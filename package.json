@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "npm@10.8.2",
-  "description": "Open-source, self-hosted Jongo OS monorepo",
+  "description": "Open-source, self-hosted Jongo monorepo",
   "workspaces": [
     "apps/*",
     "packages/*"
