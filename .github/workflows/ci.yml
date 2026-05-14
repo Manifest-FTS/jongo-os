@@ -49,22 +49,19 @@ jobs:
       - name: Docker info
         run: docker info
 
-      - name: Nixpacks plan
+      - name: Install Nixpacks CLI
         run: |
-          docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            ghcr.io/railwayapp/nixpacks:latest \
-            plan .
+          curl -fsSL https://nixpacks.com/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Nixpacks version
+        run: nixpacks --version
+
+      - name: Nixpacks plan
+        run: nixpacks plan .
 
       - name: Nixpacks build
-        run: |
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            ghcr.io/railwayapp/nixpacks:latest \
-            build . --name jongo-os-nixpacks-ci-${{ github.run_id }}
+        run: nixpacks build . --name jongo-os-nixpacks-ci-${{ github.run_id }}
 
       - name: Cleanup Nixpacks image
         if: always()
