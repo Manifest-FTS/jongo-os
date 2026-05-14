@@ -56,6 +56,13 @@ For Coolify/Nixpacks deployments, this repository includes `nixpacks.toml` to en
 - `npm run build`
 - start with standalone server path above
 
+Startup behavior:
+
+- Runtime attempts `npm run db:migrate:deploy` on boot.
+- If migrations fail (for example, transient DB/network startup timing), app startup continues so the service can come up instead of returning Bad Gateway.
+- Run migrations manually in your deployment shell when needed:
+	- `npm run db:migrate:deploy`
+
 ## Environment
 
 - `COOLIFY_API_BASE_URL`
