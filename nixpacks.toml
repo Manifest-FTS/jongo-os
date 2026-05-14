@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "npm"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = ["npm ci", "npm run prisma:generate"]
@@ -8,4 +8,4 @@ cmds = ["npm ci", "npm run prisma:generate"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "node apps/web/.next/standalone/apps/web/server.js"
+cmd = "npm run db:migrate:deploy && node apps/web/.next/standalone/apps/web/server.js"

@@ -33,3 +33,39 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  nixpacks-build-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NEXTAUTH_SECRET: ci-placeholder-secret-not-for-production
+      NEXTAUTH_URL: http://localhost:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker info
+        run: docker info
+
+      - name: Nixpacks plan
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            ghcr.io/railwayapp/nixpacks:latest \
+            plan .
+
+      - name: Nixpacks build
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            ghcr.io/railwayapp/nixpacks:latest \
+            build . --name jongo-os-nixpacks-ci-${{ github.run_id }}
+
+      - name: Cleanup Nixpacks image
+        if: always()
+        run: docker rmi jongo-os-nixpacks-ci-${{ github.run_id }} || true
