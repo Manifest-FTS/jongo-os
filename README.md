@@ -40,7 +40,8 @@ This repository now includes pass-2 implementation for branded UI and read-only 
 - This project uses Next.js `output: standalone`.
 - Production start command must run the standalone server output, not `next start`.
 - Default start path is:
-	- `node apps/web/.next/standalone/apps/web/server.js`
+	- `HOSTNAME=0.0.0.0 npm run start --workspace @jongo-os/web`
+	- This forces the standalone server to bind to `0.0.0.0` so reverse proxies can reach the app inside container environments.
 
 Prisma client generation is required for production bootstrap/auth/database routes.
 
