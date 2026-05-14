@@ -1,0 +1,29 @@
+{
+  "name": "jongo-os",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@10.8.2",
+  "description": "Open-source, self-hosted Jongo OS monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:push": "prisma db push",
+    "db:seed": "node prisma/seed.ts"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0",
+    "turbo": "^2.0.6"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}
