@@ -4,7 +4,12 @@ export type DeploymentRecord = {
   environment: "production" | "staging" | "unknown";
   status: "healthy" | "degraded" | "error" | "unknown";
   finishedAt?: string;
+  startedAt?: string;
+  commitMessage?: string;
+  durationSeconds?: number;
 };
+
+export type SiteType = "wordpress" | "generic";
 
 export type SiteOverview = {
   id: string;
@@ -13,6 +18,7 @@ export type SiteOverview = {
   status: "healthy" | "degraded" | "error" | "unknown";
   productionStatus: "healthy" | "degraded" | "error" | "unknown";
   stagingStatus: "healthy" | "degraded" | "error" | "unknown";
+  siteType: SiteType;
 };
 
 export type CoolifyOverview = {
@@ -36,6 +42,44 @@ export type CoolifyConnectionStatus = {
   checkedAt: string;
   error?: string;
 };
+
+/**
+ * Detect site type from Coolify resource metadata.
+ * Priority order (highest confidence first):
+ *   1. docker_registry_image_name — image for Docker Image deployments (e.g. "wordpress", "bitnami/wordpress")
+ *   2. static_image              — static/pre-built image field
+ *   3. git_repository            — repository URL may contain "wordpress"
+ *   4. description               — free-text description field
+ *   5. name                      — resource name: last resort, most fragile
+ *
+ * Returns "wordpress" only if one of the above clearly indicates WordPress.
+ * Falls back to "generic" when metadata is absent or inconclusive.
+ */
+export function detectSiteType(resource: Record<string, unknown>): SiteType {
+  const wp = /wordpress|bitnami\/wordpress/i;
+
+  // 1 & 2: image fields — highest signal
+  for (const field of ["docker_registry_image_name", "static_image"]) {
+    const val = resource[field];
+    if (typeof val === "string" && wp.test(val)) return "wordpress";
+  }
+
+  // 3: git repository URL
+  const gitRepo = resource.git_repository;
+  if (typeof gitRepo === "string" && /wordpress/i.test(gitRepo)) return "wordpress";
+
+  // 4: description free text
+  const description = resource.description;
+  if (typeof description === "string" && /wordpress/i.test(description)) return "wordpress";
+
+  // 5: name — last fallback
+  const name = resource.name;
+  if (typeof name === "string" && (/wordpress/i.test(name) || /\bwp[-_ ]/i.test(name) || /[-_ ]wp\b/i.test(name))) {
+    return "wordpress";
+  }
+
+  return "generic";
+}
 
 function statusFromRaw(value: unknown): SiteOverview["status"] {
   if (typeof value !== "string") return "unknown";
@@ -121,12 +165,25 @@ function normalizeDeploymentRecords(input: unknown, fallbackSiteName = "Unknown 
     const id = stringValue(deployment, ["uuid", "id"], `dep-${index + 1}`);
     const siteName = stringValue(deployment, ["service_name", "name", "application_name"], fallbackSiteName);
 
+    const finishedAt = stringValue(deployment, ["finished_at", "updated_at", "created_at"], "") || undefined;
+    const startedAt = stringValue(deployment, ["started_at", "queued_at", "created_at"], "") || undefined;
+    const commitMessage = stringValue(deployment, ["commit_message", "message", "description"], "") || undefined;
+
+    let durationSeconds: number | undefined;
+    if (startedAt && finishedAt) {
+      const diff = (new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000;
+      if (diff > 0) durationSeconds = Math.round(diff);
+    }
+
     return {
       id,
       siteName,
       environment: deploymentEnvironmentFromRaw(deployment),
       status: statusFromRaw(deployment.status ?? deployment.result ?? deployment.current_status ?? deployment.state),
-      finishedAt: stringValue(deployment, ["finished_at", "updated_at", "created_at"], "") || undefined
+      finishedAt,
+      startedAt,
+      commitMessage,
+      durationSeconds
     };
   });
 }
@@ -175,7 +232,8 @@ function mockOverview(): CoolifyOverview {
         name: "Main Marketing Site",
         status: "healthy",
         productionStatus: "healthy",
-        stagingStatus: "degraded"
+        stagingStatus: "degraded",
+        siteType: "generic"
       },
       {
         id: "site-client-portal",
@@ -183,7 +241,8 @@ function mockOverview(): CoolifyOverview {
         name: "Client Portal",
         status: "degraded",
         productionStatus: "healthy",
-        stagingStatus: "degraded"
+        stagingStatus: "degraded",
+        siteType: "generic"
       }
     ],
     deployments: [
@@ -247,7 +306,8 @@ async function buildOverviewFromApplications(applications: Record<string, unknow
           name,
           status: combineStatuses(rawStatus, productionStatus, stagingStatus),
           productionStatus,
-          stagingStatus
+          stagingStatus,
+          siteType: detectSiteType(application)
         },
         deployments
       };
@@ -294,7 +354,8 @@ async function buildOverviewFromServices(services: Record<string, unknown>[]): P
       name,
       status: mergedStatus,
       productionStatus,
-      stagingStatus
+      stagingStatus,
+      siteType: detectSiteType(service)
     };
   });
 

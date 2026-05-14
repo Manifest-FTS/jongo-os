@@ -26,7 +26,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
-    "db:seed": "node prisma/seed.js"
+    "db:seed": "node prisma/seed.js",
+    "create-admin": "node ./scripts/create-admin.mjs"
   },
   "devDependencies": {
     "prisma": "^5.22.0",

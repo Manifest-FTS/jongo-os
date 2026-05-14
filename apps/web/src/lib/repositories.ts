@@ -26,6 +26,7 @@ export type SiteWorkspaceRecord = {
   stagingStatus: "healthy" | "degraded" | "error" | "unknown";
   deploymentCount: number;
   recentActivity: string[];
+  siteType: "wordpress" | "generic";
 };
 
 export type ActivityFeedItem = {
@@ -34,6 +35,9 @@ export type ActivityFeedItem = {
   detail: string;
   timestamp?: string;
   status: "healthy" | "degraded" | "error" | "unknown";
+  actor?: string;
+  environment?: "production" | "staging" | "unknown";
+  durationSeconds?: number;
 };
 
 function fromMockClients(): ClientWorkspaceRecord[] {
@@ -62,9 +66,11 @@ export async function getActivityFeed(limit = 6): Promise<ActivityFeedItem[]> {
   const deploymentItems: ActivityFeedItem[] = overview.deployments.slice(0, limit).map((deployment) => ({
     id: deployment.id,
     title: `${deployment.siteName} → ${deployment.environment}`,
-    detail: `Deployment ${deployment.status}`,
+    detail: deployment.commitMessage ?? `Deployment ${deployment.status}`,
     timestamp: deployment.finishedAt,
-    status: deployment.status
+    status: deployment.status,
+    environment: deployment.environment,
+    durationSeconds: deployment.durationSeconds
   }));
 
   const prisma = await maybeGetDb();
@@ -107,9 +113,11 @@ export async function getSiteActivityFeed(siteId: string, limit = 6): Promise<Ac
     .map((deployment) => ({
       id: deployment.id,
       title: `${site.name} → ${deployment.environment}`,
-      detail: `Deployment ${deployment.status}`,
+      detail: deployment.commitMessage ?? `Deployment ${deployment.status}`,
       timestamp: deployment.finishedAt,
-      status: deployment.status
+      status: deployment.status,
+      environment: deployment.environment,
+      durationSeconds: deployment.durationSeconds
     }));
 }
 
@@ -311,6 +319,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
     productionStatus: site.productionStatus,
     stagingStatus: site.stagingStatus,
     deploymentCount,
+    siteType: site.siteType,
     recentActivity: overview.deployments
       .filter((deployment) => deployment.siteName === site.name)
       .slice(0, 3)
