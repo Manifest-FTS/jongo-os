@@ -19,7 +19,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
             "radial-gradient(circle at 0% 0%, rgba(212, 175, 55, 0.16), transparent 30%), radial-gradient(circle at 100% 0%, rgba(255, 47, 176, 0.11), transparent 30%), linear-gradient(180deg, #ffffff 0%, #f8faf9 100%)"
         }}
       >
-        <p className="tag">jongo-os operational platform</p>
+        <p className="tag">powered by Manifest FTS</p>
         <h1 style={{ margin: "0.65rem 0 0.2rem" }}>
           <span className="brand-text">Jongo</span> {title}
         </h1>
