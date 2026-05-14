@@ -111,16 +111,18 @@ export default async function DashboardPage() {
                   <p style={{ margin: 0, fontWeight: 500 }}>
                     {item.title}
                   </p>
-                  {item.timestamp && (
-                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
-                      {new Date(item.timestamp).toLocaleDateString()}
-                    </p>
-                  )}
-                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
                     {item.detail}
+                    {item.durationSeconds !== undefined && ` • ${item.durationSeconds < 60 ? `${item.durationSeconds}s` : `${Math.floor(item.durationSeconds / 60)}m`}`}
+                    {item.timestamp ? ` • ${new Date(item.timestamp).toLocaleString()}` : ""}
                   </p>
                 </div>
-                <span className={`status-chip ${item.status}`}>{item.status}</span>
+                <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0 }}>
+                  {item.environment && item.environment !== "unknown" && (
+                    <span className="status-chip unknown" style={{ fontSize: "0.72rem" }}>{item.environment}</span>
+                  )}
+                  <span className={`status-chip ${item.status}`}>{item.status}</span>
+                </div>
               </div>
             ))}
           </div>
