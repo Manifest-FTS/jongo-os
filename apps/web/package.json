@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "node .next/standalone/apps/web/server.js",
+    "start": "node ./scripts/start-standalone.cjs",
     "start:next": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit"
