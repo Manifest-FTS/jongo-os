@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node ./scripts/copy-standalone-static.cjs",
     "start": "node ./scripts/start-standalone.cjs",
     "start:next": "next start",
     "lint": "next lint",
