@@ -24,14 +24,54 @@ This repository now includes pass-2 implementation for branded UI and read-only 
 
 - `npm install`
 - `npm run dev`
+- `npm run dev:web`
+- `npm run start`
 - `npm run type-check`
 - `npm run build`
+- `npm run bootstrap:local`
+- `npm run smoke:coolify`
+- `npm run dev:web:env`
+- `npm run start:web:env`
+- `npm run docker:up`
+- `npm run docker:down`
 
 ## Environment
 
 - `COOLIFY_API_BASE_URL`
 - `COOLIFY_API_TOKEN`
 - `COOLIFY_TIMEOUT_MS` (optional; defaults to 8000)
+
+## Local Install Path
+
+1. `cp .env.example .env` (or copy manually on Windows)
+2. Fill in `.env` values for DB, auth, and Coolify API
+3. Run `npm run bootstrap:local`
+4. Run `npm run dev:web`
+
+If your Coolify credentials are in root `.env`, use `npm run dev:web:env` so the web process receives them.
+
+## Docker Compose Path
+
+1. Ensure Docker is installed
+2. Prepare `.env` from `.env.example`
+3. Run `npm run docker:up`
+4. Open `http://localhost:3000`
+
+## Real Coolify Validation
+
+Use these routes after your env vars are configured:
+
+- `/api/coolify/connection` - returns connectivity status and explicit error details
+- `/api/coolify/status` - returns live/mock mode plus current site stats
+- `/api/health` - service health route
+
+You can run a local smoke test (with app running) using:
+
+- `npm run smoke:coolify`
+
+To fail fast unless live data is active:
+
+- PowerShell: `$env:EXPECT_LIVE='true'; $env:APP_BASE_URL='http://localhost:3000'; npm run smoke:coolify`
 
 ## App Surface (MVP)
 

@@ -27,6 +27,16 @@ export type CoolifyOverview = {
   };
 };
 
+export type CoolifyConnectionStatus = {
+  mode: "live" | "mock";
+  configured: boolean;
+  reachable: boolean;
+  baseUrl?: string;
+  applicationCount: number;
+  checkedAt: string;
+  error?: string;
+};
+
 function statusFromRaw(value: unknown): SiteOverview["status"] {
   if (typeof value !== "string") return "unknown";
   const normalized = value.toLowerCase();
@@ -328,6 +338,49 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     return mockOverview();
   } catch {
     return mockOverview();
+  }
+}
+
+export async function getCoolifyConnectionStatus(): Promise<CoolifyConnectionStatus> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+  const configured = Boolean(baseUrl && token);
+
+  if (!configured) {
+    return {
+      mode: "mock",
+      configured: false,
+      reachable: false,
+      baseUrl,
+      applicationCount: 0,
+      checkedAt: new Date().toISOString(),
+      error: "Missing COOLIFY_API_BASE_URL or COOLIFY_API_TOKEN"
+    };
+  }
+
+  try {
+    const payload = await coolifyFetch("/api/v1/applications");
+    const applications = normalizeArrayPayload(payload);
+
+    return {
+      mode: "live",
+      configured: true,
+      reachable: true,
+      baseUrl,
+      applicationCount: applications.length,
+      checkedAt: new Date().toISOString()
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Coolify connectivity check failed";
+    return {
+      mode: "mock",
+      configured: true,
+      reachable: false,
+      baseUrl,
+      applicationCount: 0,
+      checkedAt: new Date().toISOString(),
+      error: message
+    };
   }
 }
 
