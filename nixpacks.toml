@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "npm"]
+
+[phases.install]
+cmds = ["npm ci", "npm run prisma:generate"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "node apps/web/.next/standalone/apps/web/server.js"

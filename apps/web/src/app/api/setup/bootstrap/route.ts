@@ -1,6 +1,18 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 
+function isPrismaInitializationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("@prisma/client did not initialize yet") ||
+    normalized.includes("prisma generate") ||
+    normalized.includes("cannot find module '.prisma/client") ||
+    normalized.includes("cannot find module '@prisma/client")
+  );
+}
+
 export async function GET() {
   return NextResponse.json({
     ok: true,
@@ -90,6 +102,21 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     console.error("[setup/bootstrap] error:", err);
+
+    if (isPrismaInitializationError(err)) {
+      return NextResponse.json(
+        {
+          error: "Prisma client is not initialized in this deployment.",
+          guidance: [
+            "Run prisma generate during install/build.",
+            "Rebuild and redeploy the application.",
+            "Ensure production start uses the Next standalone server output."
+          ]
+        },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
