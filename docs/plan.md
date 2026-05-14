@@ -138,6 +138,16 @@ Site-level configuration:
 - Advanced operational settings
 - Collaborator access (site-level overrides)
 
+### Secrets and Environment Variables
+
+Server-only secrets should live in `.env.local` during local development and in the host's environment-variable UI for deployed environments.
+
+- `COOLIFY_API_BASE_URL` and `COOLIFY_API_TOKEN` are read only on the server.
+- `NEXTAUTH_SECRET` is also server-only.
+- `DATABASE_URL` is server-only.
+- `NEXT_PUBLIC_*` should not be used for Coolify credentials or other secrets.
+- If Coolify vars are missing, deploy actions fall back to mock/no-op behavior rather than exposing the secret requirement to the browser.
+
 ### WordPress-Specific Operational Context
 
 For WordPress sites, add contextual operational widgets:

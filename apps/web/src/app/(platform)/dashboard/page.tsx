@@ -1,7 +1,11 @@
-import { getCoolifyOverview } from "../../lib/coolify";
+import { getCoolifyOverview } from "@/lib/coolify";
+import { getActivityFeed, listClientWorkspaces } from "@/lib/repositories";
+import StatusPoll from "@/components/StatusPoll";
 
 export default async function DashboardPage() {
   const overview = await getCoolifyOverview();
+  const clients = await listClientWorkspaces();
+  const activityFeed = await getActivityFeed();
 
   return (
     <div>
@@ -19,6 +23,9 @@ export default async function DashboardPage() {
           <h2 className="card-title">Platform Overview</h2>
           <div style={{ marginTop: "0.75rem" }}>
             <p style={{ margin: "0.35rem 0" }}>
+              Total Clients: <strong>{clients.length}</strong>
+            </p>
+            <p style={{ margin: "0.35rem 0" }}>
               Total Sites: <strong>{overview.sites.length}</strong>
             </p>
             <p style={{ margin: "0.35rem 0" }}>
@@ -30,22 +37,11 @@ export default async function DashboardPage() {
           </div>
         </article>
 
-        {/* Health Summary */}
+        {/* Health Summary — live poll every 30s */}
         <article className="card">
           <h2 className="card-title">Infrastructure Health</h2>
           <div style={{ marginTop: "0.75rem" }}>
-            <p style={{ margin: "0.35rem 0" }}>
-              <span style={{ color: "var(--success, #10b981)" }}>●</span> Healthy:{" "}
-              <strong>{overview.stats.healthySites}</strong>
-            </p>
-            <p style={{ margin: "0.35rem 0" }}>
-              <span style={{ color: "var(--warning, #f59e0b)" }}>●</span> Degraded:{" "}
-              <strong>{overview.stats.degradedSites}</strong>
-            </p>
-            <p style={{ margin: "0.35rem 0" }}>
-              <span style={{ color: "var(--danger, #ef4444)" }}>●</span> Error:{" "}
-              <strong>{overview.stats.errorSites}</strong>
-            </p>
+            <StatusPoll intervalMs={30_000} />
           </div>
         </article>
 
@@ -94,13 +90,13 @@ export default async function DashboardPage() {
       {/* Recent Activity */}
       <section className="card" style={{ marginTop: "1rem" }}>
         <h2 className="card-title">Recent Deployment Activity</h2>
-        {overview.deployments.length === 0 ? (
+        {activityFeed.length === 0 ? (
           <p className="card-muted">No recent deployments</p>
         ) : (
           <div style={{ marginTop: "1rem" }}>
-            {overview.deployments.slice(0, 5).map((deployment) => (
+            {activityFeed.map((item) => (
               <div
-                key={deployment.id}
+                key={item.id}
                 style={{
                   padding: "0.75rem",
                   marginBottom: "0.5rem",
@@ -113,15 +109,18 @@ export default async function DashboardPage() {
               >
                 <div>
                   <p style={{ margin: 0, fontWeight: 500 }}>
-                    {deployment.siteName} → {deployment.environment}
+                    {item.title}
                   </p>
-                  {deployment.finishedAt && (
+                  {item.timestamp && (
                     <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
-                      {new Date(deployment.finishedAt).toLocaleDateString()}
+                      {new Date(item.timestamp).toLocaleDateString()}
                     </p>
                   )}
+                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+                    {item.detail}
+                  </p>
                 </div>
-                <span className={`status-chip ${deployment.status}`}>{deployment.status}</span>
+                <span className={`status-chip ${item.status}`}>{item.status}</span>
               </div>
             ))}
           </div>

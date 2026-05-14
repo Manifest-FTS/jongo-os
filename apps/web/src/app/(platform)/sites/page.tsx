@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { getClientForSite } from "../../lib/clients";
-import { getCoolifyOverview } from "../../lib/coolify";
+import { getCoolifyOverview } from "@/lib/coolify";
+import { listSiteDirectory } from "@/lib/repositories";
 
 export default async function SitesPage() {
   const overview = await getCoolifyOverview();
+  const siteDirectory = await listSiteDirectory();
 
   return (
     <div>
@@ -19,8 +20,8 @@ export default async function SitesPage() {
         {overview.sites.length} total applications across all clients
       </p>
       <section className="grid">
-        {overview.sites.map((site) => {
-          const client = getClientForSite(site.id);
+        {siteDirectory.map((site) => {
+          const overviewSite = overview.sites.find((item) => item.id === site.id);
 
           return (
             <article key={site.id} className="card">
@@ -29,15 +30,15 @@ export default async function SitesPage() {
                 ID: {site.id}
               </p>
               <p style={{ color: "var(--muted)", margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
-                Client: {client?.name ?? "Unassigned"}
+                Client: {site.clientName}
               </p>
               <div style={{ marginBottom: "0.65rem" }}>
-                <span className={`status-chip ${site.status}`}>{site.status}</span>
+                <span className={`status-chip ${overviewSite?.status ?? site.status}`}>{overviewSite?.status ?? site.status}</span>
               </div>
-              {client ? (
+              {site.clientId !== "unassigned" ? (
                 <p style={{ margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
                   <Link
-                    href={`/organizations/${client.id}`}
+                    href={`/organizations/${site.clientId}`}
                     style={{ color: "var(--accent)", textDecoration: "none" }}
                   >
                     View client →

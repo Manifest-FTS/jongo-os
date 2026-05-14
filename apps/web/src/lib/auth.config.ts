@@ -39,30 +39,31 @@ export const authConfig = {
           return null;
         }
 
-        // TODO: Call database to fetch user
-        // const user = await db.user.findUnique({
-        //   where: { email: credentials.email }
-        // });
+        try {
+          const { db } = await import("./db");
+          const user = await db.user.findUnique({
+            where: { email: credentials.email }
+          });
 
-        // if (!user?.passwordHash) {
-        //   return null;
-        // }
+          if (!user?.passwordHash) {
+            return null;
+          }
 
-        // const passwordValid = await compare(credentials.password, user.passwordHash);
-        // if (!passwordValid) {
-        //   return null;
-        // }
+          const passwordValid = await compare(credentials.password, user.passwordHash);
 
-        // return {
-        //   id: user.id,
-        //   email: user.email,
-        //   name: user.fullName
-        // };
+          if (!passwordValid) {
+            return null;
+          }
 
-        console.warn(
-          "🚨 Authentication not yet wired to database. Add db integration in providers/auth.ts"
-        );
-        return null;
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.fullName ?? undefined
+          };
+        } catch {
+          console.warn("Authentication is waiting on a configured database.");
+          return null;
+        }
       }
     })
   ],

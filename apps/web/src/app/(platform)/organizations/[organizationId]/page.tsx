@@ -1,22 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getClientById } from "../../../lib/clients";
-import { getCoolifyOverview } from "../../../lib/coolify";
+import { getSiteWorkspace, getClientWorkspace } from "@/lib/repositories";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
 export default async function OrganizationDetailPage({ params }: Params) {
   const { organizationId } = await params;
-  const client = getClientById(organizationId);
+  const client = await getClientWorkspace(organizationId);
 
   if (!client) {
     notFound();
   }
 
-  const overview = await getCoolifyOverview();
-  const clientSites = overview.sites.filter((site) => client.siteIds.includes(site.id));
-  const clientSiteNames = new Set(clientSites.map((site) => site.name));
-  const clientDeployments = overview.deployments.filter((deployment) => clientSiteNames.has(deployment.siteName));
+  const clientSites = await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId)));
+  const visibleSites = clientSites.filter((site): site is NonNullable<typeof site> => Boolean(site));
 
   return (
     <div>
@@ -33,11 +30,11 @@ export default async function OrganizationDetailPage({ params }: Params) {
       <section className="grid" style={{ marginBottom: "1rem" }}>
         <article className="card">
           <h3 className="card-title">Sites / Applications</h3>
-          {clientSites.length === 0 ? (
+          {visibleSites.length === 0 ? (
             <p className="card-muted">No sites linked to this client yet.</p>
           ) : (
             <div>
-              {clientSites.map((site) => (
+              {visibleSites.map((site) => (
                 <p key={site.id} style={{ margin: "0.5rem 0" }}>
                   <Link href={`/sites/${site.id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>
                     {site.name} →
@@ -52,7 +49,7 @@ export default async function OrganizationDetailPage({ params }: Params) {
         <article className="card">
           <h3 className="card-title">Recent Activity</h3>
           <p className="card-muted" style={{ marginBottom: "0.6rem" }}>
-            {clientDeployments.length} deployment event{clientDeployments.length === 1 ? "" : "s"}
+            {client.recentActivity.length} activity item{client.recentActivity.length === 1 ? "" : "s"}
           </p>
           {client.recentActivity.map((item) => (
             <p key={item} style={{ margin: "0.45rem 0", fontSize: "0.9rem" }}>

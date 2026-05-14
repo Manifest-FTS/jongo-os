@@ -1,6 +1,5 @@
 import { ReactNode } from "react";
-import { getClientForSite } from "../../../lib/clients";
-import { getCoolifyOverview } from "../../../lib/coolify";
+import { getSiteWorkspace } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -12,9 +11,7 @@ export default async function SiteWorkspaceLayout({
   params: Promise<{ siteId: string }>;
 }) {
   const { siteId } = await params;
-  const client = getClientForSite(siteId);
-  const overview = await getCoolifyOverview();
-  const site = overview.sites.find((item) => item.id === siteId);
+  const site = await getSiteWorkspace(siteId);
 
   const tabs = [
     { name: "Overview", href: `/sites/${siteId}` },
@@ -27,7 +24,7 @@ export default async function SiteWorkspaceLayout({
     <div>
       <div className="card" style={{ marginBottom: "1rem" }}>
         <p className="card-muted" style={{ margin: "0 0 0.35rem" }}>
-          Dashboard / Clients / {client?.name ?? "Unknown Client"} / {site?.name ?? siteId}
+          Dashboard / Clients / {site?.clientName ?? "Unknown Client"} / {site?.name ?? siteId}
         </p>
         <h1 style={{ margin: 0 }}>Site: {site?.name ?? siteId}</h1>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
@@ -42,7 +39,7 @@ export default async function SiteWorkspaceLayout({
           <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
             Staging {site?.stagingStatus ?? "unknown"}
           </span>
-          <span className="tag">Source {overview.mode}</span>
+          <span className="tag">Source mock/live Coolify</span>
         </div>
       </div>
 

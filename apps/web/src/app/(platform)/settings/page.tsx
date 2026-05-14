@@ -1,4 +1,8 @@
+import { getRuntimeConfigStatus } from "@/lib/runtime-config";
+
 export default function SettingsPage() {
+  const runtime = getRuntimeConfigStatus();
+
   return (
     <div>
       <div className="card" style={{ marginBottom: "1rem" }}>
@@ -46,18 +50,44 @@ export default function SettingsPage() {
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
             Coolify API URL and authentication token (can be overridden per-organization).
           </p>
+          <div style={{ marginTop: "1rem", display: "grid", gap: "0.6rem" }}>
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              Runtime mode: <span className={`status-chip ${runtime.coolifyMode}`}>{runtime.coolifyMode}</span>
+            </p>
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              Base URL: <span className={`status-chip ${runtime.coolifyBaseUrlConfigured ? "healthy" : "unknown"}`}>
+                {runtime.coolifyBaseUrlConfigured ? "configured" : "missing"}
+              </span>
+            </p>
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              API token: <span className={`status-chip ${runtime.coolifyTokenConfigured ? "healthy" : "unknown"}`}>
+                {runtime.coolifyTokenConfigured ? "configured" : "missing"}
+              </span>
+            </p>
+          </div>
         </article>
       </div>
 
-      <article className="card">
-        <h3 className="card-title">System Preferences</h3>
-        <ul style={{ fontSize: "0.9rem", margin: "0.75rem 0 0", paddingLeft: "1.25rem" }}>
-          <li>Theme and appearance</li>
-          <li>Notification preferences</li>
-          <li>Time zone and date format</li>
-          <li>Language and localization</li>
-        </ul>
-      </article>
+      <div className="grid">
+        <article className="card">
+          <h3 className="card-title">System Preferences</h3>
+          <ul style={{ fontSize: "0.9rem", margin: "0.75rem 0 0", paddingLeft: "1.25rem" }}>
+            <li>Theme and appearance</li>
+            <li>Notification preferences</li>
+            <li>Time zone and date format</li>
+            <li>Language and localization</li>
+          </ul>
+        </article>
+
+        <article className="card">
+          <h3 className="card-title">Server Runtime</h3>
+          <ul style={{ fontSize: "0.9rem", margin: "0.75rem 0 0", paddingLeft: "1.25rem" }}>
+            <li>DATABASE_URL: {runtime.databaseConfigured ? "configured" : "missing"}</li>
+            <li>NEXTAUTH_SECRET: {runtime.nextauthSecretConfigured ? "configured" : "missing"}</li>
+            <li>Coolify API values stay server-only</li>
+          </ul>
+        </article>
+      </div>
     </div>
   );
 }

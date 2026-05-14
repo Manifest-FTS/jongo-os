@@ -1,18 +1,41 @@
-// Database client - pending Prisma initialization
-// This will be populated after DATABASE_URL is configured and migrations are applied
-// See docs/database-schema.md for schema definition
+const prismaClientModule = require("@prisma/client") as {
+  PrismaClient: new (...args: unknown[]) => any;
+};
 
-// import { PrismaClient } from "@prisma/client";
-// const db = new PrismaClient();
-// export default db;
+const PrismaClient = prismaClientModule.PrismaClient;
 
-// Placeholder for now to avoid build errors
-export const db = null as any;
+const globalForPrisma = globalThis as unknown as {
+  prisma?: any;
+};
+
+export const db =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"]
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = db;
+}
 
 export async function ensureDb() {
-  console.warn("Database client not yet initialized. Configure DATABASE_URL and run `npm run db:push`");
+  await db.$connect();
 }
 
 export async function closeDb() {
-  console.warn("Database client not yet initialized.");
+  await db.$disconnect();
+}
+
+/**
+ * Returns the Prisma client if the generated client is available,
+ * or null when running without a database (mock mode).
+ */
+export async function getDb(): Promise<typeof db | null> {
+  try {
+    // Quick ping to verify the client is actually usable
+    await db.$queryRaw`SELECT 1`;
+    return db;
+  } catch {
+    return null;
+  }
 }

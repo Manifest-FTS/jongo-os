@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { getClients } from "../../lib/clients";
+import { listClientWorkspaces } from "@/lib/repositories";
 
-export default function OrganizationsPage() {
-  const clients = getClients();
+export default async function OrganizationsPage() {
+  const clients = await listClientWorkspaces();
 
   return (
     <div>
@@ -23,7 +23,7 @@ export default function OrganizationsPage() {
             <h3 className="card-title">{client.name}</h3>
             <p className="card-muted">{client.summary}</p>
             <p style={{ margin: "0.75rem 0 0.55rem", fontSize: "0.9rem" }}>
-              {client.siteIds.length} site{client.siteIds.length === 1 ? "" : "s"} • {client.members.length} members
+              {client.siteCount} site{client.siteCount === 1 ? "" : "s"} • {client.memberCount} members
             </p>
             <Link href={`/organizations/${client.id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>
               Open client detail →

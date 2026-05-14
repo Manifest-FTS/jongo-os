@@ -1,4 +1,6 @@
-import { getCoolifyOverview } from "../../../lib/coolify";
+import { getCoolifyOverview } from "@/lib/coolify";
+import DeployButton from "@/components/DeployButton";
+import { getSiteActivityFeed } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -7,6 +9,7 @@ export default async function SiteOverviewPage({ params }: Params) {
   const overview = await getCoolifyOverview();
   const site = overview.sites.find((item) => item.id === siteId);
   const siteDeployments = overview.deployments.filter((deployment) => deployment.siteName === site?.name);
+  const siteActivity = await getSiteActivityFeed(siteId);
 
   return (
     <div>
@@ -34,6 +37,10 @@ export default async function SiteOverviewPage({ params }: Params) {
               {site?.status ?? "unknown"}
             </span>
           </p>
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
+            <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" />
+            <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" />
+          </div>
         </article>
 
         {/* Collaborators */}
@@ -62,15 +69,15 @@ export default async function SiteOverviewPage({ params }: Params) {
       <div style={{ display: "grid", gap: "1rem", marginBottom: "1rem" }}>
         <article className="card">
           <h3 className="card-title">Activity Feed</h3>
-          {siteDeployments.length === 0 ? (
+          {siteActivity.length === 0 ? (
             <p className="card-muted" style={{ marginBottom: 0 }}>
               No activity yet. New deployment and staging events will appear here.
             </p>
           ) : (
             <div style={{ marginTop: "0.5rem", display: "grid", gap: "0.55rem" }}>
-              {siteDeployments.map((deployment) => (
+              {siteActivity.map((item) => (
                 <div
-                  key={deployment.id}
+                  key={item.id}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
@@ -79,10 +86,14 @@ export default async function SiteOverviewPage({ params }: Params) {
                     borderBottom: "1px solid var(--border)"
                   }}
                 >
-                  <p style={{ margin: 0, fontSize: "0.9rem" }}>
-                    {deployment.environment === "production" ? "Deploy to production" : "Staging update"}
-                  </p>
-                  <span className={`status-chip ${deployment.status}`}>{deployment.status}</span>
+                  <div>
+                    <p style={{ margin: 0, fontSize: "0.9rem" }}>{item.title}</p>
+                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+                      {item.detail}
+                      {item.timestamp ? ` • ${new Date(item.timestamp).toLocaleString()}` : ""}
+                    </p>
+                  </div>
+                  <span className={`status-chip ${item.status}`}>{item.status}</span>
                 </div>
               ))}
             </div>
