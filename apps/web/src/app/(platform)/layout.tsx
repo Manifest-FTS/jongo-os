@@ -6,7 +6,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       <aside className="app-sidebar">
         <div className="app-brand card">
           <p className="tag" style={{ marginBottom: "0.65rem" }}>
-            jongo-os operational platform
+            powered by Manifest FTS
           </p>
           <h1 style={{ margin: 0 }}>
             <span className="brand-text">Jongo</span> OS
