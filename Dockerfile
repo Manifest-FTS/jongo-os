@@ -25,4 +25,4 @@ COPY --from=build /app/prisma ./prisma
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npm run db:migrate:deploy && npm run start --workspace @jongo-os/web"]
+CMD ["sh", "-c", "npm run db:migrate:deploy && node apps/web/.next/standalone/apps/web/server.js"]

@@ -11,10 +11,12 @@
   "scripts": {
     "dev": "turbo run dev",
     "dev:web": "npm run dev --workspace @jongo-os/web",
-    "start": "npm run start --workspace @jongo-os/web",
-    "build": "turbo run build",
+    "start": "npm run prisma:generate && npm run start --workspace @jongo-os/web",
+    "build": "npm run prisma:generate && turbo run build",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
+    "postinstall": "npm run prisma:generate",
+    "prisma:generate": "prisma generate --schema ./prisma/schema.prisma",
     "bootstrap:local": "powershell -ExecutionPolicy Bypass -File ./scripts/bootstrap.ps1",
     "smoke:coolify": "node ./scripts/smoke-coolify.mjs",
     "dev:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1 -Dev",
@@ -35,5 +37,8 @@
   },
   "engines": {
     "node": ">=18.18.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
   }
 }

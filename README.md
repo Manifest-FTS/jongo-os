@@ -35,6 +35,27 @@ This repository now includes pass-2 implementation for branded UI and read-only 
 - `npm run docker:up`
 - `npm run docker:down`
 
+## Production Runtime Notes
+
+- This project uses Next.js `output: standalone`.
+- Production start command must run the standalone server output, not `next start`.
+- Default start path is:
+	- `node apps/web/.next/standalone/apps/web/server.js`
+
+Prisma client generation is required for production bootstrap/auth/database routes.
+
+- Prisma generation is wired into:
+	- `postinstall` (runs on install)
+	- `build` (runs before Next build)
+	- `start` (runs before app start)
+
+For Coolify/Nixpacks deployments, this repository includes `nixpacks.toml` to enforce:
+
+- `npm ci`
+- `npm run prisma:generate`
+- `npm run build`
+- start with standalone server path above
+
 ## Environment
 
 - `COOLIFY_API_BASE_URL`
