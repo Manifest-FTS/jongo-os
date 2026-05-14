@@ -9,6 +9,9 @@ on:
 jobs:
   build-and-typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     env:
       NEXTAUTH_SECRET: ci-placeholder-secret-not-for-production
       NEXTAUTH_URL: http://localhost:3000
