@@ -65,3 +65,7 @@ jobs:
             -w /workspace \
             ghcr.io/railwayapp/nixpacks:latest \
             build . --name jongo-os-nixpacks-ci-${{ github.run_id }}
+
+      - name: Cleanup Nixpacks image
+        if: always()
+        run: docker rmi jongo-os-nixpacks-ci-${{ github.run_id }} || true
