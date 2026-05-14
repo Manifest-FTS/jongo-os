@@ -1,6 +1,24 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    endpoint: "/api/setup/bootstrap",
+    methods: ["POST"],
+    message: "Create the first admin user by sending a POST JSON body.",
+    requiredBody: {
+      email: "string",
+      password: "string (min 8 chars)",
+      fullName: "string (optional)"
+    },
+    notes: [
+      "Returns 409 when bootstrap already completed (at least one user exists).",
+      "If SETUP_TOKEN is configured, pass Authorization: Bearer <SETUP_TOKEN>."
+    ]
+  });
+}
+
 /**
  * POST /api/setup/bootstrap
  *
