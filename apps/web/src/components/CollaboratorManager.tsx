@@ -29,12 +29,12 @@ type Props = {
   currentUserId: string;
 };
 
-const ROLES = ["admin", "operator", "viewer"] as const;
+const ROLES = ["admin", "collaborator"] as const;
 
 export default function CollaboratorManager({ organizationId, collaborators, pendingInvites = [], currentUserId }: Props) {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "operator" | "viewer">("operator");
+  const [role, setRole] = useState<"admin" | "collaborator">("collaborator");
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);

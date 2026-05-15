@@ -48,14 +48,16 @@ jongo-os/
 
 ## MVP Information Architecture (Workflow-First)
 
+**Terminology Update:** Sites are referred to as "Apps" in the UI/UX. This better reflects the range of infrastructure managed (websites, SaaS applications, APIs, containers, services, WordPress installs, etc.).
+
 ### Platform-Level Navigation
 
 Top-level navigation contains only primary scopes:
 
 1. **Dashboard** — Platform overview, activity, infrastructure health
-2. **Clients** — Organization/team listing and management
-3. **Sites** — Application/project listing across all clients
-4. **Settings** — Platform-level configuration
+2. **Clients** — Client/organization listing and management
+3. **Apps** — Applications/projects listing across all clients
+4. **Settings** — Platform-level configuration (admin only)
 
 Sponsorship links moved to footer (shown as periodic toast notification).
 
@@ -66,38 +68,59 @@ Mental model:
 Dashboard (platform scope)
   ↓
 Client/Organization (team scope)
+  ├─ Overview
+  ├─ Apps
+  ├─ Team
+  └─ Settings (admin only)
   ↓
-Site/Application (operational workspace)
-    ├─ Overview (health, activity, resources)
-    ├─ Deployments (history, logs, actions)
+App/Application (operational workspace)
+    ├─ Overview (status, environments, quick actions)
+    ├─ Integrations (WordPress, provider plugins)
     ├─ Staging (sync workflows, environment status)
-    └─ Settings (configuration, infrastructure)
+    ├─ Backups
+    ├─ Analytics / Monitoring
+    ├─ Team (collaborator management at app level)
+    ├─ Settings (configuration)
+    └─ Advanced (infrastructure details, diagnostics)
 ```
+
+**Key Structure Change:** Team/Collaborator management has moved from Organization level to App level. This creates cleaner operational boundaries and mirrors real workflows where app-level permissions matter more than org-level roles.
 
 ### Dashboard (Platform Scope)
 
 Platform-level operational overview:
 
-- Total clients and sites
-- Recent deployment activity across all sites
+- Total clients and apps
+- Recent deployment activity across all apps
 - Environments needing attention
 - Failed deployments
 - Backup warnings
 - Infrastructure health summaries
 - Quick stats (deploy frequency, success rate, avg deployment time)
 
-### Site/Application Workspace
+### Client/Organization Workspace
 
-The Site/Application is the primary operational unit. All site-focused functionality is scoped within the site detail page using tab/section navigation.
+The Client workspace is the team/organization scope. Horizontal tab navigation:
 
-Structure:
-```
-/sites/[siteId]/
-  page.tsx           → Overview tab (default)
-  deployments/       → Deployments tab
-  staging/           → Staging tab
-  settings/          → Settings tab
-  layout.tsx         → Workspace layout with tab navigation
+**Tabs:**
+1. **Overview** — Team notes, profile/contact card, apps summary, recent activity
+2. **Apps** — Full app directory for this client
+3. **Team** — (Deprecated: team management moved to app level; kept for historical ownership records)
+4. **Settings** — Client-level configuration (admin only; includes Coolify project mapping)
+
+### App/Application Workspace
+
+The App is the primary operational unit. All app-focused functionality uses horizontal tab navigation.
+
+**Tabs:**
+1. **Overview** — Status, environments, domains, IP addresses, quick action buttons (deploy/sync staging)
+2. **Integrations** — WordPress plugin telemetry (if applicable), provider-specific integrations
+3. **Staging** — Staging environment management (only if staging enabled)
+4. **Backups** — Backup status, schedules, restore workflows
+5. **Analytics / Monitoring** — Deployment history, performance, logs
+6. **Team** — Collaborator invitations and role management for this app
+7. **Settings** — App configuration (env vars, domains, publishing settings)
+8. **Advanced** — Infrastructure details, Coolify UUIDs, developer diagnostics (admin only)
 ```
 
 #### Overview Tab
@@ -138,6 +161,41 @@ Site-level configuration:
 - Advanced operational settings
 - Collaborator access (site-level overrides)
 
+### Team Roles & Permissions
+
+**Simplified Role Model:**
+
+- **Owner** — Organization founder/account owner (not shown as a role; implicit)
+- **Admin** — Full access to all client workspaces and their apps (platform-level administrative access)
+- **Collaborator** — Standard team member with app-level permissions granted per-app (can deploy, manage staging, etc. depending on app settings)
+
+**Permission Rules:**
+
+- Organization admins can:
+  - Invite other team members as admins or collaborators
+  - Configure Coolify project mappings (admin-only settings section)
+  - Access platform diagnostics and infrastructure details
+  - Manage organization-level settings
+- Collaborators can:
+  - Deploy to their assigned apps
+  - Manage staging workflows for their assigned apps
+  - Invite other collaborators to their app (but cannot invite other admins)
+  - View app analytics and backups
+- Viewer role has been removed. Future fine-grained read-only access will be designed when required.
+
+### Progressive Disclosure
+
+Infrastructure details and advanced configuration are hidden by default to keep the primary UI focused on operational workflows:
+
+- **Developer Details** (collapsed section) — Coolify UUIDs, environment IDs, service IDs
+- **Advanced Tab** (app detail page) — Reserved for admin-only infrastructure diagnostics, Coolify project mapping, raw logs, debugging
+- **Admin-Only Sections** — Settings tab in Client workspace shows Coolify project mapping only to admins
+
+**Information Never Exposed:**
+- Coolify API tokens (read only on server; never sent to client)
+- Database passwords
+- Secret environment variables (hidden unless admin explicitly views them)
+
 ### Secrets and Environment Variables
 
 Server-only secrets should live in `.env.local` during local development and in the host's environment-variable UI for deployed environments.
@@ -150,66 +208,33 @@ Server-only secrets should live in `.env.local` during local development and in 
 
 ### WordPress-Specific Operational Context
 
-For WordPress sites, add contextual operational widgets:
-- Plugin update visibility
+For WordPress apps, include contextual operational information:
+- Plugin update visibility (via Integrations tab)
 - Plugin status summaries
 - WordPress core version visibility
 - Maintenance-mode warnings
 - Theme/plugin conflict detection
 
-Do NOT fragment operational pages for WordPress—extend Overview/Settings with contextual info.
-
-### Avoided Fragmentation
-
-Do NOT create standalone pages for:
-- Collaborators (shown in Overview; managed in Settings)
-- Staging (tab within site workspace)
-- Deployments (tab within site workspace)
-- Environment details (shown in Overview; configured in Settings)
-
-### Sponsor/Donation
-
-Moved out of primary navigation. Instead:
-- Footer link to GitHub Sponsors / OpenCollective
-- Weekly toast notification encouraging support (user-dismissed, cookied)
-- Lightweight, non-intrusive positioning
+WordPress details live in the **Integrations** tab, not fragmented across the UI.
 
 ### Primary Workflows
 
-1. **View operational health** → Dashboard + Site Overview
-2. **Deploy application** → Site Deployments tab + deploy action
-3. **Sync staging** → Site Staging tab + sync workflow
-4. **Configure site** → Site Settings tab
-5. **Manage team** → Site Overview (collaborators) or Settings (access control)
+1. **View operational health** → Dashboard + Client Overview + App Overview
+2. **Deploy application** → App detail page, Overview tab → Deploy button
+3. **Sync staging** → App detail page, Staging tab → Sync workflow
+4. **Configure app** → App Settings tab
+5. **Invite team members** → App Team tab (not client level)
+6. **View app history** → App Analytics/Monitoring tab (deployments, logs, performance)
 
-### UI Direction (Lightweight)
+### UI Structure Philosophy (No Card Sprawl)
 
-- jongo-os should avoid feeling like a generic SaaS card dashboard.
-- The interface should evolve toward an operational workspace / control center.
-- Cards are acceptable for summaries, but key workflows should rely on stronger spatial structure:
-  - workspace headers
-  - status strips
-  - timelines
-  - environment relationship views
-  - activity feeds
-  - action panels
-- Site/Application pages should feel like workspaces, not disconnected report pages.
-- Visual polish should follow foundation stability: authentication, database bootstrap, and Coolify integration first.
+- **Horizontal sections over vertical cards** — Use tab navigation to organize major sections (not ad-hoc cards)
+- **Clear hierarchy** — Dashboard → Client → App (clear parent-child relationships via breadcrumbs)
+- **Consistent patterns** — All workspaces use the same tab/section structure for discoverability
+- **Progressive disclosure** — Advanced/admin features are hidden until needed
+- **Operational focus** — Every page should answer: "What can I do here?" and "What's the current status?"
 
-The UX direction favors inspiration from:
-
-- Flywheel (operational focus, workflow clarity)
-- Vercel (clear scope hierarchy, deployment UX)
-- Render (self-hosted positioning, simplicity)
-- Railway (modern operational UX, clear workflows)
-
-But adapted for:
-
-- self-hosted infrastructure
-- Coolify-powered operations
-- agency/team workflows
-- operational simplicity
-- workflow orientation (not entity fragmentation)
+The interface should feel like a cohesive operational workspace, not a widget dashboard accumulating unrelated cards.
 
 ## Sponsor / Donation Direction
 

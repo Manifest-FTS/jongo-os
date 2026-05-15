@@ -1397,6 +1397,49 @@ main {
   border-color: #f5c870;
 }
 
+/* ── Workspace Navigation (horizontal tabs) ────────────────────── */
+.workspace-nav {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.workspace-nav-inner {
+  display: flex;
+  gap: 0;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.workspace-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 3px solid transparent;
+  text-decoration: none;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.workspace-nav-item:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.workspace-nav-item.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.workspace-nav-icon {
+  display: inline-flex;
+  font-size: 1rem;
+  line-height: 1;
+}
+
 /* ── Coolify mapping form ────────────────────────────────────────── */
 .coolify-mapping-form {
   display: grid;
