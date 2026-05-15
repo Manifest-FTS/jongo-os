@@ -58,9 +58,9 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <div style={{ marginBottom: "0.75rem" }}>
-        <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.9rem" }}>
+    <form onSubmit={handleSubmit} className="form-stack">
+      <div>
+        <label className="form-label">
           Name <span style={{ color: "var(--error, #e55)" }}>*</span>
         </label>
         <input
@@ -68,40 +68,40 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
           value={name}
           onChange={(e) => { setName(e.target.value); setSuccess(false); }}
           required
-          style={{ width: "100%", padding: "0.5rem", borderRadius: "4px", border: "1px solid var(--border)", background: "var(--surface)", color: "inherit", fontSize: "0.95rem" }}
+          className="form-input"
         />
       </div>
-      <div style={{ marginBottom: "0.75rem" }}>
-        <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.9rem" }}>Description</label>
+      <div>
+        <label className="form-label">Description</label>
         <input
           type="text"
           value={description}
           onChange={(e) => { setDescription(e.target.value); setSuccess(false); }}
-          style={{ width: "100%", padding: "0.5rem", borderRadius: "4px", border: "1px solid var(--border)", background: "var(--surface)", color: "inherit", fontSize: "0.95rem" }}
+          className="form-input"
         />
       </div>
-      <div style={{ marginBottom: "0.75rem" }}>
-        <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.9rem" }}>Coolify Service UUID</label>
+      <div>
+        <label className="form-label">Coolify Service UUID</label>
         <input
           type="text"
           value={coolifyUuid}
           onChange={(e) => { setCoolifyUuid(e.target.value); setSuccess(false); }}
           placeholder="Links this site to a Coolify application"
-          style={{ width: "100%", padding: "0.5rem", borderRadius: "4px", border: "1px solid var(--border)", background: "var(--surface)", color: "inherit", fontSize: "0.95rem", fontFamily: "monospace" }}
+          className="form-input mono-input"
         />
       </div>
-      <div style={{ marginBottom: "1rem" }}>
-        <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.9rem" }}>Git Repository URL</label>
+      <div>
+        <label className="form-label">Git Repository URL</label>
         <input
           type="url"
           value={gitUrl}
           onChange={(e) => { setGitUrl(e.target.value); setSuccess(false); }}
           placeholder="https://github.com/org/repo"
-          style={{ width: "100%", padding: "0.5rem", borderRadius: "4px", border: "1px solid var(--border)", background: "var(--surface)", color: "inherit", fontSize: "0.95rem" }}
+          className="form-input"
         />
       </div>
-      {error && <p style={{ color: "var(--error, #e55)", marginBottom: "0.5rem", fontSize: "0.9rem" }}>{error}</p>}
-      {success && <p style={{ color: "var(--success, #4c4)", marginBottom: "0.5rem", fontSize: "0.9rem" }}>Saved successfully</p>}
+      {error && <p className="form-error">{error}</p>}
+      {success && <p className="form-success">Saved successfully</p>}
       <button type="submit" className="btn" disabled={loading}>
         {loading ? "Saving…" : "Save Changes"}
       </button>

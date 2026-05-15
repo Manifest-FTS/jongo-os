@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { PlusIcon } from "@/components/JongoIcons";
 
 type Collaborator = {
   id: string;
@@ -109,7 +110,8 @@ export default function CollaboratorManager({ organizationId, collaborators, cur
               <select
                 value={c.role}
                 onChange={(e) => handleRoleChange(c.id, e.target.value)}
-                style={{ padding: "0.25rem 0.4rem", fontSize: "0.85rem", borderRadius: "4px", border: "1px solid var(--border)", background: "var(--surface)", color: "inherit" }}
+                className="form-select"
+                style={{ width: "auto", fontSize: "0.85rem", padding: "0.25rem 0.45rem" }}
               >
                 {ROLES.map((r) => (
                   <option key={r} value={r}>{r}</option>
@@ -120,7 +122,8 @@ export default function CollaboratorManager({ organizationId, collaborators, cur
               <button
                 onClick={() => handleRemove(c.id)}
                 disabled={removingId === c.id}
-                style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem", background: "transparent", border: "1px solid var(--border)", borderRadius: "4px", cursor: "pointer", color: "var(--muted)" }}
+                className="btn btn-danger"
+                style={{ padding: "0.3rem 0.55rem", fontSize: "0.8rem" }}
               >
                 {removingId === c.id ? "…" : "Remove"}
               </button>
@@ -130,32 +133,35 @@ export default function CollaboratorManager({ organizationId, collaborators, cur
       </div>
 
       {/* Invite form */}
-      <form onSubmit={handleInvite} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+      <form onSubmit={handleInvite} className="form-row">
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="user@example.com"
           required
-          style={{ flex: "1 1 180px", padding: "0.5rem", borderRadius: "4px", border: "1px solid var(--border)", background: "var(--surface)", color: "inherit", fontSize: "0.9rem" }}
+          className="form-input"
+          style={{ flex: "1 1 180px" }}
         />
         <select
           value={role}
           onChange={(e) => setRole(e.target.value as typeof role)}
-          style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid var(--border)", background: "var(--surface)", color: "inherit", fontSize: "0.9rem" }}
+          className="form-select"
+          style={{ width: "auto", minWidth: "128px" }}
         >
           {ROLES.map((r) => (
             <option key={r} value={r}>{r}</option>
           ))}
         </select>
         <button type="submit" className="btn" disabled={inviteLoading}>
+          <PlusIcon className="btn-icon" />
           {inviteLoading ? "Adding…" : "Add"}
         </button>
       </form>
       {inviteError && (
-        <p style={{ color: "var(--error, #e55)", marginTop: "0.5rem", fontSize: "0.85rem" }}>{inviteError}</p>
+        <p className="form-error" style={{ marginTop: "0.5rem" }}>{inviteError}</p>
       )}
-      <p style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "var(--muted)" }}>
+      <p className="form-help">
         The user must have an existing account to be added.
       </p>
     </div>

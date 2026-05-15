@@ -4,6 +4,7 @@ import { getSiteWorkspace, getClientWorkspace } from "@/lib/repositories";
 import CreateSiteForm from "@/components/CreateSiteForm";
 import CollaboratorManager from "@/components/CollaboratorManager";
 import { auth } from "@/lib/auth.config";
+import { ArrowRightIcon } from "@/components/JongoIcons";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -68,8 +69,8 @@ export default async function OrganizationDetailPage({ params }: Params) {
             <div>
               {visibleSites.map((site) => (
                 <p key={site.id} style={{ margin: "0.5rem 0" }}>
-                  <Link href={`/sites/${site.id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>
-                    {site.name} →
+                  <Link href={`/sites/${site.id}`} className="action-link">
+                    {site.name} <ArrowRightIcon className="btn-icon" />
                   </Link>{" "}
                   <span className={`status-chip ${site.status}`}>{site.status}</span>
                 </p>

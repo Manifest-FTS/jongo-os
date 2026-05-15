@@ -2,6 +2,8 @@ import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { listSiteDirectory } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
+import { ArrowRightIcon } from "@/components/JongoIcons";
+import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 
 export default async function SitesPage() {
   const session = await auth();
@@ -26,8 +28,14 @@ export default async function SitesPage() {
       {siteDirectory.length === 0 ? (
         <div className="card">
           <p className="card-muted">No sites yet. Create a client organization first, then add sites to it.</p>
+          <p className="form-help" style={{ marginBottom: "0.75rem" }}>
+            Site creation is available on each client detail page.
+          </p>
+          <div style={{ marginBottom: "0.75rem" }}>
+            <CreateOrganizationForm />
+          </div>
           <p style={{ marginTop: "0.5rem" }}>
-            <Link href="/organizations" style={{ color: "var(--accent)", textDecoration: "none" }}>→ Manage clients</Link>
+            <Link href="/organizations" className="action-link">Manage clients <ArrowRightIcon className="btn-icon" /></Link>
           </p>
         </div>
       ) : (
@@ -52,16 +60,13 @@ export default async function SitesPage() {
                 </div>
                 {site.clientId !== "unassigned" ? (
                   <p style={{ margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
-                    <Link
-                      href={`/organizations/${site.clientId}`}
-                      style={{ color: "var(--accent)", textDecoration: "none" }}
-                    >
-                      View client →
+                    <Link href={`/organizations/${site.clientId}`} className="action-link">
+                      View client <ArrowRightIcon className="btn-icon" />
                     </Link>
                   </p>
                 ) : null}
-                <Link href={`/sites/${site.id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>
-                  Open workspace →
+                <Link href={`/sites/${site.id}`} className="action-link">
+                  Open workspace <ArrowRightIcon className="btn-icon" />
                 </Link>
               </article>
             );

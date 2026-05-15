@@ -1,9 +1,11 @@
 type Params = { params: Promise<{ siteId: string }> };
 
+import Link from "next/link";
 import DeployButton from "@/components/DeployButton";
 import SiteInfoForm from "@/components/SiteInfoForm";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
+import { ArrowRightIcon } from "@/components/JongoIcons";
 
 export default async function SiteSettingsPage({ params }: Params) {
   const { siteId } = await params;
@@ -129,9 +131,9 @@ export default async function SiteSettingsPage({ params }: Params) {
           </p>
           {workspace?.clientId && workspace.clientId !== "unassigned" && (
             <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-              <a href={`/organizations/${workspace.clientId}`} style={{ color: "var(--accent)", textDecoration: "none" }}>
-                → Manage {workspace.clientName} collaborators
-              </a>
+              <Link href={`/organizations/${workspace.clientId}`} className="action-link">
+                Manage {workspace.clientName} collaborators <ArrowRightIcon className="btn-icon" />
+              </Link>
             </p>
           )}
         </div>

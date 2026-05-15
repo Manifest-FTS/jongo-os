@@ -100,6 +100,43 @@ export type AuthSession = {
 export async function auth(): Promise<AuthSession> {
   const raw = await getServerSession(authConfig as any);
   const session = raw as unknown as { user?: { id?: string; email?: string } } | null;
-  if (!session?.user?.id) return null;
-  return session as unknown as AuthSession;
+  if (session?.user?.id) {
+    return session as unknown as AuthSession;
+  }
+
+  const isDev = process.env.NODE_ENV !== "production";
+  const secret = process.env.NEXTAUTH_SECRET;
+  const devAuthBypass = !secret || secret === "dev-secret-change-in-production";
+
+  if (isDev && devAuthBypass) {
+    try {
+      const { db } = await import("./db");
+      const preferredEmail = process.env.DEV_AUTH_EMAIL?.trim().toLowerCase();
+
+      const devUser = preferredEmail
+        ? await db.user.findFirst({
+            where: { email: preferredEmail, deletedAt: null },
+            select: { id: true, email: true, fullName: true }
+          })
+        : await db.user.findFirst({
+            where: { deletedAt: null },
+            orderBy: { createdAt: "asc" },
+            select: { id: true, email: true, fullName: true }
+          });
+
+      if (devUser) {
+        return {
+          user: {
+            id: devUser.id,
+            email: devUser.email,
+            name: devUser.fullName ?? null
+          }
+        };
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }

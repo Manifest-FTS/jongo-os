@@ -1,11 +1,13 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { ReactNode } from "react";
+import { BuildingOfficeIcon, DashboardIcon, ServerIcon, SettingsIcon } from "@/components/JongoIcons";
 
 const nav = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/organizations", label: "Clients" },
-  { href: "/sites", label: "Sites" },
-  { href: "/settings", label: "Settings" }
+  { href: "/dashboard", label: "Dashboard", icon: DashboardIcon },
+  { href: "/organizations", label: "Clients", icon: BuildingOfficeIcon },
+  { href: "/sites", label: "Sites", icon: ServerIcon },
+  { href: "/settings", label: "Settings", icon: SettingsIcon }
 ];
 
 export function AppShell({ title, children }: { title: string; children: ReactNode }) {
@@ -20,8 +22,18 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
         }}
       >
         <p className="tag">powered by Manifest FTS</p>
+        <p className="brand-lockup" style={{ margin: "0.6rem 0 0.1rem" }}>
+          <Image
+            src="/assets/images/jongo-logomark-color.png"
+            alt="Jongo"
+            width={32}
+            height={32}
+            className="brand-mark"
+          />
+          <span className="brand-text" style={{ fontWeight: 700 }}>Jongo</span>
+        </p>
         <h1 style={{ margin: "0.65rem 0 0.2rem" }}>
-          <span className="brand-text">Jongo</span> {title}
+          {title}
         </h1>
         <p style={{ marginTop: 0, color: "var(--muted)", maxWidth: "68ch" }}>
           Self-hosted operational UX for Coolify-managed environments.
@@ -36,16 +48,9 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           <Link
             key={item.href}
             href={item.href}
-            style={{
-              textDecoration: "none",
-              color: "#1f3e28",
-              fontWeight: 600,
-              border: "1px solid #d7e4d1",
-              borderRadius: "999px",
-              padding: "0.32rem 0.72rem",
-              background: "#f0f7eb"
-            }}
+            className="nav-pill"
           >
+            <item.icon />
             {item.label}
           </Link>
         ))}
@@ -65,7 +70,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
         }}
       >
         <p style={{ margin: "0 0 0.5rem" }}>
-          <strong>jongo-os</strong> is open-source and self-hosted. Support the project:
+          <strong>Jongo</strong> is open-source and self-hosted. Support the project:
         </p>
         <p style={{ margin: 0 }}>
           <a href="https://github.com/sponsors/manifest-fts" style={{ color: "var(--accent)", textDecoration: "none" }}>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listClientWorkspaces } from "@/lib/repositories";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import { auth } from "@/lib/auth.config";
+import { ArrowRightIcon } from "@/components/JongoIcons";
 
 export default async function OrganizationsPage() {
   const session = await auth();
@@ -34,8 +35,8 @@ export default async function OrganizationsPage() {
               <p style={{ margin: "0.75rem 0 0.55rem", fontSize: "0.9rem" }}>
                 {client.siteCount} site{client.siteCount === 1 ? "" : "s"} • {client.memberCount} members
               </p>
-              <Link href={`/organizations/${client.id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>
-                Open client detail →
+              <Link href={`/organizations/${client.id}`} className="action-link">
+                Open client detail <ArrowRightIcon className="btn-icon" />
               </Link>
             </article>
           ))}
