@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import BrandLogo from "@/components/BrandLogo";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,11 +10,12 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
             powered by Manifest FTS
           </p>
           <p className="brand-lockup" style={{ margin: "0 0 0.4rem" }}>
-            <Image
+            <BrandLogo
               src="/assets/images/jongo-logo-color.png"
               alt="Jongo"
               width={124}
               height={36}
+              fallbackText="Jongo"
             />
           </p>
           <h1 style={{ margin: 0 }}>Operations</h1>

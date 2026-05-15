@@ -24,7 +24,7 @@ export default async function SiteSettingsPage({ params }: Params) {
         </p>
         <h2 style={{ margin: 0 }}>Settings</h2>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Infrastructure, environment, and access settings for this site.
+          Manage publishing, site health, backups, and team access.
         </p>
       </div>
 
@@ -48,38 +48,38 @@ export default async function SiteSettingsPage({ params }: Params) {
       <div className="grid" style={{ marginBottom: "2rem" }}>
         {/* Environment Variables */}
         <article className="card">
-          <h3 className="card-title">Environment Variables</h3>
-          <p className="card-muted">Configure application environment variables</p>
+          <h3 className="card-title">Publishing</h3>
+          <p className="card-muted">Manage release behavior across production and staging.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Variables are scoped per-environment (production, staging, development).
+            Environment-specific variables are available under Developer Details.
           </p>
         </article>
 
         {/* Domain Configuration */}
         <article className="card">
           <h3 className="card-title">Domains</h3>
-          <p className="card-muted">Manage custom domains and HTTPS certificates</p>
+          <p className="card-muted">Manage site domains and SSL certificates.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Configure primary domain, aliases, and SSL/TLS settings.
+            Set your primary domain, aliases, and secure routing.
           </p>
         </article>
 
         {/* Backup Configuration */}
         <article className="card">
           <h3 className="card-title">Backups</h3>
-          <p className="card-muted">Schedule and manage automated backups</p>
+          <p className="card-muted">Protect content with automated backups.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Configure backup frequency, retention policy, and storage destination.
+            Configure cadence, retention, and recovery expectations.
           </p>
         </article>
 
         {/* Infrastructure Status */}
         <article className="card">
-          <h3 className="card-title">Infrastructure</h3>
-          <p className="card-muted">Coolify connection status</p>
+          <h3 className="card-title">Site Health</h3>
+          <p className="card-muted">Current operational status for this site.</p>
           <div style={{ marginTop: "1rem", display: "grid", gap: "0.45rem" }}>
             <p style={{ margin: 0, fontSize: "0.9rem" }}>
-              Source: <span className="tag">{workspace?.source ?? "coolify"}</span>
+              Source: <span className="tag">{workspace?.source === "db" ? "managed" : "external"}</span>
             </p>
             <p style={{ margin: 0, fontSize: "0.9rem" }}>
               Overall: <span className={`status-chip ${workspace?.status ?? "unknown"}`}>{workspace?.status ?? "unknown"}</span>
@@ -90,24 +90,31 @@ export default async function SiteSettingsPage({ params }: Params) {
             <p style={{ margin: 0, fontSize: "0.9rem" }}>
               Staging: <span className={`status-chip ${workspace?.stagingStatus ?? "unknown"}`}>{workspace?.stagingStatus ?? "unknown"}</span>
             </p>
-            {workspace?.coolifyServiceUuid && (
-              <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)", fontFamily: "monospace", wordBreak: "break-all" }}>
-                UUID: {workspace.coolifyServiceUuid}
-              </p>
-            )}
-            {workspace?.gitRepositoryUrl && (
-              <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                <a href={workspace.gitRepositoryUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>
-                  {workspace.gitRepositoryUrl}
-                </a>
-              </p>
-            )}
+            <details style={{ marginTop: "0.35rem" }}>
+              <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)" }}>
+                Developer Details
+              </summary>
+              <div style={{ marginTop: "0.45rem", display: "grid", gap: "0.35rem" }}>
+                {workspace?.coolifyServiceUuid && (
+                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)", fontFamily: "monospace", wordBreak: "break-all" }}>
+                    Coolify UUID: {workspace.coolifyServiceUuid}
+                  </p>
+                )}
+                {workspace?.gitRepositoryUrl && (
+                  <p style={{ margin: 0, fontSize: "0.82rem" }}>
+                    <a href={workspace.gitRepositoryUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>
+                      Repository: {workspace.gitRepositoryUrl}
+                    </a>
+                  </p>
+                )}
+              </div>
+            </details>
           </div>
         </article>
       </div>
 
       <article className="card" style={{ marginBottom: "1.5rem" }}>
-        <h3 className="card-title">Quick Actions</h3>
+        <h3 className="card-title">Publishing Actions</h3>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
           <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId} environment="staging" label="Sync to Staging" />
           <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId} environment="production" label="Deploy to Production" />

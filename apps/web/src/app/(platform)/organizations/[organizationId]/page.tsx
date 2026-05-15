@@ -16,15 +16,50 @@ async function getCollaborators(organizationId: string) {
       include: { user: { select: { id: true, email: true, fullName: true } } },
       orderBy: { createdAt: "asc" }
     });
-    return rows.map((c: any) => ({
+    const pendingInviteLogs = await db.auditLog.findMany({
+      where: {
+        organizationId,
+        action: "collaborator_invited_pending"
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    });
+
+    const collaborators = rows.map((c: any) => ({
       id: c.id,
       userId: c.userId,
       role: c.role,
       email: c.user.email,
       fullName: c.user.fullName
     }));
+
+    const existingEmails = new Set(collaborators.map((c: any) => c.email.toLowerCase()));
+    const pendingInvites = pendingInviteLogs
+      .map((log: any) => {
+        const details = (log.details ?? {}) as {
+          email?: string;
+          role?: string;
+          status?: string;
+          delivery?: string;
+          note?: string;
+        };
+        const email = details.email?.toLowerCase().trim();
+        if (!email || existingEmails.has(email)) return null;
+        return {
+          id: log.id,
+          email,
+          role: details.role ?? "viewer",
+          status: details.status ?? "pending",
+          delivery: details.delivery ?? "not_configured",
+          note: details.note ?? "Email delivery not configured yet.",
+          createdAt: log.createdAt
+        };
+      })
+      .filter((item: any): item is NonNullable<typeof item> => Boolean(item));
+
+    return { collaborators, pendingInvites };
   } catch {
-    return [];
+    return { collaborators: [], pendingInvites: [] };
   }
 }
 
@@ -37,11 +72,13 @@ export default async function OrganizationDetailPage({ params }: Params) {
     notFound();
   }
 
-  const [clientSites, collaborators] = await Promise.all([
+  const [clientSites, collaboratorData] = await Promise.all([
     Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId))),
-    client.dbId ? getCollaborators(client.dbId) : Promise.resolve([])
+    client.dbId ? getCollaborators(client.dbId) : Promise.resolve({ collaborators: [], pendingInvites: [] })
   ]);
   const visibleSites = clientSites.filter((site): site is NonNullable<typeof site> => Boolean(site));
+  const collaborators = collaboratorData.collaborators;
+  const pendingInvites = collaboratorData.pendingInvites;
 
   return (
     <div>
@@ -62,7 +99,7 @@ export default async function OrganizationDetailPage({ params }: Params) {
 
       <section className="grid" style={{ marginBottom: "1rem" }}>
         <article className="card">
-          <h3 className="card-title">Sites / Applications</h3>
+          <h3 className="card-title">Sites</h3>
           {visibleSites.length === 0 ? (
             <p className="card-muted">No sites yet. Use the button above to add one.</p>
           ) : (
@@ -80,7 +117,7 @@ export default async function OrganizationDetailPage({ params }: Params) {
         </article>
 
         <article className="card">
-          <h3 className="card-title">Recent Activity</h3>
+          <h3 className="card-title">Activity</h3>
           {client.recentActivity.length === 0 ? (
             <p className="card-muted">No activity yet.</p>
           ) : (
@@ -97,11 +134,12 @@ export default async function OrganizationDetailPage({ params }: Params) {
 
         {client.dbId && (
           <article className="card">
-            <h3 className="card-title">Team Access</h3>
-            <p className="card-muted" style={{ marginBottom: "1rem" }}>Manage who has access to this organization.</p>
+            <h3 className="card-title">Team</h3>
+            <p className="card-muted" style={{ marginBottom: "1rem" }}>Invite and manage who can access this client workspace.</p>
             <CollaboratorManager
               organizationId={client.dbId}
               collaborators={collaborators}
+              pendingInvites={pendingInvites}
               currentUserId={session?.user?.id ?? ""}
             />
           </article>
