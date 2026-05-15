@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,9 +9,15 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           <p className="tag" style={{ marginBottom: "0.65rem" }}>
             powered by Manifest FTS
           </p>
-          <h1 style={{ margin: 0 }}>
-            <span className="brand-text">Jongo</span> OS
-          </h1>
+          <p className="brand-lockup" style={{ margin: "0 0 0.4rem" }}>
+            <Image
+              src="/assets/images/jongo-logo-color.png"
+              alt="Jongo"
+              width={124}
+              height={36}
+            />
+          </p>
+          <h1 style={{ margin: 0 }}>Operations</h1>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>
             Self-hosted operational UX for Coolify-managed environments.
           </p>
@@ -44,7 +51,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
         <footer className="app-footer">
           <p style={{ margin: "0 0 0.5rem" }}>
-            <strong>jongo-os</strong> is open-source and self-hosted.
+            <strong>Jongo</strong> is open-source and self-hosted.
           </p>
           <p style={{ margin: 0 }}>
             <a href="https://github.com/sponsors/manifest-fts">GitHub Sponsors</a> •{" "}

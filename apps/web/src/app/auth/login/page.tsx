@@ -75,7 +75,7 @@ export default function LoginPage() {
     <div className="auth-page">
       <div className="auth-card card">
         <div style={{ marginBottom: "1.5rem" }}>
-          <p className="tag" style={{ marginBottom: "0.4rem" }}>jongo-os</p>
+          <p className="tag" style={{ marginBottom: "0.4rem" }}>Jongo</p>
           <h1 style={{ margin: 0 }}>
             <span className="brand-text">Sign in</span>
           </h1>

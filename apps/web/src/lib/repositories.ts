@@ -2,22 +2,27 @@ import { getClients, getClientById as getMockClientById, getClientForSite, type 
 import { getCoolifyOverview } from "./coolify";
 
 export type ClientWorkspaceRecord = ClientRecord & {
+  dbId?: string; // actual DB UUID (undefined when using mock data)
   siteCount: number;
   memberCount: number;
 };
 
 export type SiteDirectoryRecord = {
-  id: string;
+  id: string;           // DB UUID when available, Coolify ID otherwise
   name: string;
   deployTargetId: string;
   clientId: string;
   clientName: string;
   status: "healthy" | "degraded" | "error" | "unknown";
+  source: "db" | "coolify"; // where the record originates
+  coolifyServiceUuid?: string;
+  description?: string;
 };
 
 export type SiteWorkspaceRecord = {
-  id: string;
+  id: string;           // DB UUID when available, Coolify ID otherwise
   name: string;
+  description?: string;
   deployTargetId: string;
   clientId: string;
   clientName: string;
@@ -27,6 +32,11 @@ export type SiteWorkspaceRecord = {
   deploymentCount: number;
   recentActivity: string[];
   siteType: "wordpress" | "generic";
+  // DB-native fields (only present for DB-backed sites)
+  coolifyServiceUuid?: string;
+  gitRepositoryUrl?: string;
+  organizationId?: string;
+  source: "db" | "coolify";
 };
 
 export type ActivityFeedItem = {
@@ -121,14 +131,23 @@ export async function getSiteActivityFeed(siteId: string, limit = 6): Promise<Ac
     }));
 }
 
-async function readRealClientWorkspaces(): Promise<ClientWorkspaceRecord[]> {
+async function readRealClientWorkspaces(userId?: string): Promise<ClientWorkspaceRecord[]> {
   const prisma = await maybeGetDb();
 
   if (!prisma) {
     return fromMockClients();
   }
 
+  const whereClause: any = { deletedAt: null };
+  if (userId) {
+    whereClause.OR = [
+      { ownerId: userId },
+      { collaborators: { some: { userId } } }
+    ];
+  }
+
   const organizations: any[] = await prisma.organization.findMany({
+    where: whereClause,
     include: {
       sites: {
         include: {
@@ -149,6 +168,7 @@ async function readRealClientWorkspaces(): Promise<ClientWorkspaceRecord[]> {
 
   return organizations.map((organization: any) => ({
     id: organization.slug,
+    dbId: organization.id,
     name: organization.name,
     summary: organization.description ?? "Client workspace",
     siteIds: organization.sites.map((site: any) => site.id),
@@ -166,15 +186,15 @@ async function readRealClientWorkspaces(): Promise<ClientWorkspaceRecord[]> {
   }));
 }
 
-export async function listClientWorkspaces(): Promise<ClientWorkspaceRecord[]> {
+export async function listClientWorkspaces(userId?: string): Promise<ClientWorkspaceRecord[]> {
   try {
-    return await readRealClientWorkspaces();
+    return await readRealClientWorkspaces(userId);
   } catch {
     return fromMockClients();
   }
 }
 
-export async function getClientWorkspace(clientId: string): Promise<ClientWorkspaceRecord | undefined> {
+export async function getClientWorkspace(clientId: string, userId?: string): Promise<ClientWorkspaceRecord | undefined> {
   try {
     const prisma = await maybeGetDb();
 
@@ -190,8 +210,16 @@ export async function getClientWorkspace(clientId: string): Promise<ClientWorksp
       };
     }
 
-    const organization: any = await prisma.organization.findUnique({
-      where: { slug: clientId },
+    const whereClause: any = { slug: clientId };
+    if (userId) {
+      whereClause.OR = [
+        { ownerId: userId },
+        { collaborators: { some: { userId } } }
+      ];
+    }
+
+    const organization: any = await prisma.organization.findFirst({
+      where: whereClause,
       include: {
         sites: {
           include: {
@@ -213,6 +241,7 @@ export async function getClientWorkspace(clientId: string): Promise<ClientWorksp
 
     return {
       id: organization.slug,
+      dbId: organization.id,
       name: organization.name,
       summary: organization.description ?? "Client workspace",
       siteIds: organization.sites.map((site: any) => site.id),
@@ -241,7 +270,7 @@ export async function getClientWorkspace(clientId: string): Promise<ClientWorksp
   }
 }
 
-export async function listSiteDirectory(): Promise<SiteDirectoryRecord[]> {
+export async function listSiteDirectory(userId?: string): Promise<SiteDirectoryRecord[]> {
   try {
     const prisma = await maybeGetDb();
     const overview = await getCoolifyOverview();
@@ -249,80 +278,186 @@ export async function listSiteDirectory(): Promise<SiteDirectoryRecord[]> {
     if (!prisma) {
       return overview.sites.map((site) => {
         const client = getClientForSite(site.id);
-
         return {
           id: site.id,
           name: site.name,
           deployTargetId: site.deployTargetId,
           clientId: client?.id ?? "unassigned",
           clientName: client?.name ?? "Unassigned",
-          status: site.status
+          status: site.status,
+          source: "coolify" as const
         };
       });
     }
 
-    const organizations: any[] = await prisma.organization.findMany({
-      include: { sites: true },
+    // --- DB sites (user-scoped) ---
+    const orgWhere: any = { deletedAt: null };
+    if (userId) {
+      orgWhere.OR = [
+        { ownerId: userId },
+        { collaborators: { some: { userId } } }
+      ];
+    }
+
+    const dbSites: any[] = await prisma.site.findMany({
+      where: { deletedAt: null, organization: orgWhere },
+      include: { organization: { select: { id: true, slug: true, name: true } } },
       orderBy: { name: "asc" }
     });
 
-    return overview.sites.map((site) => {
-      const owner = organizations.find((organization: any) =>
-        organization.sites.some((ownedSite: any) => ownedSite.name === site.name || ownedSite.id === site.id)
-      );
+    // Track which Coolify UUIDs are already represented by DB records
+    const coveredCoolifyUuids = new Set(
+      dbSites.map((s: any) => s.coolifyServiceUuid).filter(Boolean)
+    );
 
-      const client = owner ? { id: owner.slug, name: owner.name } : getClientForSite(site.id);
+    const dbRecords: SiteDirectoryRecord[] = dbSites.map((s: any) => {
+      const coolifyMatch = s.coolifyServiceUuid
+        ? overview.sites.find((cs) => cs.deployTargetId === s.coolifyServiceUuid || cs.id === s.coolifyServiceUuid)
+        : undefined;
 
       return {
-        id: site.id,
-        name: site.name,
-        deployTargetId: site.deployTargetId,
-        clientId: client?.id ?? "unassigned",
-        clientName: client?.name ?? "Unassigned",
-        status: site.status
+        id: s.id,
+        name: s.name,
+        description: s.description ?? undefined,
+        deployTargetId: coolifyMatch?.deployTargetId ?? s.coolifyServiceUuid ?? "",
+        clientId: s.organization.slug,
+        clientName: s.organization.name,
+        status: coolifyMatch?.status ?? "unknown",
+        source: "db" as const,
+        coolifyServiceUuid: s.coolifyServiceUuid ?? undefined
       };
     });
+
+    // --- Coolify-only sites (not linked to any DB record) ---
+    const coolifyOnlyRecords: SiteDirectoryRecord[] = overview.sites
+      .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
+      .map((site) => {
+        const client = getClientForSite(site.id);
+        return {
+          id: site.id,
+          name: site.name,
+          deployTargetId: site.deployTargetId,
+          clientId: client?.id ?? "unassigned",
+          clientName: client?.name ?? "Unassigned",
+          status: site.status,
+          source: "coolify" as const,
+          coolifyServiceUuid: site.id
+        };
+      });
+
+    return [...dbRecords, ...coolifyOnlyRecords];
   } catch {
     const overview = await getCoolifyOverview();
-
     return overview.sites.map((site) => {
       const client = getClientForSite(site.id);
-
       return {
         id: site.id,
         name: site.name,
         deployTargetId: site.deployTargetId,
         clientId: client?.id ?? "unassigned",
         clientName: client?.name ?? "Unassigned",
-        status: site.status
+        status: site.status,
+        source: "coolify" as const
       };
     });
   }
 }
 
 export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRecord | undefined> {
-  const overview = await getCoolifyOverview();
-  const site = overview.sites.find((item) => item.id === siteId);
-  const client = getClientForSite(siteId);
+  try {
+    const prisma = await maybeGetDb();
+    const overview = await getCoolifyOverview();
 
-  if (!site) return undefined;
+    if (prisma) {
+      // Try DB lookup first (siteId may be a DB UUID)
+      const dbSite: any = await prisma.site.findFirst({
+        where: { id: siteId, deletedAt: null },
+        include: {
+          organization: { select: { id: true, slug: true, name: true } },
+          environments: { include: { deployments: { orderBy: { triggeredAt: "desc" }, take: 3 } } }
+        }
+      });
 
-  const deploymentCount = overview.deployments.filter((deployment) => deployment.siteName === site.name).length;
+      if (dbSite) {
+        // Enrich with Coolify data if UUID is stored
+        const coolifyMatch = dbSite.coolifyServiceUuid
+          ? overview.sites.find(
+              (cs) => cs.id === dbSite.coolifyServiceUuid || cs.deployTargetId === dbSite.coolifyServiceUuid
+            )
+          : undefined;
 
-  return {
-    id: site.id,
-    name: site.name,
-    deployTargetId: site.deployTargetId,
-    clientId: client?.id ?? "unassigned",
-    clientName: client?.name ?? "Unassigned",
-    status: site.status,
-    productionStatus: site.productionStatus,
-    stagingStatus: site.stagingStatus,
-    deploymentCount,
-    siteType: site.siteType,
-    recentActivity: overview.deployments
-      .filter((deployment) => deployment.siteName === site.name)
-      .slice(0, 3)
-      .map((deployment) => `${deployment.environment} ${deployment.status}`)
-  };
+        const recentActivity = dbSite.environments.flatMap((env: any) =>
+          env.deployments.map((dep: any) => `${env.name} ${dep.status}`)
+        );
+
+        return {
+          id: dbSite.id,
+          name: dbSite.name,
+          description: dbSite.description ?? undefined,
+          deployTargetId: coolifyMatch?.deployTargetId ?? dbSite.coolifyServiceUuid ?? "",
+          clientId: dbSite.organization.slug,
+          clientName: dbSite.organization.name,
+          status: coolifyMatch?.status ?? "unknown",
+          productionStatus: coolifyMatch?.productionStatus ?? "unknown",
+          stagingStatus: coolifyMatch?.stagingStatus ?? "unknown",
+          deploymentCount: dbSite.environments.reduce((n: number, env: any) => n + env.deployments.length, 0),
+          recentActivity,
+          siteType: coolifyMatch?.siteType ?? "generic",
+          coolifyServiceUuid: dbSite.coolifyServiceUuid ?? undefined,
+          gitRepositoryUrl: dbSite.gitRepositoryUrl ?? undefined,
+          organizationId: dbSite.organizationId,
+          source: "db" as const
+        };
+      }
+    }
+
+    // Fallback: Coolify-only lookup (for sites not yet in DB)
+    const site = overview.sites.find((item) => item.id === siteId);
+    const client = getClientForSite(siteId);
+
+    if (!site) return undefined;
+
+    const deploymentCount = overview.deployments.filter((dep) => dep.siteName === site.name).length;
+
+    return {
+      id: site.id,
+      name: site.name,
+      deployTargetId: site.deployTargetId,
+      clientId: client?.id ?? "unassigned",
+      clientName: client?.name ?? "Unassigned",
+      status: site.status,
+      productionStatus: site.productionStatus,
+      stagingStatus: site.stagingStatus,
+      deploymentCount,
+      siteType: site.siteType,
+      recentActivity: overview.deployments
+        .filter((dep) => dep.siteName === site.name)
+        .slice(0, 3)
+        .map((dep) => `${dep.environment} ${dep.status}`),
+      coolifyServiceUuid: site.id,
+      source: "coolify" as const
+    };
+  } catch {
+    // Last-resort Coolify fallback
+    const overview = await getCoolifyOverview();
+    const site = overview.sites.find((item) => item.id === siteId);
+    const client = getClientForSite(siteId);
+
+    if (!site) return undefined;
+
+    return {
+      id: site.id,
+      name: site.name,
+      deployTargetId: site.deployTargetId,
+      clientId: client?.id ?? "unassigned",
+      clientName: client?.name ?? "Unassigned",
+      status: site.status,
+      productionStatus: site.productionStatus,
+      stagingStatus: site.stagingStatus,
+      deploymentCount: overview.deployments.filter((dep) => dep.siteName === site.name).length,
+      siteType: site.siteType,
+      recentActivity: [],
+      source: "coolify" as const
+    };
+  }
 }

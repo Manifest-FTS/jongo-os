@@ -1,10 +1,12 @@
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getActivityFeed, listClientWorkspaces } from "@/lib/repositories";
 import StatusPoll from "@/components/StatusPoll";
+import { auth } from "@/lib/auth.config";
 
 export default async function DashboardPage() {
+  const session = await auth();
   const overview = await getCoolifyOverview();
-  const clients = await listClientWorkspaces();
+  const clients = await listClientWorkspaces(session?.user?.id);
   const activityFeed = await getActivityFeed();
 
   return (

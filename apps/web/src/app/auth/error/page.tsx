@@ -4,7 +4,7 @@ export default function AuthErrorPage() {
   return (
     <div className="auth-page">
       <div className="auth-card card">
-        <p className="tag" style={{ marginBottom: "0.4rem" }}>jongo-os</p>
+        <p className="tag" style={{ marginBottom: "0.4rem" }}>Jongo</p>
         <h1 style={{ margin: 0 }}>
           <span className="brand-text">Auth error</span>
         </h1>
