@@ -91,6 +91,14 @@ main {
   background: #f4f9f1;
 }
 
+.sidebar-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  stroke-width: 2.1;
+  color: #2e5a37;
+  flex-shrink: 0;
+}
+
 .app-main {
   min-width: 0;
 }
@@ -118,6 +126,56 @@ main {
   border-radius: 14px;
   padding: 1rem;
   box-shadow: var(--shadow);
+}
+
+.page-hero {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(158, 200, 119, 0.2), transparent 42%),
+    linear-gradient(145deg, #ffffff 0%, #f3f8ef 100%);
+  border-color: #cfdeca;
+  padding: 1.15rem 1.2rem;
+}
+
+.page-hero h1,
+.page-hero h2 {
+  margin-top: 0;
+  margin-bottom: 0.2rem;
+}
+
+.hero-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.tab-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.tab-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: #23432d;
+  font-weight: 600;
+  border: 1px solid #d2dfce;
+  border-radius: 999px;
+  padding: 0.42rem 0.82rem;
+  background: #f1f7ed;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.tab-link:hover {
+  background: #eaf4e3;
+  border-color: #c1d2bb;
+  transform: translateY(-1px);
+}
+
+.tone-card {
+  border-left: 4px solid #c6dba2;
 }
 
 .card-title {

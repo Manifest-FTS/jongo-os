@@ -66,7 +66,10 @@ async function getCollaborators(organizationId: string) {
 export default async function OrganizationDetailPage({ params }: Params) {
   const { organizationId } = await params;
   const session = await auth();
-  const client = await getClientWorkspace(organizationId, session?.user?.id);
+  const client = await getClientWorkspace(organizationId, {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
 
   if (!client) {
     notFound();
@@ -126,7 +129,7 @@ export default async function OrganizationDetailPage({ params }: Params) {
                 {client.recentActivity.length} item{client.recentActivity.length === 1 ? "" : "s"}
               </p>
               {client.recentActivity.map((item) => (
-                <p key={item} style={{ margin: "0.45rem 0", fontSize: "0.9rem" }}>• {item}</p>
+                <p key={item} style={{ margin: "0.45rem 0", fontSize: "0.9rem" }}>- {item}</p>
               ))}
             </>
           )}

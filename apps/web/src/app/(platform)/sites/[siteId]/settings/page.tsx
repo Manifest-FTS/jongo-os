@@ -124,7 +124,7 @@ export default async function SiteSettingsPage({ params }: Params) {
         </p>
       </article>
 
-      {/* Collaborators — managed via org membership */}
+      {/* Collaborators - managed via org membership */}
       <article className="card">
         <h3 className="card-title">Collaborators</h3>
         <p className="card-muted">Manage team access and permissions</p>

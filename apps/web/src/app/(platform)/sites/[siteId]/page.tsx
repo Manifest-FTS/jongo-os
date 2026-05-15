@@ -1,6 +1,8 @@
 ﻿import { getCoolifyOverview } from "@/lib/coolify";
 import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace } from "@/lib/repositories";
+import Link from "next/link";
+import { ArrowRightIcon } from "@/components/JongoIcons";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -27,9 +29,9 @@ export default async function SiteOverviewPage({ params }: Params) {
       <h2 style={{ marginTop: 0 }}>Overview</h2>
 
       <div className="grid" style={{ marginBottom: "1rem" }}>
-        {/* Health Summary */}
+        {/* Site Health */}
         <article className="card">
-          <h3 className="card-title">Health Status</h3>
+          <h3 className="card-title">Site Health</h3>
           <p style={{ margin: "0.35rem 0" }}>
             Production:{" "}
             <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>
@@ -54,35 +56,44 @@ export default async function SiteOverviewPage({ params }: Params) {
           </div>
         </article>
 
-        {/* Collaborators */}
+        {/* Publishing */}
         <article className="card">
-          <h3 className="card-title">Collaborators</h3>
-          <p className="card-muted">Manage in Settings tab</p>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            Team members and access control configured per-site
+          <h3 className="card-title">Publishing</h3>
+          <p className="card-muted">Move changes safely from staging to production.</p>
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
+            Use staging sync for review, then promote when ready.
+          </p>
+          <p style={{ margin: "0.75rem 0 0" }}>
+            <Link href={`/sites/${siteId}/staging`} className="action-link">
+              Open publishing workflow <ArrowRightIcon className="btn-icon" />
+            </Link>
           </p>
         </article>
 
-        {/* Recent Deployments */}
+        {/* Team */}
         <article className="card">
-          <h3 className="card-title">Recent Deployments</h3>
-          <p className="card-muted">
-            {siteDeployments.length === 0 ? "No deployment records yet" : `${siteDeployments.length} recorded for this site`}
-          </p>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <a href={`/sites/${siteId}/deployments`} style={{ color: "var(--accent)" }}>
-              View deployment history â†’
-            </a>
-          </p>
+          <h3 className="card-title">Team</h3>
+          <p className="card-muted">Collaborators are managed at the client level.</p>
+          {workspace?.clientId && workspace.clientId !== "unassigned" ? (
+            <p style={{ margin: "0.75rem 0 0" }}>
+              <Link href={`/organizations/${workspace.clientId}`} className="action-link">
+                Manage team access <ArrowRightIcon className="btn-icon" />
+              </Link>
+            </p>
+          ) : (
+            <p className="form-help" style={{ marginTop: "0.75rem" }}>
+              Assign this site to a client workspace to manage team access.
+            </p>
+          )}
         </article>
       </div>
 
-      {/* WordPress Context â€” shown only when site type is detected as WordPress */}
+      {/* WordPress context - shown only when site type is detected as WordPress */}
       {isWordPress && (
         <div style={{ marginBottom: "1rem" }}>
           <article className="card">
             <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              WordPress Operational Context
+              WordPress Overview
               <span className="status-chip unknown" style={{ fontSize: "0.7rem" }}>WP detected</span>
             </h3>
             <div className="grid" style={{ marginTop: "0.5rem" }}>
@@ -96,7 +107,7 @@ export default async function SiteOverviewPage({ params }: Params) {
               </div>
               <div>
                 <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Maintenance Mode</p>
-                <p className="card-muted" style={{ margin: 0 }}>Configure WP_API_URL in site settings to enable</p>
+                <p className="card-muted" style={{ margin: 0 }}>Enable WP API settings to control maintenance mode</p>
               </div>
             </div>
             <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
@@ -130,8 +141,8 @@ export default async function SiteOverviewPage({ params }: Params) {
                     <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 500 }}>{item.title}</p>
                     <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
                       {item.detail}
-                      {item.durationSeconds !== undefined && ` â€¢ ${formatDuration(item.durationSeconds)}`}
-                      {item.timestamp ? ` â€¢ ${new Date(item.timestamp).toLocaleString()}` : ""}
+                      {item.durationSeconds !== undefined && ` - ${formatDuration(item.durationSeconds)}`}
+                      {item.timestamp ? ` - ${new Date(item.timestamp).toLocaleString()}` : ""}
                     </p>
                   </div>
                   <div style={{ display: "flex", gap: "0.35rem", marginLeft: "0.75rem", flexShrink: 0 }}>
@@ -148,48 +159,65 @@ export default async function SiteOverviewPage({ params }: Params) {
       </div>
 
       <div className="grid">
-        {/* Backup Status */}
+        {/* Backups */}
         <article className="card">
           <h3 className="card-title">Backups</h3>
-          <p className="card-muted">Configure in Settings</p>
+          <p className="card-muted">Protect site data with routine backups.</p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            Backup scheduling and retention managed per-site
+            Configure schedule and retention in site settings.
           </p>
         </article>
 
-        {/* Environment Configuration */}
+        {/* Environments */}
         <article className="card">
           <h3 className="card-title">Environments</h3>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
             Production, Staging, Development
           </p>
           <p style={{ fontSize: "0.9rem" }}>
-            <a href={`/sites/${siteId}/settings`} style={{ color: "var(--accent)" }}>
-              Configure environments â†’
-            </a>
+            <Link href={`/sites/${siteId}/settings`} className="action-link">
+              Configure environments <ArrowRightIcon className="btn-icon" />
+            </Link>
           </p>
         </article>
 
-        {/* Action Panel */}
+        {/* Next Steps */}
         <article className="card">
-          <h3 className="card-title">Quick Actions</h3>
+          <h3 className="card-title">What to do next</h3>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <a href={`/sites/${siteId}/deployments`} style={{ color: "var(--accent)" }}>
-              â€¢ Deploy now
-            </a>
+            <Link href={`/sites/${siteId}/deployments`} className="action-link">
+              Review deployment history <ArrowRightIcon className="btn-icon" />
+            </Link>
           </p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <a href={`/sites/${siteId}/staging`} style={{ color: "var(--accent)" }}>
-              â€¢ Sync staging
-            </a>
+            <Link href={`/sites/${siteId}/staging`} className="action-link">
+              Run publishing workflow <ArrowRightIcon className="btn-icon" />
+            </Link>
           </p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <a href={`/sites/${siteId}/settings`} style={{ color: "var(--accent)" }}>
-              â€¢ Configure site
-            </a>
+            <Link href={`/sites/${siteId}/settings`} className="action-link">
+              Update site settings <ArrowRightIcon className="btn-icon" />
+            </Link>
           </p>
         </article>
       </div>
+
+      <article className="card" style={{ marginTop: "1rem" }}>
+        <h3 className="card-title">Developer Details</h3>
+        <details>
+          <summary style={{ cursor: "pointer", fontSize: "0.9rem", color: "var(--muted)" }}>
+            View infrastructure metadata
+          </summary>
+          <div style={{ marginTop: "0.6rem", display: "grid", gap: "0.35rem" }}>
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              Known deployment records: {siteDeployments.length}
+            </p>
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              Source mode: {overview.mode}
+            </p>
+          </div>
+        </details>
+      </article>
     </div>
   );
 }

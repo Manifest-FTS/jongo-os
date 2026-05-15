@@ -1,6 +1,26 @@
 import { getClients, getClientById as getMockClientById, getClientForSite, type ClientRecord } from "./clients";
 import { getCoolifyOverview } from "./coolify";
 
+export type ViewerContext = {
+  userId?: string;
+  email?: string;
+};
+
+function normalizeEmail(value?: string | null): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function hasBootstrapGlobalAccess(viewer?: ViewerContext): boolean {
+  const configuredAdmin = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
+  const viewerEmail = normalizeEmail(viewer?.email);
+
+  if (!configuredAdmin || !viewerEmail) {
+    return false;
+  }
+
+  return configuredAdmin === viewerEmail;
+}
+
 export type ClientWorkspaceRecord = ClientRecord & {
   dbId?: string; // actual DB UUID (undefined when using mock data)
   siteCount: number;
@@ -131,7 +151,7 @@ export async function getSiteActivityFeed(siteId: string, limit = 6): Promise<Ac
     }));
 }
 
-async function readRealClientWorkspaces(userId?: string): Promise<ClientWorkspaceRecord[]> {
+async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientWorkspaceRecord[]> {
   const prisma = await maybeGetDb();
 
   if (!prisma) {
@@ -139,10 +159,10 @@ async function readRealClientWorkspaces(userId?: string): Promise<ClientWorkspac
   }
 
   const whereClause: any = { deletedAt: null };
-  if (userId) {
+  if (viewer?.userId && !hasBootstrapGlobalAccess(viewer)) {
     whereClause.OR = [
-      { ownerId: userId },
-      { collaborators: { some: { userId } } }
+      { ownerId: viewer.userId },
+      { collaborators: { some: { userId: viewer.userId } } }
     ];
   }
 
@@ -186,15 +206,15 @@ async function readRealClientWorkspaces(userId?: string): Promise<ClientWorkspac
   }));
 }
 
-export async function listClientWorkspaces(userId?: string): Promise<ClientWorkspaceRecord[]> {
+export async function listClientWorkspaces(viewer?: ViewerContext): Promise<ClientWorkspaceRecord[]> {
   try {
-    return await readRealClientWorkspaces(userId);
+    return await readRealClientWorkspaces(viewer);
   } catch {
     return fromMockClients();
   }
 }
 
-export async function getClientWorkspace(clientId: string, userId?: string): Promise<ClientWorkspaceRecord | undefined> {
+export async function getClientWorkspace(clientId: string, viewer?: ViewerContext): Promise<ClientWorkspaceRecord | undefined> {
   try {
     const prisma = await maybeGetDb();
 
@@ -211,10 +231,10 @@ export async function getClientWorkspace(clientId: string, userId?: string): Pro
     }
 
     const whereClause: any = { slug: clientId };
-    if (userId) {
+    if (viewer?.userId && !hasBootstrapGlobalAccess(viewer)) {
       whereClause.OR = [
-        { ownerId: userId },
-        { collaborators: { some: { userId } } }
+        { ownerId: viewer.userId },
+        { collaborators: { some: { userId: viewer.userId } } }
       ];
     }
 
@@ -270,7 +290,7 @@ export async function getClientWorkspace(clientId: string, userId?: string): Pro
   }
 }
 
-export async function listSiteDirectory(userId?: string): Promise<SiteDirectoryRecord[]> {
+export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDirectoryRecord[]> {
   try {
     const prisma = await maybeGetDb();
     const overview = await getCoolifyOverview();
@@ -292,10 +312,10 @@ export async function listSiteDirectory(userId?: string): Promise<SiteDirectoryR
 
     // --- DB sites (user-scoped) ---
     const orgWhere: any = { deletedAt: null };
-    if (userId) {
+    if (viewer?.userId && !hasBootstrapGlobalAccess(viewer)) {
       orgWhere.OR = [
-        { ownerId: userId },
-        { collaborators: { some: { userId } } }
+        { ownerId: viewer.userId },
+        { collaborators: { some: { userId: viewer.userId } } }
       ];
     }
 

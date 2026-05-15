@@ -8,22 +8,30 @@ import { ArrowRightIcon } from "@/components/JongoIcons";
 export default async function DashboardPage() {
   const session = await auth();
   const overview = await getCoolifyOverview();
-  const clients = await listClientWorkspaces(session?.user?.id);
+  const clients = await listClientWorkspaces({
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
   const activityFeed = await getActivityFeed();
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: "1rem" }}>
+      <div className="card page-hero" style={{ marginBottom: "1rem" }}>
         <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Dashboard</p>
         <h1 style={{ margin: 0 }}>Jongo Dashboard</h1>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
           Client operations, site health, and publishing activity.
         </p>
+        <div className="hero-meta-row">
+          <span className="tag">Live operations</span>
+          <span className="status-chip healthy">{clients.length} clients</span>
+          <span className="status-chip unknown">{overview.sites.length} sites</span>
+        </div>
       </div>
 
       <section className="grid">
         {/* Platform Stats */}
-        <article className="card">
+        <article className="card tone-card">
           <h2 className="card-title">Overview</h2>
           <div style={{ marginTop: "0.75rem" }}>
             <p style={{ margin: "0.35rem 0" }}>
@@ -36,13 +44,22 @@ export default async function DashboardPage() {
               Total Deployments: <strong>{overview.deployments.length}</strong>
             </p>
             <p style={{ margin: "0.35rem 0" }}>
-              Data Source: <span className="tag" style={{ display: "inline" }}>{overview.mode}</span>
+              Data Mode: <span className="tag" style={{ display: "inline" }}>{overview.mode}</span>
             </p>
           </div>
+
+          <details style={{ marginTop: "0.75rem" }}>
+            <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)" }}>
+              Developer Details
+            </summary>
+            <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+              Runtime integration source is resolved server-side.
+            </p>
+          </details>
         </article>
 
-        {/* Site Health — live poll every 30s */}
-        <article className="card">
+        {/* Site Health - live poll every 30s */}
+        <article className="card tone-card">
           <h2 className="card-title">Site Health</h2>
           <div style={{ marginTop: "0.75rem" }}>
             <StatusPoll intervalMs={30_000} />
@@ -50,7 +67,7 @@ export default async function DashboardPage() {
         </article>
 
         {/* Sites Needing Attention */}
-        <article className="card">
+        <article className="card tone-card">
           <h2 className="card-title">Needs Attention</h2>
           {overview.sites.filter((s) => s.status !== "healthy").length === 0 ? (
             <p className="card-muted">All sites are healthy</p>
@@ -69,7 +86,7 @@ export default async function DashboardPage() {
         </article>
 
         {/* Quick Navigation */}
-        <article className="card">
+        <article className="card tone-card">
           <h2 className="card-title">Quick Actions</h2>
           <div style={{ marginTop: "0.75rem" }}>
             <p style={{ margin: "0.35rem 0" }}>
@@ -117,8 +134,8 @@ export default async function DashboardPage() {
                   </p>
                   <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
                     {item.detail}
-                    {item.durationSeconds !== undefined && ` • ${item.durationSeconds < 60 ? `${item.durationSeconds}s` : `${Math.floor(item.durationSeconds / 60)}m`}`}
-                    {item.timestamp ? ` • ${new Date(item.timestamp).toLocaleString()}` : ""}
+                    {item.durationSeconds !== undefined && ` - ${item.durationSeconds < 60 ? `${item.durationSeconds}s` : `${Math.floor(item.durationSeconds / 60)}m`}`}
+                    {item.timestamp ? ` - ${new Date(item.timestamp).toLocaleString()}` : ""}
                   </p>
                 </div>
                 <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0 }}>
