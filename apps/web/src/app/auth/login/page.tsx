@@ -4,6 +4,7 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
+import BrandLogo from "@/components/BrandLogo";
 
 function LoginForm() {
   const router = useRouter();
@@ -73,14 +74,20 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <div className="auth-page">
-      <div className="auth-card card">
-        <div style={{ marginBottom: "1.5rem" }}>
-          <p className="tag" style={{ marginBottom: "0.4rem" }}>Jongo</p>
-          <h1 style={{ margin: 0 }}>
-            <span className="brand-text">Sign in</span>
-          </h1>
-          <p className="card-muted" style={{ marginTop: "0.4rem" }}>
-            Access your operational platform.
+      <div className="auth-card auth-panel card">
+        <div className="auth-brand-block">
+          <Link href="/" className="auth-logo-link" aria-label="Go to home">
+            <BrandLogo
+              src="/assets/images/jongo-logo-color.png"
+              alt="Jongo"
+              width={132}
+              height={40}
+              fallbackText="Jongo"
+            />
+          </Link>
+          <h1 className="auth-title">Sign in to your account</h1>
+          <p className="auth-subtitle">
+            Or <Link href="/auth/register" className="auth-inline-link">create a new account</Link>
           </p>
         </div>
         <Suspense fallback={null}>

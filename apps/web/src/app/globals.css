@@ -272,11 +272,56 @@ main {
   justify-content: center;
   min-height: 100vh;
   padding: 1.5rem;
+  background: transparent;
 }
 
 .auth-card {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
+}
+
+.auth-panel {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
+}
+
+.auth-brand-block {
+  margin-bottom: 1.5rem;
+}
+
+.auth-logo-link {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.9rem;
+}
+
+.auth-title {
+  margin: 0;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: #111827;
+}
+
+.auth-subtitle {
+  margin: 0.45rem 0 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.auth-inline-link {
+  color: #4f46e5;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.auth-inline-link:hover {
+  color: #4338ca;
+  text-decoration: underline;
 }
 
 .auth-form {
@@ -292,27 +337,26 @@ main {
 }
 
 .auth-field label {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: #374151;
 }
 
 .auth-field input {
-  border: 1px solid var(--border);
+  border: 1px solid #d1d5db;
   border-radius: 6px;
   padding: 0.55rem 0.75rem;
   font-size: 0.95rem;
   font-family: inherit;
-  background: var(--surface-alt);
-  color: var(--text);
+  background: #ffffff;
+  color: #111827;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .auth-field input:focus {
-  border-color: var(--accent-strong);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
 .auth-error {
@@ -326,8 +370,8 @@ main {
 }
 
 .auth-submit {
-  background: var(--accent);
-  color: var(--text);
+  background: #4f46e5;
+  color: #ffffff;
   border: none;
   border-radius: 6px;
   padding: 0.65rem 1.25rem;
@@ -339,7 +383,7 @@ main {
 }
 
 .auth-submit:hover:not(:disabled) {
-  background: var(--accent-strong);
+  background: #4338ca;
 }
 
 .auth-submit:disabled {

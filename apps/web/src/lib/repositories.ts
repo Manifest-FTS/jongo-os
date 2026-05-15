@@ -78,6 +78,14 @@ function fromMockClients(): ClientWorkspaceRecord[] {
   }));
 }
 
+function getClientForCoolifySite(siteId: string, mode: "live" | "mock") {
+  if (mode !== "mock") {
+    return undefined;
+  }
+
+  return getClientForSite(siteId);
+}
+
 async function maybeGetDb(): Promise<any | null> {
   if (!process.env.DATABASE_URL) {
     return null;
@@ -297,7 +305,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
 
     if (!prisma) {
       return overview.sites.map((site) => {
-        const client = getClientForSite(site.id);
+        const client = getClientForCoolifySite(site.id, overview.mode);
         return {
           id: site.id,
           name: site.name,
@@ -352,7 +360,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
     const coolifyOnlyRecords: SiteDirectoryRecord[] = overview.sites
       .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
       .map((site) => {
-        const client = getClientForSite(site.id);
+        const client = getClientForCoolifySite(site.id, overview.mode);
         return {
           id: site.id,
           name: site.name,
@@ -369,7 +377,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
   } catch {
     const overview = await getCoolifyOverview();
     return overview.sites.map((site) => {
-      const client = getClientForSite(site.id);
+      const client = getClientForCoolifySite(site.id, overview.mode);
       return {
         id: site.id,
         name: site.name,
@@ -433,7 +441,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
 
     // Fallback: Coolify-only lookup (for sites not yet in DB)
     const site = overview.sites.find((item) => item.id === siteId);
-    const client = getClientForSite(siteId);
+    const client = getClientForCoolifySite(siteId, overview.mode);
 
     if (!site) return undefined;
 
@@ -461,7 +469,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
     // Last-resort Coolify fallback
     const overview = await getCoolifyOverview();
     const site = overview.sites.find((item) => item.id === siteId);
-    const client = getClientForSite(siteId);
+    const client = getClientForCoolifySite(siteId, overview.mode);
 
     if (!site) return undefined;
 

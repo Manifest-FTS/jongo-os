@@ -11,6 +11,7 @@ export async function middleware(req: NextRequest) {
   if (
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
     pathname.startsWith("/_next") ||
+    pathname.startsWith("/assets") ||
     pathname.startsWith("/favicon")
   ) {
     return NextResponse.next();
@@ -38,8 +39,9 @@ export const config = {
      * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization files)
+     * - assets/* (public branding and media)
      * - favicon.ico
      */
-    "/((?!_next/static|_next/image|favicon.ico).*)"
+    "/((?!_next/static|_next/image|assets|favicon.ico).*)"
   ]
 };
