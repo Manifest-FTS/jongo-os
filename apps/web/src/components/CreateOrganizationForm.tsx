@@ -21,7 +21,10 @@ export default function CreateOrganizationForm() {
       const res = await fetch("/api/organizations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined })
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim() || undefined
+        })
       });
 
       const data = await res.json();

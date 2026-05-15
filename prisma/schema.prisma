@@ -54,6 +54,8 @@ model Organization {
   logoUrl          String?
   ownerId          String    @db.Uuid
   coolifyApiUrl    String?   // optional per-org override
+  coolifyProjectId String?   @unique
+  coolifyProjectName String?
 
   // Relations
   owner            User      @relation(fields: [ownerId], references: [id], onDelete: Restrict)
@@ -68,6 +70,7 @@ model Organization {
 
   @@index([ownerId])
   @@index([slug])
+  @@index([coolifyProjectName])
 }
 
 // ============================================================
@@ -82,7 +85,10 @@ model Site {
   description         String?
   coolifyServiceId    String?   // external Coolify service ID
   coolifyServiceUuid  String?   // Coolify service UUID
+  coolifyProjectId    String?   // Coolify project UUID/ID for ownership mapping
+  coolifyProjectName  String?
   gitRepositoryUrl    String?
+  stagingEnabled      Boolean   @default(false)
 
   // Relations
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -96,6 +102,8 @@ model Site {
   @@unique([organizationId, slug])
   @@index([organizationId])
   @@index([coolifyServiceId])
+  @@index([coolifyProjectId])
+  @@index([coolifyProjectName])
 }
 
 // ============================================================

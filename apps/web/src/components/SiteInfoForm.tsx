@@ -9,7 +9,9 @@ type Props = {
     name: string;
     description?: string;
     coolifyServiceUuid?: string;
+    coolifyProjectId?: string;
     gitRepositoryUrl?: string;
+    stagingEnabled?: boolean;
   };
 };
 
@@ -18,7 +20,9 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description ?? "");
   const [coolifyUuid, setCoolifyUuid] = useState(initial.coolifyServiceUuid ?? "");
+  const [coolifyProjectId, setCoolifyProjectId] = useState(initial.coolifyProjectId ?? "");
   const [gitUrl, setGitUrl] = useState(initial.gitRepositoryUrl ?? "");
+  const [stagingEnabled, setStagingEnabled] = useState(Boolean(initial.stagingEnabled));
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,7 +41,9 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
           name: name.trim(),
           description: description.trim() || undefined,
           coolifyServiceUuid: coolifyUuid.trim() || undefined,
-          gitRepositoryUrl: gitUrl.trim() || undefined
+          coolifyProjectId: coolifyProjectId.trim() || undefined,
+          gitRepositoryUrl: gitUrl.trim() || undefined,
+          stagingEnabled
         })
       });
 
@@ -98,6 +104,25 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
           onChange={(e) => { setGitUrl(e.target.value); setSuccess(false); }}
           placeholder="https://github.com/org/repo"
           className="form-input"
+        />
+      </div>
+      <div>
+        <label className="form-label">Coolify Project ID</label>
+        <input
+          type="text"
+          value={coolifyProjectId}
+          onChange={(e) => { setCoolifyProjectId(e.target.value); setSuccess(false); }}
+          placeholder="Project UUID/ID from Coolify"
+          className="form-input mono-input"
+        />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <label className="form-label" style={{ marginBottom: 0 }}>Enable Staging Workspace</label>
+        <input
+          type="checkbox"
+          checked={stagingEnabled}
+          onChange={(e) => { setStagingEnabled(e.target.checked); setSuccess(false); }}
+          style={{ width: "18px", height: "18px" }}
         />
       </div>
       {error && <p className="form-error">{error}</p>}

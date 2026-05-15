@@ -48,9 +48,11 @@ export default async function SitesPage() {
               clientId: site.clientId,
               clientName: site.clientName,
               status: overviewSite?.status ?? site.status,
+              ownershipState: site.ownershipState,
+              coolifyProjectName: site.coolifyProjectName,
               source: site.source,
               href: `/sites/${site.id}`,
-              clientHref: site.clientId !== "unassigned" ? `/organizations/${site.clientId}` : undefined
+              clientHref: site.ownershipState === "mapped" ? `/organizations/${site.clientId}` : undefined
             };
           })}
         />

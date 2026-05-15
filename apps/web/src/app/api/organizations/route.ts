@@ -36,6 +36,8 @@ export async function GET() {
         name: org.name,
         description: org.description,
         logoUrl: org.logoUrl,
+        coolifyProjectId: org.coolifyProjectId,
+        coolifyProjectName: org.coolifyProjectName,
         ownerId: org.ownerId,
         siteCount: org._count.sites,
         memberCount: org._count.collaborators,
@@ -60,7 +62,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { name?: string; description?: string };
+  let body: { name?: string; description?: string; coolifyProjectId?: string; coolifyProjectName?: string };
   try {
     body = await req.json();
   } catch {
@@ -95,6 +97,8 @@ export async function POST(req: Request) {
         slug,
         name,
         description: body.description?.trim() || null,
+        coolifyProjectId: body.coolifyProjectId?.trim() || null,
+        coolifyProjectName: body.coolifyProjectName?.trim() || null,
         ownerId: session.user.id,
         collaborators: {
           create: {
@@ -111,6 +115,8 @@ export async function POST(req: Request) {
         slug: org.slug,
         name: org.name,
         description: org.description,
+        coolifyProjectId: org.coolifyProjectId,
+        coolifyProjectName: org.coolifyProjectName,
         ownerId: org.ownerId,
         siteCount: 0,
         memberCount: 1,

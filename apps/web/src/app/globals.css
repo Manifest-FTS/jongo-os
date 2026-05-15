@@ -1272,3 +1272,11 @@ main {
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+
+/* ── Responsive staging layout ───────────────────────────────────── */
+@media (max-width: 900px) {
+  /* Two-column layout becomes one column on smaller screens */
+  div[style*="gridTemplateColumns: 1fr 320px"] {
+    grid-template-columns: 1fr !important;
+  }
+}

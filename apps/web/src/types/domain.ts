@@ -49,6 +49,8 @@ export type Organization = {
   logoUrl?: string;
   ownerId: UUID;
   coolifyApiUrl?: string;
+  coolifyProjectId?: string;
+  coolifyProjectName?: string;
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date;
@@ -61,6 +63,8 @@ export type OrganizationCreateInput = {
   logoUrl?: string;
   ownerId: UUID;
   coolifyApiUrl?: string;
+  coolifyProjectId?: string;
+  coolifyProjectName?: string;
 };
 
 export type OrganizationWithOwner = Organization & {
@@ -79,7 +83,10 @@ export type Site = {
   description?: string;
   coolifyServiceId?: string;
   coolifyServiceUuid?: string;
+  coolifyProjectId?: string;
+  coolifyProjectName?: string;
   gitRepositoryUrl?: string;
+  stagingEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date;
@@ -91,7 +98,10 @@ export type SiteCreateInput = {
   name: string;
   description?: string;
   coolifyServiceId?: string;
+  coolifyProjectId?: string;
+  coolifyProjectName?: string;
   gitRepositoryUrl?: string;
+  stagingEnabled?: boolean;
 };
 
 export type SiteWithEnvironments = Site & {

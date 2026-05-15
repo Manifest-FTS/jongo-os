@@ -34,7 +34,8 @@ export default async function DeploymentsPage({ params }: Params) {
     getSiteWorkspace(siteId),
     listSiteDeployments(siteId)
   ]);
-  const site = overview.sites.find((item) => item.id === siteId);
+  const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
+  const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
 
   const productionDeployments = deployments.filter((d) => d.environment === "production");
   const stagingDeployments = deployments.filter((d) => d.environment === "staging");

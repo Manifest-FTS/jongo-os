@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { getCoolifyOverview } from "@/lib/coolify";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -51,7 +52,9 @@ export async function GET(_req: Request, { params }: Params) {
         description: site.description,
         coolifyServiceId: site.coolifyServiceId,
         coolifyServiceUuid: site.coolifyServiceUuid,
+        coolifyProjectId: site.coolifyProjectId,
         gitRepositoryUrl: site.gitRepositoryUrl,
+        stagingEnabled: site.stagingEnabled,
         organizationId: site.organizationId,
         environments: site.environments,
         createdAt: site.createdAt
@@ -118,13 +121,38 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
 
+    const coolifyServiceUuid = body.coolifyServiceUuid?.trim() || null;
+    let coolifyProjectId: string | null = null;
+    let coolifyProjectName: string | null = null;
+
+    if (coolifyServiceUuid) {
+      const overview = await getCoolifyOverview();
+      const matched = overview.sites.find(
+        (site) => site.id === coolifyServiceUuid || site.deployTargetId === coolifyServiceUuid
+      );
+      coolifyProjectId = matched?.coolifyProjectId ?? null;
+      coolifyProjectName = matched?.coolifyProjectName ?? null;
+
+      if (coolifyProjectId && !org.coolifyProjectId) {
+        await db.organization.update({
+          where: { id: organizationId },
+          data: {
+            coolifyProjectId,
+            coolifyProjectName: coolifyProjectName ?? undefined
+          }
+        });
+      }
+    }
+
     const site = await db.site.create({
       data: {
         organizationId,
         slug,
         name,
         description: body.description?.trim() || null,
-        coolifyServiceUuid: body.coolifyServiceUuid?.trim() || null,
+        coolifyServiceUuid,
+        coolifyProjectId,
+        stagingEnabled: false,
         gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
         environments: {
           create: [
@@ -143,6 +171,8 @@ export async function POST(req: Request, { params }: Params) {
         name: site.name,
         description: site.description,
         coolifyServiceUuid: site.coolifyServiceUuid,
+        coolifyProjectId: site.coolifyProjectId,
+        stagingEnabled: site.stagingEnabled,
         gitRepositoryUrl: site.gitRepositoryUrl,
         organizationId: site.organizationId,
         environments: site.environments,
