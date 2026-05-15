@@ -74,8 +74,11 @@ Startup behavior:
 
 1. `cp .env.example .env` (or copy manually on Windows)
 2. Fill in `.env` values for DB, auth, and Coolify API
-3. Run `npm run bootstrap:local`
-4. Run `npm run dev:web`
+3. Start the SSH tunnel workflow in [docs/local-development.md](docs/local-development.md) and set `DATABASE_URL` to `localhost:5433`
+4. Run `npm run bootstrap:local`
+5. Run `npm run dev:web`
+
+If you use `npm run dev:web:env` or `npm run start:web:env`, the repo-root `.env.local` is loaded by the wrapper script. For plain `npm run dev` or `npm run dev:web`, the web app reads `apps/web/.env.local`.
 
 If your Coolify credentials are in root `.env`, use `npm run dev:web:env` so the web process receives them.
 

@@ -3,6 +3,11 @@ import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 
+function isUuid(value?: string | null): boolean {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 declare module "next-auth" {
   interface User {
     id: string;
@@ -50,13 +55,32 @@ export const authConfig = {
           credentials.email.trim().toLowerCase() === devAuthEmail &&
           credentials.password === devAuthPassword
         ) {
-          return {
-            id: "dev-local-user",
-            email: devAuthEmail,
-            name: "Local Dev User"
-          };
+          try {
+            const { db } = await import("./db");
+            const existingUser = await db.user.findUnique({
+              where: { email: devAuthEmail },
+              select: { id: true, email: true, fullName: true }
+            });
+
+            if (existingUser && isUuid(existingUser.id)) {
+              return {
+                id: existingUser.id,
+                email: existingUser.email,
+                name: existingUser.fullName ?? "Local Dev User"
+              };
+            }
+
+            console.warn(
+              "[auth] DEV_AUTH credentials matched but no UUID-backed DB user was found for DEV_AUTH_EMAIL."
+            );
+            return null;
+          } catch (error) {
+            console.warn("[auth] DEV_AUTH credential fallback failed to resolve DB user.", error);
+            return null;
+          }
         }
 
+        // Credentials auth continues with normal DB password validation.
         try {
           const { db } = await import("./db");
           const user = await db.user.findUnique({

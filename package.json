@@ -28,6 +28,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
+    "db:repair-legacy-ids": "node ./scripts/repair-legacy-ids.mjs",
+    "db:repair-legacy-ids:apply": "node ./scripts/repair-legacy-ids.mjs --apply",
     "db:seed": "node prisma/seed.js",
     "create-admin": "node ./scripts/create-admin.mjs"
   },

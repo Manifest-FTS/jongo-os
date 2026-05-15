@@ -6,6 +6,38 @@ export type ViewerContext = {
   email?: string;
 };
 
+function isUuid(value?: string | null): boolean {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function getScopedViewerUserId(viewer?: ViewerContext): string | undefined {
+  if (!viewer?.userId) {
+    return undefined;
+  }
+
+  if (isUuid(viewer.userId)) {
+    return viewer.userId;
+  }
+
+  console.error(
+    "[jongo] Ignoring non-UUID viewer user id while building DB filters.",
+    "viewer.userId:", viewer.userId
+  );
+  return undefined;
+}
+
+function isPrismaUuidMismatchError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { code?: string; message?: string; meta?: { code?: string; message?: string } };
+  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
+
+  return e.code === "P2023" || message.includes("error creating uuid") || message.includes("invalid character");
+}
+
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
 }
@@ -25,6 +57,8 @@ export type ClientWorkspaceRecord = ClientRecord & {
   dbId?: string; // actual DB UUID (undefined when using mock data)
   siteCount: number;
   memberCount: number;
+  /** Where this record was sourced from – "db" means a live Prisma query succeeded. */
+  dataSource: "db" | "mock";
 };
 
 export type SiteDirectoryRecord = {
@@ -74,7 +108,8 @@ function fromMockClients(): ClientWorkspaceRecord[] {
   return getClients().map((client) => ({
     ...client,
     siteCount: client.siteIds.length,
-    memberCount: client.members.length
+    memberCount: client.members.length,
+    dataSource: "mock" as const
   }));
 }
 
@@ -93,8 +128,9 @@ async function maybeGetDb(): Promise<any | null> {
 
   try {
     const module = await import("./db");
-    return module.db;
-  } catch {
+    return await module.getDb();
+  } catch (error) {
+    console.error("[jongo] Failed to load Prisma client for database access.", error);
     return null;
   }
 }
@@ -167,10 +203,11 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
   }
 
   const whereClause: any = { deletedAt: null };
-  if (viewer?.userId && !hasBootstrapGlobalAccess(viewer)) {
+  const scopedUserId = getScopedViewerUserId(viewer);
+  if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
     whereClause.OR = [
-      { ownerId: viewer.userId },
-      { collaborators: { some: { userId: viewer.userId } } }
+      { ownerId: scopedUserId },
+      { collaborators: { some: { userId: scopedUserId } } }
     ];
   }
 
@@ -197,6 +234,7 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
   return organizations.map((organization: any) => ({
     id: organization.slug,
     dbId: organization.id,
+    dataSource: "db" as const,
     name: organization.name,
     summary: organization.description ?? "Client workspace",
     siteIds: organization.sites.map((site: any) => site.id),
@@ -217,7 +255,21 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
 export async function listClientWorkspaces(viewer?: ViewerContext): Promise<ClientWorkspaceRecord[]> {
   try {
     return await readRealClientWorkspaces(viewer);
-  } catch {
+  } catch (error) {
+    if (isPrismaUuidMismatchError(error)) {
+      console.error(
+        "[jongo] listClientWorkspaces: Prisma UUID mismatch (P2023).",
+        "This is usually caused by a non-UUID session user id or legacy text IDs in UUID-filtered paths.",
+        "viewer.userId:", viewer?.userId,
+        "Error:", error
+      );
+    }
+
+    console.error(
+      "[jongo] listClientWorkspaces: DB query failed after the connection check, falling back to mock data.",
+      "DATABASE_URL present:", !!process.env.DATABASE_URL,
+      "Error:", error
+    );
     return fromMockClients();
   }
 }
@@ -234,15 +286,17 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
       return {
         ...mockClient,
         siteCount: mockClient.siteIds.length,
-        memberCount: mockClient.members.length
+        memberCount: mockClient.members.length,
+        dataSource: "mock" as const
       };
     }
 
     const whereClause: any = { slug: clientId };
-    if (viewer?.userId && !hasBootstrapGlobalAccess(viewer)) {
+    const scopedUserId = getScopedViewerUserId(viewer);
+    if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
       whereClause.OR = [
-        { ownerId: viewer.userId },
-        { collaborators: { some: { userId: viewer.userId } } }
+        { ownerId: scopedUserId },
+        { collaborators: { some: { userId: scopedUserId } } }
       ];
     }
 
@@ -270,6 +324,7 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
     return {
       id: organization.slug,
       dbId: organization.id,
+      dataSource: "db" as const,
       name: organization.name,
       summary: organization.description ?? "Client workspace",
       siteIds: organization.sites.map((site: any) => site.id),
@@ -285,7 +340,12 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
       siteCount: organization.sites.length,
       memberCount: organization.collaborators.length
     };
-  } catch {
+  } catch (error) {
+    console.error(
+      "[jongo] getClientWorkspace: DB query failed, falling back to mock data.",
+      "DATABASE_URL present:", !!process.env.DATABASE_URL,
+      "Error:", error
+    );
     const mockClient = getMockClientById(clientId);
 
     if (!mockClient) return undefined;
@@ -293,7 +353,8 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
     return {
       ...mockClient,
       siteCount: mockClient.siteIds.length,
-      memberCount: mockClient.members.length
+      memberCount: mockClient.members.length,
+      dataSource: "mock" as const
     };
   }
 }
@@ -320,10 +381,11 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
 
     // --- DB sites (user-scoped) ---
     const orgWhere: any = { deletedAt: null };
-    if (viewer?.userId && !hasBootstrapGlobalAccess(viewer)) {
+    const scopedUserId = getScopedViewerUserId(viewer);
+    if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
       orgWhere.OR = [
-        { ownerId: viewer.userId },
-        { collaborators: { some: { userId: viewer.userId } } }
+        { ownerId: scopedUserId },
+        { collaborators: { some: { userId: scopedUserId } } }
       ];
     }
 
@@ -374,7 +436,12 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       });
 
     return [...dbRecords, ...coolifyOnlyRecords];
-  } catch {
+  } catch (error) {
+    console.error(
+      "[jongo] listSiteDirectory: DB query failed, falling back to Coolify-only data.",
+      "DATABASE_URL present:", !!process.env.DATABASE_URL,
+      "Error:", error
+    );
     const overview = await getCoolifyOverview();
     return overview.sites.map((site) => {
       const client = getClientForCoolifySite(site.id, overview.mode);

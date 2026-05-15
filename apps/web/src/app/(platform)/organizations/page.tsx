@@ -12,18 +12,26 @@ export default async function OrganizationsPage() {
     email: session?.user?.email
   });
 
+  const isMock = clients.length > 0 && clients[0].dataSource === "mock";
+
   return (
     <div className="page-stack">
       <div className="page-head">
         <div>
-          <p className="page-kicker">Clients</p>
-          <h1 className="page-title">Client directory</h1>
-          <p className="page-subtitle">A compact list of client workspaces, people, and site ownership.</p>
+          <h1 className="page-title">Clients ({clients.length})</h1>
+          <p className="page-subtitle">Workspaces, contacts, and site ownership.</p>
         </div>
         <div className="page-head-actions">
           <CreateOrganizationForm />
         </div>
       </div>
+
+      {isMock && (
+        <div className="diagnostic-banner">
+          <strong>Mock data active.</strong> A database query failed, so hardcoded sample clients are shown.
+          Check server logs for the exact cause (for example network/tunnel issues or UUID mismatch in query inputs).
+        </div>
+      )}
       {clients.length === 0 ? (
         <div className="card">
           <p className="card-muted">No client workspaces yet. Create one above to get started.</p>
