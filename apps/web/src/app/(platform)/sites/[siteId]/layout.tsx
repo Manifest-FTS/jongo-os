@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { getSiteWorkspace } from "@/lib/repositories";
+import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -13,8 +14,8 @@ export default async function SiteWorkspaceLayout({
   const { siteId } = await params;
   const site = await getSiteWorkspace(siteId);
 
-  const tabs = [
-    { name: "Overview", href: `/sites/${siteId}` },
+  const tabs: WorkspaceTab[] = [
+    { name: "Overview", href: `/sites/${siteId}`, match: "exact" },
     { name: "Deployments", href: `/sites/${siteId}/deployments` },
     { name: "Staging", href: `/sites/${siteId}/staging` },
     { name: "Settings", href: `/sites/${siteId}/settings` }
@@ -53,13 +54,7 @@ export default async function SiteWorkspaceLayout({
       </div>
 
       <div className="card" style={{ marginBottom: "1rem", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
-        <div className="tab-rail">
-          {tabs.map((tab) => (
-            <a key={tab.href} href={tab.href} className="tab-link">
-              {tab.name}
-            </a>
-          ))}
-        </div>
+        <WorkspaceTabs tabs={tabs} />
       </div>
 
       <div>{children}</div>

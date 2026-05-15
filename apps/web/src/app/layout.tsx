@@ -3,7 +3,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Jongo",
-  description: "Self-hosted operations UX for Coolify"
+  description: "Self-hosted operations UX for Coolify",
+  icons: {
+    icon: "/favicon.ico"
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth.config";
 import BrandLogo from "@/components/BrandLogo";
-import { BellIcon, BuildingOfficeIcon, ChevronDownIcon, DashboardIcon, ServerIcon, SettingsIcon } from "@/components/JongoIcons";
+import { BellIcon, ChevronDownIcon } from "@/components/JongoIcons";
+import PlatformPrimaryNav from "@/components/navigation/PlatformPrimaryNav";
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -12,32 +13,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
-        <nav className="app-nav card">
-          <Link href="/dashboard">
-            <span className="app-nav-label">
-              <DashboardIcon className="sidebar-icon" />
-              Dashboard
-            </span>
-          </Link>
-          <Link href="/organizations">
-            <span className="app-nav-label">
-              <BuildingOfficeIcon className="sidebar-icon" />
-              Clients
-            </span>
-          </Link>
-          <Link href="/sites">
-            <span className="app-nav-label">
-              <ServerIcon className="sidebar-icon" />
-              Sites
-            </span>
-          </Link>
-          <Link href="/settings">
-            <span className="app-nav-label">
-              <SettingsIcon className="sidebar-icon" />
-              Settings
-            </span>
-          </Link>
-        </nav>
+        <PlatformPrimaryNav />
       </aside>
 
       <div className="app-main">
