@@ -1,4 +1,5 @@
 import NextAuth from "next-auth";
+import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 
@@ -85,3 +86,20 @@ export const authConfig = {
   },
   secret: process.env.NEXTAUTH_SECRET || "dev-secret-change-in-production"
 };
+
+export type AuthSession = {
+  user: { id: string; email: string; name?: string | null };
+} | null;
+
+/**
+ * Server-side session helper. Works in App Router Server Components,
+ * Route Handlers, and middleware.
+ *
+ * Usage: const session = await auth();
+ */
+export async function auth(): Promise<AuthSession> {
+  const raw = await getServerSession(authConfig as any);
+  const session = raw as unknown as { user?: { id?: string; email?: string } } | null;
+  if (!session?.user?.id) return null;
+  return session as unknown as AuthSession;
+}

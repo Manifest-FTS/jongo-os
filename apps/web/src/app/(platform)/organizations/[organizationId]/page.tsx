@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSiteWorkspace, getClientWorkspace } from "@/lib/repositories";
+import CreateSiteForm from "@/components/CreateSiteForm";
+import { auth } from "@/lib/auth.config";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
 export default async function OrganizationDetailPage({ params }: Params) {
   const { organizationId } = await params;
-  const client = await getClientWorkspace(organizationId);
+  const session = await auth();
+  const client = await getClientWorkspace(organizationId, session?.user?.id);
 
   if (!client) {
     notFound();
@@ -17,15 +20,18 @@ export default async function OrganizationDetailPage({ params }: Params) {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: "1rem" }}>
-        <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Dashboard / Clients / {client.name}</p>
-        <h1 style={{ margin: 0 }}>{client.name}</h1>
-        <p className="card-muted" style={{ marginTop: "0.35rem" }}>{client.summary}</p>
+      <div className="card" style={{ marginBottom: "1rem", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
+        <div>
+          <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Dashboard / Clients / {client.name}</p>
+          <h1 style={{ margin: 0 }}>{client.name}</h1>
+          <p className="card-muted" style={{ marginTop: "0.35rem" }}>{client.summary}</p>
+        </div>
+        {client.dbId && (
+          <div style={{ flexShrink: 0, paddingTop: "0.25rem" }}>
+            <CreateSiteForm organizationId={client.dbId} />
+          </div>
+        )}
       </div>
-
-      <p className="card-muted" style={{ marginBottom: "0.5rem" }}>
-        Dashboard / Clients / {client.name}
-      </p>
 
       <section className="grid" style={{ marginBottom: "1rem" }}>
         <article className="card">

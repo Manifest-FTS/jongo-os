@@ -1,0 +1,207 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth.config";
+
+type Params = { params: Promise<{ siteId: string }> };
+
+async function getSiteForUser(siteId: string, userId: string) {
+  const { db } = await import("@/lib/db");
+
+  return db.site.findFirst({
+    where: {
+      id: siteId,
+      deletedAt: null,
+      organization: {
+        deletedAt: null,
+        OR: [
+          { ownerId: userId },
+          { collaborators: { some: { userId } } }
+        ]
+      }
+    },
+    include: { organization: { select: { id: true, ownerId: true } } }
+  });
+}
+
+/**
+ * GET /api/sites/[siteId]
+ */
+export async function GET(_req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { siteId } = await params;
+
+  try {
+    const { db } = await import("@/lib/db");
+
+    const site = await db.site.findFirst({
+      where: {
+        id: siteId,
+        deletedAt: null,
+        organization: {
+          deletedAt: null,
+          OR: [
+            { ownerId: session.user.id },
+            { collaborators: { some: { userId: session.user.id } } }
+          ]
+        }
+      },
+      include: {
+        environments: {
+          include: {
+            deployments: { orderBy: { triggeredAt: "desc" }, take: 5 }
+          }
+        },
+        collaborators: { include: { user: { select: { id: true, email: true, fullName: true } } } },
+        organization: { select: { id: true, slug: true, name: true } }
+      }
+    });
+
+    if (!site) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      id: site.id,
+      slug: site.slug,
+      name: site.name,
+      description: site.description,
+      coolifyServiceId: site.coolifyServiceId,
+      coolifyServiceUuid: site.coolifyServiceUuid,
+      gitRepositoryUrl: site.gitRepositoryUrl,
+      organizationId: site.organizationId,
+      organization: site.organization,
+      environments: site.environments,
+      collaborators: site.collaborators.map((c: any) => ({
+        userId: c.userId,
+        role: c.role,
+        email: c.user.email,
+        fullName: c.user.fullName
+      })),
+      createdAt: site.createdAt,
+      updatedAt: site.updatedAt
+    });
+  } catch (err) {
+    console.error("GET /api/sites/[id] error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * PUT /api/sites/[siteId]
+ * Updates name/description/coolifyServiceUuid/gitRepositoryUrl.
+ * Requires owner or admin on the parent organization.
+ */
+export async function PUT(req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { siteId } = await params;
+
+  let body: {
+    name?: string;
+    description?: string;
+    coolifyServiceUuid?: string;
+    gitRepositoryUrl?: string;
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  try {
+    const { db } = await import("@/lib/db");
+
+    const site = await db.site.findFirst({
+      where: {
+        id: siteId,
+        deletedAt: null,
+        organization: {
+          deletedAt: null,
+          OR: [
+            { ownerId: session.user.id },
+            { collaborators: { some: { userId: session.user.id, role: { in: ["owner", "admin"] } } } }
+          ]
+        }
+      }
+    });
+
+    if (!site) {
+      return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+
+    const name = body.name?.trim();
+    const updates: {
+      name?: string;
+      slug?: string;
+      description?: string | null;
+      coolifyServiceUuid?: string | null;
+      gitRepositoryUrl?: string | null;
+    } = {};
+    if (name) {
+      updates.name = name;
+      updates.slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 60);
+    }
+    if ("description" in body) updates.description = body.description?.trim() || null;
+    if ("coolifyServiceUuid" in body) updates.coolifyServiceUuid = body.coolifyServiceUuid?.trim() || null;
+    if ("gitRepositoryUrl" in body) updates.gitRepositoryUrl = body.gitRepositoryUrl?.trim() || null;
+
+    const updated = await db.site.update({ where: { id: siteId }, data: updates });
+
+    return NextResponse.json({ id: updated.id, slug: updated.slug, name: updated.name });
+  } catch (err) {
+    console.error("PUT /api/sites/[id] error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/sites/[siteId]
+ * Soft-deletes the site. Requires owner or admin on the parent organization.
+ */
+export async function DELETE(_req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { siteId } = await params;
+
+  try {
+    const { db } = await import("@/lib/db");
+
+    const site = await db.site.findFirst({
+      where: {
+        id: siteId,
+        deletedAt: null,
+        organization: {
+          deletedAt: null,
+          OR: [
+            { ownerId: session.user.id },
+            { collaborators: { some: { userId: session.user.id, role: { in: ["owner", "admin"] } } } }
+          ]
+        }
+      }
+    });
+
+    if (!site) {
+      return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+
+    await db.site.update({ where: { id: siteId }, data: { deletedAt: new Date() } });
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /api/sites/[id] error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

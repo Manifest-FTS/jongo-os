@@ -2,6 +2,7 @@ import { getClients, getClientById as getMockClientById, getClientForSite, type 
 import { getCoolifyOverview } from "./coolify";
 
 export type ClientWorkspaceRecord = ClientRecord & {
+  dbId?: string; // actual DB UUID (undefined when using mock data)
   siteCount: number;
   memberCount: number;
 };
@@ -121,14 +122,23 @@ export async function getSiteActivityFeed(siteId: string, limit = 6): Promise<Ac
     }));
 }
 
-async function readRealClientWorkspaces(): Promise<ClientWorkspaceRecord[]> {
+async function readRealClientWorkspaces(userId?: string): Promise<ClientWorkspaceRecord[]> {
   const prisma = await maybeGetDb();
 
   if (!prisma) {
     return fromMockClients();
   }
 
+  const whereClause: any = { deletedAt: null };
+  if (userId) {
+    whereClause.OR = [
+      { ownerId: userId },
+      { collaborators: { some: { userId } } }
+    ];
+  }
+
   const organizations: any[] = await prisma.organization.findMany({
+    where: whereClause,
     include: {
       sites: {
         include: {
@@ -149,6 +159,7 @@ async function readRealClientWorkspaces(): Promise<ClientWorkspaceRecord[]> {
 
   return organizations.map((organization: any) => ({
     id: organization.slug,
+    dbId: organization.id,
     name: organization.name,
     summary: organization.description ?? "Client workspace",
     siteIds: organization.sites.map((site: any) => site.id),
@@ -166,15 +177,15 @@ async function readRealClientWorkspaces(): Promise<ClientWorkspaceRecord[]> {
   }));
 }
 
-export async function listClientWorkspaces(): Promise<ClientWorkspaceRecord[]> {
+export async function listClientWorkspaces(userId?: string): Promise<ClientWorkspaceRecord[]> {
   try {
-    return await readRealClientWorkspaces();
+    return await readRealClientWorkspaces(userId);
   } catch {
     return fromMockClients();
   }
 }
 
-export async function getClientWorkspace(clientId: string): Promise<ClientWorkspaceRecord | undefined> {
+export async function getClientWorkspace(clientId: string, userId?: string): Promise<ClientWorkspaceRecord | undefined> {
   try {
     const prisma = await maybeGetDb();
 
@@ -190,8 +201,16 @@ export async function getClientWorkspace(clientId: string): Promise<ClientWorksp
       };
     }
 
-    const organization: any = await prisma.organization.findUnique({
-      where: { slug: clientId },
+    const whereClause: any = { slug: clientId };
+    if (userId) {
+      whereClause.OR = [
+        { ownerId: userId },
+        { collaborators: { some: { userId } } }
+      ];
+    }
+
+    const organization: any = await prisma.organization.findFirst({
+      where: whereClause,
       include: {
         sites: {
           include: {
@@ -213,6 +232,7 @@ export async function getClientWorkspace(clientId: string): Promise<ClientWorksp
 
     return {
       id: organization.slug,
+      dbId: organization.id,
       name: organization.name,
       summary: organization.description ?? "Client workspace",
       siteIds: organization.sites.map((site: any) => site.id),
