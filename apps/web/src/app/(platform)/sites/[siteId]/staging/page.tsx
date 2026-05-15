@@ -10,10 +10,11 @@ export default async function StagingPage({ params }: Params) {
     getCoolifyOverview(),
     getSiteWorkspace(siteId)
   ]);
-  
-  const site = overview.sites.find((item) => item.id === siteId);
+
+  const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
+  const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const isWordPress = workspace?.siteType === "wordpress";
-  const stagingEnabled = workspace?.stagingStatus !== undefined && workspace.stagingStatus !== "unknown";
+  const stagingEnabled = Boolean(workspace?.stagingEnabled);
 
   return (
     <div className="page-stack">

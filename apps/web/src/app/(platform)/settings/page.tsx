@@ -1,4 +1,5 @@
 import { getRuntimeConfigStatus } from "@/lib/runtime-config";
+import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
 
 export default function SettingsPage() {
   const runtime = getRuntimeConfigStatus();
@@ -40,6 +41,8 @@ export default function SettingsPage() {
             Generate and manage API tokens for scripting and integrations.
           </p>
         </article>
+
+        <OwnershipSyncPanel />
 
         {/* Organizations */}
         <article className="card tone-card">

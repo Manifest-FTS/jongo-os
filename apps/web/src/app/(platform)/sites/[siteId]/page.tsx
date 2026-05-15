@@ -20,7 +20,8 @@ export default async function SiteOverviewPage({ params }: Params) {
     getSiteWorkspace(siteId),
     getSiteActivityFeed(siteId)
   ]);
-  const site = overview.sites.find((item) => item.id === siteId);
+  const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
+  const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const siteDeployments = overview.deployments.filter((deployment) => deployment.siteName === site?.name);
   const isWordPress = workspace?.siteType === "wordpress";
 
@@ -74,7 +75,7 @@ export default async function SiteOverviewPage({ params }: Params) {
         <article className="card">
           <h3 className="card-title">Team</h3>
           <p className="card-muted">Collaborators are managed at the client level.</p>
-          {workspace?.clientId && workspace.clientId !== "unassigned" ? (
+          {workspace?.ownershipState === "mapped" ? (
             <p style={{ margin: "0.75rem 0 0" }}>
               <Link href={`/organizations/${workspace.clientId}`} className="action-link">
                 Manage team access <ArrowRightIcon className="btn-icon" />

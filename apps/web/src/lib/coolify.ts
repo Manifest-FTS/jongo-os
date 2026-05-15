@@ -19,11 +19,19 @@ export type SiteOverview = {
   productionStatus: "healthy" | "degraded" | "error" | "unknown";
   stagingStatus: "healthy" | "degraded" | "error" | "unknown";
   siteType: SiteType;
+  coolifyProjectId?: string;
+  coolifyProjectName?: string;
+};
+
+export type CoolifyProjectRecord = {
+  id: string;
+  name: string;
 };
 
 export type CoolifyOverview = {
   mode: "live" | "mock";
   generatedAt: string;
+  projects: CoolifyProjectRecord[];
   sites: SiteOverview[];
   deployments: DeploymentRecord[];
   stats: {
@@ -135,8 +143,85 @@ function stringValue(obj: Record<string, unknown>, keys: string[], fallback = ""
     if (typeof value === "string" && value.trim().length > 0) {
       return value;
     }
+    if (typeof value === "number") {
+      return String(value);
+    }
   }
   return fallback;
+}
+
+function normalizeProjectRecords(input: unknown): CoolifyProjectRecord[] {
+  const seen = new Set<string>();
+
+  return normalizeArrayPayload(input)
+    .map((project, index): CoolifyProjectRecord | null => {
+      const id = stringValue(project, ["uuid", "id", "project_uuid", "project_id"], `project-${index + 1}`);
+      const name = stringValue(project, ["name", "project_name", "display_name"], id);
+
+      if (!id || seen.has(id)) {
+        return null;
+      }
+
+      seen.add(id);
+      return { id, name };
+    })
+    .filter((project): project is CoolifyProjectRecord => Boolean(project));
+}
+
+function resolveProjectForResource(
+  resource: Record<string, unknown>,
+  projectsById: Map<string, CoolifyProjectRecord>,
+  projectsByName: Map<string, CoolifyProjectRecord>
+): { id?: string; name?: string } {
+  const idCandidates = new Set<string>();
+  const nameCandidates = new Set<string>();
+  const rawNameCandidates = new Set<string>();
+
+  const directId = stringValue(resource, ["project_uuid", "project_id", "projectId"], "");
+  if (directId) idCandidates.add(directId);
+
+  const projectValue = resource.project;
+  if (typeof projectValue === "string") {
+    idCandidates.add(projectValue);
+    nameCandidates.add(projectValue.trim().toLowerCase());
+    rawNameCandidates.add(projectValue.trim());
+  } else if (typeof projectValue === "object" && projectValue !== null) {
+    const projectObj = projectValue as Record<string, unknown>;
+    const nestedId = stringValue(projectObj, ["uuid", "id", "project_uuid", "project_id"], "");
+    const nestedName = stringValue(projectObj, ["name", "project_name", "display_name"], "");
+    if (nestedId) idCandidates.add(nestedId);
+    if (nestedName) {
+      nameCandidates.add(nestedName.trim().toLowerCase());
+      rawNameCandidates.add(nestedName.trim());
+    }
+  }
+
+  const directName = stringValue(resource, ["project_name"], "");
+  if (directName) {
+    nameCandidates.add(directName.trim().toLowerCase());
+    rawNameCandidates.add(directName.trim());
+  }
+
+  for (const candidate of idCandidates) {
+    const project = projectsById.get(candidate);
+    if (project) {
+      return { id: project.id, name: project.name };
+    }
+  }
+
+  for (const candidate of nameCandidates) {
+    const project = projectsByName.get(candidate);
+    if (project) {
+      return { id: project.id, name: project.name };
+    }
+  }
+
+  const fallbackId = [...idCandidates][0];
+  const fallbackName = [...rawNameCandidates][0];
+  return {
+    id: fallbackId,
+    name: fallbackName
+  };
 }
 
 function combineStatuses(...statuses: SiteOverview["status"][]): SiteOverview["status"] {
@@ -256,6 +341,10 @@ function mockOverview(): CoolifyOverview {
   return {
     mode: "mock",
     generatedAt: new Date().toISOString(),
+    projects: [
+      { id: "project-main", name: "Main Client" },
+      { id: "project-portal", name: "Portal Client" }
+    ],
     sites: [
       {
         id: "site-main",
@@ -264,7 +353,9 @@ function mockOverview(): CoolifyOverview {
         status: "healthy",
         productionStatus: "healthy",
         stagingStatus: "degraded",
-        siteType: "generic"
+        siteType: "generic",
+        coolifyProjectId: "project-main",
+        coolifyProjectName: "Main Client"
       },
       {
         id: "site-client-portal",
@@ -273,7 +364,9 @@ function mockOverview(): CoolifyOverview {
         status: "degraded",
         productionStatus: "healthy",
         stagingStatus: "degraded",
-        siteType: "generic"
+        siteType: "generic",
+        coolifyProjectId: "project-portal",
+        coolifyProjectName: "Portal Client"
       }
     ],
     deployments: [
@@ -304,6 +397,7 @@ function emptyLiveOverview(): CoolifyOverview {
   return {
     mode: "live",
     generatedAt: new Date().toISOString(),
+    projects: [],
     sites: [],
     deployments: [],
     stats: {
@@ -331,11 +425,18 @@ function sortDeploymentsNewestFirst(deployments: DeploymentRecord[]): Deployment
   });
 }
 
-function makeSiteOverview(resource: Record<string, unknown>, fallbackName: string, fallbackId: string): SiteOverview {
+function makeSiteOverview(
+  resource: Record<string, unknown>,
+  fallbackName: string,
+  fallbackId: string,
+  projectsById: Map<string, CoolifyProjectRecord>,
+  projectsByName: Map<string, CoolifyProjectRecord>
+): SiteOverview {
   const id = stringValue(resource, ["uuid", "id"], fallbackId);
   const name = stringValue(resource, ["name", "application_name", "service_name"], fallbackName);
   const productionStatus = statusFromRaw(resource.production_status ?? resource.status ?? resource.current_status ?? resource.state ?? resource.server_status);
   const stagingStatus = statusFromRaw(resource.staging_status ?? resource.preview_status);
+  const project = resolveProjectForResource(resource, projectsById, projectsByName);
 
   return {
     id,
@@ -344,7 +445,9 @@ function makeSiteOverview(resource: Record<string, unknown>, fallbackName: strin
     status: combineStatuses(productionStatus, stagingStatus),
     productionStatus,
     stagingStatus,
-    siteType: detectSiteType(resource)
+    siteType: detectSiteType(resource),
+    coolifyProjectId: project.id,
+    coolifyProjectName: project.name
   };
 }
 
@@ -359,8 +462,12 @@ function buildSiteStats(sites: SiteOverview[]) {
 async function buildLiveOverview(
   applications: Record<string, unknown>[],
   services: Record<string, unknown>[],
-  databases: Record<string, unknown>[]
+  databases: Record<string, unknown>[],
+  projects: CoolifyProjectRecord[]
 ): Promise<CoolifyOverview> {
+  const projectsById = new Map(projects.map((project) => [project.id, project]));
+  const projectsByName = new Map(projects.map((project) => [project.name.trim().toLowerCase(), project]));
+
   const serviceChildApplicationIds = new Set<string>();
   const serviceChildDatabaseIds = new Set<string>();
 
@@ -392,7 +499,7 @@ async function buildLiveOverview(
 
   const applicationSitesWithDeployments = await Promise.all(
     standaloneApplications.slice(0, 20).map(async (application, index): Promise<{ site: SiteOverview; deployments: DeploymentRecord[] }> => {
-      const site = makeSiteOverview(application, `application-${index + 1}`, `app-${index + 1}`);
+      const site = makeSiteOverview(application, `application-${index + 1}`, `app-${index + 1}`, projectsById, projectsByName);
       const deployments = await readApplicationDeployments(site.id, site.name, 8);
       const productionDeployment = deployments.find((deployment) => deployment.environment === "production");
       const stagingDeployment = deployments.find((deployment) => deployment.environment === "staging");
@@ -409,9 +516,11 @@ async function buildLiveOverview(
     })
   );
 
-  const serviceSites = services.map((service, index) => makeSiteOverview(service, `service-${index + 1}`, `svc-${index + 1}`));
+  const serviceSites = services.map((service, index) =>
+    makeSiteOverview(service, `service-${index + 1}`, `svc-${index + 1}`, projectsById, projectsByName)
+  );
   const databaseSites = standaloneDatabases.map((database, index) =>
-    makeSiteOverview(database, `database-${index + 1}`, `db-${index + 1}`)
+    makeSiteOverview(database, `database-${index + 1}`, `db-${index + 1}`, projectsById, projectsByName)
   );
 
   const sites = [
@@ -427,6 +536,7 @@ async function buildLiveOverview(
   return {
     mode: "live",
     generatedAt: new Date().toISOString(),
+    projects,
     sites,
     deployments,
     stats: buildSiteStats(sites)
@@ -442,6 +552,14 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
   }
 
   try {
+    let projects: CoolifyProjectRecord[] = [];
+    try {
+      const projectsPayload = await coolifyFetch("/api/v1/projects");
+      projects = normalizeProjectRecords(projectsPayload);
+    } catch {
+      projects = [];
+    }
+
     const applicationsPayload = await coolifyFetch("/api/v1/applications");
     const applications = normalizeArrayPayload(applicationsPayload);
 
@@ -452,10 +570,13 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     const databases = normalizeArrayPayload(databasesPayload);
 
     if (applications.length > 0 || services.length > 0 || databases.length > 0) {
-      return await buildLiveOverview(applications, services, databases);
+      return await buildLiveOverview(applications, services, databases, projects);
     }
 
-    return emptyLiveOverview();
+    return {
+      ...emptyLiveOverview(),
+      projects
+    };
   } catch {
     return emptyLiveOverview();
   }

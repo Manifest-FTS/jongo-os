@@ -58,6 +58,8 @@ export async function GET(_req: Request, { params }: Params) {
       name: org.name,
       description: org.description,
       logoUrl: org.logoUrl,
+      coolifyProjectId: org.coolifyProjectId,
+      coolifyProjectName: org.coolifyProjectName,
       ownerId: org.ownerId,
       siteCount: org._count.sites,
       members: org.collaborators.map((c: any) => ({
@@ -78,7 +80,7 @@ export async function GET(_req: Request, { params }: Params) {
 /**
  * PUT /api/organizations/[organizationId]
  * Updates name/description. Only the owner or an admin may do this.
- * Body: { name?: string; description?: string }
+ * Body: { name?: string; description?: string; coolifyProjectId?: string; coolifyProjectName?: string }
  */
 export async function PUT(req: Request, { params }: Params) {
   const session = await auth();
@@ -88,7 +90,7 @@ export async function PUT(req: Request, { params }: Params) {
 
   const { organizationId } = await params;
 
-  let body: { name?: string; description?: string };
+  let body: { name?: string; description?: string; coolifyProjectId?: string; coolifyProjectName?: string };
   try {
     body = await req.json();
   } catch {
@@ -114,7 +116,13 @@ export async function PUT(req: Request, { params }: Params) {
     }
 
     const name = body.name?.trim();
-    const updates: { name?: string; description?: string | null; slug?: string } = {};
+    const updates: {
+      name?: string;
+      description?: string | null;
+      slug?: string;
+      coolifyProjectId?: string | null;
+      coolifyProjectName?: string | null;
+    } = {};
     if (name) {
       updates.name = name;
       updates.slug = name
@@ -125,6 +133,12 @@ export async function PUT(req: Request, { params }: Params) {
     }
     if ("description" in body) {
       updates.description = body.description?.trim() || null;
+    }
+    if ("coolifyProjectId" in body) {
+      updates.coolifyProjectId = body.coolifyProjectId?.trim() || null;
+    }
+    if ("coolifyProjectName" in body) {
+      updates.coolifyProjectName = body.coolifyProjectName?.trim() || null;
     }
 
     const updated = await db.organization.update({ where: { id: organizationId }, data: updates });

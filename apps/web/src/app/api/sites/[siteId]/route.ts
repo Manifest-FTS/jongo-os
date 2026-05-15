@@ -70,7 +70,9 @@ export async function GET(_req: Request, { params }: Params) {
       description: site.description,
       coolifyServiceId: site.coolifyServiceId,
       coolifyServiceUuid: site.coolifyServiceUuid,
+      coolifyProjectId: site.coolifyProjectId,
       gitRepositoryUrl: site.gitRepositoryUrl,
+      stagingEnabled: site.stagingEnabled,
       organizationId: site.organizationId,
       organization: site.organization,
       environments: site.environments,
@@ -91,7 +93,7 @@ export async function GET(_req: Request, { params }: Params) {
 
 /**
  * PUT /api/sites/[siteId]
- * Updates name/description/coolifyServiceUuid/gitRepositoryUrl.
+ * Updates name/description/coolifyServiceUuid/coolifyProjectId/gitRepositoryUrl/stagingEnabled.
  * Requires owner or admin on the parent organization.
  */
 export async function PUT(req: Request, { params }: Params) {
@@ -106,7 +108,9 @@ export async function PUT(req: Request, { params }: Params) {
     name?: string;
     description?: string;
     coolifyServiceUuid?: string;
+    coolifyProjectId?: string;
     gitRepositoryUrl?: string;
+    stagingEnabled?: boolean;
   };
   try {
     body = await req.json();
@@ -141,7 +145,9 @@ export async function PUT(req: Request, { params }: Params) {
       slug?: string;
       description?: string | null;
       coolifyServiceUuid?: string | null;
+      coolifyProjectId?: string | null;
       gitRepositoryUrl?: string | null;
+      stagingEnabled?: boolean;
     } = {};
     if (name) {
       updates.name = name;
@@ -153,7 +159,9 @@ export async function PUT(req: Request, { params }: Params) {
     }
     if ("description" in body) updates.description = body.description?.trim() || null;
     if ("coolifyServiceUuid" in body) updates.coolifyServiceUuid = body.coolifyServiceUuid?.trim() || null;
+    if ("coolifyProjectId" in body) updates.coolifyProjectId = body.coolifyProjectId?.trim() || null;
     if ("gitRepositoryUrl" in body) updates.gitRepositoryUrl = body.gitRepositoryUrl?.trim() || null;
+    if ("stagingEnabled" in body && typeof body.stagingEnabled === "boolean") updates.stagingEnabled = body.stagingEnabled;
 
     const updated = await db.site.update({ where: { id: siteId }, data: updates });
 

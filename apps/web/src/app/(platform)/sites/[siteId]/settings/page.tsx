@@ -39,10 +39,19 @@ export default async function SiteSettingsPage({ params }: Params) {
               name: workspace.name,
               description: workspace.description,
               coolifyServiceUuid: workspace.coolifyServiceUuid,
+              coolifyProjectId: workspace.coolifyProjectId,
+              stagingEnabled: workspace.stagingEnabled,
               gitRepositoryUrl: workspace.gitRepositoryUrl
             }}
           />
         </article>
+      )}
+
+      {workspace?.ownershipState !== "mapped" && (
+        <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
+          <strong>Ownership mapping needs attention.</strong> This resource is not mapped to a Client via Coolify Project ownership yet.
+          Map a Coolify Project ID in Site Information to avoid orphaned resources.
+        </div>
       )}
 
       <div className="grid" style={{ marginBottom: "2rem" }}>
@@ -82,6 +91,9 @@ export default async function SiteSettingsPage({ params }: Params) {
               Source: <span className="tag">{workspace?.source === "db" ? "managed" : "external"}</span>
             </p>
             <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              Ownership: <span className="tag">{workspace?.ownershipState ?? "unavailable"}</span>
+            </p>
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
               Overall: <span className={`status-chip ${workspace?.status ?? "unknown"}`}>{workspace?.status ?? "unknown"}</span>
             </p>
             <p style={{ margin: 0, fontSize: "0.9rem" }}>
@@ -98,6 +110,16 @@ export default async function SiteSettingsPage({ params }: Params) {
                 {workspace?.coolifyServiceUuid && (
                   <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)", fontFamily: "monospace", wordBreak: "break-all" }}>
                     Coolify UUID: {workspace.coolifyServiceUuid}
+                  </p>
+                )}
+                {workspace?.coolifyProjectId && (
+                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)", fontFamily: "monospace", wordBreak: "break-all" }}>
+                    Coolify Project ID: {workspace.coolifyProjectId}
+                  </p>
+                )}
+                {workspace?.coolifyProjectName && (
+                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                    Coolify Project Name: {workspace.coolifyProjectName}
                   </p>
                 )}
                 {workspace?.gitRepositoryUrl && (
@@ -136,7 +158,7 @@ export default async function SiteSettingsPage({ params }: Params) {
             Organization-level collaborators inherit access to all sites in that org.
             Site-specific overrides will be available in a future update.
           </p>
-          {workspace?.clientId && workspace.clientId !== "unassigned" && (
+          {workspace?.ownershipState === "mapped" && (
             <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
               <Link href={`/organizations/${workspace.clientId}`} className="action-link">
                 Manage {workspace.clientName} collaborators <ArrowRightIcon className="btn-icon" />

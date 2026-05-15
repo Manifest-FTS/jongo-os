@@ -17,9 +17,12 @@ export default async function SiteWorkspaceLayout({
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/sites/${siteId}`, match: "exact" },
     { name: "Deployments", href: `/sites/${siteId}/deployments` },
-    { name: "Staging", href: `/sites/${siteId}/staging` },
     { name: "Settings", href: `/sites/${siteId}/settings` }
   ];
+
+  if (site?.stagingEnabled) {
+    tabs.splice(2, 0, { name: "Staging", href: `/sites/${siteId}/staging` });
+  }
 
   return (
     <div>
@@ -37,9 +40,14 @@ export default async function SiteWorkspaceLayout({
           <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>
             Prod {site?.productionStatus ?? "unknown"}
           </span>
-          <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
-            Staging {site?.stagingStatus ?? "unknown"}
-          </span>
+          {site?.stagingEnabled ? (
+            <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
+              Staging {site?.stagingStatus ?? "unknown"}
+            </span>
+          ) : (
+            <span className="tag">Staging disabled</span>
+          )}
+          <span className="tag">Ownership {site?.ownershipState ?? "unavailable"}</span>
           <span className="tag">Health summary</span>
         </div>
 
