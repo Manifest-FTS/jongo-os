@@ -269,6 +269,20 @@ function mockOverview(): CoolifyOverview {
   };
 }
 
+function emptyLiveOverview(): CoolifyOverview {
+  return {
+    mode: "live",
+    generatedAt: new Date().toISOString(),
+    sites: [],
+    deployments: [],
+    stats: {
+      healthySites: 0,
+      degradedSites: 0,
+      errorSites: 0
+    }
+  };
+}
+
 async function readApplicationDeployments(applicationId: string, fallbackSiteName: string, limit = 8): Promise<DeploymentRecord[]> {
   try {
     const payload = await coolifyFetch(`/api/v1/deployments/applications/${applicationId}?take=${limit}`);
@@ -381,6 +395,13 @@ async function buildOverviewFromServices(services: Record<string, unknown>[]): P
 }
 
 export async function getCoolifyOverview(): Promise<CoolifyOverview> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    return mockOverview();
+  }
+
   try {
     const applicationsPayload = await coolifyFetch("/api/v1/applications");
     const applications = normalizeArrayPayload(applicationsPayload);
@@ -396,9 +417,9 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
       return await buildOverviewFromServices(services);
     }
 
-    return mockOverview();
+    return emptyLiveOverview();
   } catch {
-    return mockOverview();
+    return emptyLiveOverview();
   }
 }
 

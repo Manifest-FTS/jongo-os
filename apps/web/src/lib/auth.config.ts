@@ -40,6 +40,23 @@ export const authConfig = {
           return null;
         }
 
+        const devAuthEmail = process.env.DEV_AUTH_EMAIL?.trim().toLowerCase();
+        const devAuthPassword = process.env.DEV_AUTH_PASSWORD;
+        const canUseDevCredentialFallback =
+          process.env.NODE_ENV !== "production" && Boolean(devAuthEmail && devAuthPassword);
+
+        if (
+          canUseDevCredentialFallback &&
+          credentials.email.trim().toLowerCase() === devAuthEmail &&
+          credentials.password === devAuthPassword
+        ) {
+          return {
+            id: "dev-local-user",
+            email: devAuthEmail,
+            name: "Local Dev User"
+          };
+        }
+
         try {
           const { db } = await import("./db");
           const user = await db.user.findUnique({

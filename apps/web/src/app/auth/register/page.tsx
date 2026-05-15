@@ -4,6 +4,7 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import BrandLogo from "@/components/BrandLogo";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -63,14 +64,20 @@ export default function RegisterPage() {
 
   return (
     <div className="auth-page">
-      <div className="auth-card card">
-        <div style={{ marginBottom: "1.5rem" }}>
-          <p className="tag" style={{ marginBottom: "0.4rem" }}>Jongo</p>
-          <h1 style={{ margin: 0 }}>
-            <span className="brand-text">Create account</span>
-          </h1>
-          <p className="card-muted" style={{ marginTop: "0.4rem" }}>
-            Register an operator account for this deployment.
+      <div className="auth-card auth-panel card">
+        <div className="auth-brand-block">
+          <Link href="/" className="auth-logo-link" aria-label="Go to home">
+            <BrandLogo
+              src="/assets/images/jongo-logo-color.png"
+              alt="Jongo"
+              width={132}
+              height={40}
+              fallbackText="Jongo"
+            />
+          </Link>
+          <h1 className="auth-title">Create your account</h1>
+          <p className="auth-subtitle">
+            Or <Link href="/auth/login" className="auth-inline-link">sign in to your existing account</Link>
           </p>
         </div>
 

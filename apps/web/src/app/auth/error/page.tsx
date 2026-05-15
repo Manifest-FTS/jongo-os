@@ -1,13 +1,22 @@
 import Link from "next/link";
+import BrandLogo from "@/components/BrandLogo";
 
 export default function AuthErrorPage() {
   return (
     <div className="auth-page">
-      <div className="auth-card card">
-        <p className="tag" style={{ marginBottom: "0.4rem" }}>Jongo</p>
-        <h1 style={{ margin: 0 }}>
-          <span className="brand-text">Auth error</span>
-        </h1>
+      <div className="auth-card auth-panel card">
+        <div className="auth-brand-block">
+          <Link href="/" className="auth-logo-link" aria-label="Go to home">
+            <BrandLogo
+              src="/assets/images/jongo-logo-color.png"
+              alt="Jongo"
+              width={132}
+              height={40}
+              fallbackText="Jongo"
+            />
+          </Link>
+        </div>
+        <h1 className="auth-title" style={{ marginTop: 0 }}>Authentication error</h1>
         <p className="card-muted" style={{ marginTop: "0.4rem", marginBottom: "1.5rem" }}>
           Something went wrong during sign-in. Please try again.
         </p>
