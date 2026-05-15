@@ -289,6 +289,18 @@ main {
   cursor: not-allowed;
 }
 
+.auth-link-row {
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.auth-link-row a {
+  color: #24426f;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* ── Deploy button ──────────────────────────────────────────────── */
 .deploy-btn {
   border: none;
