@@ -103,7 +103,7 @@ export async function getActivityFeed(limit = 6): Promise<ActivityFeedItem[]> {
   const overview = await getCoolifyOverview();
   const deploymentItems: ActivityFeedItem[] = overview.deployments.slice(0, limit).map((deployment) => ({
     id: deployment.id,
-    title: `${deployment.siteName} → ${deployment.environment}`,
+    title: deployment.environment === "unknown" ? deployment.siteName : `${deployment.siteName} → ${deployment.environment}`,
     detail: deployment.commitMessage ?? `Deployment ${deployment.status}`,
     timestamp: deployment.finishedAt,
     status: deployment.status,
@@ -150,7 +150,7 @@ export async function getSiteActivityFeed(siteId: string, limit = 6): Promise<Ac
     .slice(0, limit)
     .map((deployment) => ({
       id: deployment.id,
-      title: `${site.name} → ${deployment.environment}`,
+      title: deployment.environment === "unknown" ? site.name : `${site.name} → ${deployment.environment}`,
       detail: deployment.commitMessage ?? `Deployment ${deployment.status}`,
       timestamp: deployment.finishedAt,
       status: deployment.status,

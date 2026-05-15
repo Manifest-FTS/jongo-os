@@ -1,9 +1,6 @@
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getActivityFeed, listClientWorkspaces } from "@/lib/repositories";
-import StatusPoll from "@/components/StatusPoll";
 import { auth } from "@/lib/auth.config";
-import Link from "next/link";
-import { ArrowRightIcon } from "@/components/JongoIcons";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -13,142 +10,143 @@ export default async function DashboardPage() {
     email: session?.user?.email
   });
   const activityFeed = await getActivityFeed();
+  const wordpressSites = overview.sites.filter((site) => site.siteType === "wordpress");
+  const totalSites = Math.max(overview.sites.length, 1);
+  const healthBars = [
+    { label: "Healthy", value: overview.stats.healthySites, tone: "healthy" },
+    { label: "Degraded", value: overview.stats.degradedSites, tone: "degraded" },
+    { label: "Error", value: overview.stats.errorSites, tone: "error" }
+  ];
 
   return (
-    <div>
-      <div className="card page-hero" style={{ marginBottom: "1rem" }}>
-        <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Dashboard</p>
-        <h1 style={{ margin: 0 }}>Jongo Dashboard</h1>
-        <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Client operations, site health, and publishing activity.
-        </p>
-        <div className="hero-meta-row">
-          <span className="tag">Live operations</span>
-          <span className="status-chip healthy">{clients.length} clients</span>
-          <span className="status-chip unknown">{overview.sites.length} sites</span>
+    <div className="page-stack">
+      <section className="page-head compact-head">
+        <div>
+          <p className="page-kicker">Dashboard</p>
+          <h1 className="page-title">Hello, Kevin.</h1>
+          <p className="page-subtitle">A tighter view of client ops, site health, and publishing activity.</p>
         </div>
-      </div>
+      </section>
 
-      <section className="grid">
-        {/* Platform Stats */}
-        <article className="card tone-card">
-          <h2 className="card-title">Overview</h2>
-          <div style={{ marginTop: "0.75rem" }}>
-            <p style={{ margin: "0.35rem 0" }}>
-              Total Clients: <strong>{clients.length}</strong>
-            </p>
-            <p style={{ margin: "0.35rem 0" }}>
-              Total Sites: <strong>{overview.sites.length}</strong>
-            </p>
-            <p style={{ margin: "0.35rem 0" }}>
-              Total Deployments: <strong>{overview.deployments.length}</strong>
-            </p>
-            <p style={{ margin: "0.35rem 0" }}>
-              Data Mode: <span className="tag" style={{ display: "inline" }}>{overview.mode}</span>
-            </p>
-          </div>
-
-          <details style={{ marginTop: "0.75rem" }}>
-            <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)" }}>
-              Developer Details
-            </summary>
-            <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-              Runtime integration source is resolved server-side.
-            </p>
-          </details>
+      <section className="metric-strip">
+        <article className="card metric-card">
+          <p className="metric-value">{overview.sites.length}</p>
+          <p className="metric-label">Sites</p>
         </article>
-
-        {/* Site Health - live poll every 30s */}
-        <article className="card tone-card">
-          <h2 className="card-title">Site Health</h2>
-          <div style={{ marginTop: "0.75rem" }}>
-            <StatusPoll intervalMs={30_000} />
-          </div>
+        <article className="card metric-card">
+          <p className="metric-value">{clients.length}</p>
+          <p className="metric-label">Clients</p>
         </article>
-
-        {/* Sites Needing Attention */}
-        <article className="card tone-card">
-          <h2 className="card-title">Needs Attention</h2>
-          {overview.sites.filter((s) => s.status !== "healthy").length === 0 ? (
-            <p className="card-muted">All sites are healthy</p>
-          ) : (
-            <div style={{ marginTop: "0.75rem" }}>
-              {overview.sites
-                .filter((s) => s.status !== "healthy")
-                .map((site) => (
-                  <p key={site.id} style={{ margin: "0.35rem 0" }}>
-                    <strong>{site.name}</strong>{" "}
-                    <span className={`status-chip ${site.status}`}>{site.status}</span>
-                  </p>
-                ))}
-            </div>
-          )}
+        <article className="card metric-card">
+          <p className="metric-value">{overview.deployments.length}</p>
+          <p className="metric-label">Deployments</p>
         </article>
-
-        {/* Quick Navigation */}
-        <article className="card tone-card">
-          <h2 className="card-title">Quick Actions</h2>
-          <div style={{ marginTop: "0.75rem" }}>
-            <p style={{ margin: "0.35rem 0" }}>
-              <Link href="/sites" className="action-link">
-                View all sites <ArrowRightIcon className="btn-icon" />
-              </Link>
-            </p>
-            <p style={{ margin: "0.35rem 0" }}>
-              <Link href="/organizations" className="action-link">
-                Manage clients <ArrowRightIcon className="btn-icon" />
-              </Link>
-            </p>
-            <p style={{ margin: "0.35rem 0" }}>
-              <Link href="/settings" className="action-link">
-                Open settings <ArrowRightIcon className="btn-icon" />
-              </Link>
-            </p>
-          </div>
+        <article className="card metric-card">
+          <p className="metric-value">{overview.mode}</p>
+          <p className="metric-label">Data mode</p>
         </article>
       </section>
 
-      {/* Recent Activity */}
-      <section className="card" style={{ marginTop: "1rem" }}>
-        <h2 className="card-title">Recent Activity</h2>
-        {activityFeed.length === 0 ? (
-          <p className="card-muted">No recent deployments</p>
-        ) : (
-          <div style={{ marginTop: "1rem" }}>
-            {activityFeed.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  padding: "0.75rem",
-                  marginBottom: "0.5rem",
-                  background: "var(--bg-alt)",
-                  borderRadius: "var(--radius)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center"
-                }}
-              >
-                <div>
-                  <p style={{ margin: 0, fontWeight: 500 }}>
-                    {item.title}
-                  </p>
-                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-                    {item.detail}
-                    {item.durationSeconds !== undefined && ` - ${item.durationSeconds < 60 ? `${item.durationSeconds}s` : `${Math.floor(item.durationSeconds / 60)}m`}`}
-                    {item.timestamp ? ` - ${new Date(item.timestamp).toLocaleString()}` : ""}
-                  </p>
+      <section className="dashboard-shell">
+        <article className="card dashboard-health-panel">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Site health</p>
+              <h2 className="card-title">Operational health</h2>
+            </div>
+            <span className="status-chip healthy">{overview.stats.healthySites}/{overview.sites.length || 0} healthy</span>
+          </div>
+
+          <div className="health-summary-grid">
+            {healthBars.map((item) => (
+              <div key={item.label} className="health-stat-block">
+                <p className={`health-stat-value ${item.tone}`}>{item.value}</p>
+                <p className="health-stat-label">{item.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="health-bars">
+            {healthBars.map((item) => (
+              <div key={item.label} className="health-bar-row">
+                <div className="health-bar-meta">
+                  <span>{item.label}</span>
+                  <span>{Math.round((item.value / totalSites) * 100)}%</span>
                 </div>
-                <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0 }}>
-                  {item.environment && item.environment !== "unknown" && (
-                    <span className="status-chip unknown" style={{ fontSize: "0.72rem" }}>{item.environment}</span>
-                  )}
-                  <span className={`status-chip ${item.status}`}>{item.status}</span>
+                <div className="health-bar-track">
+                  <span className={`health-bar-fill ${item.tone}`} style={{ width: `${Math.max((item.value / totalSites) * 100, item.value > 0 ? 8 : 0)}%` }} />
                 </div>
               </div>
             ))}
           </div>
-        )}
+
+          {wordpressSites.length > 0 ? (
+            <div className="dashboard-inline-note">
+              <span className="tag">WordPress footprint</span>
+              <span className="card-muted">{wordpressSites.length} WordPress site{wordpressSites.length === 1 ? "" : "s"} in this workspace.</span>
+            </div>
+          ) : null}
+        </article>
+
+        <article className="card dashboard-activity-panel">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Recent activity</p>
+              <h2 className="card-title">Latest deployments</h2>
+            </div>
+          </div>
+
+          {activityFeed.length === 0 ? (
+            <p className="card-muted">No recent deployments.</p>
+          ) : (
+            <div className="activity-list compact">
+              {activityFeed.slice(0, 6).map((item) => (
+                <div key={item.id} className="activity-item">
+                  <div className="activity-copy">
+                    <p className="activity-title">{item.title}</p>
+                    <p className="activity-detail">
+                      {item.detail}
+                      {item.durationSeconds !== undefined && ` - ${item.durationSeconds < 60 ? `${item.durationSeconds}s` : `${Math.floor(item.durationSeconds / 60)}m`}`}
+                    </p>
+                  </div>
+                  <div className="activity-meta">
+                    {item.environment && <span className="status-chip unknown">{item.environment}</span>}
+                    <span className={`status-chip ${item.status}`}>{item.status}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
       </section>
+
+      {wordpressSites.length > 0 ? (
+        <section className="dashboard-secondary-grid">
+          <article className="card dashboard-plugin-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">WordPress</p>
+                <h2 className="card-title">Plugin status</h2>
+              </div>
+            </div>
+            <div className="health-summary-grid two-up">
+              <div className="health-stat-block">
+                <p className="metric-value small">{wordpressSites.length}</p>
+                <p className="metric-label">WordPress sites</p>
+              </div>
+              <div className="health-stat-block">
+                <p className="metric-value small">n/a</p>
+                <p className="metric-label">Updates pending</p>
+              </div>
+              <div className="health-stat-block">
+                <p className="metric-value small">n/a</p>
+                <p className="metric-label">Vulnerabilities</p>
+              </div>
+            </div>
+            <p className="card-muted">Plugin telemetry is not connected yet, so this panel is scoped to WordPress footprint only.</p>
+          </article>
+        </section>
+      ) : null}
     </div>
   );
 }

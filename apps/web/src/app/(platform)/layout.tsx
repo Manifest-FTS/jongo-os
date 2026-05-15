@@ -1,81 +1,78 @@
 import Link from "next/link";
+import { auth } from "@/lib/auth.config";
 import BrandLogo from "@/components/BrandLogo";
-import { BuildingOfficeIcon, DashboardIcon, ServerIcon, SettingsIcon } from "@/components/JongoIcons";
+import { BellIcon, BuildingOfficeIcon, ChevronDownIcon, DashboardIcon, ServerIcon, SettingsIcon } from "@/components/JongoIcons";
 
-export default function PlatformLayout({ children }: { children: React.ReactNode }) {
+export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+  const email = session?.user?.email ?? "Account";
+  const userLabel = email === "Account" ? email : email.split("@")[0];
+  const userInitial = userLabel.slice(0, 1).toUpperCase();
+
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
-        <div className="app-brand card">
-          <p className="tag" style={{ marginBottom: "0.65rem" }}>
-            powered by Manifest FTS
-          </p>
-          <p className="brand-lockup" style={{ margin: "0 0 0.4rem" }}>
-            <BrandLogo
-              src="/assets/images/jongo-logo-color.png"
-              alt="Jongo"
-              width={124}
-              height={36}
-              fallbackText="Jongo"
-            />
-          </p>
-          <h1 style={{ margin: 0 }}>Operations</h1>
-          <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-            Managed client and site operations workspace.
-          </p>
-        </div>
-
         <nav className="app-nav card">
           <Link href="/dashboard">
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+            <span className="app-nav-label">
               <DashboardIcon className="sidebar-icon" />
               Dashboard
             </span>
           </Link>
           <Link href="/organizations">
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+            <span className="app-nav-label">
               <BuildingOfficeIcon className="sidebar-icon" />
               Clients
             </span>
           </Link>
           <Link href="/sites">
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+            <span className="app-nav-label">
               <ServerIcon className="sidebar-icon" />
               Sites
             </span>
           </Link>
           <Link href="/settings">
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+            <span className="app-nav-label">
               <SettingsIcon className="sidebar-icon" />
               Settings
             </span>
           </Link>
         </nav>
-
-        <div className="app-sidebar-panel card">
-          <p className="card-muted" style={{ marginBottom: "0.5rem" }}>
-            Next Steps
-          </p>
-          <p style={{ margin: 0, fontSize: "0.92rem", lineHeight: 1.5 }}>
-            Create a client, add a site, then use publishing and team tools.
-          </p>
-        </div>
       </aside>
 
       <div className="app-main">
         <header className="app-topbar card">
-          <p className="tag" style={{ margin: 0 }}>
-            <SettingsIcon className="btn-icon" />
-            Managed operations portal
-          </p>
+          <Link href="/dashboard" className="topbar-logo" aria-label="Jongo dashboard home">
+            <BrandLogo
+              src="/assets/images/jongo-logo-color.png"
+              alt="Jongo"
+              width={126}
+              height={38}
+              fallbackText="Jongo"
+            />
+          </Link>
+
+          <div className="topbar-actions">
+            <button type="button" className="topbar-icon-button" aria-label="Notifications">
+              <BellIcon className="topbar-icon" />
+            </button>
+            <details className="user-menu">
+              <summary className="user-menu-trigger">
+                <span className="user-avatar">{userInitial}</span>
+                <span className="user-label">{userLabel}</span>
+                <ChevronDownIcon className="topbar-icon" />
+              </summary>
+              <div className="user-menu-panel">
+                <p className="user-menu-email">{email}</p>
+                <Link href="/settings">Account settings</Link>
+              </div>
+            </details>
+          </div>
         </header>
 
         <div className="app-content">{children}</div>
 
         <footer className="app-footer">
-          <p style={{ margin: "0 0 0.5rem" }}>
-            <strong>Jongo</strong> is open-source and self-hosted.
-          </p>
           <p style={{ margin: 0 }}>
             <a href="https://github.com/sponsors/manifest-fts">GitHub Sponsors</a> |{" "}
             <a href="https://opencollective.com/jongo-os">OpenCollective</a> |{" "}

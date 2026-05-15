@@ -147,7 +147,15 @@ function combineStatuses(...statuses: SiteOverview["status"][]): SiteOverview["s
 }
 
 function deploymentEnvironmentFromRaw(deployment: Record<string, unknown>): DeploymentRecord["environment"] {
-  const environmentRaw = stringValue(deployment, ["environment", "branch", "target", "environment_name"], "").toLowerCase();
+  const environmentRaw = stringValue(
+    deployment,
+    ["environment", "environment_name", "branch", "git_branch", "target", "deployment_url", "preview_url"],
+    ""
+  ).toLowerCase();
+
+  if (!environmentRaw) {
+    return "production";
+  }
 
   if (environmentRaw.includes("stag") || environmentRaw.includes("preview") || environmentRaw.includes("dev")) {
     return "staging";
@@ -155,6 +163,29 @@ function deploymentEnvironmentFromRaw(deployment: Record<string, unknown>): Depl
 
   if (environmentRaw.includes("prod") || environmentRaw.includes("main") || environmentRaw.includes("live")) {
     return "production";
+  }
+
+  return "production";
+}
+
+function deploymentStatusFromRaw(deployment: Record<string, unknown>): DeploymentRecord["status"] {
+  const explicitStatus = statusFromRaw(
+    deployment.status ?? deployment.result ?? deployment.current_status ?? deployment.state ?? deployment.server_status
+  );
+
+  if (explicitStatus !== "unknown") {
+    return explicitStatus;
+  }
+
+  const finishedAt = stringValue(deployment, ["finished_at", "updated_at"], "");
+  const startedAt = stringValue(deployment, ["started_at", "queued_at", "created_at"], "");
+
+  if (finishedAt) {
+    return "healthy";
+  }
+
+  if (startedAt) {
+    return "degraded";
   }
 
   return "unknown";
@@ -179,7 +210,7 @@ function normalizeDeploymentRecords(input: unknown, fallbackSiteName = "Unknown 
       id,
       siteName,
       environment: deploymentEnvironmentFromRaw(deployment),
-      status: statusFromRaw(deployment.status ?? deployment.result ?? deployment.current_status ?? deployment.state),
+      status: deploymentStatusFromRaw(deployment),
       finishedAt,
       startedAt,
       commitMessage,
@@ -300,97 +331,105 @@ function sortDeploymentsNewestFirst(deployments: DeploymentRecord[]): Deployment
   });
 }
 
-async function buildOverviewFromApplications(applications: Record<string, unknown>[]): Promise<CoolifyOverview> {
-  const enrichedSites = await Promise.all(
-    applications.slice(0, 20).map(async (application, index): Promise<{ site: SiteOverview; deployments: DeploymentRecord[] }> => {
-      const id = stringValue(application, ["uuid", "id"], `app-${index + 1}`);
-      const deployTargetId = id;
-      const name = stringValue(application, ["name", "application_name", "service_name"], `application-${index + 1}`);
-      const rawStatus = statusFromRaw(application.status ?? application.current_status ?? application.state);
-      const deployments = await readApplicationDeployments(id, name, 8);
+function makeSiteOverview(resource: Record<string, unknown>, fallbackName: string, fallbackId: string): SiteOverview {
+  const id = stringValue(resource, ["uuid", "id"], fallbackId);
+  const name = stringValue(resource, ["name", "application_name", "service_name"], fallbackName);
+  const productionStatus = statusFromRaw(resource.production_status ?? resource.status ?? resource.current_status ?? resource.state ?? resource.server_status);
+  const stagingStatus = statusFromRaw(resource.staging_status ?? resource.preview_status);
+
+  return {
+    id,
+    deployTargetId: id,
+    name,
+    status: combineStatuses(productionStatus, stagingStatus),
+    productionStatus,
+    stagingStatus,
+    siteType: detectSiteType(resource)
+  };
+}
+
+function buildSiteStats(sites: SiteOverview[]) {
+  return {
+    healthySites: sites.filter((site) => site.status === "healthy").length,
+    degradedSites: sites.filter((site) => site.status === "degraded").length,
+    errorSites: sites.filter((site) => site.status === "error").length
+  };
+}
+
+async function buildLiveOverview(
+  applications: Record<string, unknown>[],
+  services: Record<string, unknown>[],
+  databases: Record<string, unknown>[]
+): Promise<CoolifyOverview> {
+  const serviceChildApplicationIds = new Set<string>();
+  const serviceChildDatabaseIds = new Set<string>();
+
+  for (const service of services) {
+    for (const application of ensureArray(service.applications)) {
+      const applicationId = stringValue(application, ["uuid", "id"]);
+      if (applicationId) {
+        serviceChildApplicationIds.add(applicationId);
+      }
+    }
+
+    for (const database of ensureArray(service.databases)) {
+      const databaseId = stringValue(database, ["uuid", "id"]);
+      if (databaseId) {
+        serviceChildDatabaseIds.add(databaseId);
+      }
+    }
+  }
+
+  const standaloneApplications = applications.filter((application) => {
+    const id = stringValue(application, ["uuid", "id"]);
+    return !id || !serviceChildApplicationIds.has(id);
+  });
+
+  const standaloneDatabases = databases.filter((database) => {
+    const id = stringValue(database, ["uuid", "id"]);
+    return !id || !serviceChildDatabaseIds.has(id);
+  });
+
+  const applicationSitesWithDeployments = await Promise.all(
+    standaloneApplications.slice(0, 20).map(async (application, index): Promise<{ site: SiteOverview; deployments: DeploymentRecord[] }> => {
+      const site = makeSiteOverview(application, `application-${index + 1}`, `app-${index + 1}`);
+      const deployments = await readApplicationDeployments(site.id, site.name, 8);
       const productionDeployment = deployments.find((deployment) => deployment.environment === "production");
       const stagingDeployment = deployments.find((deployment) => deployment.environment === "staging");
-      const productionStatus = productionDeployment?.status ?? statusFromRaw(application.production_status ?? application.status ?? application.current_status ?? application.state);
-      const stagingStatus = stagingDeployment?.status ?? statusFromRaw(application.staging_status ?? application.preview_status ?? application.current_status ?? application.state);
 
       return {
         site: {
-          id,
-          deployTargetId,
-          name,
-          status: combineStatuses(rawStatus, productionStatus, stagingStatus),
-          productionStatus,
-          stagingStatus,
-          siteType: detectSiteType(application)
+          ...site,
+          productionStatus: productionDeployment?.status ?? site.productionStatus,
+          stagingStatus: stagingDeployment?.status ?? site.stagingStatus,
+          status: combineStatuses(site.status, productionDeployment?.status ?? "unknown", stagingDeployment?.status ?? "unknown")
         },
         deployments
       };
     })
   );
 
-  const sites = enrichedSites.map((item) => item.site);
-  const deployments = sortDeploymentsNewestFirst(
-    enrichedSites.flatMap((item) => item.deployments).slice(0, 12)
+  const serviceSites = services.map((service, index) => makeSiteOverview(service, `service-${index + 1}`, `svc-${index + 1}`));
+  const databaseSites = standaloneDatabases.map((database, index) =>
+    makeSiteOverview(database, `database-${index + 1}`, `db-${index + 1}`)
   );
 
-  const healthySites = sites.filter((site) => site.status === "healthy").length;
-  const degradedSites = sites.filter((site) => site.status === "degraded").length;
-  const errorSites = sites.filter((site) => site.status === "error").length;
+  const sites = [
+    ...applicationSitesWithDeployments.map((item) => item.site),
+    ...serviceSites,
+    ...databaseSites
+  ];
+
+  const deployments = sortDeploymentsNewestFirst(
+    applicationSitesWithDeployments.flatMap((item) => item.deployments).slice(0, 12)
+  );
 
   return {
     mode: "live",
     generatedAt: new Date().toISOString(),
     sites,
     deployments,
-    stats: {
-      healthySites,
-      degradedSites,
-      errorSites
-    }
-  };
-}
-
-async function buildOverviewFromServices(services: Record<string, unknown>[]): Promise<CoolifyOverview> {
-  const deploymentsPayload = await coolifyFetch("/api/v1/deployments");
-  const deploymentsRaw = normalizeDeploymentRecords(deploymentsPayload);
-
-  const sites = services.map((service, index): SiteOverview => {
-    const name = stringValue(service, ["name", "service_name"], `service-${index + 1}`);
-    const id = stringValue(service, ["uuid", "id"], `svc-${index + 1}`);
-    const deployTargetId = stringValue(service, ["uuid", "id"], id);
-    const productionStatus = statusFromRaw(service.status ?? service.current_status ?? service.state);
-    const stagingStatus = statusFromRaw(service.staging_status ?? service.preview_status);
-    const mergedStatus = combineStatuses(productionStatus, stagingStatus);
-
-    return {
-      id,
-      deployTargetId,
-      name,
-      status: mergedStatus,
-      productionStatus,
-      stagingStatus,
-      siteType: detectSiteType(service)
-    };
-  });
-
-  const deployments = sortDeploymentsNewestFirst(
-    deploymentsRaw.slice(0, 12)
-  );
-
-  const healthySites = sites.filter((site) => site.status === "healthy").length;
-  const degradedSites = sites.filter((site) => site.status === "degraded").length;
-  const errorSites = sites.filter((site) => site.status === "error").length;
-
-  return {
-    mode: "live",
-    generatedAt: new Date().toISOString(),
-    sites,
-    deployments,
-    stats: {
-      healthySites,
-      degradedSites,
-      errorSites
-    }
+    stats: buildSiteStats(sites)
   };
 }
 
@@ -406,15 +445,14 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     const applicationsPayload = await coolifyFetch("/api/v1/applications");
     const applications = normalizeArrayPayload(applicationsPayload);
 
-    if (applications.length > 0) {
-      return await buildOverviewFromApplications(applications);
-    }
-
     const servicesPayload = await coolifyFetch("/api/v1/services");
     const services = normalizeArrayPayload(servicesPayload);
 
-    if (services.length > 0) {
-      return await buildOverviewFromServices(services);
+    const databasesPayload = await coolifyFetch("/api/v1/databases");
+    const databases = normalizeArrayPayload(databasesPayload);
+
+    if (applications.length > 0 || services.length > 0 || databases.length > 0) {
+      return await buildLiveOverview(applications, services, databases);
     }
 
     return emptyLiveOverview();
