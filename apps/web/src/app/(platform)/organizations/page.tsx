@@ -29,7 +29,7 @@ export default async function OrganizationsPage() {
       {isMock && (
         <div className="diagnostic-banner">
           <strong>Mock data active.</strong> A database query failed, so hardcoded sample clients are shown.
-          Check server logs for the exact cause (for example network/tunnel issues or UUID mismatch in query inputs).
+          Check server logs for the exact cause (for example network/tunnel issues, UUID mismatch in query inputs, or a migration-required schema mismatch such as missing columns).
         </div>
       )}
       {clients.length === 0 ? (

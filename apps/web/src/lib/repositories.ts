@@ -38,6 +38,21 @@ function isPrismaUuidMismatchError(error: unknown): boolean {
   return e.code === "P2023" || message.includes("error creating uuid") || message.includes("invalid character");
 }
 
+function isPrismaSchemaMismatchError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { code?: string; message?: string; meta?: { message?: string } };
+  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
+
+  return (
+    e.code === "P2022" ||
+    message.includes("column") && message.includes("does not exist") ||
+    message.includes("the column") && message.includes("does not exist")
+  );
+}
+
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
 }
@@ -348,6 +363,14 @@ export async function listClientWorkspaces(viewer?: ViewerContext): Promise<Clie
   try {
     return await readRealClientWorkspaces(viewer);
   } catch (error) {
+    if (isPrismaSchemaMismatchError(error)) {
+      console.error(
+        "[jongo] listClientWorkspaces: Prisma schema mismatch detected. Migration required before DB data can be read.",
+        "Run: npx prisma migrate deploy --schema .\\prisma\\schema.prisma",
+        "Error:", error
+      );
+    }
+
     if (isPrismaUuidMismatchError(error)) {
       console.error(
         "[jongo] listClientWorkspaces: Prisma UUID mismatch (P2023).",
@@ -433,6 +456,14 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
       memberCount: organization.collaborators.length
     };
   } catch (error) {
+    if (isPrismaSchemaMismatchError(error)) {
+      console.error(
+        "[jongo] getClientWorkspace: Prisma schema mismatch detected. Migration required before DB data can be read.",
+        "Run: npx prisma migrate deploy --schema .\\prisma\\schema.prisma",
+        "Error:", error
+      );
+    }
+
     console.error(
       "[jongo] getClientWorkspace: DB query failed, falling back to mock data.",
       "DATABASE_URL present:", !!process.env.DATABASE_URL,
@@ -550,6 +581,14 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
 
     return [...dbRecords, ...coolifyOnlyRecords];
   } catch (error) {
+    if (isPrismaSchemaMismatchError(error)) {
+      console.error(
+        "[jongo] listSiteDirectory: Prisma schema mismatch detected. Migration required before DB-backed site mapping can run.",
+        "Run: npx prisma migrate deploy --schema .\\prisma\\schema.prisma",
+        "Error:", error
+      );
+    }
+
     console.error(
       "[jongo] listSiteDirectory: DB query failed, falling back to Coolify-only data.",
       "DATABASE_URL present:", !!process.env.DATABASE_URL,

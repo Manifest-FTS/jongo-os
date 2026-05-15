@@ -86,6 +86,7 @@ model Site {
   coolifyServiceId    String?   // external Coolify service ID
   coolifyServiceUuid  String?   // Coolify service UUID
   coolifyProjectId    String?   // Coolify project UUID/ID for ownership mapping
+  coolifyProjectName  String?
   gitRepositoryUrl    String?
   stagingEnabled      Boolean   @default(false)
 
@@ -102,6 +103,7 @@ model Site {
   @@index([organizationId])
   @@index([coolifyServiceId])
   @@index([coolifyProjectId])
+  @@index([coolifyProjectName])
 }
 
 // ============================================================

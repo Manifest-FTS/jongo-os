@@ -9,6 +9,8 @@ CREATE INDEX "Organization_coolifyProjectName_idx" ON "Organization"("coolifyPro
 -- Add Coolify project id + staging toggle on sites
 ALTER TABLE "Site"
   ADD COLUMN "coolifyProjectId" TEXT,
+  ADD COLUMN "coolifyProjectName" TEXT,
   ADD COLUMN "stagingEnabled" BOOLEAN NOT NULL DEFAULT false;
 
 CREATE INDEX "Site_coolifyProjectId_idx" ON "Site"("coolifyProjectId");
+CREATE INDEX "Site_coolifyProjectName_idx" ON "Site"("coolifyProjectName");

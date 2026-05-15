@@ -84,6 +84,7 @@ export type Site = {
   coolifyServiceId?: string;
   coolifyServiceUuid?: string;
   coolifyProjectId?: string;
+  coolifyProjectName?: string;
   gitRepositoryUrl?: string;
   stagingEnabled: boolean;
   createdAt: Date;
@@ -98,6 +99,7 @@ export type SiteCreateInput = {
   description?: string;
   coolifyServiceId?: string;
   coolifyProjectId?: string;
+  coolifyProjectName?: string;
   gitRepositoryUrl?: string;
   stagingEnabled?: boolean;
 };

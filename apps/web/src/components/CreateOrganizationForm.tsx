@@ -8,8 +8,6 @@ export default function CreateOrganizationForm() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [coolifyProjectId, setCoolifyProjectId] = useState("");
-  const [coolifyProjectName, setCoolifyProjectName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -25,9 +23,7 @@ export default function CreateOrganizationForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          description: description.trim() || undefined,
-          coolifyProjectId: coolifyProjectId.trim() || undefined,
-          coolifyProjectName: coolifyProjectName.trim() || undefined
+          description: description.trim() || undefined
         })
       });
 
@@ -40,8 +36,6 @@ export default function CreateOrganizationForm() {
 
       setName("");
       setDescription("");
-      setCoolifyProjectId("");
-      setCoolifyProjectName("");
       setOpen(false);
       router.refresh();
     } catch {
@@ -85,26 +79,6 @@ export default function CreateOrganizationForm() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Optional description"
-            className="form-input"
-          />
-        </div>
-        <div>
-          <label className="form-label">Coolify Project ID (Optional)</label>
-          <input
-            type="text"
-            value={coolifyProjectId}
-            onChange={(e) => setCoolifyProjectId(e.target.value)}
-            placeholder="e.g. project UUID from Coolify"
-            className="form-input mono-input"
-          />
-        </div>
-        <div>
-          <label className="form-label">Coolify Project Name (Optional)</label>
-          <input
-            type="text"
-            value={coolifyProjectName}
-            onChange={(e) => setCoolifyProjectName(e.target.value)}
-            placeholder="e.g. Acme Client"
             className="form-input"
           />
         </div>
