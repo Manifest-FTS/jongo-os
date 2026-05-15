@@ -91,3 +91,21 @@ ssh -L 5433:127.0.0.1:5432 root@<SERVER_IP>
 - If the app logs Prisma `P2023` (`Error creating UUID`), your session identity is likely non-UUID (for example a stale local dev session). Sign out, clear auth cookies, and sign in again so the session user ID comes from the DB UUID.
 - If the app logs a schema or query error after the connection succeeds, the issue is no longer the tunnel. Check migrations or the affected repository query.
 - The server logs should show a targeted warning from `apps/web/src/lib/db.ts` when connectivity fails, including the host currently in `DATABASE_URL`.
+
+## Legacy ID Repair Utility
+
+If you suspect old text IDs in UUID-modeled tables, run the bundled checker:
+
+```bash
+npm run db:repair-legacy-ids
+```
+
+It runs in dry-run mode by default and prints any legacy non-UUID primary keys it finds in core tables.
+
+To apply the repair (rewrite legacy text IDs to generated UUIDs and update related text FK columns in one transaction), run:
+
+```bash
+npm run db:repair-legacy-ids:apply
+```
+
+This utility does not drop or reset tables.
