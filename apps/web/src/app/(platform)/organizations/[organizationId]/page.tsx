@@ -126,7 +126,7 @@ export default async function OrganizationDetailPage({ params }: Params) {
                 {client.recentActivity.length} item{client.recentActivity.length === 1 ? "" : "s"}
               </p>
               {client.recentActivity.map((item) => (
-                <p key={item} style={{ margin: "0.45rem 0", fontSize: "0.9rem" }}>• {item}</p>
+                <p key={item} style={{ margin: "0.45rem 0", fontSize: "0.9rem" }}>- {item}</p>
               ))}
             </>
           )}

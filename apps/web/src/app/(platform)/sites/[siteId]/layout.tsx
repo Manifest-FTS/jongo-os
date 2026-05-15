@@ -26,9 +26,9 @@ export default async function SiteWorkspaceLayout({
         <p className="card-muted" style={{ margin: "0 0 0.35rem" }}>
           Dashboard / Clients / {site?.clientName ?? "Unknown Client"} / {site?.name ?? siteId}
         </p>
-        <h1 style={{ margin: 0 }}>Site: {site?.name ?? siteId}</h1>
+        <h1 style={{ margin: 0 }}>{site?.name ?? siteId}</h1>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Operational workspace
+          Site operations workspace
         </p>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.45rem", marginTop: "0.75rem" }}>
@@ -39,8 +39,17 @@ export default async function SiteWorkspaceLayout({
           <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
             Staging {site?.stagingStatus ?? "unknown"}
           </span>
-          <span className="tag">Source mock/live Coolify</span>
+          <span className="tag">Health summary</span>
         </div>
+
+        <details style={{ marginTop: "0.75rem" }}>
+          <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)" }}>
+            Developer Details
+          </summary>
+          <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+            Data source: {site?.source ?? "unknown"}
+          </p>
+        </details>
       </div>
 
       <div className="card" style={{ marginBottom: "1rem", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>

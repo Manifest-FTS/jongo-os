@@ -18,7 +18,7 @@ export default async function StagingPage({ params }: Params) {
         </p>
         <h2 style={{ margin: 0 }}>Staging</h2>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Validate changes in staging before promoting anything to production.
+          Validate changes before publishing to production.
         </p>
       </div>
 
@@ -33,7 +33,7 @@ export default async function StagingPage({ params }: Params) {
             </span>
           </p>
           <p className="card-muted" style={{ marginTop: "0.75rem" }}>
-            The staging environment mirrors production for safe testing and validation before deployment.
+            Use staging for QA and content checks before live publishing.
           </p>
           <div style={{ marginTop: "1rem" }}>
             <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" label="Sync to Staging" />
@@ -50,7 +50,7 @@ export default async function StagingPage({ params }: Params) {
             </span>
           </p>
           <p className="card-muted" style={{ marginTop: "0.75rem" }}>
-            Live environment serving real users and traffic.
+            Live environment serving clients and visitors.
           </p>
           <div style={{ marginTop: "1rem" }}>
             <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" label="Deploy to Production" />
@@ -60,9 +60,9 @@ export default async function StagingPage({ params }: Params) {
 
       {/* Staging Workflows */}
       <article className="card">
-        <h3 className="card-title">Staging Workflows</h3>
+        <h3 className="card-title">Publishing Workflow</h3>
         <p className="card-muted" style={{ marginTop: 0 }}>
-          Source: {overview.mode} • {workspace?.deploymentCount ?? 0} known deployments
+          Source: {overview.mode} - {workspace?.deploymentCount ?? 0} known deployments
         </p>
 
         <div style={{ marginBottom: "1.5rem" }}>
@@ -75,10 +75,10 @@ export default async function StagingPage({ params }: Params) {
             }}
           >
             <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.95rem" }}>
-              Production → Staging Sync
+              Production to Staging Sync
             </h4>
             <p style={{ margin: "0 0 0.75rem", fontSize: "0.9rem", color: "var(--muted)" }}>
-              Copy the latest production deployment to staging for validation testing.
+              Copy the latest production state to staging for validation.
             </p>
             <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" label="Sync to Staging" />
           </div>
@@ -91,10 +91,10 @@ export default async function StagingPage({ params }: Params) {
             }}
           >
             <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.95rem" }}>
-              Staging → Production Deploy
+              Staging to Production Publish
             </h4>
             <p style={{ margin: "0 0 0.75rem", fontSize: "0.9rem", color: "var(--muted)" }}>
-              Promote validated changes from staging to production.
+              Promote validated changes to production.
             </p>
             <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" label="Deploy to Production" />
           </div>
@@ -111,6 +111,18 @@ export default async function StagingPage({ params }: Params) {
           </ul>
         </article>
       ) : null}
+
+      <article className="card" style={{ marginTop: "1.5rem" }}>
+        <h3 className="card-title">Developer Details</h3>
+        <details>
+          <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)" }}>
+            View technical deployment context
+          </summary>
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+            Deploy target: {site?.deployTargetId ?? "not available"}
+          </p>
+        </details>
+      </article>
     </div>
   );
 }

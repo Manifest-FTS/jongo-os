@@ -20,7 +20,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           </p>
           <h1 style={{ margin: 0 }}>Operations</h1>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-            Self-hosted operational UX for Coolify-managed environments.
+            Managed client and site operations workspace.
           </p>
         </div>
 
@@ -33,10 +33,10 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
         <div className="app-sidebar-panel card">
           <p className="card-muted" style={{ marginBottom: "0.5rem" }}>
-            Scope
+            Next Steps
           </p>
           <p style={{ margin: 0, fontSize: "0.92rem", lineHeight: 1.5 }}>
-            Dashboard → Clients → Sites → Workspace tabs.
+            Create a client, add a site, then use publishing and team tools.
           </p>
         </div>
       </aside>
@@ -44,7 +44,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       <div className="app-main">
         <header className="app-topbar card">
           <p className="tag" style={{ margin: 0 }}>
-            Operational control center
+            Managed operations portal
           </p>
         </header>
 
@@ -55,8 +55,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
             <strong>Jongo</strong> is open-source and self-hosted.
           </p>
           <p style={{ margin: 0 }}>
-            <a href="https://github.com/sponsors/manifest-fts">GitHub Sponsors</a> •{" "}
-            <a href="https://opencollective.com/jongo-os">OpenCollective</a> •{" "}
+            <a href="https://github.com/sponsors/manifest-fts">GitHub Sponsors</a> |{" "}
+            <a href="https://opencollective.com/jongo-os">OpenCollective</a> |{" "}
             <a href="https://github.com/manifest-fts/jongo-os">GitHub Repository</a>
           </p>
         </footer>

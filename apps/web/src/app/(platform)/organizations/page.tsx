@@ -15,7 +15,7 @@ export default async function OrganizationsPage() {
           <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Clients</p>
           <h1 style={{ margin: 0 }}>Client Directory</h1>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-            Manage client accounts, teams, and operational ownership.
+            Manage client workspaces, teams, and site ownership.
           </p>
         </div>
         <div style={{ flexShrink: 0, paddingTop: "0.25rem" }}>
@@ -24,7 +24,10 @@ export default async function OrganizationsPage() {
       </div>
       {clients.length === 0 ? (
         <div className="card">
-          <p className="card-muted">No client organizations yet. Create one above to get started.</p>
+          <p className="card-muted">No client workspaces yet. Create one above to get started.</p>
+          <p className="form-help" style={{ marginTop: "0.65rem" }}>
+            After creating a client, add sites and invite collaborators from the client detail page.
+          </p>
         </div>
       ) : (
         <section className="grid">
@@ -33,7 +36,7 @@ export default async function OrganizationsPage() {
               <h3 className="card-title">{client.name}</h3>
               <p className="card-muted">{client.summary}</p>
               <p style={{ margin: "0.75rem 0 0.55rem", fontSize: "0.9rem" }}>
-                {client.siteCount} site{client.siteCount === 1 ? "" : "s"} • {client.memberCount} members
+                {client.siteCount} site{client.siteCount === 1 ? "" : "s"} | {client.memberCount} members
               </p>
               <Link href={`/organizations/${client.id}`} className="action-link">
                 Open client detail <ArrowRightIcon className="btn-icon" />

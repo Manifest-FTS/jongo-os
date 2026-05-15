@@ -22,8 +22,17 @@ export default async function SitesPage() {
 
       <p style={{ color: "var(--muted)", marginBottom: "1rem" }}>
         {siteDirectory.length} site{siteDirectory.length === 1 ? "" : "s"} across all clients
-        {" — "}{overview.mode} Coolify data
+        {" - "}managed in Jongo
       </p>
+
+      <details style={{ marginBottom: "1rem" }}>
+        <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)" }}>
+          Developer Details
+        </summary>
+        <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+          Site source mode: {overview.mode}
+        </p>
+      </details>
 
       {siteDirectory.length === 0 ? (
         <div className="card">
