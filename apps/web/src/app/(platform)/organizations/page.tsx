@@ -6,17 +6,24 @@ import { ArrowRightIcon } from "@/components/JongoIcons";
 
 export default async function OrganizationsPage() {
   const session = await auth();
-  const clients = await listClientWorkspaces(session?.user?.id);
+  const clients = await listClientWorkspaces({
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: "1rem", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
+      <div className="card page-hero" style={{ marginBottom: "1rem", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
         <div>
           <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Clients</p>
           <h1 style={{ margin: 0 }}>Client Directory</h1>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>
             Manage client workspaces, teams, and site ownership.
           </p>
+          <div className="hero-meta-row">
+            <span className="tag">Workspace management</span>
+            <span className="status-chip healthy">{clients.length} active clients</span>
+          </div>
         </div>
         <div style={{ flexShrink: 0, paddingTop: "0.25rem" }}>
           <CreateOrganizationForm />
@@ -32,7 +39,7 @@ export default async function OrganizationsPage() {
       ) : (
         <section className="grid">
           {clients.map((client) => (
-            <article key={client.id} className="card">
+            <article key={client.id} className="card tone-card">
               <h3 className="card-title">{client.name}</h3>
               <p className="card-muted">{client.summary}</p>
               <p style={{ margin: "0.75rem 0 0.55rem", fontSize: "0.9rem" }}>

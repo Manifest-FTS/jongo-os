@@ -22,7 +22,7 @@ export default async function SiteWorkspaceLayout({
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: "1rem" }}>
+      <div className="card page-hero" style={{ marginBottom: "1rem" }}>
         <p className="card-muted" style={{ margin: "0 0 0.35rem" }}>
           Dashboard / Clients / {site?.clientName ?? "Unknown Client"} / {site?.name ?? siteId}
         </p>
@@ -31,7 +31,7 @@ export default async function SiteWorkspaceLayout({
           Site operations workspace
         </p>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.45rem", marginTop: "0.75rem" }}>
+        <div className="hero-meta-row">
           <span className={`status-chip ${site?.status ?? "unknown"}`}>Overall {site?.status ?? "unknown"}</span>
           <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>
             Prod {site?.productionStatus ?? "unknown"}
@@ -53,9 +53,9 @@ export default async function SiteWorkspaceLayout({
       </div>
 
       <div className="card" style={{ marginBottom: "1rem", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
-        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+        <div className="tab-rail">
           {tabs.map((tab) => (
-            <a key={tab.href} href={tab.href} style={{ textDecoration: "none", color: "inherit", fontWeight: 600 }}>
+            <a key={tab.href} href={tab.href} className="tab-link">
               {tab.name}
             </a>
           ))}

@@ -5,17 +5,24 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: "1rem" }}>
+      <div className="card page-hero" style={{ marginBottom: "1rem" }}>
         <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Settings</p>
         <h1 style={{ margin: 0 }}>Platform Settings</h1>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
           Configure account, client operations, and platform preferences.
         </p>
+        <div className="hero-meta-row">
+          <span className="tag">Operational profile</span>
+          <span className={`status-chip ${runtime.coolifyMode}`}>Mode {runtime.coolifyMode}</span>
+          <span className={`status-chip ${runtime.databaseConfigured ? "healthy" : "unknown"}`}>
+            Database {runtime.databaseConfigured ? "ready" : "missing"}
+          </span>
+        </div>
       </div>
 
       <div className="grid" style={{ marginBottom: "2rem" }}>
         {/* Account Settings */}
-        <article className="card">
+        <article className="card tone-card">
           <h3 className="card-title">Account</h3>
           <p className="card-muted">Manage your profile and sign-in preferences.</p>
           <ul style={{ fontSize: "0.9rem", margin: "0.75rem 0 0", paddingLeft: "1.25rem" }}>
@@ -26,7 +33,7 @@ export default function SettingsPage() {
         </article>
 
         {/* API Tokens */}
-        <article className="card">
+        <article className="card tone-card">
           <h3 className="card-title">API Tokens</h3>
           <p className="card-muted">Manage automation access.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
@@ -35,7 +42,7 @@ export default function SettingsPage() {
         </article>
 
         {/* Organizations */}
-        <article className="card">
+        <article className="card tone-card">
           <h3 className="card-title">Organizations</h3>
           <p className="card-muted">Manage clients and team structure.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
@@ -44,7 +51,7 @@ export default function SettingsPage() {
         </article>
 
         {/* Integrations */}
-        <article className="card">
+        <article className="card tone-card">
           <h3 className="card-title">Publishing Integration</h3>
           <p className="card-muted">Connection status for deployment provider.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
@@ -78,7 +85,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid">
-        <article className="card">
+        <article className="card tone-card">
           <h3 className="card-title">System Preferences</h3>
           <ul style={{ fontSize: "0.9rem", margin: "0.75rem 0 0", paddingLeft: "1.25rem" }}>
             <li>Theme and appearance</li>
@@ -88,7 +95,7 @@ export default function SettingsPage() {
           </ul>
         </article>
 
-        <article className="card">
+        <article className="card tone-card">
           <h3 className="card-title">Developer Details</h3>
           <details>
             <summary style={{ cursor: "pointer", fontSize: "0.9rem", color: "var(--muted)" }}>

@@ -8,16 +8,23 @@ import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 export default async function SitesPage() {
   const session = await auth();
   const overview = await getCoolifyOverview();
-  const siteDirectory = await listSiteDirectory(session?.user?.id);
+  const siteDirectory = await listSiteDirectory({
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: "1rem" }}>
+      <div className="card page-hero" style={{ marginBottom: "1rem" }}>
         <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Sites</p>
         <h1 style={{ margin: 0 }}>Site Directory</h1>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
           View all client sites in one place.
         </p>
+        <div className="hero-meta-row">
+          <span className="tag">Cross-client view</span>
+          <span className="status-chip unknown">{siteDirectory.length} listed</span>
+        </div>
       </div>
 
       <p style={{ color: "var(--muted)", marginBottom: "1rem" }}>
@@ -53,7 +60,7 @@ export default async function SitesPage() {
             const overviewSite = overview.sites.find((item) => item.id === site.coolifyServiceUuid || item.id === site.id);
 
             return (
-              <article key={site.id} className="card">
+              <article key={site.id} className="card tone-card">
                 <h2 className="card-title">{site.name}</h2>
                 {site.description && (
                   <p className="card-muted" style={{ marginBottom: "0.35rem" }}>{site.description}</p>

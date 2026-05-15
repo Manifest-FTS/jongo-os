@@ -66,7 +66,10 @@ async function getCollaborators(organizationId: string) {
 export default async function OrganizationDetailPage({ params }: Params) {
   const { organizationId } = await params;
   const session = await auth();
-  const client = await getClientWorkspace(organizationId, session?.user?.id);
+  const client = await getClientWorkspace(organizationId, {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
 
   if (!client) {
     notFound();
