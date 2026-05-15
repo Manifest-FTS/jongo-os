@@ -18,9 +18,8 @@ export default async function SitesPage() {
     <div className="page-stack">
       <div className="page-head">
         <div>
-          <p className="page-kicker">Sites</p>
-          <h1 className="page-title">Site directory</h1>
-          <p className="page-subtitle">Filter by name, health, or source and switch between list and grid as needed.</p>
+          <h1 className="page-title">Sites ({siteDirectory.length})</h1>
+          <p className="page-subtitle">Filter by name or health and switch between list and grid as needed.</p>
         </div>
       </div>
 
@@ -39,7 +38,6 @@ export default async function SitesPage() {
         </div>
       ) : (
         <SiteDirectoryView
-          mode={overview.mode}
           sites={siteDirectory.map((site) => {
             const overviewSite = overview.sites.find((item) => item.id === site.coolifyServiceUuid || item.id === site.id);
 

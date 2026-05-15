@@ -22,7 +22,6 @@ export default async function DashboardPage() {
     <div className="page-stack">
       <section className="page-head compact-head">
         <div>
-          <p className="page-kicker">Dashboard</p>
           <h1 className="page-title">Hello, Kevin.</h1>
           <p className="page-subtitle">A tighter view of client ops, site health, and publishing activity.</p>
         </div>
@@ -42,8 +41,8 @@ export default async function DashboardPage() {
           <p className="metric-label">Deployments</p>
         </article>
         <article className="card metric-card">
-          <p className="metric-value">{overview.mode}</p>
-          <p className="metric-label">Data mode</p>
+          <p className="metric-value">{overview.stats.healthySites}</p>
+          <p className="metric-label">Healthy</p>
         </article>
       </section>
 

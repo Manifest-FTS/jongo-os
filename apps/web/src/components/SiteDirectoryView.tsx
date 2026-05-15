@@ -17,15 +17,12 @@ type SiteItem = {
 };
 
 export default function SiteDirectoryView({
-  sites,
-  mode
+  sites
 }: {
   sites: SiteItem[];
-  mode: "live" | "mock";
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | SiteItem["status"]>("all");
-  const [sourceFilter, setSourceFilter] = useState<"all" | SiteItem["source"]>("all");
   const [view, setView] = useState<"list" | "grid">("list");
 
   const query = search.trim().toLowerCase();
@@ -37,9 +34,8 @@ export default function SiteDirectoryView({
       site.description?.toLowerCase().includes(query);
 
     const matchesStatus = statusFilter === "all" || site.status === statusFilter;
-    const matchesSource = sourceFilter === "all" || site.source === sourceFilter;
 
-    return matchesQuery && matchesStatus && matchesSource;
+    return matchesQuery && matchesStatus;
   });
 
   return (
@@ -60,11 +56,6 @@ export default function SiteDirectoryView({
             <button type="button" className={`filter-pill ${statusFilter === "degraded" ? "is-active" : ""}`} onClick={() => setStatusFilter("degraded")}>Degraded</button>
             <button type="button" className={`filter-pill ${statusFilter === "error" ? "is-active" : ""}`} onClick={() => setStatusFilter("error")}>Error</button>
           </div>
-          <div className="filter-group" aria-label="Site source filters">
-            <button type="button" className={`filter-pill ${sourceFilter === "all" ? "is-active" : ""}`} onClick={() => setSourceFilter("all")}>All sources</button>
-            <button type="button" className={`filter-pill ${sourceFilter === "coolify" ? "is-active" : ""}`} onClick={() => setSourceFilter("coolify")}>Coolify</button>
-            <button type="button" className={`filter-pill ${sourceFilter === "db" ? "is-active" : ""}`} onClick={() => setSourceFilter("db")}>Mapped</button>
-          </div>
         </div>
 
         <div className="view-toggle" aria-label="Site view toggle">
@@ -73,7 +64,7 @@ export default function SiteDirectoryView({
         </div>
       </div>
 
-      <p className="card-muted">{filtered.length} result{filtered.length === 1 ? "" : "s"} · {mode} mode</p>
+      <p className="card-muted">{filtered.length} site{filtered.length === 1 ? "" : "s"}</p>
 
       {filtered.length === 0 ? (
         <div className="card directory-empty">
@@ -87,7 +78,6 @@ export default function SiteDirectoryView({
                 <div className="directory-title-row">
                   <h2 className="directory-title">{site.name}</h2>
                   <span className={`status-chip ${site.status}`}>{site.status}</span>
-                  <span className="tag">{site.source}</span>
                 </div>
                 {site.description ? <p className="directory-summary">{site.description}</p> : null}
                 <p className="directory-meta">Client: {site.clientName}</p>

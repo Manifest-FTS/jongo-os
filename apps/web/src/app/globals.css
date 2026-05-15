@@ -51,19 +51,19 @@ main {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 1.25rem;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 1rem;
   align-items: start;
   width: min(1400px, calc(100vw - 1.6rem));
   margin: 0 auto;
-  padding: 0.9rem 0.8rem 1.25rem;
+  padding: 0.9rem 0.8rem 1.35rem;
 }
 
 .app-sidebar {
   position: sticky;
   top: 0.9rem;
   display: grid;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
 .app-nav,
@@ -72,43 +72,79 @@ main {
 }
 
 .app-nav {
-  display: grid;
-  gap: 0.2rem;
-  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.55rem 0.75rem;
+  background: #1e332a;
+  border-color: #244235;
+  box-shadow: 0 12px 28px rgba(14, 24, 20, 0.3);
 }
 
-.app-nav a {
+.app-nav-items {
+  width: 100%;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.app-nav-item {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 0.62rem;
   text-decoration: none;
-  color: #23422c;
-  font-weight: 600;
+  color: #9cb5aa;
   border: 1px solid transparent;
-  border-radius: 12px;
-  padding: 0.72rem 0.78rem;
+  border-radius: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0.6rem 0.72rem;
   background: transparent;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
-.app-nav a:hover {
-  background: #f4f9f1;
-  border-color: #d7e4d1;
+.app-nav-item:hover {
+  color: #f6fbf8;
+  background: #2b4a3c;
+  border-color: #3b6352;
   transform: translateY(-1px);
 }
 
-.app-nav-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
+.app-nav-item.is-active {
+  color: #14231c;
+  background: linear-gradient(145deg, #ffeac4 0%, #ffd6e4 100%);
+  border-color: #f2c1d1;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.22);
 }
 
 .sidebar-icon {
   width: 1.1rem;
   height: 1.1rem;
-  stroke-width: 2.1;
-  color: #2e5a37;
+  stroke-width: 2;
+  color: currentColor;
   flex-shrink: 0;
+}
+
+.app-nav-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: currentColor;
+  letter-spacing: 0.005em;
+}
+
+/* ── Diagnostic banner (mock-data warning) ──────────────────────── */
+.diagnostic-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.75rem 1rem;
+  background: #fff8e6;
+  border: 1px solid #f5cc6e;
+  border-left: 4px solid #d4950a;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  color: #6b4c00;
+  line-height: 1.5;
 }
 
 .app-main {
@@ -117,7 +153,7 @@ main {
 
 .app-topbar {
   margin-bottom: 1rem;
-  padding: 0.85rem 1rem;
+  padding: 0.78rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -126,7 +162,7 @@ main {
 
 .app-content {
   display: grid;
-  gap: 1rem;
+  gap: 1.15rem;
 }
 
 .app-footer {
@@ -270,19 +306,26 @@ main {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
-  color: #23432d;
+  color: #2d4737;
   font-weight: 600;
   border: 1px solid #d2dfce;
   border-radius: 999px;
   padding: 0.42rem 0.82rem;
-  background: #f1f7ed;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  background: #f2f7ef;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, color 0.15s ease;
 }
 
 .tab-link:hover {
   background: #eaf4e3;
   border-color: #c1d2bb;
   transform: translateY(-1px);
+}
+
+.tab-link.is-active {
+  background: linear-gradient(145deg, #ffeecf 0%, #ffddeb 100%);
+  border-color: #f1bfd0;
+  color: #1f2a22;
+  box-shadow: 0 1px 2px rgba(21, 34, 34, 0.11);
 }
 
 .tone-card {
@@ -752,6 +795,25 @@ main {
 
   .app-sidebar {
     position: static;
+  }
+
+  .app-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.5rem;
+  }
+
+  .app-nav-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .app-nav-item {
+    width: auto;
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem;
   }
 
   .page-head,
