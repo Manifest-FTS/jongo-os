@@ -556,3 +556,77 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
     };
   }
 }
+
+export type SiteDeploymentRecord = {
+  id: string;
+  environment: string;
+  status: string;
+  triggeredAt: string;
+  finishedAt?: string;
+  coolifyDeploymentId?: string;
+  commitMessage?: string;
+  commitSha?: string;
+  actor?: string;
+  source: "db" | "coolify";
+};
+
+export async function listSiteDeployments(siteId: string): Promise<SiteDeploymentRecord[]> {
+  try {
+    const prisma = await maybeGetDb();
+
+    if (prisma) {
+      const rows: any[] = await prisma.deployment.findMany({
+        where: {
+          environment: {
+            siteId,
+            site: { deletedAt: null }
+          }
+        },
+        include: {
+          environment: { select: { name: true } },
+          triggeredBy: { select: { email: true, fullName: true } }
+        },
+        orderBy: { triggeredAt: "desc" },
+        take: 50
+      });
+
+      if (rows.length > 0) {
+        return rows.map((row: any): SiteDeploymentRecord => ({
+          id: row.id,
+          environment: row.environment.name,
+          status: row.status,
+          triggeredAt: row.triggeredAt.toISOString(),
+          finishedAt: row.finishedAt?.toISOString(),
+          coolifyDeploymentId: row.coolifyDeploymentId ?? undefined,
+          commitMessage: row.commitMessage ?? undefined,
+          commitSha: row.commitSha ?? undefined,
+          actor: row.triggeredBy?.fullName ?? row.triggeredBy?.email ?? undefined,
+          source: "db" as const
+        }));
+      }
+    }
+  } catch (error) {
+    console.error("[jongo] listSiteDeployments: DB query failed, falling back to Coolify data.", error);
+  }
+
+  // Fallback: Coolify overview deployments for this site
+  try {
+    const overview = await getCoolifyOverview();
+    const site = overview.sites.find((item) => item.id === siteId);
+    if (!site) return [];
+
+    return overview.deployments
+      .filter((dep) => dep.siteName === site.name)
+      .map((dep): SiteDeploymentRecord => ({
+        id: dep.id,
+        environment: dep.environment,
+        status: dep.status,
+        triggeredAt: dep.startedAt ?? dep.finishedAt ?? new Date().toISOString(),
+        finishedAt: dep.finishedAt,
+        commitMessage: dep.commitMessage ?? undefined,
+        source: "coolify" as const
+      }));
+  } catch {
+    return [];
+  }
+}

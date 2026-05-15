@@ -4,6 +4,9 @@ import { auth } from "@/lib/auth.config";
 
 export default async function DashboardPage() {
   const session = await auth();
+  const email = session?.user?.email ?? "";
+  const greeting = email ? email.split("@")[0] : "there";
+
   const overview = await getCoolifyOverview();
   const clients = await listClientWorkspaces({
     userId: session?.user?.id,
@@ -22,7 +25,7 @@ export default async function DashboardPage() {
     <div className="page-stack">
       <section className="page-head compact-head">
         <div>
-          <h1 className="page-title">Hello, Kevin.</h1>
+          <h1 className="page-title">Hello, {greeting}.</h1>
           <p className="page-subtitle">A tighter view of client ops, site health, and publishing activity.</p>
         </div>
       </section>

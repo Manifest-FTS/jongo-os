@@ -1190,3 +1190,85 @@ main {
   width: 0.95rem;
   height: 0.95rem;
 }
+
+/* ── Deployment timeline ───────────────────────────────────────── */
+.deploy-timeline {
+  display: grid;
+  gap: 0;
+}
+
+.deploy-row {
+  display: flex;
+  gap: 0.85rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.deploy-row:last-child {
+  border-bottom: none;
+}
+
+.deploy-row-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 0.3rem;
+  flex-shrink: 0;
+  width: 12px;
+}
+
+.deploy-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.deploy-dot.healthy { background: #4caf76; }
+.deploy-dot.degraded { background: #e8a44a; }
+.deploy-dot.error { background: #d94f4f; }
+.deploy-dot.unknown { background: #9db4a8; }
+
+.deploy-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.deploy-row-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.deploy-env-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.deploy-actor {
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.deploy-time {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.deploy-commit {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deploy-sha {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
