@@ -40,8 +40,45 @@ export async function GET(_req: Request, { params }: Params) {
       orderBy: { createdAt: "asc" }
     });
 
-    return NextResponse.json(
-      collaborators.map((c: any) => ({
+    const pendingInviteLogs = await db.auditLog.findMany({
+      where: {
+        organizationId,
+        action: "collaborator_invited_pending"
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    });
+
+    const existingEmails = new Set(
+      collaborators.map((c: any) => c.user.email.toLowerCase())
+    );
+
+    const pendingInvites = pendingInviteLogs
+      .map((log: any) => {
+        const details = (log.details ?? {}) as {
+          email?: string;
+          role?: string;
+          status?: string;
+          delivery?: string;
+          note?: string;
+        };
+        const email = details.email?.toLowerCase().trim();
+        if (!email) return null;
+        if (existingEmails.has(email)) return null;
+        return {
+          id: log.id,
+          email,
+          role: details.role ?? "viewer",
+          status: details.status ?? "pending",
+          delivery: details.delivery ?? "not_configured",
+          note: details.note ?? "Email delivery not configured yet.",
+          createdAt: log.createdAt
+        };
+      })
+      .filter((item: any): item is NonNullable<typeof item> => Boolean(item));
+
+    return NextResponse.json({
+      collaborators: collaborators.map((c: any) => ({
         id: c.id,
         userId: c.userId,
         role: c.role,
@@ -49,8 +86,10 @@ export async function GET(_req: Request, { params }: Params) {
         fullName: c.user.fullName,
         avatarUrl: c.user.avatarUrl,
         createdAt: c.createdAt
-      }))
-    );
+      })),
+      pendingInvites,
+      emailDeliveryConfigured: false
+    });
   } catch (err) {
     console.error("GET /api/organizations/[id]/collaborators error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -59,7 +98,7 @@ export async function GET(_req: Request, { params }: Params) {
 
 /**
  * POST /api/organizations/[organizationId]/collaborators
- * Invite an existing user to an organization by email.
+ * Invite a user to an organization by email.
  * Requires owner or admin role.
  * Body: { email: string; role: "admin" | "operator" | "viewer" }
  */
@@ -107,42 +146,82 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
 
-    // Find the user to invite (must already exist)
+    // If the user already exists, create collaborator membership immediately.
     const targetUser = await db.user.findUnique({ where: { email } });
-    if (!targetUser) {
+    if (targetUser) {
+      const existing = await db.collaborator.findFirst({
+        where: { organizationId, userId: targetUser.id }
+      });
+      if (existing) {
+        return NextResponse.json({ error: "That user is already a collaborator" }, { status: 409 });
+      }
+
+      const collaborator = await db.collaborator.create({
+        data: {
+          organizationId,
+          userId: targetUser.id,
+          role,
+          grantedById: session.user.id
+        },
+        include: { user: { select: { id: true, email: true, fullName: true } } }
+      });
+
       return NextResponse.json(
-        { error: "No account found with that email address. The user must sign up first." },
-        { status: 404 }
+        {
+          status: "active",
+          id: collaborator.id,
+          userId: collaborator.userId,
+          role: collaborator.role,
+          email: collaborator.user.email,
+          fullName: collaborator.user.fullName
+        },
+        { status: 201 }
       );
     }
 
-    // Prevent duplicate
-    const existing = await db.collaborator.findFirst({
-      where: { organizationId, userId: targetUser.id }
-    });
-    if (existing) {
-      return NextResponse.json({ error: "That user is already a collaborator" }, { status: 409 });
-    }
-
-    const collaborator = await db.collaborator.create({
-      data: {
+    // No account yet: create a pending invitation record.
+    const recentPendingLogs = await db.auditLog.findMany({
+      where: {
         organizationId,
-        userId: targetUser.id,
-        role,
-        grantedById: session.user.id
+        action: "collaborator_invited_pending"
       },
-      include: { user: { select: { id: true, email: true, fullName: true } } }
+      orderBy: { createdAt: "desc" },
+      take: 100
     });
+
+    const existingPending = recentPendingLogs.find((log: any) => {
+      const details = (log.details ?? {}) as { email?: string };
+      return details.email?.toLowerCase().trim() === email;
+    });
+
+    if (!existingPending) {
+      await db.auditLog.create({
+        data: {
+          organizationId,
+          actorId: session.user.id,
+          action: "collaborator_invited_pending",
+          resourceType: "collaborator_invitation",
+          resourceId: null,
+          details: {
+            email,
+            role,
+            status: "pending",
+            delivery: "not_configured",
+            note: "Email delivery not configured yet."
+          }
+        }
+      });
+    }
 
     return NextResponse.json(
       {
-        id: collaborator.id,
-        userId: collaborator.userId,
-        role: collaborator.role,
-        email: collaborator.user.email,
-        fullName: collaborator.user.fullName
+        status: "pending",
+        email,
+        role,
+        delivery: "not_configured",
+        message: "Invitation pending. Email delivery is not configured yet."
       },
-      { status: 201 }
+      { status: 202 }
     );
   } catch (err) {
     console.error("POST /api/organizations/[id]/collaborators error:", err);

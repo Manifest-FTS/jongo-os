@@ -2,6 +2,8 @@ import { getCoolifyOverview } from "@/lib/coolify";
 import { getActivityFeed, listClientWorkspaces } from "@/lib/repositories";
 import StatusPoll from "@/components/StatusPoll";
 import { auth } from "@/lib/auth.config";
+import Link from "next/link";
+import { ArrowRightIcon } from "@/components/JongoIcons";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -15,14 +17,14 @@ export default async function DashboardPage() {
         <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Dashboard</p>
         <h1 style={{ margin: 0 }}>Jongo Dashboard</h1>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Platform-level operations, activity, and infrastructure health.
+          Client operations, site health, and publishing activity.
         </p>
       </div>
 
       <section className="grid">
         {/* Platform Stats */}
         <article className="card">
-          <h2 className="card-title">Platform Overview</h2>
+          <h2 className="card-title">Overview</h2>
           <div style={{ marginTop: "0.75rem" }}>
             <p style={{ margin: "0.35rem 0" }}>
               Total Clients: <strong>{clients.length}</strong>
@@ -39,9 +41,9 @@ export default async function DashboardPage() {
           </div>
         </article>
 
-        {/* Health Summary — live poll every 30s */}
+        {/* Site Health — live poll every 30s */}
         <article className="card">
-          <h2 className="card-title">Infrastructure Health</h2>
+          <h2 className="card-title">Site Health</h2>
           <div style={{ marginTop: "0.75rem" }}>
             <StatusPoll intervalMs={30_000} />
           </div>
@@ -49,7 +51,7 @@ export default async function DashboardPage() {
 
         {/* Sites Needing Attention */}
         <article className="card">
-          <h2 className="card-title">Sites Needing Attention</h2>
+          <h2 className="card-title">Needs Attention</h2>
           {overview.sites.filter((s) => s.status !== "healthy").length === 0 ? (
             <p className="card-muted">All sites are healthy</p>
           ) : (
@@ -68,22 +70,22 @@ export default async function DashboardPage() {
 
         {/* Quick Navigation */}
         <article className="card">
-          <h2 className="card-title">Quick Navigation</h2>
+          <h2 className="card-title">Quick Actions</h2>
           <div style={{ marginTop: "0.75rem" }}>
             <p style={{ margin: "0.35rem 0" }}>
-              <a href="/sites" style={{ color: "var(--accent)", textDecoration: "none" }}>
-                → View all sites
-              </a>
+              <Link href="/sites" className="action-link">
+                View all sites <ArrowRightIcon className="btn-icon" />
+              </Link>
             </p>
             <p style={{ margin: "0.35rem 0" }}>
-              <a href="/organizations" style={{ color: "var(--accent)", textDecoration: "none" }}>
-                → Manage clients
-              </a>
+              <Link href="/organizations" className="action-link">
+                Manage clients <ArrowRightIcon className="btn-icon" />
+              </Link>
             </p>
             <p style={{ margin: "0.35rem 0" }}>
-              <a href="/settings" style={{ color: "var(--accent)", textDecoration: "none" }}>
-                → Platform settings
-              </a>
+              <Link href="/settings" className="action-link">
+                Open settings <ArrowRightIcon className="btn-icon" />
+              </Link>
             </p>
           </div>
         </article>
@@ -91,7 +93,7 @@ export default async function DashboardPage() {
 
       {/* Recent Activity */}
       <section className="card" style={{ marginTop: "1rem" }}>
-        <h2 className="card-title">Recent Deployment Activity</h2>
+        <h2 className="card-title">Recent Activity</h2>
         {activityFeed.length === 0 ? (
           <p className="card-muted">No recent deployments</p>
         ) : (

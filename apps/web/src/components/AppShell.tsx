@@ -1,7 +1,7 @@
 import Link from "next/link";
-import Image from "next/image";
 import type { ReactNode } from "react";
 import { BuildingOfficeIcon, DashboardIcon, ServerIcon, SettingsIcon } from "@/components/JongoIcons";
+import BrandLogo from "@/components/BrandLogo";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardIcon },
@@ -23,7 +23,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
       >
         <p className="tag">powered by Manifest FTS</p>
         <p className="brand-lockup" style={{ margin: "0.6rem 0 0.1rem" }}>
-          <Image
+          <BrandLogo
             src="/assets/images/jongo-logomark-color.png"
             alt="Jongo"
             width={32}

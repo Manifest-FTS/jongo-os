@@ -13,23 +13,23 @@ export default async function SitesPage() {
   return (
     <div>
       <div className="card" style={{ marginBottom: "1rem" }}>
-        <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Sites / Applications</p>
+        <p className="card-muted" style={{ marginBottom: "0.35rem" }}>Sites</p>
         <h1 style={{ margin: 0 }}>Site Directory</h1>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Global application index across all clients.
+          View all client sites in one place.
         </p>
       </div>
 
       <p style={{ color: "var(--muted)", marginBottom: "1rem" }}>
-        {siteDirectory.length} application{siteDirectory.length === 1 ? "" : "s"} across all clients
+        {siteDirectory.length} site{siteDirectory.length === 1 ? "" : "s"} across all clients
         {" — "}{overview.mode} Coolify data
       </p>
 
       {siteDirectory.length === 0 ? (
         <div className="card">
-          <p className="card-muted">No sites yet. Create a client organization first, then add sites to it.</p>
+          <p className="card-muted">No sites yet. Start by creating a client, then add their first site.</p>
           <p className="form-help" style={{ marginBottom: "0.75rem" }}>
-            Site creation is available on each client detail page.
+            Open a client workspace to create and manage its sites.
           </p>
           <div style={{ marginBottom: "0.75rem" }}>
             <CreateOrganizationForm />
