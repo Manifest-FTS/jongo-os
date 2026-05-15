@@ -49,7 +49,7 @@ export default async function SitesPage() {
               clientName: site.clientName,
               status: overviewSite?.status ?? site.status,
               ownershipState: site.ownershipState,
-              coolifyProjectName: site.coolifyProjectName,
+              ownershipDiagnostic: site.ownershipDiagnostic,
               source: site.source,
               href: `/sites/${site.id}`,
               clientHref: site.ownershipState === "mapped" ? `/organizations/${site.clientId}` : undefined

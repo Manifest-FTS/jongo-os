@@ -14,9 +14,15 @@ function normalized(value?: string | null): string {
  * - Backfills Organization coolifyProjectId/coolifyProjectName when missing.
  * - Returns orphaned resources that still have no client mapping.
  */
-export async function POST() {
+export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user?.id) {
+
+  const syncToken = process.env.OWNERSHIP_SYNC_TOKEN;
+  const authHeader = request.headers.get("authorization") ?? undefined;
+  const providedToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
+  const tokenAuthorized = Boolean(syncToken && providedToken && providedToken === syncToken);
+
+  if (!session?.user?.id && !tokenAuthorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -73,7 +79,10 @@ export async function POST() {
       if (site.coolifyProjectId !== coolifySite.coolifyProjectId) {
         await db.site.update({
           where: { id: site.id },
-          data: { coolifyProjectId: coolifySite.coolifyProjectId }
+          data: {
+            coolifyProjectId: coolifySite.coolifyProjectId,
+            coolifyProjectName: coolifySite.coolifyProjectName ?? undefined
+          }
         });
         updatedSites += 1;
       }
@@ -90,30 +99,62 @@ export async function POST() {
       }
     }
 
-    const orphaned = overview.sites
-      .filter((site) => {
-        if (!site.coolifyProjectId && !site.coolifyProjectName) return true;
+    const diagnostics = overview.sites.map((site) => {
+      if (!site.coolifyProjectId && !site.coolifyProjectName) {
+        return {
+          resourceId: site.id,
+          resourceName: site.name,
+          coolifyProjectId: site.coolifyProjectId,
+          coolifyProjectName: site.coolifyProjectName,
+          status: "unavailable",
+          message: "Coolify project unavailable from API"
+        };
+      }
 
-        if (site.coolifyProjectId && orgByProjectId.has(site.coolifyProjectId)) return false;
+      if (site.coolifyProjectId && orgByProjectId.has(site.coolifyProjectId)) {
+        const org = orgByProjectId.get(site.coolifyProjectId);
+        return {
+          resourceId: site.id,
+          resourceName: site.name,
+          coolifyProjectId: site.coolifyProjectId,
+          coolifyProjectName: site.coolifyProjectName,
+          status: "mapped",
+          message: `Mapped to Client: ${org.name}`
+        };
+      }
 
-        const key = normalized(site.coolifyProjectName);
-        if (key && orgByProjectName.has(key)) return false;
+      const key = normalized(site.coolifyProjectName);
+      if (key && orgByProjectName.has(key)) {
+        const org = orgByProjectName.get(key);
+        return {
+          resourceId: site.id,
+          resourceName: site.name,
+          coolifyProjectId: site.coolifyProjectId,
+          coolifyProjectName: site.coolifyProjectName,
+          status: "mapped",
+          message: `Mapped to Client: ${org.name}`
+        };
+      }
 
-        return true;
-      })
-      .map((site) => ({
+      return {
         resourceId: site.id,
         resourceName: site.name,
         coolifyProjectId: site.coolifyProjectId,
-        coolifyProjectName: site.coolifyProjectName
-      }));
+        coolifyProjectName: site.coolifyProjectName,
+        status: "orphaned",
+        message: "Project found but no Jongo Client mapped"
+      };
+    });
+
+    const orphaned = diagnostics.filter((d) => d.status !== "mapped");
 
     return NextResponse.json({
       ok: true,
       updatedSites,
       backfilledOrganizations,
       orphanedCount: orphaned.length,
-      orphaned
+      orphaned,
+      diagnostics
     });
   } catch (error) {
     console.error("POST /api/coolify/ownership/sync error:", error);

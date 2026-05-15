@@ -72,6 +72,8 @@ export type ClientWorkspaceRecord = ClientRecord & {
   dbId?: string; // actual DB UUID (undefined when using mock data)
   siteCount: number;
   memberCount: number;
+  coolifyProjectId?: string;
+  coolifyProjectName?: string;
   /** Where this record was sourced from – "db" means a live Prisma query succeeded. */
   dataSource: "db" | "mock";
 };
@@ -84,6 +86,7 @@ export type SiteDirectoryRecord = {
   clientName: string;
   status: "healthy" | "degraded" | "error" | "unknown";
   ownershipState: "mapped" | "orphaned" | "unavailable";
+  ownershipDiagnostic: string;
   source: "db" | "coolify"; // where the record originates
   coolifyServiceUuid?: string;
   coolifyProjectId?: string;
@@ -109,9 +112,12 @@ export type SiteWorkspaceRecord = {
   coolifyServiceUuid?: string;
   coolifyProjectId?: string;
   coolifyProjectName?: string;
+  coolifyEnvironmentId?: string;
+  coolifyEnvironmentName?: string;
   gitRepositoryUrl?: string;
   organizationId?: string;
   ownershipState: "mapped" | "orphaned" | "unavailable";
+  ownershipDiagnostic: string;
   source: "db" | "coolify";
 };
 
@@ -173,6 +179,7 @@ function resolveOwnershipForCoolifySite(
   clientId: string;
   clientName: string;
   ownershipState: "mapped" | "orphaned" | "unavailable";
+  ownershipDiagnostic: string;
 } {
   if (mode === "mock") {
     const mockClient = getClientForSite(site.id);
@@ -180,7 +187,8 @@ function resolveOwnershipForCoolifySite(
       return {
         clientId: mockClient.id,
         clientName: mockClient.name,
-        ownershipState: "mapped"
+        ownershipState: "mapped",
+        ownershipDiagnostic: `Mapped to Client: ${mockClient.name}`
       };
     }
   }
@@ -191,7 +199,8 @@ function resolveOwnershipForCoolifySite(
       return {
         clientId: org.slug,
         clientName: org.name,
-        ownershipState: "mapped"
+        ownershipState: "mapped",
+        ownershipDiagnostic: `Mapped to Client: ${org.name}`
       };
     }
 
@@ -201,7 +210,8 @@ function resolveOwnershipForCoolifySite(
       return {
         clientId: org.slug,
         clientName: org.name,
-        ownershipState: "mapped"
+        ownershipState: "mapped",
+        ownershipDiagnostic: `Mapped to Client: ${org.name}`
       };
     }
   }
@@ -210,15 +220,17 @@ function resolveOwnershipForCoolifySite(
   if (fallbackProject) {
     return {
       clientId: "orphaned",
-      clientName: `Orphaned (${fallbackProject})`,
-      ownershipState: "orphaned"
+      clientName: "Unmapped Client",
+      ownershipState: "orphaned",
+      ownershipDiagnostic: "Project found but no Jongo Client mapped"
     };
   }
 
   return {
     clientId: "orphaned",
-    clientName: "Orphaned (No Coolify Project)",
-    ownershipState: "unavailable"
+    clientName: "Unknown Client",
+    ownershipState: "unavailable",
+    ownershipDiagnostic: "Coolify project unavailable from API"
   };
 }
 
@@ -355,7 +367,9 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
       )
     ),
     siteCount: organization.sites.length,
-    memberCount: organization.collaborators.length
+    memberCount: organization.collaborators.length,
+    coolifyProjectId: organization.coolifyProjectId ?? undefined,
+    coolifyProjectName: organization.coolifyProjectName ?? undefined
   }));
 }
 
@@ -453,7 +467,9 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
         )
       ),
       siteCount: organization.sites.length,
-      memberCount: organization.collaborators.length
+      memberCount: organization.collaborators.length,
+      coolifyProjectId: organization.coolifyProjectId ?? undefined,
+      coolifyProjectName: organization.coolifyProjectName ?? undefined
     };
   } catch (error) {
     if (isPrismaSchemaMismatchError(error)) {
@@ -498,9 +514,12 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
           clientName: ownership.clientName,
           status: site.status,
           ownershipState: ownership.ownershipState,
+          ownershipDiagnostic: ownership.ownershipDiagnostic,
           source: "coolify" as const,
           coolifyProjectId: site.coolifyProjectId,
-          coolifyProjectName: site.coolifyProjectName
+          coolifyProjectName: site.coolifyProjectName,
+          coolifyEnvironmentId: site.coolifyEnvironmentId,
+          coolifyEnvironmentName: site.coolifyEnvironmentName
         };
       });
     }
@@ -552,10 +571,13 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         clientName: s.organization.name,
         status: coolifyMatch?.status ?? "unknown",
         ownershipState: "mapped" as const,
+        ownershipDiagnostic: `Mapped to Client: ${s.organization.name}`,
         source: "db" as const,
         coolifyServiceUuid: s.coolifyServiceUuid ?? undefined,
         coolifyProjectId: s.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
-        coolifyProjectName: coolifyMatch?.coolifyProjectName
+        coolifyProjectName: coolifyMatch?.coolifyProjectName,
+        coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
+        coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName
       };
     });
 
@@ -572,10 +594,13 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
           clientName: ownership.clientName,
           status: site.status,
           ownershipState: ownership.ownershipState,
+          ownershipDiagnostic: ownership.ownershipDiagnostic,
           source: "coolify" as const,
           coolifyServiceUuid: site.id,
           coolifyProjectId: site.coolifyProjectId,
-          coolifyProjectName: site.coolifyProjectName
+          coolifyProjectName: site.coolifyProjectName,
+          coolifyEnvironmentId: site.coolifyEnvironmentId,
+          coolifyEnvironmentName: site.coolifyEnvironmentName
         };
       });
 
@@ -605,9 +630,12 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         clientName: ownership.clientName,
         status: site.status,
         ownershipState: ownership.ownershipState,
+        ownershipDiagnostic: ownership.ownershipDiagnostic,
         source: "coolify" as const,
         coolifyProjectId: site.coolifyProjectId,
-        coolifyProjectName: site.coolifyProjectName
+        coolifyProjectName: site.coolifyProjectName,
+        coolifyEnvironmentId: site.coolifyEnvironmentId,
+        coolifyEnvironmentName: site.coolifyEnvironmentName
       };
     });
   }
@@ -665,9 +693,12 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
           coolifyServiceUuid: dbSite.coolifyServiceUuid ?? undefined,
           coolifyProjectId: dbSite.coolifyProjectId ?? dbSite.organization.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
           coolifyProjectName: dbSite.organization.coolifyProjectName ?? coolifyMatch?.coolifyProjectName,
+          coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
+          coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
           gitRepositoryUrl: dbSite.gitRepositoryUrl ?? undefined,
           organizationId: dbSite.organizationId,
           ownershipState: "mapped",
+          ownershipDiagnostic: `Mapped to Client: ${dbSite.organization.name}`,
           source: "db" as const
         };
       }
@@ -700,7 +731,10 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
       coolifyServiceUuid: site.id,
       coolifyProjectId: site.coolifyProjectId,
       coolifyProjectName: site.coolifyProjectName,
+      coolifyEnvironmentId: site.coolifyEnvironmentId,
+      coolifyEnvironmentName: site.coolifyEnvironmentName,
       ownershipState: ownership?.ownershipState ?? "unavailable",
+      ownershipDiagnostic: ownership?.ownershipDiagnostic ?? "Coolify project unavailable from API",
       source: "coolify" as const
     };
   } catch {
@@ -726,7 +760,10 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
       recentActivity: [],
       coolifyProjectId: site.coolifyProjectId,
       coolifyProjectName: site.coolifyProjectName,
+      coolifyEnvironmentId: site.coolifyEnvironmentId,
+      coolifyEnvironmentName: site.coolifyEnvironmentName,
       ownershipState: ownership?.ownershipState ?? "unavailable",
+      ownershipDiagnostic: ownership?.ownershipDiagnostic ?? "Coolify project unavailable from API",
       source: "coolify" as const
     };
   }

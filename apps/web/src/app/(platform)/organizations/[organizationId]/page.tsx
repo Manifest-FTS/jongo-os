@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSiteWorkspace, getClientWorkspace } from "@/lib/repositories";
+import { getCoolifyOverview } from "@/lib/coolify";
 import CreateSiteForm from "@/components/CreateSiteForm";
 import CollaboratorManager from "@/components/CollaboratorManager";
+import CoolifyProjectMappingForm from "@/components/CoolifyProjectMappingForm";
 import { auth } from "@/lib/auth.config";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 
@@ -75,9 +77,10 @@ export default async function OrganizationDetailPage({ params }: Params) {
     notFound();
   }
 
-  const [clientSites, collaboratorData] = await Promise.all([
+  const [clientSites, collaboratorData, overview] = await Promise.all([
     Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId))),
-    client.dbId ? getCollaborators(client.dbId) : Promise.resolve({ collaborators: [], pendingInvites: [] })
+    client.dbId ? getCollaborators(client.dbId) : Promise.resolve({ collaborators: [], pendingInvites: [] }),
+    getCoolifyOverview()
   ]);
   const visibleSites = clientSites.filter((site): site is NonNullable<typeof site> => Boolean(site));
   const collaborators = collaboratorData.collaborators;
@@ -106,14 +109,21 @@ export default async function OrganizationDetailPage({ params }: Params) {
           {visibleSites.length === 0 ? (
             <p className="card-muted">No sites yet. Use the button above to add one.</p>
           ) : (
-            <div>
+            <div style={{ display: "grid", gap: "0.65rem" }}>
               {visibleSites.map((site) => (
-                <p key={site.id} style={{ margin: "0.5rem 0" }}>
-                  <Link href={`/sites/${site.id}`} className="action-link">
+                <div key={site.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.65rem", flexWrap: "wrap" }}>
+                  <Link href={`/sites/${site.id}`} className="action-link" style={{ fontWeight: 600 }}>
                     {site.name} <ArrowRightIcon className="btn-icon" />
-                  </Link>{" "}
-                  <span className={`status-chip ${site.status}`}>{site.status}</span>
-                </p>
+                  </Link>
+                  <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                    <span className={`status-chip ${site.status}`}>{site.status}</span>
+                    {site.ownershipState !== "mapped" ? (
+                      <span className="tag tag-warning" style={{ fontSize: "0.75rem" }}>
+                        {site.ownershipDiagnostic}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -144,6 +154,29 @@ export default async function OrganizationDetailPage({ params }: Params) {
               collaborators={collaborators}
               pendingInvites={pendingInvites}
               currentUserId={session?.user?.id ?? ""}
+            />
+          </article>
+        )}
+
+        {client.dbId && (
+          <article className="card">
+            <h3 className="card-title">Coolify Project</h3>
+            <p className="card-muted" style={{ marginBottom: "1rem" }}>
+              Link this client workspace to a Coolify project so sites deployed under it are automatically owned here.
+            </p>
+            {!client.coolifyProjectId && (
+              <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
+                <strong>No Coolify project mapped.</strong> Sites belonging to this client may appear as unowned in the Sites directory until a project is selected.
+              </div>
+            )}
+            <CoolifyProjectMappingForm
+              organizationDbId={client.dbId}
+              currentProjectId={client.coolifyProjectId}
+              currentProjectName={client.coolifyProjectName}
+              availableProjects={overview.projects.map((project) => ({
+                id: project.id,
+                name: project.name
+              }))}
             />
           </article>
         )}

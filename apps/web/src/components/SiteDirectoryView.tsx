@@ -12,7 +12,7 @@ type SiteItem = {
   clientName: string;
   status: "healthy" | "degraded" | "error" | "unknown";
   ownershipState: "mapped" | "orphaned" | "unavailable";
-  coolifyProjectName?: string;
+  ownershipDiagnostic: string;
   source: "db" | "coolify";
   href: string;
   clientHref?: string;
@@ -83,11 +83,8 @@ export default function SiteDirectoryView({
                 </div>
                 {site.description ? <p className="directory-summary">{site.description}</p> : null}
                 <p className="directory-meta">Client: {site.clientName}</p>
-                {site.coolifyProjectName ? (
-                  <p className="directory-meta">Coolify Project: {site.coolifyProjectName}</p>
-                ) : null}
                 <div className="directory-badges">
-                  <span className="tag">Ownership: {site.ownershipState}</span>
+                  <span className="tag">Ownership: {site.ownershipDiagnostic}</span>
                 </div>
               </div>
 
