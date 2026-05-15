@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 
@@ -62,6 +63,9 @@ function LoginForm() {
       <button type="submit" className="auth-submit" disabled={loading}>
         {loading ? "Signing in…" : "Sign in"}
       </button>
+      <p className="auth-link-row">
+        Need an account? <Link href="/auth/register">Create one</Link>
+      </p>
     </form>
   );
 }
