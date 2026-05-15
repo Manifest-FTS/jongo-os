@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { listSiteDirectory } from "@/lib/repositories";
+import { auth } from "@/lib/auth.config";
 
 export default async function SitesPage() {
+  const session = await auth();
   const overview = await getCoolifyOverview();
-  const siteDirectory = await listSiteDirectory();
+  const siteDirectory = await listSiteDirectory(session?.user?.id);
 
   return (
     <div>
@@ -17,41 +19,55 @@ export default async function SitesPage() {
       </div>
 
       <p style={{ color: "var(--muted)", marginBottom: "1rem" }}>
-        {overview.sites.length} total applications across all clients
+        {siteDirectory.length} application{siteDirectory.length === 1 ? "" : "s"} across all clients
+        {" — "}{overview.mode} Coolify data
       </p>
-      <section className="grid">
-        {siteDirectory.map((site) => {
-          const overviewSite = overview.sites.find((item) => item.id === site.id);
 
-          return (
-            <article key={site.id} className="card">
-              <h2 className="card-title">{site.name}</h2>
-              <p style={{ color: "var(--muted)", margin: "0 0 0.25rem", fontSize: "0.9rem" }}>
-                ID: {site.id}
-              </p>
-              <p style={{ color: "var(--muted)", margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
-                Client: {site.clientName}
-              </p>
-              <div style={{ marginBottom: "0.65rem" }}>
-                <span className={`status-chip ${overviewSite?.status ?? site.status}`}>{overviewSite?.status ?? site.status}</span>
-              </div>
-              {site.clientId !== "unassigned" ? (
-                <p style={{ margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
-                  <Link
-                    href={`/organizations/${site.clientId}`}
-                    style={{ color: "var(--accent)", textDecoration: "none" }}
-                  >
-                    View client →
-                  </Link>
+      {siteDirectory.length === 0 ? (
+        <div className="card">
+          <p className="card-muted">No sites yet. Create a client organization first, then add sites to it.</p>
+          <p style={{ marginTop: "0.5rem" }}>
+            <Link href="/organizations" style={{ color: "var(--accent)", textDecoration: "none" }}>→ Manage clients</Link>
+          </p>
+        </div>
+      ) : (
+        <section className="grid">
+          {siteDirectory.map((site) => {
+            const overviewSite = overview.sites.find((item) => item.id === site.coolifyServiceUuid || item.id === site.id);
+
+            return (
+              <article key={site.id} className="card">
+                <h2 className="card-title">{site.name}</h2>
+                {site.description && (
+                  <p className="card-muted" style={{ marginBottom: "0.35rem" }}>{site.description}</p>
+                )}
+                <p style={{ color: "var(--muted)", margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
+                  Client: {site.clientName}
                 </p>
-              ) : null}
-              <Link href={`/sites/${site.id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>
-                Open workspace →
-              </Link>
-            </article>
-          );
-        })}
-      </section>
+                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
+                  <span className={`status-chip ${overviewSite?.status ?? site.status}`}>
+                    {overviewSite?.status ?? site.status}
+                  </span>
+                  <span className="tag">{site.source}</span>
+                </div>
+                {site.clientId !== "unassigned" ? (
+                  <p style={{ margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
+                    <Link
+                      href={`/organizations/${site.clientId}`}
+                      style={{ color: "var(--accent)", textDecoration: "none" }}
+                    >
+                      View client →
+                    </Link>
+                  </p>
+                ) : null}
+                <Link href={`/sites/${site.id}`} style={{ color: "var(--accent)", textDecoration: "none" }}>
+                  Open workspace →
+                </Link>
+              </article>
+            );
+          })}
+        </section>
+      )}
     </div>
   );
 }
