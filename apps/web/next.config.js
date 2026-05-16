@@ -3,6 +3,20 @@ const nextConfig = {
   output: 'standalone',
   experimental: {
     optimizePackageImports: []
+  },
+  async redirects() {
+    return [
+      {
+        source: '/sites',
+        destination: '/apps',
+        permanent: true
+      },
+      {
+        source: '/sites/:path*',
+        destination: '/apps/:path*',
+        permanent: true
+      }
+    ]
   }
 }
 
