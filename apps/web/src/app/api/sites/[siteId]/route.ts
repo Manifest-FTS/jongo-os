@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isAdminRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -127,16 +128,24 @@ export async function PUT(req: Request, { params }: Params) {
         deletedAt: null,
         organization: {
           deletedAt: null,
-          OR: [
-            { ownerId: session.user.id },
-            { collaborators: { some: { userId: session.user.id, role: { in: ["owner", "admin"] } } } }
-          ]
+          OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
+        }
+      },
+      include: {
+        organization: {
+          select: { id: true, ownerId: true, collaborators: { where: { userId: session.user.id }, select: { role: true } } }
         }
       }
     });
 
     if (!site) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+
+    const callerIsOwner = site.organization.ownerId === session.user.id;
+    const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
+    if (!callerIsAdmin) {
+      return NextResponse.json({ error: "Only admins can update apps" }, { status: 403 });
     }
 
     const name = body.name?.trim();
@@ -193,16 +202,24 @@ export async function DELETE(_req: Request, { params }: Params) {
         deletedAt: null,
         organization: {
           deletedAt: null,
-          OR: [
-            { ownerId: session.user.id },
-            { collaborators: { some: { userId: session.user.id, role: { in: ["owner", "admin"] } } } }
-          ]
+          OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
+        }
+      },
+      include: {
+        organization: {
+          select: { id: true, ownerId: true, collaborators: { where: { userId: session.user.id }, select: { role: true } } }
         }
       }
     });
 
     if (!site) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+
+    const callerIsOwner = site.organization.ownerId === session.user.id;
+    const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
+    if (!callerIsAdmin) {
+      return NextResponse.json({ error: "Only admins can delete apps" }, { status: 403 });
     }
 
     await db.site.update({ where: { id: siteId }, data: { deletedAt: new Date() } });

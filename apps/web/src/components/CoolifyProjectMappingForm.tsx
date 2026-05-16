@@ -128,7 +128,7 @@ export default function CoolifyProjectMappingForm({
           </select>
         )}
         <p className="form-help">
-          Mapping a Coolify Project links this client workspace to all sites deployed under it.
+          Mapping a Coolify Project links this client workspace to all apps deployed under it.
         </p>
       </div>
 

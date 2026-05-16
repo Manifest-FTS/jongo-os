@@ -17,13 +17,14 @@ export default async function SiteWorkspaceLayout({
 
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/sites/${siteId}`, match: "exact" },
-    { name: "Deployments", href: `/sites/${siteId}/deployments` },
-    { name: "Settings", href: `/sites/${siteId}/settings` }
+    { name: "Integrations", href: `/sites/${siteId}/integrations` },
+    { name: "Staging", href: `/sites/${siteId}/staging` },
+    { name: "Backups", href: `/sites/${siteId}/backups` },
+    { name: "Analytics", href: `/sites/${siteId}/analytics` },
+    { name: "Team", href: `/sites/${siteId}/team` },
+    { name: "Settings", href: `/sites/${siteId}/settings` },
+    { name: "Advanced", href: `/sites/${siteId}/advanced` }
   ];
-
-  if (site?.stagingEnabled) {
-    tabs.splice(2, 0, { name: "Staging", href: `/sites/${siteId}/staging` });
-  }
 
   const ownershipDiagnostic = site?.ownershipDiagnostic;
   const isMapped = site?.ownershipState === "mapped";
@@ -32,7 +33,7 @@ export default async function SiteWorkspaceLayout({
     <div className="workspace-shell">
       <div className="workspace-hero card">
         <div className="workspace-breadcrumb">
-          <Link href="/sites" className="breadcrumb-link">Sites</Link>
+          <Link href="/sites" className="breadcrumb-link">Apps</Link>
           <span className="breadcrumb-sep">/</span>
           {isMapped && site.clientId ? (
             <>
@@ -73,15 +74,6 @@ export default async function SiteWorkspaceLayout({
           </div>
         </div>
 
-        <details className="workspace-dev-details">
-          <summary>Developer details</summary>
-          <div className="workspace-dev-detail-body">
-            <span>Source: {site?.source ?? "unknown"}</span>
-            {site?.coolifyServiceUuid ? <span>Coolify UUID: <code>{site.coolifyServiceUuid}</code></span> : null}
-            {site?.coolifyProjectId ? <span>Project ID: <code>{site.coolifyProjectId}</code></span> : null}
-            {site?.coolifyEnvironmentName ? <span>Environment: <code>{site.coolifyEnvironmentName}</code></span> : null}
-          </div>
-        </details>
       </div>
 
       <div className="workspace-tab-bar card">

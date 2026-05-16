@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isAdminRole, normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -68,7 +69,7 @@ export async function GET(_req: Request, { params }: Params) {
         return {
           id: log.id,
           email,
-          role: details.role ?? "viewer",
+          role: normalizeRole(details.role),
           status: details.status ?? "pending",
           delivery: details.delivery ?? "not_configured",
           note: details.note ?? "Email delivery not configured yet.",
@@ -100,7 +101,7 @@ export async function GET(_req: Request, { params }: Params) {
  * POST /api/organizations/[organizationId]/collaborators
  * Invite a user to an organization by email.
  * Requires owner or admin role.
- * Body: { email: string; role: "admin" | "operator" | "viewer" }
+ * Body: { email: string; role: "admin" | "collaborator" }
  */
 export async function POST(req: Request, { params }: Params) {
   const session = await auth();
@@ -118,13 +119,13 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const email = body.email?.trim().toLowerCase();
-  const role = body.role?.trim();
+  const role = normalizeRole(body.role);
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
   }
-  if (!role || !["admin", "operator", "viewer"].includes(role)) {
-    return NextResponse.json({ error: "role must be admin, operator, or viewer" }, { status: 400 });
+  if (!["admin", "collaborator"].includes(role)) {
+    return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
   }
 
   try {
@@ -135,15 +136,24 @@ export async function POST(req: Request, { params }: Params) {
       where: {
         id: organizationId,
         deletedAt: null,
-        OR: [
-          { ownerId: session.user.id },
-          { collaborators: { some: { userId: session.user.id, role: { in: ["owner", "admin"] } } } }
-        ]
+        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
+      },
+      include: {
+        collaborators: {
+          where: { userId: session.user.id },
+          select: { role: true }
+        }
       }
     });
 
     if (!org) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+
+    const callerIsOwner = org.ownerId === session.user.id;
+    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
+    if (!callerIsAdmin) {
+      return NextResponse.json({ error: "Only admins can invite collaborators" }, { status: 403 });
     }
 
     // If the user already exists, create collaborator membership immediately.

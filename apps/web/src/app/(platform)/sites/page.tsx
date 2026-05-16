@@ -18,16 +18,16 @@ export default async function SitesPage() {
     <div className="page-stack">
       <div className="page-head">
         <div>
-          <h1 className="page-title">Sites ({siteDirectory.length})</h1>
+          <h1 className="page-title">Apps ({siteDirectory.length})</h1>
           <p className="page-subtitle">Filter by name or health and switch between list and grid as needed.</p>
         </div>
       </div>
 
       {siteDirectory.length === 0 ? (
         <div className="card">
-          <p className="card-muted">No sites yet. Start by creating a client, then add their first site.</p>
+          <p className="card-muted">No apps yet. Start by creating a client, then add their first app.</p>
           <p className="form-help" style={{ marginBottom: "0.75rem" }}>
-            Open a client workspace to create and manage its sites.
+            Open a client workspace to create and manage its apps.
           </p>
           <div style={{ marginBottom: "0.75rem" }}>
             <CreateOrganizationForm />

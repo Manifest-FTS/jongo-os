@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { db } from "@/lib/db";
+import { isAdminRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -43,11 +44,23 @@ export async function POST(request: Request, { params }: Params) {
           { ownerId: session.user.id },
           { collaborators: { some: { userId: session.user.id } } }
         ]
+      },
+      include: {
+        collaborators: {
+          where: { userId: session.user.id },
+          select: { role: true }
+        }
       }
     });
 
     if (!organization) {
       return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
+
+    const callerIsOwner = organization.ownerId === session.user.id;
+    const callerIsAdmin = callerIsOwner || isAdminRole(organization.collaborators[0]?.role);
+    if (!callerIsAdmin) {
+      return NextResponse.json({ error: "Only admins can manage Coolify mapping" }, { status: 403 });
     }
 
     const updated = await db.organization.update({

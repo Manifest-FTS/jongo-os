@@ -33,7 +33,7 @@ export default async function DashboardPage() {
       <section className="metric-strip">
         <article className="card metric-card">
           <p className="metric-value">{overview.sites.length}</p>
-          <p className="metric-label">Sites</p>
+          <p className="metric-label">Apps</p>
         </article>
         <article className="card metric-card">
           <p className="metric-value">{clients.length}</p>
@@ -85,7 +85,7 @@ export default async function DashboardPage() {
           {wordpressSites.length > 0 ? (
             <div className="dashboard-inline-note">
               <span className="tag">WordPress footprint</span>
-              <span className="card-muted">{wordpressSites.length} WordPress site{wordpressSites.length === 1 ? "" : "s"} in this workspace.</span>
+              <span className="card-muted">{wordpressSites.length} WordPress app{wordpressSites.length === 1 ? "" : "s"} in this workspace.</span>
             </div>
           ) : null}
         </article>
@@ -134,7 +134,7 @@ export default async function DashboardPage() {
             <div className="health-summary-grid two-up">
               <div className="health-stat-block">
                 <p className="metric-value small">{wordpressSites.length}</p>
-                <p className="metric-label">WordPress sites</p>
+                <p className="metric-label">WordPress apps</p>
               </div>
               <div className="health-stat-block">
                 <p className="metric-value small">n/a</p>

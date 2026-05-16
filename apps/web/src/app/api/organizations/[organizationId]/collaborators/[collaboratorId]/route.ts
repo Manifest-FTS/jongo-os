@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isAdminRole, normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ organizationId: string; collaboratorId: string }> };
 
 /**
  * PUT /api/organizations/[organizationId]/collaborators/[collaboratorId]
  * Update a collaborator's role. Owner or admin only. Cannot change owner role.
- * Body: { role: "admin" | "operator" | "viewer" }
+ * Body: { role: "admin" | "collaborator" }
  */
 export async function PUT(req: Request, { params }: Params) {
   const session = await auth();
@@ -23,9 +24,9 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const role = body.role?.trim();
-  if (!role || !["admin", "operator", "viewer"].includes(role)) {
-    return NextResponse.json({ error: "role must be admin, operator, or viewer" }, { status: 400 });
+  const role = normalizeRole(body.role);
+  if (!["admin", "collaborator"].includes(role)) {
+    return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
   }
 
   try {
@@ -36,15 +37,24 @@ export async function PUT(req: Request, { params }: Params) {
       where: {
         id: organizationId,
         deletedAt: null,
-        OR: [
-          { ownerId: session.user.id },
-          { collaborators: { some: { userId: session.user.id, role: { in: ["owner", "admin"] } } } }
-        ]
+        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
+      },
+      include: {
+        collaborators: {
+          where: { userId: session.user.id },
+          select: { role: true }
+        }
       }
     });
 
     if (!org) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+
+    const callerIsOwner = org.ownerId === session.user.id;
+    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
+    if (!callerIsAdmin) {
+      return NextResponse.json({ error: "Only admins can change roles" }, { status: 403 });
     }
 
     const collaborator = await db.collaborator.findFirst({
@@ -53,11 +63,6 @@ export async function PUT(req: Request, { params }: Params) {
 
     if (!collaborator) {
       return NextResponse.json({ error: "Collaborator not found" }, { status: 404 });
-    }
-
-    // Cannot change the owner's role
-    if (collaborator.role === "owner") {
-      return NextResponse.json({ error: "Cannot change the owner's role" }, { status: 403 });
     }
 
     const updated = await db.collaborator.update({
@@ -92,15 +97,24 @@ export async function DELETE(_req: Request, { params }: Params) {
       where: {
         id: organizationId,
         deletedAt: null,
-        OR: [
-          { ownerId: session.user.id },
-          { collaborators: { some: { userId: session.user.id, role: { in: ["owner", "admin"] } } } }
-        ]
+        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
+      },
+      include: {
+        collaborators: {
+          where: { userId: session.user.id },
+          select: { role: true }
+        }
       }
     });
 
     if (!org) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+
+    const callerIsOwner = org.ownerId === session.user.id;
+    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
+    if (!callerIsAdmin) {
+      return NextResponse.json({ error: "Only admins can remove collaborators" }, { status: 403 });
     }
 
     const collaborator = await db.collaborator.findFirst({
@@ -111,7 +125,7 @@ export async function DELETE(_req: Request, { params }: Params) {
       return NextResponse.json({ error: "Collaborator not found" }, { status: 404 });
     }
 
-    if (collaborator.role === "owner") {
+    if (collaborator.userId === org.ownerId) {
       return NextResponse.json({ error: "Cannot remove the organization owner" }, { status: 403 });
     }
 

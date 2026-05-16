@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon } from "@/components/JongoIcons";
+import { normalizeRole } from "@/lib/roles";
 
 type Collaborator = {
   id: string;
@@ -69,7 +70,7 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
       setEmail("");
       router.refresh();
     } catch {
-      setInviteError("Network error — please try again");
+      setInviteError("Network error - please try again");
     } finally {
       setInviteLoading(false);
     }
@@ -96,41 +97,39 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
       });
       router.refresh();
     } catch {
-      // silent — refresh won't happen but no crash
+      // no-op on network failure
     }
   }
 
   return (
     <div>
-      {/* Existing collaborators */}
       <div style={{ marginBottom: "1rem" }}>
         {collaborators.length === 0 && pendingInvites.length === 0 ? (
           <p className="card-muted">No team members yet. Invite someone to get started.</p>
         ) : null}
-        {collaborators.map((c) => (
-          <div
-            key={c.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.75rem",
-              padding: "0.5rem 0",
-              borderBottom: "1px solid var(--border)"
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>
-                {c.fullName ?? c.email}
-              </p>
-              {c.fullName && (
-                <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>{c.email}</p>
-              )}
-            </div>
-            {c.role === "owner" ? (
-              <span className="tag">owner</span>
-            ) : (
+
+        {collaborators.map((c) => {
+          const normalizedRole = normalizeRole(c.role);
+          const isSelf = c.userId === currentUserId;
+
+          return (
+            <div
+              key={c.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.75rem",
+                padding: "0.5rem 0",
+                borderBottom: "1px solid var(--border)"
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>{c.fullName ?? c.email}</p>
+                {c.fullName && <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>{c.email}</p>}
+              </div>
+
               <select
-                value={c.role}
+                value={normalizedRole}
                 onChange={(e) => handleRoleChange(c.id, e.target.value)}
                 className="form-select"
                 style={{ width: "auto", fontSize: "0.85rem", padding: "0.25rem 0.45rem" }}
@@ -139,19 +138,20 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
                   <option key={r} value={r}>{r}</option>
                 ))}
               </select>
-            )}
-            {c.role !== "owner" && c.userId !== currentUserId && (
-              <button
-                onClick={() => handleRemove(c.id)}
-                disabled={removingId === c.id}
-                className="btn btn-danger"
-                style={{ padding: "0.3rem 0.55rem", fontSize: "0.8rem" }}
-              >
-                {removingId === c.id ? "…" : "Remove"}
-              </button>
-            )}
-          </div>
-        ))}
+
+              {!isSelf && (
+                <button
+                  onClick={() => handleRemove(c.id)}
+                  disabled={removingId === c.id}
+                  className="btn btn-danger"
+                  style={{ padding: "0.3rem 0.55rem", fontSize: "0.8rem" }}
+                >
+                  {removingId === c.id ? "..." : "Remove"}
+                </button>
+              )}
+            </div>
+          );
+        })}
 
         {pendingInvites.map((invite) => (
           <div
@@ -165,20 +165,17 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
             }}
           >
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>
-                {invite.email}
-              </p>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>{invite.email}</p>
               <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-                Invitation pending {invite.note ? `• ${invite.note}` : ""}
+                Invitation pending {invite.note ? `- ${invite.note}` : ""}
               </p>
             </div>
-            <span className="tag">{invite.role}</span>
+            <span className="tag">{normalizeRole(invite.role)}</span>
             <span className="status-chip unknown">pending</span>
           </div>
         ))}
       </div>
 
-      {/* Invite form */}
       <form onSubmit={handleInvite} className="form-row">
         <input
           type="email"
@@ -201,18 +198,13 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
         </select>
         <button type="submit" className="btn" disabled={inviteLoading}>
           <PlusIcon className="btn-icon" />
-          {inviteLoading ? "Adding…" : "Add"}
+          {inviteLoading ? "Adding..." : "Add"}
         </button>
       </form>
-      {inviteError && (
-        <p className="form-error" style={{ marginTop: "0.5rem" }}>{inviteError}</p>
-      )}
-      {inviteNotice && (
-        <p className="form-help" style={{ marginTop: "0.5rem" }}>{inviteNotice}</p>
-      )}
-      <p className="form-help">
-        Invite by email. If the person has not registered yet, the invite will remain pending.
-      </p>
+
+      {inviteError && <p className="form-error" style={{ marginTop: "0.5rem" }}>{inviteError}</p>}
+      {inviteNotice && <p className="form-help" style={{ marginTop: "0.5rem" }}>{inviteNotice}</p>}
+      <p className="form-help">Invite by email. If the person has not registered yet, the invite will remain pending.</p>
     </div>
   );
 }

@@ -33,7 +33,7 @@ export type Session = {
   userId: UUID;
   organizationId: UUID;
   email: string;
-  role: "owner" | "admin" | "operator" | "viewer";
+  role: "admin" | "collaborator";
   expiresAt: Date;
 };
 
@@ -166,7 +166,7 @@ export type DeploymentWithEnvironment = Deployment & {
 // Collaborators
 // ============================================================
 
-export type CollaboratorRole = "owner" | "admin" | "operator" | "viewer";
+export type CollaboratorRole = "admin" | "collaborator";
 
 export type Collaborator = {
   id: UUID;
@@ -278,14 +278,12 @@ export type Permission =
   | "manage_environments";
 
 export type PermissionMatrix = {
-  owner: Permission[];
   admin: Permission[];
-  operator: Permission[];
-  viewer: Permission[];
+  collaborator: Permission[];
 };
 
 export const ROLE_PERMISSIONS: PermissionMatrix = {
-  owner: [
+  admin: [
     "read",
     "deploy",
     "manage_collaborators",
@@ -293,15 +291,7 @@ export const ROLE_PERMISSIONS: PermissionMatrix = {
     "manage_site",
     "manage_environments"
   ],
-  admin: [
-    "read",
-    "deploy",
-    "manage_collaborators",
-    "manage_site",
-    "manage_environments"
-  ],
-  operator: ["read", "deploy"],
-  viewer: ["read"]
+  collaborator: ["read", "deploy"]
 };
 
 // ============================================================
