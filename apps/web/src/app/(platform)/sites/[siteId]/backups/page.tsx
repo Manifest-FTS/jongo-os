@@ -53,7 +53,7 @@ export default async function BackupsPage({ params }: Params) {
           </div>
         )}
         <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
-          <Link href={`/sites/${siteId}/deployments`} className="action-link">Open deployment history</Link>
+          <Link href={`/apps/${siteId}/deployments`} className="action-link">Open deployment history</Link>
         </p>
       </article>
     </div>

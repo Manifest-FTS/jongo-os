@@ -98,6 +98,7 @@ export type ClientWorkspaceRecord = ClientRecord & {
 
 export type SiteDirectoryRecord = {
   id: string;           // DB UUID when available, Coolify ID otherwise
+  slug?: string;
   name: string;
   deployTargetId: string;
   clientId: string;
@@ -114,6 +115,7 @@ export type SiteDirectoryRecord = {
 
 export type SiteWorkspaceRecord = {
   id: string;           // DB UUID when available, Coolify ID otherwise
+  slug?: string;
   name: string;
   description?: string;
   deployTargetId: string;
@@ -169,6 +171,21 @@ function getClientForCoolifySite(siteId: string, mode: "live" | "mock") {
 
 function normalizedKey(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
+}
+
+function toAppSlug(name: string, fallbackId: string): string {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72);
+
+  if (base.length > 0) {
+    return base;
+  }
+
+  return fallbackId.trim().toLowerCase();
 }
 
 function buildOrganizationOwnershipIndex(organizations: any[]) {
@@ -339,6 +356,7 @@ async function readLegacySiteDirectory(prisma: any, viewer?: ViewerContext): Pro
 
   return rows.map((row) => ({
     id: row.id,
+    slug: toAppSlug(row.name, row.id),
     name: row.name,
     description: row.description ?? undefined,
     deployTargetId: row.id,
@@ -578,11 +596,22 @@ export async function getSiteActivityFeed(siteId: string, limit = 6): Promise<Ac
   const overview = await getCoolifyOverview();
   const prisma = await maybeGetDb();
   const dbSite = prisma
-    ? await prisma.site.findFirst({ where: { id: siteId, deletedAt: null }, select: { coolifyServiceUuid: true } })
+    ? await prisma.site.findFirst({
+        where: isUuid(siteId)
+          ? { id: siteId, deletedAt: null }
+          : { slug: siteId, deletedAt: null },
+        select: { coolifyServiceUuid: true, name: true }
+      })
     : null;
 
   const coolifyId = dbSite?.coolifyServiceUuid ?? siteId;
-  const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
+  const site = overview.sites.find(
+    (item) =>
+      item.id === coolifyId ||
+      item.deployTargetId === coolifyId ||
+      toAppSlug(item.name, item.id) === siteId ||
+      (dbSite?.name ? toAppSlug(item.name, item.id) === toAppSlug(dbSite.name, item.id) : false)
+  );
 
   if (!site) {
     return [];
@@ -968,6 +997,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
         return {
           id: site.id,
+          slug: toAppSlug(site.name, site.id),
           name: site.name,
           deployTargetId: site.deployTargetId,
           clientId: ownership.clientId,
@@ -1025,6 +1055,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
 
         return {
           id: s.id,
+          slug: s.slug ?? toAppSlug(s.name, s.id),
           name: s.name,
           description: s.description ?? undefined,
           deployTargetId: coolifyMatch?.deployTargetId ?? s.coolifyServiceUuid ?? "",
@@ -1049,6 +1080,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
           const ownership = resolveOwnershipForCoolifySite(site, overview.mode, ownershipIndex);
           return {
             id: site.id,
+            slug: toAppSlug(site.name, site.id),
             name: site.name,
             deployTargetId: site.deployTargetId,
             clientId: ownership.clientId,
@@ -1068,8 +1100,32 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       return [...dbRecords, ...coolifyOnlyRecords];
     } catch (siteQueryError) {
       const legacyRecords = await readLegacySiteDirectory(prisma, viewer);
-      if (legacyRecords.length > 0) {
-        return legacyRecords;
+      const legacyNames = new Set(legacyRecords.map((record) => normalizedKey(record.name)));
+      const coolifyRecords: SiteDirectoryRecord[] = overview.sites
+        .filter((site) => !legacyNames.has(normalizedKey(site.name)))
+        .map((site) => {
+          const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
+          return {
+            id: site.id,
+            slug: toAppSlug(site.name, site.id),
+            name: site.name,
+            deployTargetId: site.deployTargetId,
+            clientId: ownership.clientId,
+            clientName: ownership.clientName,
+            status: site.status,
+            ownershipState: ownership.ownershipState,
+            ownershipDiagnostic: ownership.ownershipDiagnostic,
+            source: "coolify" as const,
+            coolifyServiceUuid: site.id,
+            coolifyProjectId: site.coolifyProjectId,
+            coolifyProjectName: site.coolifyProjectName,
+            coolifyEnvironmentId: site.coolifyEnvironmentId,
+            coolifyEnvironmentName: site.coolifyEnvironmentName
+          };
+        });
+
+      if (legacyRecords.length > 0 || coolifyRecords.length > 0) {
+        return [...legacyRecords, ...coolifyRecords];
       }
 
       throw siteQueryError;
@@ -1120,7 +1176,9 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
       try {
         // Try DB lookup first (siteId may be a DB UUID)
         dbSite = await prisma.site.findFirst({
-          where: { id: siteId, deletedAt: null },
+          where: isUuid(siteId)
+            ? { id: siteId, deletedAt: null }
+            : { OR: [{ slug: siteId }, { id: siteId }], deletedAt: null },
           include: {
             organization: {
               select: {
@@ -1154,6 +1212,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
 
         return {
           id: dbSite.id,
+          slug: dbSite.slug ?? toAppSlug(dbSite.name, dbSite.id),
           name: dbSite.name,
           description: dbSite.description ?? undefined,
           deployTargetId: coolifyMatch?.deployTargetId ?? dbSite.coolifyServiceUuid ?? "",
@@ -1207,6 +1266,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
         const mappedStatus = mapLegacyProjectStatus(legacyProject.status);
         return {
           id: legacyProject.id,
+          slug: toAppSlug(legacyProject.name, legacyProject.id),
           name: legacyProject.name,
           description: legacyProject.description ?? undefined,
           deployTargetId: legacyProject.id,
@@ -1234,7 +1294,9 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
     }
 
     // Fallback: Coolify-only lookup (for sites not yet in DB)
-    const site = overview.sites.find((item) => item.id === siteId);
+    const site = overview.sites.find(
+      (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
+    );
     const ownership = site ? resolveOwnershipForCoolifySite(site, overview.mode) : undefined;
 
     if (!site) return undefined;
@@ -1243,6 +1305,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
 
     return {
       id: site.id,
+      slug: toAppSlug(site.name, site.id),
       name: site.name,
       deployTargetId: site.deployTargetId,
       clientId: ownership?.clientId ?? "orphaned",
@@ -1269,13 +1332,16 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
   } catch {
     // Last-resort Coolify fallback
     const overview = await getCoolifyOverview();
-    const site = overview.sites.find((item) => item.id === siteId);
+    const site = overview.sites.find(
+      (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
+    );
     const ownership = site ? resolveOwnershipForCoolifySite(site, overview.mode) : undefined;
 
     if (!site) return undefined;
 
     return {
       id: site.id,
+      slug: toAppSlug(site.name, site.id),
       name: site.name,
       deployTargetId: site.deployTargetId,
       clientId: ownership?.clientId ?? "orphaned",
@@ -1316,10 +1382,18 @@ export async function listSiteDeployments(siteId: string): Promise<SiteDeploymen
     const prisma = await maybeGetDb();
 
     if (prisma) {
-      const rows: any[] = await prisma.deployment.findMany({
+      const dbSite = await prisma.site.findFirst({
+        where: isUuid(siteId)
+          ? { id: siteId, deletedAt: null }
+          : { slug: siteId, deletedAt: null },
+        select: { id: true, coolifyServiceUuid: true, name: true }
+      });
+
+      const resolvedSiteId = dbSite?.id ?? (isUuid(siteId) ? siteId : undefined);
+      const rows: any[] = resolvedSiteId ? await prisma.deployment.findMany({
         where: {
           environment: {
-            siteId,
+            siteId: resolvedSiteId,
             site: { deletedAt: null }
           }
         },
@@ -1329,7 +1403,7 @@ export async function listSiteDeployments(siteId: string): Promise<SiteDeploymen
         },
         orderBy: { triggeredAt: "desc" },
         take: 50
-      });
+      }) : [];
 
       if (rows.length > 0) {
         return rows.map((row: any): SiteDeploymentRecord => ({
@@ -1353,7 +1427,9 @@ export async function listSiteDeployments(siteId: string): Promise<SiteDeploymen
   // Fallback: Coolify overview deployments for this site
   try {
     const overview = await getCoolifyOverview();
-    const site = overview.sites.find((item) => item.id === siteId);
+    const site = overview.sites.find(
+      (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
+    );
     if (!site) return [];
 
     return overview.deployments

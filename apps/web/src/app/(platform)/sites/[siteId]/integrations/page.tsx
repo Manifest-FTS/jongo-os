@@ -74,7 +74,7 @@ export default async function IntegrationsPage({ params }: Params) {
           </div>
         )}
         <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
-          <Link href={`/sites/${siteId}/advanced`} className="action-link">Open advanced diagnostics</Link>
+          <Link href={`/apps/${siteId}/advanced`} className="action-link">Open advanced diagnostics</Link>
         </p>
       </article>
     </div>

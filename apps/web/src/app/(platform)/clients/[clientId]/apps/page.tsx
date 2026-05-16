@@ -43,7 +43,7 @@ export default async function ClientAppsPage({ params }: Params) {
                 key={app.id}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.65rem", flexWrap: "wrap" }}
               >
-                <Link href={`/sites/${app.id}`} className="action-link" style={{ fontWeight: 600 }}>
+                <Link href={`/apps/${app.slug ?? app.id}`} className="action-link" style={{ fontWeight: 600 }}>
                   {app.name} <ArrowRightIcon className="btn-icon" />
                 </Link>
                 <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>

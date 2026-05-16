@@ -51,7 +51,7 @@ export default async function SitesPage() {
               ownershipState: site.ownershipState,
               ownershipDiagnostic: site.ownershipDiagnostic,
               source: site.source,
-              href: `/sites/${site.id}`,
+              href: `/apps/${site.slug ?? site.id}`,
               clientHref: site.ownershipState === "mapped" ? `/clients/${site.clientId}` : undefined
             };
           })}
