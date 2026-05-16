@@ -1,6 +1,7 @@
 import { getRuntimeConfigStatus } from "@/lib/runtime-config";
 import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
 import { auth } from "@/lib/auth.config";
+import { canAccessRuntimeDiagnostics, runRuntimeDiagnosticsProbe } from "@/lib/runtime-diagnostics";
 
 function normalizeEmail(value?: string | null) {
   return value?.trim().toLowerCase() ?? "";
@@ -12,6 +13,11 @@ export default async function SettingsPage() {
   const sessionEmail = normalizeEmail(session?.user?.email);
   const bootstrapAdminEmail = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
   const isAdmin = Boolean(bootstrapAdminEmail && sessionEmail === bootstrapAdminEmail);
+  const canViewDiagnostics = canAccessRuntimeDiagnostics({ sessionEmail: session?.user?.email });
+  const diagnostics = canViewDiagnostics ? await runRuntimeDiagnosticsProbe() : null;
+  const recentRepoCall = diagnostics?.repositoryCalls[diagnostics.repositoryCalls.length - 1];
+  const recentInventory = diagnostics?.coolifyInventoryHistory[diagnostics.coolifyInventoryHistory.length - 1];
+  const recentEndpointCalls = diagnostics?.coolifyEndpointCalls.slice(-8).reverse() ?? [];
 
   return (
     <div>
@@ -119,6 +125,62 @@ export default async function SettingsPage() {
               <li>Provider integration secrets stay server-only</li>
             </ul>
           </details>
+
+          {canViewDiagnostics && diagnostics ? (
+            <details style={{ marginTop: "0.8rem" }}>
+              <summary style={{ cursor: "pointer", fontSize: "0.9rem", color: "var(--muted)" }}>
+                Runtime diagnostics (admin/dev)
+              </summary>
+
+              <div style={{ marginTop: "0.65rem", display: "grid", gap: "0.5rem", fontSize: "0.85rem" }}>
+                <p style={{ margin: 0 }}>
+                  Last successful Coolify inventory fetch: {diagnostics.lastSuccessfulCoolifyInventoryFetchAt ?? "never"}
+                </p>
+                <p style={{ margin: 0 }}>
+                  Last non-empty Coolify inventory fetch: {diagnostics.lastNonEmptyCoolifyInventoryFetchAt ?? "never"}
+                </p>
+                <p style={{ margin: 0 }}>
+                  Latest inventory source: {recentInventory ? `${recentInventory.source} (${recentInventory.mode})` : "n/a"}
+                </p>
+                <p style={{ margin: 0 }}>
+                  Latest repo source decision: {recentRepoCall ? `${recentRepoCall.operation} -> ${recentRepoCall.source}` : "n/a"}
+                </p>
+                <p style={{ margin: 0 }}>
+                  Scope applied: {recentRepoCall?.scopeApplied ? "yes" : "no"}
+                </p>
+                <p style={{ margin: 0 }}>
+                  Env presence: DATABASE_URL={diagnostics.envPresence.databaseUrl ? "yes" : "no"}, COOLIFY_API_BASE_URL={diagnostics.envPresence.coolifyApiBaseUrl ? "yes" : "no"}, COOLIFY_API_TOKEN={diagnostics.envPresence.coolifyApiToken ? "yes" : "no"}, NEXTAUTH_SECRET={diagnostics.envPresence.nextauthSecret ? "yes" : "no"}
+                </p>
+              </div>
+
+              <div style={{ marginTop: "0.65rem", overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", padding: "0.35rem" }}>Endpoint</th>
+                      <th style={{ textAlign: "left", padding: "0.35rem" }}>Status</th>
+                      <th style={{ textAlign: "left", padding: "0.35rem" }}>Success</th>
+                      <th style={{ textAlign: "left", padding: "0.35rem" }}>Count</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentEndpointCalls.map((call, idx) => (
+                      <tr key={`${call.at}-${call.path}-${idx}`}>
+                        <td style={{ padding: "0.35rem" }}>{call.path}</td>
+                        <td style={{ padding: "0.35rem" }}>{call.statusCode ?? "n/a"}</td>
+                        <td style={{ padding: "0.35rem" }}>{call.success ? "yes" : "no"}</td>
+                        <td style={{ padding: "0.35rem" }}>{call.responseCount ?? "n/a"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <p style={{ marginTop: "0.65rem", marginBottom: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+                Full JSON is available at /api/diagnostics/runtime?probe=1 for authorized admin/dev access.
+              </p>
+            </details>
+          ) : null}
         </article>
 
         {!isAdmin ? (

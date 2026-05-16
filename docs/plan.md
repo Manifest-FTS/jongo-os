@@ -50,6 +50,14 @@ jongo-os/
 
 **Terminology Update:** Sites are referred to as "Apps" in the UI/UX. This better reflects the range of infrastructure managed (websites, SaaS applications, APIs, containers, services, WordPress installs, etc.).
 
+**Coolify Vocabulary Alignment (2026 refresh):**
+
+- In jongo-os UI we keep the word "Clients", while Coolify API uses "Projects".
+- In jongo-os UI we keep the word "Apps", while Coolify API now also exposes cross-type "Resources".
+- Jongo data model should treat service/app/database as resource variants under one App workspace mental model.
+
+This preserves user-friendly UX language while keeping backend mappings explicit and deterministic.
+
 ### Platform-Level Navigation
 
 Top-level navigation contains only primary scopes:
@@ -329,6 +337,47 @@ The plan should eventually cover:
 - backup and restore state
 - infrastructure and environment configuration
 - operational workflows for self-hosted teams and agencies
+
+### API Alignment Track (Current Priority)
+
+Near-term roadmap work should keep the implementation aligned to current Coolify API docs:
+
+1. Keep project mapping on `GET /api/v1/projects` with write support on `PATCH/DELETE /api/v1/projects/{uuid}` when mutating workflows are enabled.
+2. Introduce `GET /api/v1/resources` as the canonical cross-type inventory feed for Apps directory aggregation.
+3. Keep `GET /api/v1/services` and `POST /api/v1/services` for service-specific create/read operations.
+4. Keep environment lifecycle attached to projects via `POST /api/v1/projects/{uuid}/environments`.
+5. Preserve API bootstrap check with `GET /api/v1/enable` and document root-permission requirement in deployment runbooks.
+
+### API Alignment Execution Status (2026-05-16)
+
+Completed in codebase:
+
+1. Added runtime diagnostics instrumentation for:
+  - endpoint-level Coolify call status, success/failure, response counts
+  - inventory source attribution (`db`, `coolify`, `hybrid`, `mock`)
+  - auth/session scope-filter diagnostics
+  - env-presence checks without secret exposure
+  - last successful and last non-empty inventory timestamps
+2. Added protected diagnostics surfaces:
+  - admin/dev diagnostics section under Settings -> Developer Details
+  - protected endpoint: `GET /api/diagnostics/runtime` (supports `?probe=1`)
+3. Kept existing fallback behavior intact (no fallback removals).
+4. Switched Coolify inventory aggregation to resources-primary:
+  - attempts `GET /api/v1/resources` first
+  - falls back to legacy `applications/services/databases` calls when needed
+
+Current production finding (must resolve next):
+
+- Production Coolify API requests are failing authentication (`Unauthenticated` / non-reachable in connection checks).
+- Production database currently has no Site rows, so when Coolify inventory fails auth, Apps can resolve to zero.
+
+Immediate next actions:
+
+1. Deploy current diagnostics/resources-primary build to production.
+2. Rotate/validate production Coolify API token and API enablement state.
+3. Re-run diagnostics probe in production and verify endpoint success for inventory calls.
+4. Confirm Apps inventory is non-empty from live Coolify feed when DB Sites are zero.
+5. Capture final verification in runbook docs before additional feature work.
 
 ## Next Implementation Phases
 
