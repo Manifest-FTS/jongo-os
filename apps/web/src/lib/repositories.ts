@@ -1,5 +1,6 @@
 import { getClients, getClientById as getMockClientById, getClientForSite, type ClientRecord } from "./clients";
 import { getCoolifyOverview } from "./coolify";
+import { recordRepositoryCall } from "./diagnostics";
 import { normalizeRole } from "./roles";
 
 export type ViewerContext = {
@@ -720,8 +721,37 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
 }
 
 export async function listClientWorkspaces(viewer?: ViewerContext): Promise<ClientWorkspaceRecord[]> {
+  const scopedUserId = getScopedViewerUserId(viewer);
+  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewer);
+  const scopeApplied = Boolean(scopedUserId && !bootstrapGlobalAccess);
+
   try {
-    return await readRealClientWorkspaces(viewer);
+    const rows = await readRealClientWorkspaces(viewer);
+    const mockCount = rows.filter((row) => row.dataSource === "mock").length;
+    const dbCount = rows.filter((row) => row.dataSource === "db").length;
+    const source = mockCount > 0 ? "mock" : "db";
+
+    recordRepositoryCall({
+      operation: "listClientWorkspaces",
+      source,
+      recordCount: rows.length,
+      dbCount,
+      coolifyCount: 0,
+      mockCount,
+      scopeApplied,
+      viewerUserIdPresent: Boolean(viewer?.userId),
+      viewerUserIdIsUuid: Boolean(scopedUserId),
+      bootstrapGlobalAccess,
+      fallbackUsed: mockCount > 0,
+      note:
+        source === "mock"
+          ? process.env.DATABASE_URL
+            ? "mock_data_returned_with_database_configured"
+            : "mock_data_returned_without_database"
+          : "db_query_succeeded"
+    });
+
+    return rows;
   } catch (error) {
     if (isPrismaSchemaMismatchError(error)) {
       console.error(
@@ -745,7 +775,25 @@ export async function listClientWorkspaces(viewer?: ViewerContext): Promise<Clie
       "DATABASE_URL present:", !!process.env.DATABASE_URL,
       "Error:", error
     );
-    return fromMockClients();
+
+    const fallbackRows = fromMockClients();
+
+    recordRepositoryCall({
+      operation: "listClientWorkspaces",
+      source: "mock",
+      recordCount: fallbackRows.length,
+      dbCount: 0,
+      coolifyCount: 0,
+      mockCount: fallbackRows.length,
+      scopeApplied,
+      viewerUserIdPresent: Boolean(viewer?.userId),
+      viewerUserIdIsUuid: Boolean(scopedUserId),
+      bootstrapGlobalAccess,
+      fallbackUsed: true,
+      note: "exception_triggered_mock_fallback"
+    });
+
+    return fallbackRows;
   }
 }
 
@@ -1045,12 +1093,45 @@ export async function isClientAdmin(clientDbId: string, userId: string): Promise
 }
 
 export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDirectoryRecord[]> {
+  const scopedUserId = getScopedViewerUserId(viewer);
+  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewer);
+  const scopeApplied = Boolean(scopedUserId && !bootstrapGlobalAccess);
+
+  const recordSiteDirectoryDiagnostics = (records: SiteDirectoryRecord[], fallbackUsed: boolean, note: string) => {
+    const dbCount = records.filter((record) => record.source === "db").length;
+    const coolifyCount = records.filter((record) => record.source === "coolify").length;
+
+    let source: "db" | "coolify" | "hybrid" | "mock" = "coolify";
+    if (dbCount > 0 && coolifyCount > 0) {
+      source = "hybrid";
+    } else if (dbCount > 0) {
+      source = "db";
+    } else if (coolifyCount > 0) {
+      source = "coolify";
+    }
+
+    recordRepositoryCall({
+      operation: "listSiteDirectory",
+      source,
+      recordCount: records.length,
+      dbCount,
+      coolifyCount,
+      mockCount: 0,
+      scopeApplied,
+      viewerUserIdPresent: Boolean(viewer?.userId),
+      viewerUserIdIsUuid: Boolean(scopedUserId),
+      bootstrapGlobalAccess,
+      fallbackUsed,
+      note
+    });
+  };
+
   try {
     const prisma = await maybeGetDb();
     const overview = await getCoolifyOverview();
 
     if (!prisma) {
-      return overview.sites.map((site) => {
+      const records = overview.sites.map((site) => {
         const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
         return {
           id: site.id,
@@ -1069,6 +1150,9 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
           coolifyEnvironmentName: site.coolifyEnvironmentName
         };
       });
+
+      recordSiteDirectoryDiagnostics(records, true, "db_unavailable_coolify_only");
+      return records;
     }
 
     // --- DB sites (user-scoped) ---
@@ -1154,7 +1238,9 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
           };
         });
 
-      return [...dbRecords, ...coolifyOnlyRecords];
+      const mergedRecords = [...dbRecords, ...coolifyOnlyRecords];
+      recordSiteDirectoryDiagnostics(mergedRecords, false, "db_plus_coolify_merge");
+      return mergedRecords;
     } catch (siteQueryError) {
       const legacyRecords = (await hasLegacySchema(prisma))
         ? await readLegacySiteDirectory(prisma, viewer)
@@ -1184,7 +1270,9 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         });
 
       if (legacyRecords.length > 0 || coolifyRecords.length > 0) {
-        return [...legacyRecords, ...coolifyRecords];
+        const mergedFallbackRecords = [...legacyRecords, ...coolifyRecords];
+        recordSiteDirectoryDiagnostics(mergedFallbackRecords, true, "legacy_or_coolify_fallback_after_site_query_error");
+        return mergedFallbackRecords;
       }
 
       throw siteQueryError;
@@ -1204,7 +1292,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       "Error:", error
     );
     const overview = await getCoolifyOverview();
-    return overview.sites.map((site) => {
+    const fallbackRecords = overview.sites.map((site) => {
       const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
       return {
         id: site.id,
@@ -1222,6 +1310,9 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         coolifyEnvironmentName: site.coolifyEnvironmentName
       };
     });
+
+    recordSiteDirectoryDiagnostics(fallbackRecords, true, "top_level_exception_coolify_only");
+    return fallbackRecords;
   }
 }
 

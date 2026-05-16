@@ -1,3 +1,5 @@
+import { recordCoolifyEndpointCall, recordCoolifyInventoryResult } from "@/lib/diagnostics";
+
 export type DeploymentRecord = {
   id: string;
   siteName: string;
@@ -146,6 +148,81 @@ function normalizeArrayPayload(input: unknown): Record<string, unknown>[] {
   }
 
   return [];
+}
+
+function partitionResourceInventory(resources: Record<string, unknown>[]): {
+  applications: Record<string, unknown>[];
+  services: Record<string, unknown>[];
+  databases: Record<string, unknown>[];
+} {
+  const applications: Record<string, unknown>[] = [];
+  const services: Record<string, unknown>[] = [];
+  const databases: Record<string, unknown>[] = [];
+
+  for (const resource of resources) {
+    const type = stringValue(resource, ["resource_type", "type", "kind", "service_type"]).toLowerCase();
+    const engine = stringValue(resource, ["database_type", "engine", "db_type"]).toLowerCase();
+    const hasCompose = typeof resource.docker_compose === "string" || typeof resource.docker_compose_raw === "string";
+    const hasGitRepo = typeof resource.git_repository === "string";
+
+    if (
+      type.includes("database") ||
+      type.includes("postgres") ||
+      type.includes("mysql") ||
+      type.includes("mariadb") ||
+      type.includes("redis") ||
+      engine.length > 0
+    ) {
+      databases.push(resource);
+      continue;
+    }
+
+    if (type.includes("service") || hasCompose) {
+      services.push(resource);
+      continue;
+    }
+
+    if (type.includes("application") || hasGitRepo) {
+      applications.push(resource);
+      continue;
+    }
+
+    // Keep unknown resource types visible in inventory by classifying them as generic services.
+    services.push(resource);
+  }
+
+  return { applications, services, databases };
+}
+
+function estimateResponseCount(input: unknown): number | undefined {
+  if (Array.isArray(input)) {
+    return input.length;
+  }
+
+  if (typeof input !== "object" || input === null) {
+    return undefined;
+  }
+
+  const candidate = input as Record<string, unknown>;
+  for (const key of [
+    "data",
+    "items",
+    "results",
+    "applications",
+    "services",
+    "deployments",
+    "databases",
+    "projects",
+    "environments",
+    "resources"
+  ]) {
+    const value = candidate[key];
+    if (Array.isArray(value)) {
+      return value.length;
+    }
+  }
+
+  return undefined;
 }
 
 function stringValue(obj: Record<string, unknown>, keys: string[], fallback = ""): string {
@@ -406,6 +483,9 @@ async function coolifyFetch(path: string): Promise<unknown> {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const startedAt = Date.now();
+  let statusCode: number | undefined;
+  let callLogged = false;
 
   try {
     const response = await fetch(`${baseUrl}${path}`, {
@@ -418,11 +498,43 @@ async function coolifyFetch(path: string): Promise<unknown> {
       signal: controller.signal
     });
 
+    statusCode = response.status;
+
     if (!response.ok) {
+      recordCoolifyEndpointCall({
+        path,
+        statusCode,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: `Coolify request failed (${response.status})`
+      });
+      callLogged = true;
       throw new Error(`Coolify request failed (${response.status}) for ${path}`);
     }
 
-    return response.json();
+    const payload = await response.json();
+    recordCoolifyEndpointCall({
+      path,
+      statusCode,
+      success: true,
+      responseCount: estimateResponseCount(payload),
+      durationMs: Date.now() - startedAt
+    });
+    callLogged = true;
+
+    return payload;
+  } catch (error) {
+    if (!callLogged) {
+      recordCoolifyEndpointCall({
+        path,
+        statusCode,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error
+      });
+    }
+
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -720,7 +832,18 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
   const token = process.env.COOLIFY_API_TOKEN;
 
   if (!baseUrl || !token) {
-    return mockOverview();
+    const overview = mockOverview();
+    recordCoolifyInventoryResult({
+      mode: "mock",
+      source: "mock",
+      success: false,
+      sitesCount: overview.sites.length,
+      deploymentsCount: overview.deployments.length,
+      projectsCount: overview.projects.length,
+      environmentsCount: overview.environments.length,
+      note: "missing_coolify_env"
+    });
+    return overview;
   }
 
   try {
@@ -733,26 +856,82 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     }
     const environments = await readProjectEnvironments(projects);
 
-    const applicationsPayload = await coolifyFetch("/api/v1/applications");
-    const applications = normalizeArrayPayload(applicationsPayload);
+    let applications: Record<string, unknown>[] = [];
+    let services: Record<string, unknown>[] = [];
+    let databases: Record<string, unknown>[] = [];
+    let usedResourcesPrimary = false;
 
-    const servicesPayload = await coolifyFetch("/api/v1/services");
-    const services = normalizeArrayPayload(servicesPayload);
+    try {
+      const resourcesPayload = await coolifyFetch("/api/v1/resources");
+      const resources = normalizeArrayPayload(resourcesPayload);
 
-    const databasesPayload = await coolifyFetch("/api/v1/databases");
-    const databases = normalizeArrayPayload(databasesPayload);
-
-    if (applications.length > 0 || services.length > 0 || databases.length > 0) {
-      return await buildLiveOverview(applications, services, databases, projects, environments);
+      if (resources.length > 0) {
+        const partitioned = partitionResourceInventory(resources);
+        applications = partitioned.applications;
+        services = partitioned.services;
+        databases = partitioned.databases;
+        usedResourcesPrimary = true;
+      }
+    } catch {
+      // Keep legacy endpoint fallback path.
+      usedResourcesPrimary = false;
     }
 
-    return {
+    if (!usedResourcesPrimary) {
+      const applicationsPayload = await coolifyFetch("/api/v1/applications");
+      applications = normalizeArrayPayload(applicationsPayload);
+
+      const servicesPayload = await coolifyFetch("/api/v1/services");
+      services = normalizeArrayPayload(servicesPayload);
+
+      const databasesPayload = await coolifyFetch("/api/v1/databases");
+      databases = normalizeArrayPayload(databasesPayload);
+    }
+
+    if (applications.length > 0 || services.length > 0 || databases.length > 0) {
+      const overview = await buildLiveOverview(applications, services, databases, projects, environments);
+      recordCoolifyInventoryResult({
+        mode: "live",
+        source: "coolify",
+        success: true,
+        sitesCount: overview.sites.length,
+        deploymentsCount: overview.deployments.length,
+        projectsCount: overview.projects.length,
+        environmentsCount: overview.environments.length,
+        note: usedResourcesPrimary ? "live_inventory_non_empty_resources_primary" : "live_inventory_non_empty"
+      });
+      return overview;
+    }
+
+    const emptyOverview = {
       ...emptyLiveOverview(),
       projects,
       environments
     };
+    recordCoolifyInventoryResult({
+      mode: "live",
+      source: "coolify",
+      success: true,
+      sitesCount: emptyOverview.sites.length,
+      deploymentsCount: emptyOverview.deployments.length,
+      projectsCount: emptyOverview.projects.length,
+      environmentsCount: emptyOverview.environments.length,
+      note: "live_inventory_empty"
+    });
+    return emptyOverview;
   } catch {
-    return emptyLiveOverview();
+    const fallback = emptyLiveOverview();
+    recordCoolifyInventoryResult({
+      mode: "live",
+      source: "coolify",
+      success: false,
+      sitesCount: fallback.sites.length,
+      deploymentsCount: fallback.deployments.length,
+      projectsCount: fallback.projects.length,
+      environmentsCount: fallback.environments.length,
+      note: "coolify_exception_empty_fallback"
+    });
+    return fallback;
   }
 }
 
