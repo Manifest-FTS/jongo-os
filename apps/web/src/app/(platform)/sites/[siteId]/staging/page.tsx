@@ -234,7 +234,7 @@ export default async function StagingPage({ params }: Params) {
         /* Disabled state */
         <article className="card">
           <p className="card-muted">
-            Staging is currently disabled. Enable staging in <a href={`/sites/${siteId}/settings`} style={{ color: "var(--accent-strong)", fontWeight: 600 }}>Site Settings</a> to manage staging workflows and validation environments.
+            Staging is currently disabled. Enable staging in <a href={`/apps/${siteId}/settings`} style={{ color: "var(--accent-strong)", fontWeight: 600 }}>Site Settings</a> to manage staging workflows and validation environments.
           </p>
         </article>
       )}

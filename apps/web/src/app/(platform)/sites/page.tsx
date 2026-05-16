@@ -33,7 +33,7 @@ export default async function SitesPage() {
             <CreateOrganizationForm />
           </div>
           <p style={{ marginTop: "0.5rem" }}>
-            <Link href="/organizations" className="action-link">Manage clients <ArrowRightIcon className="btn-icon" /></Link>
+            <Link href="/clients" className="action-link">Manage clients <ArrowRightIcon className="btn-icon" /></Link>
           </p>
         </div>
       ) : (
@@ -51,8 +51,8 @@ export default async function SitesPage() {
               ownershipState: site.ownershipState,
               ownershipDiagnostic: site.ownershipDiagnostic,
               source: site.source,
-              href: `/sites/${site.id}`,
-              clientHref: site.ownershipState === "mapped" ? `/organizations/${site.clientId}` : undefined
+              href: `/apps/${site.slug ?? site.id}`,
+              clientHref: site.ownershipState === "mapped" ? `/clients/${site.clientId}` : undefined
             };
           })}
         />

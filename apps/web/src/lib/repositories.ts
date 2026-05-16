@@ -98,6 +98,7 @@ export type ClientWorkspaceRecord = ClientRecord & {
 
 export type SiteDirectoryRecord = {
   id: string;           // DB UUID when available, Coolify ID otherwise
+  slug?: string;
   name: string;
   deployTargetId: string;
   clientId: string;
@@ -114,6 +115,7 @@ export type SiteDirectoryRecord = {
 
 export type SiteWorkspaceRecord = {
   id: string;           // DB UUID when available, Coolify ID otherwise
+  slug?: string;
   name: string;
   description?: string;
   deployTargetId: string;
@@ -169,6 +171,21 @@ function getClientForCoolifySite(siteId: string, mode: "live" | "mock") {
 
 function normalizedKey(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
+}
+
+function toAppSlug(name: string, fallbackId: string): string {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72);
+
+  if (base.length > 0) {
+    return base;
+  }
+
+  return fallbackId.trim().toLowerCase();
 }
 
 function buildOrganizationOwnershipIndex(organizations: any[]) {
@@ -288,6 +305,70 @@ async function readLegacyClientProjects(prisma: any, clientId: string): Promise<
     where p.client_id::text = ${clientId}
     order by p.created_at asc
   `;
+}
+
+async function readLegacySiteDirectory(prisma: any, viewer?: ViewerContext): Promise<SiteDirectoryRecord[]> {
+  const scopedUserId = getScopedViewerUserId(viewer);
+  const useScope = scopedUserId && !hasBootstrapGlobalAccess(viewer);
+
+  const rows: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    status: string | null;
+    clientId: string | null;
+    orgId: string | null;
+    clientName: string | null;
+  }> = useScope
+    ? await prisma.$queryRaw`
+      select
+        p.id as "id",
+        p.name as "name",
+        p.description as "description",
+        p.status::text as "status",
+        p.client_id as "clientId",
+        p.org_id as "orgId",
+        c.name as "clientName"
+      from projects p
+      left join clients c on c.id::text = p.client_id::text
+      where c.user_id::text = ${scopedUserId}
+         or exists (
+           select 1
+           from org_members m
+           where m.org_id::text = c.org_id::text
+             and m.user_id::text = ${scopedUserId}
+         )
+      order by p.created_at asc
+    `
+    : await prisma.$queryRaw`
+      select
+        p.id as "id",
+        p.name as "name",
+        p.description as "description",
+        p.status::text as "status",
+        p.client_id as "clientId",
+        p.org_id as "orgId",
+        c.name as "clientName"
+      from projects p
+      left join clients c on c.id::text = p.client_id::text
+      order by p.created_at asc
+    `;
+
+  return rows.map((row) => ({
+    id: row.id,
+    slug: toAppSlug(row.name, row.id),
+    name: row.name,
+    description: row.description ?? undefined,
+    deployTargetId: row.id,
+    clientId: row.clientId ?? row.orgId ?? "orphaned",
+    clientName: row.clientName ?? "Client",
+    status: mapLegacyProjectStatus(row.status),
+    ownershipState: row.clientId || row.orgId ? "mapped" : "orphaned",
+    ownershipDiagnostic: row.clientName
+      ? `Mapped to Client: ${row.clientName}`
+      : "No client mapping found",
+    source: "db"
+  }));
 }
 
 async function readLegacyClientMembers(prisma: any, clientRow: LegacyClientRow): Promise<LegacyMemberRow[]> {
@@ -515,11 +596,22 @@ export async function getSiteActivityFeed(siteId: string, limit = 6): Promise<Ac
   const overview = await getCoolifyOverview();
   const prisma = await maybeGetDb();
   const dbSite = prisma
-    ? await prisma.site.findFirst({ where: { id: siteId, deletedAt: null }, select: { coolifyServiceUuid: true } })
+    ? await prisma.site.findFirst({
+        where: isUuid(siteId)
+          ? { id: siteId, deletedAt: null }
+          : { slug: siteId, deletedAt: null },
+        select: { coolifyServiceUuid: true, name: true }
+      })
     : null;
 
   const coolifyId = dbSite?.coolifyServiceUuid ?? siteId;
-  const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
+  const site = overview.sites.find(
+    (item) =>
+      item.id === coolifyId ||
+      item.deployTargetId === coolifyId ||
+      toAppSlug(item.name, item.id) === siteId ||
+      (dbSite?.name ? toAppSlug(item.name, item.id) === toAppSlug(dbSite.name, item.id) : false)
+  );
 
   if (!site) {
     return [];
@@ -905,6 +997,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
         return {
           id: site.id,
+          slug: toAppSlug(site.name, site.id),
           name: site.name,
           deployTargetId: site.deployTargetId,
           clientId: ownership.clientId,
@@ -931,77 +1024,112 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       ];
     }
 
-    const dbSites: any[] = await prisma.site.findMany({
-      where: { deletedAt: null, organization: orgWhere },
-      include: { organization: { select: { id: true, slug: true, name: true } } },
-      orderBy: { name: "asc" }
-    });
+    try {
+      const dbSites: any[] = await prisma.site.findMany({
+        where: { deletedAt: null, organization: orgWhere },
+        include: { organization: { select: { id: true, slug: true, name: true } } },
+        orderBy: { name: "asc" }
+      });
 
-    const visibleOrganizations: any[] = await prisma.organization.findMany({
-      where: orgWhere,
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        coolifyProjectId: true,
-        coolifyProjectName: true
-      }
-    });
-    const ownershipIndex = buildOrganizationOwnershipIndex(visibleOrganizations);
+      const visibleOrganizations: any[] = await prisma.organization.findMany({
+        where: orgWhere,
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          coolifyProjectId: true,
+          coolifyProjectName: true
+        }
+      });
+      const ownershipIndex = buildOrganizationOwnershipIndex(visibleOrganizations);
 
-    // Track which Coolify UUIDs are already represented by DB records
-    const coveredCoolifyUuids = new Set(
-      dbSites.map((s: any) => s.coolifyServiceUuid).filter(Boolean)
-    );
+      // Track which Coolify UUIDs are already represented by DB records
+      const coveredCoolifyUuids = new Set(
+        dbSites.map((s: any) => s.coolifyServiceUuid).filter(Boolean)
+      );
 
-    const dbRecords: SiteDirectoryRecord[] = dbSites.map((s: any) => {
-      const coolifyMatch = s.coolifyServiceUuid
-        ? overview.sites.find((cs) => cs.deployTargetId === s.coolifyServiceUuid || cs.id === s.coolifyServiceUuid)
-        : undefined;
+      const dbRecords: SiteDirectoryRecord[] = dbSites.map((s: any) => {
+        const coolifyMatch = s.coolifyServiceUuid
+          ? overview.sites.find((cs) => cs.deployTargetId === s.coolifyServiceUuid || cs.id === s.coolifyServiceUuid)
+          : undefined;
 
-      return {
-        id: s.id,
-        name: s.name,
-        description: s.description ?? undefined,
-        deployTargetId: coolifyMatch?.deployTargetId ?? s.coolifyServiceUuid ?? "",
-        clientId: s.organization.slug,
-        clientName: s.organization.name,
-        status: coolifyMatch?.status ?? "unknown",
-        ownershipState: "mapped" as const,
-        ownershipDiagnostic: `Mapped to Client: ${s.organization.name}`,
-        source: "db" as const,
-        coolifyServiceUuid: s.coolifyServiceUuid ?? undefined,
-        coolifyProjectId: s.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
-        coolifyProjectName: coolifyMatch?.coolifyProjectName,
-        coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
-        coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName
-      };
-    });
-
-    // --- Coolify-only sites (not linked to any DB record) ---
-    const coolifyOnlyRecords: SiteDirectoryRecord[] = overview.sites
-      .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
-      .map((site) => {
-        const ownership = resolveOwnershipForCoolifySite(site, overview.mode, ownershipIndex);
         return {
-          id: site.id,
-          name: site.name,
-          deployTargetId: site.deployTargetId,
-          clientId: ownership.clientId,
-          clientName: ownership.clientName,
-          status: site.status,
-          ownershipState: ownership.ownershipState,
-          ownershipDiagnostic: ownership.ownershipDiagnostic,
-          source: "coolify" as const,
-          coolifyServiceUuid: site.id,
-          coolifyProjectId: site.coolifyProjectId,
-          coolifyProjectName: site.coolifyProjectName,
-          coolifyEnvironmentId: site.coolifyEnvironmentId,
-          coolifyEnvironmentName: site.coolifyEnvironmentName
+          id: s.id,
+          slug: s.slug ?? toAppSlug(s.name, s.id),
+          name: s.name,
+          description: s.description ?? undefined,
+          deployTargetId: coolifyMatch?.deployTargetId ?? s.coolifyServiceUuid ?? "",
+          clientId: s.organization.slug,
+          clientName: s.organization.name,
+          status: coolifyMatch?.status ?? "unknown",
+          ownershipState: "mapped" as const,
+          ownershipDiagnostic: `Mapped to Client: ${s.organization.name}`,
+          source: "db" as const,
+          coolifyServiceUuid: s.coolifyServiceUuid ?? undefined,
+          coolifyProjectId: s.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
+          coolifyProjectName: coolifyMatch?.coolifyProjectName,
+          coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
+          coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName
         };
       });
 
-    return [...dbRecords, ...coolifyOnlyRecords];
+      // --- Coolify-only sites (not linked to any DB record) ---
+      const coolifyOnlyRecords: SiteDirectoryRecord[] = overview.sites
+        .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
+        .map((site) => {
+          const ownership = resolveOwnershipForCoolifySite(site, overview.mode, ownershipIndex);
+          return {
+            id: site.id,
+            slug: toAppSlug(site.name, site.id),
+            name: site.name,
+            deployTargetId: site.deployTargetId,
+            clientId: ownership.clientId,
+            clientName: ownership.clientName,
+            status: site.status,
+            ownershipState: ownership.ownershipState,
+            ownershipDiagnostic: ownership.ownershipDiagnostic,
+            source: "coolify" as const,
+            coolifyServiceUuid: site.id,
+            coolifyProjectId: site.coolifyProjectId,
+            coolifyProjectName: site.coolifyProjectName,
+            coolifyEnvironmentId: site.coolifyEnvironmentId,
+            coolifyEnvironmentName: site.coolifyEnvironmentName
+          };
+        });
+
+      return [...dbRecords, ...coolifyOnlyRecords];
+    } catch (siteQueryError) {
+      const legacyRecords = await readLegacySiteDirectory(prisma, viewer);
+      const legacyNames = new Set(legacyRecords.map((record) => normalizedKey(record.name)));
+      const coolifyRecords: SiteDirectoryRecord[] = overview.sites
+        .filter((site) => !legacyNames.has(normalizedKey(site.name)))
+        .map((site) => {
+          const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
+          return {
+            id: site.id,
+            slug: toAppSlug(site.name, site.id),
+            name: site.name,
+            deployTargetId: site.deployTargetId,
+            clientId: ownership.clientId,
+            clientName: ownership.clientName,
+            status: site.status,
+            ownershipState: ownership.ownershipState,
+            ownershipDiagnostic: ownership.ownershipDiagnostic,
+            source: "coolify" as const,
+            coolifyServiceUuid: site.id,
+            coolifyProjectId: site.coolifyProjectId,
+            coolifyProjectName: site.coolifyProjectName,
+            coolifyEnvironmentId: site.coolifyEnvironmentId,
+            coolifyEnvironmentName: site.coolifyEnvironmentName
+          };
+        });
+
+      if (legacyRecords.length > 0 || coolifyRecords.length > 0) {
+        return [...legacyRecords, ...coolifyRecords];
+      }
+
+      throw siteQueryError;
+    }
   } catch (error) {
     if (isPrismaSchemaMismatchError(error)) {
       console.error(
@@ -1048,7 +1176,9 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
       try {
         // Try DB lookup first (siteId may be a DB UUID)
         dbSite = await prisma.site.findFirst({
-          where: { id: siteId, deletedAt: null },
+          where: isUuid(siteId)
+            ? { id: siteId, deletedAt: null }
+            : { OR: [{ slug: siteId }, { id: siteId }], deletedAt: null },
           include: {
             organization: {
               select: {
@@ -1082,6 +1212,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
 
         return {
           id: dbSite.id,
+          slug: dbSite.slug ?? toAppSlug(dbSite.name, dbSite.id),
           name: dbSite.name,
           description: dbSite.description ?? undefined,
           deployTargetId: coolifyMatch?.deployTargetId ?? dbSite.coolifyServiceUuid ?? "",
@@ -1135,6 +1266,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
         const mappedStatus = mapLegacyProjectStatus(legacyProject.status);
         return {
           id: legacyProject.id,
+          slug: toAppSlug(legacyProject.name, legacyProject.id),
           name: legacyProject.name,
           description: legacyProject.description ?? undefined,
           deployTargetId: legacyProject.id,
@@ -1162,7 +1294,9 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
     }
 
     // Fallback: Coolify-only lookup (for sites not yet in DB)
-    const site = overview.sites.find((item) => item.id === siteId);
+    const site = overview.sites.find(
+      (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
+    );
     const ownership = site ? resolveOwnershipForCoolifySite(site, overview.mode) : undefined;
 
     if (!site) return undefined;
@@ -1171,6 +1305,7 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
 
     return {
       id: site.id,
+      slug: toAppSlug(site.name, site.id),
       name: site.name,
       deployTargetId: site.deployTargetId,
       clientId: ownership?.clientId ?? "orphaned",
@@ -1197,13 +1332,16 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
   } catch {
     // Last-resort Coolify fallback
     const overview = await getCoolifyOverview();
-    const site = overview.sites.find((item) => item.id === siteId);
+    const site = overview.sites.find(
+      (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
+    );
     const ownership = site ? resolveOwnershipForCoolifySite(site, overview.mode) : undefined;
 
     if (!site) return undefined;
 
     return {
       id: site.id,
+      slug: toAppSlug(site.name, site.id),
       name: site.name,
       deployTargetId: site.deployTargetId,
       clientId: ownership?.clientId ?? "orphaned",
@@ -1244,10 +1382,18 @@ export async function listSiteDeployments(siteId: string): Promise<SiteDeploymen
     const prisma = await maybeGetDb();
 
     if (prisma) {
-      const rows: any[] = await prisma.deployment.findMany({
+      const dbSite = await prisma.site.findFirst({
+        where: isUuid(siteId)
+          ? { id: siteId, deletedAt: null }
+          : { slug: siteId, deletedAt: null },
+        select: { id: true, coolifyServiceUuid: true, name: true }
+      });
+
+      const resolvedSiteId = dbSite?.id ?? (isUuid(siteId) ? siteId : undefined);
+      const rows: any[] = resolvedSiteId ? await prisma.deployment.findMany({
         where: {
           environment: {
-            siteId,
+            siteId: resolvedSiteId,
             site: { deletedAt: null }
           }
         },
@@ -1257,7 +1403,7 @@ export async function listSiteDeployments(siteId: string): Promise<SiteDeploymen
         },
         orderBy: { triggeredAt: "desc" },
         take: 50
-      });
+      }) : [];
 
       if (rows.length > 0) {
         return rows.map((row: any): SiteDeploymentRecord => ({
@@ -1281,7 +1427,9 @@ export async function listSiteDeployments(siteId: string): Promise<SiteDeploymen
   // Fallback: Coolify overview deployments for this site
   try {
     const overview = await getCoolifyOverview();
-    const site = overview.sites.find((item) => item.id === siteId);
+    const site = overview.sites.find(
+      (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
+    );
     if (!site) return [];
 
     return overview.deployments

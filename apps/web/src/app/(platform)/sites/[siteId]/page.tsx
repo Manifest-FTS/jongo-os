@@ -64,7 +64,7 @@ export default async function SiteOverviewPage({ params }: Params) {
             Use staging sync for review, then promote when ready.
           </p>
           <p style={{ margin: "0.75rem 0 0" }}>
-            <Link href={`/sites/${siteId}/staging`} className="action-link">
+            <Link href={`/apps/${siteId}/staging`} className="action-link">
               Open publishing workflow <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>
@@ -74,7 +74,7 @@ export default async function SiteOverviewPage({ params }: Params) {
           <h3 className="card-title">Team</h3>
           <p className="card-muted">Team management lives in the dedicated Team tab.</p>
           <p style={{ margin: "0.75rem 0 0" }}>
-            <Link href={`/sites/${siteId}/team`} className="action-link">
+            <Link href={`/apps/${siteId}/team`} className="action-link">
               Open app team <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>
@@ -168,7 +168,7 @@ export default async function SiteOverviewPage({ params }: Params) {
             Production, Staging, Development
           </p>
           <p style={{ fontSize: "0.9rem" }}>
-            <Link href={`/sites/${siteId}/settings`} className="action-link">
+            <Link href={`/apps/${siteId}/settings`} className="action-link">
               Configure environments <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>
@@ -178,17 +178,17 @@ export default async function SiteOverviewPage({ params }: Params) {
         <article className="card">
           <h3 className="card-title">What to do next</h3>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <Link href={`/sites/${siteId}/analytics`} className="action-link">
+            <Link href={`/apps/${siteId}/analytics`} className="action-link">
               Review deployment analytics <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <Link href={`/sites/${siteId}/staging`} className="action-link">
+            <Link href={`/apps/${siteId}/staging`} className="action-link">
               Run publishing workflow <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <Link href={`/sites/${siteId}/settings`} className="action-link">
+            <Link href={`/apps/${siteId}/settings`} className="action-link">
               Update site settings <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>

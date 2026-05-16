@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getSiteWorkspace } from "@/lib/repositories";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 
@@ -15,15 +16,20 @@ export default async function SiteWorkspaceLayout({
   const { siteId } = await params;
   const site = await getSiteWorkspace(siteId);
 
+  if (!site) {
+    notFound();
+  }
+
   const tabs: WorkspaceTab[] = [
-    { name: "Overview", href: `/sites/${siteId}`, match: "exact" },
-    { name: "Integrations", href: `/sites/${siteId}/integrations` },
-    { name: "Staging", href: `/sites/${siteId}/staging` },
-    { name: "Backups", href: `/sites/${siteId}/backups` },
-    { name: "Analytics", href: `/sites/${siteId}/analytics` },
-    { name: "Team", href: `/sites/${siteId}/team` },
-    { name: "Settings", href: `/sites/${siteId}/settings` },
-    { name: "Advanced", href: `/sites/${siteId}/advanced` }
+    { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
+    { name: "Deployments", href: `/apps/${siteId}/deployments` },
+    { name: "Integrations", href: `/apps/${siteId}/integrations` },
+    { name: "Staging", href: `/apps/${siteId}/staging` },
+    { name: "Backups", href: `/apps/${siteId}/backups` },
+    { name: "Analytics", href: `/apps/${siteId}/analytics` },
+    { name: "Team", href: `/apps/${siteId}/team` },
+    { name: "Settings", href: `/apps/${siteId}/settings` },
+    { name: "Advanced", href: `/apps/${siteId}/advanced` }
   ];
 
   const ownershipDiagnostic = site?.ownershipDiagnostic;
@@ -33,11 +39,11 @@ export default async function SiteWorkspaceLayout({
     <div className="workspace-shell">
       <div className="workspace-hero card">
         <div className="workspace-breadcrumb">
-          <Link href="/sites" className="breadcrumb-link">Apps</Link>
+          <Link href="/apps" className="breadcrumb-link">Apps</Link>
           <span className="breadcrumb-sep">/</span>
           {isMapped && site.clientId ? (
             <>
-              <Link href={`/organizations/${site.clientId}`} className="breadcrumb-link">{site.clientName}</Link>
+              <Link href={`/clients/${site.clientId}`} className="breadcrumb-link">{site.clientName}</Link>
               <span className="breadcrumb-sep">/</span>
             </>
           ) : null}
