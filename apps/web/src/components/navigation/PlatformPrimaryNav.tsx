@@ -14,7 +14,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardIcon, match: "exact" },
-  { href: "/organizations", label: "Clients", icon: BuildingOfficeIcon, match: "prefix" },
+  { href: "/clients", label: "Clients", icon: BuildingOfficeIcon, match: "prefix" },
   { href: "/sites", label: "Apps", icon: ServerIcon, match: "prefix" },
   { href: "/settings", label: "Settings", icon: SettingsIcon, match: "prefix" }
 ];

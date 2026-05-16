@@ -290,6 +290,69 @@ async function readLegacyClientProjects(prisma: any, clientId: string): Promise<
   `;
 }
 
+async function readLegacySiteDirectory(prisma: any, viewer?: ViewerContext): Promise<SiteDirectoryRecord[]> {
+  const scopedUserId = getScopedViewerUserId(viewer);
+  const useScope = scopedUserId && !hasBootstrapGlobalAccess(viewer);
+
+  const rows: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    status: string | null;
+    clientId: string | null;
+    orgId: string | null;
+    clientName: string | null;
+  }> = useScope
+    ? await prisma.$queryRaw`
+      select
+        p.id as "id",
+        p.name as "name",
+        p.description as "description",
+        p.status::text as "status",
+        p.client_id as "clientId",
+        p.org_id as "orgId",
+        c.name as "clientName"
+      from projects p
+      left join clients c on c.id::text = p.client_id::text
+      where c.user_id::text = ${scopedUserId}
+         or exists (
+           select 1
+           from org_members m
+           where m.org_id::text = c.org_id::text
+             and m.user_id::text = ${scopedUserId}
+         )
+      order by p.created_at asc
+    `
+    : await prisma.$queryRaw`
+      select
+        p.id as "id",
+        p.name as "name",
+        p.description as "description",
+        p.status::text as "status",
+        p.client_id as "clientId",
+        p.org_id as "orgId",
+        c.name as "clientName"
+      from projects p
+      left join clients c on c.id::text = p.client_id::text
+      order by p.created_at asc
+    `;
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description ?? undefined,
+    deployTargetId: row.id,
+    clientId: row.clientId ?? row.orgId ?? "orphaned",
+    clientName: row.clientName ?? "Client",
+    status: mapLegacyProjectStatus(row.status),
+    ownershipState: row.clientId || row.orgId ? "mapped" : "orphaned",
+    ownershipDiagnostic: row.clientName
+      ? `Mapped to Client: ${row.clientName}`
+      : "No client mapping found",
+    source: "db"
+  }));
+}
+
 async function readLegacyClientMembers(prisma: any, clientRow: LegacyClientRow): Promise<LegacyMemberRow[]> {
   const orgMembers: LegacyMemberRow[] = await prisma.$queryRaw`
     select
@@ -931,77 +994,86 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       ];
     }
 
-    const dbSites: any[] = await prisma.site.findMany({
-      where: { deletedAt: null, organization: orgWhere },
-      include: { organization: { select: { id: true, slug: true, name: true } } },
-      orderBy: { name: "asc" }
-    });
+    try {
+      const dbSites: any[] = await prisma.site.findMany({
+        where: { deletedAt: null, organization: orgWhere },
+        include: { organization: { select: { id: true, slug: true, name: true } } },
+        orderBy: { name: "asc" }
+      });
 
-    const visibleOrganizations: any[] = await prisma.organization.findMany({
-      where: orgWhere,
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        coolifyProjectId: true,
-        coolifyProjectName: true
-      }
-    });
-    const ownershipIndex = buildOrganizationOwnershipIndex(visibleOrganizations);
+      const visibleOrganizations: any[] = await prisma.organization.findMany({
+        where: orgWhere,
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          coolifyProjectId: true,
+          coolifyProjectName: true
+        }
+      });
+      const ownershipIndex = buildOrganizationOwnershipIndex(visibleOrganizations);
 
-    // Track which Coolify UUIDs are already represented by DB records
-    const coveredCoolifyUuids = new Set(
-      dbSites.map((s: any) => s.coolifyServiceUuid).filter(Boolean)
-    );
+      // Track which Coolify UUIDs are already represented by DB records
+      const coveredCoolifyUuids = new Set(
+        dbSites.map((s: any) => s.coolifyServiceUuid).filter(Boolean)
+      );
 
-    const dbRecords: SiteDirectoryRecord[] = dbSites.map((s: any) => {
-      const coolifyMatch = s.coolifyServiceUuid
-        ? overview.sites.find((cs) => cs.deployTargetId === s.coolifyServiceUuid || cs.id === s.coolifyServiceUuid)
-        : undefined;
+      const dbRecords: SiteDirectoryRecord[] = dbSites.map((s: any) => {
+        const coolifyMatch = s.coolifyServiceUuid
+          ? overview.sites.find((cs) => cs.deployTargetId === s.coolifyServiceUuid || cs.id === s.coolifyServiceUuid)
+          : undefined;
 
-      return {
-        id: s.id,
-        name: s.name,
-        description: s.description ?? undefined,
-        deployTargetId: coolifyMatch?.deployTargetId ?? s.coolifyServiceUuid ?? "",
-        clientId: s.organization.slug,
-        clientName: s.organization.name,
-        status: coolifyMatch?.status ?? "unknown",
-        ownershipState: "mapped" as const,
-        ownershipDiagnostic: `Mapped to Client: ${s.organization.name}`,
-        source: "db" as const,
-        coolifyServiceUuid: s.coolifyServiceUuid ?? undefined,
-        coolifyProjectId: s.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
-        coolifyProjectName: coolifyMatch?.coolifyProjectName,
-        coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
-        coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName
-      };
-    });
-
-    // --- Coolify-only sites (not linked to any DB record) ---
-    const coolifyOnlyRecords: SiteDirectoryRecord[] = overview.sites
-      .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
-      .map((site) => {
-        const ownership = resolveOwnershipForCoolifySite(site, overview.mode, ownershipIndex);
         return {
-          id: site.id,
-          name: site.name,
-          deployTargetId: site.deployTargetId,
-          clientId: ownership.clientId,
-          clientName: ownership.clientName,
-          status: site.status,
-          ownershipState: ownership.ownershipState,
-          ownershipDiagnostic: ownership.ownershipDiagnostic,
-          source: "coolify" as const,
-          coolifyServiceUuid: site.id,
-          coolifyProjectId: site.coolifyProjectId,
-          coolifyProjectName: site.coolifyProjectName,
-          coolifyEnvironmentId: site.coolifyEnvironmentId,
-          coolifyEnvironmentName: site.coolifyEnvironmentName
+          id: s.id,
+          name: s.name,
+          description: s.description ?? undefined,
+          deployTargetId: coolifyMatch?.deployTargetId ?? s.coolifyServiceUuid ?? "",
+          clientId: s.organization.slug,
+          clientName: s.organization.name,
+          status: coolifyMatch?.status ?? "unknown",
+          ownershipState: "mapped" as const,
+          ownershipDiagnostic: `Mapped to Client: ${s.organization.name}`,
+          source: "db" as const,
+          coolifyServiceUuid: s.coolifyServiceUuid ?? undefined,
+          coolifyProjectId: s.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
+          coolifyProjectName: coolifyMatch?.coolifyProjectName,
+          coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
+          coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName
         };
       });
 
-    return [...dbRecords, ...coolifyOnlyRecords];
+      // --- Coolify-only sites (not linked to any DB record) ---
+      const coolifyOnlyRecords: SiteDirectoryRecord[] = overview.sites
+        .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
+        .map((site) => {
+          const ownership = resolveOwnershipForCoolifySite(site, overview.mode, ownershipIndex);
+          return {
+            id: site.id,
+            name: site.name,
+            deployTargetId: site.deployTargetId,
+            clientId: ownership.clientId,
+            clientName: ownership.clientName,
+            status: site.status,
+            ownershipState: ownership.ownershipState,
+            ownershipDiagnostic: ownership.ownershipDiagnostic,
+            source: "coolify" as const,
+            coolifyServiceUuid: site.id,
+            coolifyProjectId: site.coolifyProjectId,
+            coolifyProjectName: site.coolifyProjectName,
+            coolifyEnvironmentId: site.coolifyEnvironmentId,
+            coolifyEnvironmentName: site.coolifyEnvironmentName
+          };
+        });
+
+      return [...dbRecords, ...coolifyOnlyRecords];
+    } catch (siteQueryError) {
+      const legacyRecords = await readLegacySiteDirectory(prisma, viewer);
+      if (legacyRecords.length > 0) {
+        return legacyRecords;
+      }
+
+      throw siteQueryError;
+    }
   } catch (error) {
     if (isPrismaSchemaMismatchError(error)) {
       console.error(

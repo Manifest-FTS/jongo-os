@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getSiteWorkspace } from "@/lib/repositories";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 
@@ -15,8 +16,13 @@ export default async function SiteWorkspaceLayout({
   const { siteId } = await params;
   const site = await getSiteWorkspace(siteId);
 
+  if (!site) {
+    notFound();
+  }
+
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/sites/${siteId}`, match: "exact" },
+    { name: "Deployments", href: `/sites/${siteId}/deployments` },
     { name: "Integrations", href: `/sites/${siteId}/integrations` },
     { name: "Staging", href: `/sites/${siteId}/staging` },
     { name: "Backups", href: `/sites/${siteId}/backups` },
@@ -37,7 +43,7 @@ export default async function SiteWorkspaceLayout({
           <span className="breadcrumb-sep">/</span>
           {isMapped && site.clientId ? (
             <>
-              <Link href={`/organizations/${site.clientId}`} className="breadcrumb-link">{site.clientName}</Link>
+              <Link href={`/clients/${site.clientId}`} className="breadcrumb-link">{site.clientName}</Link>
               <span className="breadcrumb-sep">/</span>
             </>
           ) : null}
