@@ -26,8 +26,6 @@ export default async function SiteOverviewPage({ params }: Params) {
 
   return (
     <div>
-      <h2 style={{ marginTop: 0 }}>Overview</h2>
-
       <div className="grid" style={{ marginBottom: "1rem" }}>
         {/* Site Health */}
         <article className="card">
