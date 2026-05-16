@@ -1,11 +1,9 @@
 type Params = { params: Promise<{ siteId: string }> };
 
-import Link from "next/link";
 import DeployButton from "@/components/DeployButton";
 import SiteInfoForm from "@/components/SiteInfoForm";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
-import { ArrowRightIcon } from "@/components/JongoIcons";
 
 export default async function SiteSettingsPage({ params }: Params) {
   const { siteId } = await params;
@@ -24,7 +22,7 @@ export default async function SiteSettingsPage({ params }: Params) {
         </p>
         <h2 style={{ margin: 0 }}>Settings</h2>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Manage publishing, site health, backups, and team access.
+          Manage publishing and app configuration.
         </p>
       </div>
 
@@ -55,16 +53,14 @@ export default async function SiteSettingsPage({ params }: Params) {
       )}
 
       <div className="grid" style={{ marginBottom: "2rem" }}>
-        {/* Environment Variables */}
         <article className="card">
           <h3 className="card-title">Publishing</h3>
           <p className="card-muted">Manage release behavior across production and staging.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Environment-specific variables are available under Developer Details.
+            Environment-specific infrastructure fields are available in the Advanced tab.
           </p>
         </article>
 
-        {/* Domain Configuration */}
         <article className="card">
           <h3 className="card-title">Domains</h3>
           <p className="card-muted">Manage site domains and SSL certificates.</p>
@@ -73,7 +69,6 @@ export default async function SiteSettingsPage({ params }: Params) {
           </p>
         </article>
 
-        {/* Backup Configuration */}
         <article className="card">
           <h3 className="card-title">Backups</h3>
           <p className="card-muted">Protect content with automated backups.</p>
@@ -82,9 +77,8 @@ export default async function SiteSettingsPage({ params }: Params) {
           </p>
         </article>
 
-        {/* Infrastructure Status */}
         <article className="card">
-          <h3 className="card-title">Site Health</h3>
+          <h3 className="card-title">App Health</h3>
           <p className="card-muted">Current operational status for this site.</p>
           <div style={{ marginTop: "1rem", display: "grid", gap: "0.45rem" }}>
             <p style={{ margin: 0, fontSize: "0.9rem" }}>
@@ -102,35 +96,6 @@ export default async function SiteSettingsPage({ params }: Params) {
             <p style={{ margin: 0, fontSize: "0.9rem" }}>
               Staging: <span className={`status-chip ${workspace?.stagingStatus ?? "unknown"}`}>{workspace?.stagingStatus ?? "unknown"}</span>
             </p>
-            <details style={{ marginTop: "0.35rem" }}>
-              <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)" }}>
-                Developer Details
-              </summary>
-              <div style={{ marginTop: "0.45rem", display: "grid", gap: "0.35rem" }}>
-                {workspace?.coolifyServiceUuid && (
-                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)", fontFamily: "monospace", wordBreak: "break-all" }}>
-                    Coolify UUID: {workspace.coolifyServiceUuid}
-                  </p>
-                )}
-                {workspace?.coolifyProjectId && (
-                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)", fontFamily: "monospace", wordBreak: "break-all" }}>
-                    Coolify Project ID: {workspace.coolifyProjectId}
-                  </p>
-                )}
-                {workspace?.coolifyProjectName && (
-                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
-                    Coolify Project Name: {workspace.coolifyProjectName}
-                  </p>
-                )}
-                {workspace?.gitRepositoryUrl && (
-                  <p style={{ margin: 0, fontSize: "0.82rem" }}>
-                    <a href={workspace.gitRepositoryUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>
-                      Repository: {workspace.gitRepositoryUrl}
-                    </a>
-                  </p>
-                )}
-              </div>
-            </details>
           </div>
         </article>
       </div>
@@ -144,28 +109,6 @@ export default async function SiteSettingsPage({ params }: Params) {
         <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
           Actions reuse the same server-side deploy path and stay mock-safe when Coolify values are missing.
         </p>
-      </article>
-
-      {/* Collaborators - managed via org membership */}
-      <article className="card">
-        <h3 className="card-title">Collaborators</h3>
-        <p className="card-muted">Manage team access and permissions</p>
-        <div style={{ marginTop: "1rem" }}>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <strong>Roles:</strong> Owner, Admin, Operator, Viewer
-          </p>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            Organization-level collaborators inherit access to all sites in that org.
-            Site-specific overrides will be available in a future update.
-          </p>
-          {workspace?.ownershipState === "mapped" && (
-            <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-              <Link href={`/organizations/${workspace.clientId}`} className="action-link">
-                Manage {workspace.clientName} collaborators <ArrowRightIcon className="btn-icon" />
-              </Link>
-            </p>
-          )}
-        </div>
       </article>
     </div>
   );

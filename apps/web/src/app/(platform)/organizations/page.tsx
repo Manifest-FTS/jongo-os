@@ -36,7 +36,7 @@ export default async function OrganizationsPage() {
         <div className="card">
           <p className="card-muted">No client workspaces yet. Create one above to get started.</p>
           <p className="form-help" style={{ marginTop: "0.65rem" }}>
-            After creating a client, add sites and invite collaborators from the client detail page.
+            After creating a client, add apps and invite collaborators from the client detail page.
           </p>
         </div>
       ) : (

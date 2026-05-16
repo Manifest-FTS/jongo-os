@@ -21,17 +21,28 @@ export type SiteOverview = {
   siteType: SiteType;
   coolifyProjectId?: string;
   coolifyProjectName?: string;
+  coolifyEnvironmentId?: string;
+  coolifyEnvironmentName?: string;
 };
 
 export type CoolifyProjectRecord = {
   id: string;
   name: string;
+  numericId?: string;
+};
+
+export type CoolifyEnvironmentRecord = {
+  id: string;
+  name: string;
+  projectId: string;
+  projectName: string;
 };
 
 export type CoolifyOverview = {
   mode: "live" | "mock";
   generatedAt: string;
   projects: CoolifyProjectRecord[];
+  environments: CoolifyEnvironmentRecord[];
   sites: SiteOverview[];
   deployments: DeploymentRecord[];
   stats: {
@@ -157,28 +168,63 @@ function normalizeProjectRecords(input: unknown): CoolifyProjectRecord[] {
     .map((project, index): CoolifyProjectRecord | null => {
       const id = stringValue(project, ["uuid", "id", "project_uuid", "project_id"], `project-${index + 1}`);
       const name = stringValue(project, ["name", "project_name", "display_name"], id);
+      const numericId = stringValue(project, ["id"], "") || undefined;
 
       if (!id || seen.has(id)) {
         return null;
       }
 
       seen.add(id);
-      return { id, name };
+      return { id, name, numericId };
     })
     .filter((project): project is CoolifyProjectRecord => Boolean(project));
+}
+
+function extractComposeLabelValue(raw: unknown, labelKey: string): string | undefined {
+  if (typeof raw !== "string" || raw.length === 0) {
+    return undefined;
+  }
+
+  const pattern = new RegExp(`${labelKey}=?([^\\n\"\r]+)`, "i");
+  const match = raw.match(pattern);
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  return match[1].trim();
 }
 
 function resolveProjectForResource(
   resource: Record<string, unknown>,
   projectsById: Map<string, CoolifyProjectRecord>,
-  projectsByName: Map<string, CoolifyProjectRecord>
-): { id?: string; name?: string } {
+  projectsByName: Map<string, CoolifyProjectRecord>,
+  environmentById: Map<string, CoolifyEnvironmentRecord>,
+  environmentByName: Map<string, CoolifyEnvironmentRecord>
+): { id?: string; name?: string; environmentId?: string; environmentName?: string } {
   const idCandidates = new Set<string>();
   const nameCandidates = new Set<string>();
   const rawNameCandidates = new Set<string>();
+  const environmentIdCandidates = new Set<string>();
+  const environmentNameCandidates = new Set<string>();
 
   const directId = stringValue(resource, ["project_uuid", "project_id", "projectId"], "");
   if (directId) idCandidates.add(directId);
+
+  const environmentId = stringValue(resource, ["environment_id", "environmentId", "environment_uuid"], "");
+  if (environmentId) {
+    environmentIdCandidates.add(environmentId);
+  }
+
+  const environmentValue = resource.environment;
+  if (typeof environmentValue === "string") {
+    environmentIdCandidates.add(environmentValue);
+  } else if (typeof environmentValue === "object" && environmentValue !== null) {
+    const envObj = environmentValue as Record<string, unknown>;
+    const envId = stringValue(envObj, ["id", "uuid", "environment_id"], "");
+    const envName = stringValue(envObj, ["name", "environment_name"], "");
+    if (envId) environmentIdCandidates.add(envId);
+    if (envName) environmentNameCandidates.add(envName.trim().toLowerCase());
+  }
 
   const projectValue = resource.project;
   if (typeof projectValue === "string") {
@@ -202,6 +248,47 @@ function resolveProjectForResource(
     rawNameCandidates.add(directName.trim());
   }
 
+  const composeProjectName =
+    extractComposeLabelValue(resource.docker_compose, "coolify.projectName") ??
+    extractComposeLabelValue(resource.docker_compose_raw, "coolify.projectName") ??
+    extractComposeLabelValue(resource.custom_labels, "coolify.projectName");
+  if (composeProjectName) {
+    nameCandidates.add(composeProjectName.toLowerCase());
+    rawNameCandidates.add(composeProjectName);
+  }
+
+  const composeEnvironmentName =
+    extractComposeLabelValue(resource.docker_compose, "coolify.environmentName") ??
+    extractComposeLabelValue(resource.docker_compose_raw, "coolify.environmentName") ??
+    extractComposeLabelValue(resource.custom_labels, "coolify.environmentName");
+  if (composeEnvironmentName) {
+    environmentNameCandidates.add(composeEnvironmentName.toLowerCase());
+  }
+
+  for (const candidate of environmentIdCandidates) {
+    const environment = environmentById.get(candidate);
+    if (environment) {
+      return {
+        id: environment.projectId,
+        name: environment.projectName,
+        environmentId: environment.id,
+        environmentName: environment.name
+      };
+    }
+  }
+
+  for (const candidate of environmentNameCandidates) {
+    const environment = environmentByName.get(candidate);
+    if (environment) {
+      return {
+        id: environment.projectId,
+        name: environment.projectName,
+        environmentId: environment.id,
+        environmentName: environment.name
+      };
+    }
+  }
+
   for (const candidate of idCandidates) {
     const project = projectsById.get(candidate);
     if (project) {
@@ -218,9 +305,13 @@ function resolveProjectForResource(
 
   const fallbackId = [...idCandidates][0];
   const fallbackName = [...rawNameCandidates][0];
+  const fallbackEnvironmentId = [...environmentIdCandidates][0];
+  const fallbackEnvironmentName = [...environmentNameCandidates][0];
   return {
     id: fallbackId,
-    name: fallbackName
+    name: fallbackName,
+    environmentId: fallbackEnvironmentId,
+    environmentName: fallbackEnvironmentName
   };
 }
 
@@ -345,6 +436,10 @@ function mockOverview(): CoolifyOverview {
       { id: "project-main", name: "Main Client" },
       { id: "project-portal", name: "Portal Client" }
     ],
+    environments: [
+      { id: "env-main", name: "production", projectId: "project-main", projectName: "Main Client" },
+      { id: "env-portal", name: "production", projectId: "project-portal", projectName: "Portal Client" }
+    ],
     sites: [
       {
         id: "site-main",
@@ -398,6 +493,7 @@ function emptyLiveOverview(): CoolifyOverview {
     mode: "live",
     generatedAt: new Date().toISOString(),
     projects: [],
+    environments: [],
     sites: [],
     deployments: [],
     stats: {
@@ -430,13 +526,15 @@ function makeSiteOverview(
   fallbackName: string,
   fallbackId: string,
   projectsById: Map<string, CoolifyProjectRecord>,
-  projectsByName: Map<string, CoolifyProjectRecord>
+  projectsByName: Map<string, CoolifyProjectRecord>,
+  environmentById: Map<string, CoolifyEnvironmentRecord>,
+  environmentByName: Map<string, CoolifyEnvironmentRecord>
 ): SiteOverview {
   const id = stringValue(resource, ["uuid", "id"], fallbackId);
   const name = stringValue(resource, ["name", "application_name", "service_name"], fallbackName);
   const productionStatus = statusFromRaw(resource.production_status ?? resource.status ?? resource.current_status ?? resource.state ?? resource.server_status);
   const stagingStatus = statusFromRaw(resource.staging_status ?? resource.preview_status);
-  const project = resolveProjectForResource(resource, projectsById, projectsByName);
+  const project = resolveProjectForResource(resource, projectsById, projectsByName, environmentById, environmentByName);
 
   return {
     id,
@@ -447,8 +545,45 @@ function makeSiteOverview(
     stagingStatus,
     siteType: detectSiteType(resource),
     coolifyProjectId: project.id,
-    coolifyProjectName: project.name
+    coolifyProjectName: project.name,
+    coolifyEnvironmentId: project.environmentId,
+    coolifyEnvironmentName: project.environmentName
   };
+}
+
+async function readProjectEnvironments(projects: CoolifyProjectRecord[]): Promise<CoolifyEnvironmentRecord[]> {
+  const envs: CoolifyEnvironmentRecord[] = [];
+
+  for (const project of projects) {
+    try {
+      const payload = await coolifyFetch(`/api/v1/projects/${project.id}`);
+      const projectObject = Array.isArray(payload) ? payload[0] : payload;
+
+      if (!projectObject || typeof projectObject !== "object") {
+        continue;
+      }
+
+      const environments = ensureArray((projectObject as Record<string, unknown>).environments);
+      for (const environment of environments) {
+        const envId = stringValue(environment, ["id", "uuid", "environment_id"], "");
+        const envName = stringValue(environment, ["name", "environment_name"], envId || "environment");
+        if (!envId) {
+          continue;
+        }
+
+        envs.push({
+          id: envId,
+          name: envName,
+          projectId: project.id,
+          projectName: project.name
+        });
+      }
+    } catch {
+      // Keep going; environments are best-effort diagnostics and ownership hints.
+    }
+  }
+
+  return envs;
 }
 
 function buildSiteStats(sites: SiteOverview[]) {
@@ -463,10 +598,22 @@ async function buildLiveOverview(
   applications: Record<string, unknown>[],
   services: Record<string, unknown>[],
   databases: Record<string, unknown>[],
-  projects: CoolifyProjectRecord[]
+  projects: CoolifyProjectRecord[],
+  environments: CoolifyEnvironmentRecord[]
 ): Promise<CoolifyOverview> {
   const projectsById = new Map(projects.map((project) => [project.id, project]));
+  for (const project of projects) {
+    if (project.numericId) {
+      projectsById.set(project.numericId, project);
+    }
+  }
   const projectsByName = new Map(projects.map((project) => [project.name.trim().toLowerCase(), project]));
+  const environmentById = new Map<string, CoolifyEnvironmentRecord>();
+  const environmentByName = new Map<string, CoolifyEnvironmentRecord>();
+  for (const environment of environments) {
+    environmentById.set(environment.id, environment);
+    environmentByName.set(environment.name.trim().toLowerCase(), environment);
+  }
 
   const serviceChildApplicationIds = new Set<string>();
   const serviceChildDatabaseIds = new Set<string>();
@@ -499,7 +646,15 @@ async function buildLiveOverview(
 
   const applicationSitesWithDeployments = await Promise.all(
     standaloneApplications.slice(0, 20).map(async (application, index): Promise<{ site: SiteOverview; deployments: DeploymentRecord[] }> => {
-      const site = makeSiteOverview(application, `application-${index + 1}`, `app-${index + 1}`, projectsById, projectsByName);
+      const site = makeSiteOverview(
+        application,
+        `application-${index + 1}`,
+        `app-${index + 1}`,
+        projectsById,
+        projectsByName,
+        environmentById,
+        environmentByName
+      );
       const deployments = await readApplicationDeployments(site.id, site.name, 8);
       const productionDeployment = deployments.find((deployment) => deployment.environment === "production");
       const stagingDeployment = deployments.find((deployment) => deployment.environment === "staging");
@@ -517,10 +672,26 @@ async function buildLiveOverview(
   );
 
   const serviceSites = services.map((service, index) =>
-    makeSiteOverview(service, `service-${index + 1}`, `svc-${index + 1}`, projectsById, projectsByName)
+    makeSiteOverview(
+      service,
+      `service-${index + 1}`,
+      `svc-${index + 1}`,
+      projectsById,
+      projectsByName,
+      environmentById,
+      environmentByName
+    )
   );
   const databaseSites = standaloneDatabases.map((database, index) =>
-    makeSiteOverview(database, `database-${index + 1}`, `db-${index + 1}`, projectsById, projectsByName)
+    makeSiteOverview(
+      database,
+      `database-${index + 1}`,
+      `db-${index + 1}`,
+      projectsById,
+      projectsByName,
+      environmentById,
+      environmentByName
+    )
   );
 
   const sites = [
@@ -537,6 +708,7 @@ async function buildLiveOverview(
     mode: "live",
     generatedAt: new Date().toISOString(),
     projects,
+    environments,
     sites,
     deployments,
     stats: buildSiteStats(sites)
@@ -559,6 +731,7 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     } catch {
       projects = [];
     }
+    const environments = await readProjectEnvironments(projects);
 
     const applicationsPayload = await coolifyFetch("/api/v1/applications");
     const applications = normalizeArrayPayload(applicationsPayload);
@@ -570,12 +743,13 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     const databases = normalizeArrayPayload(databasesPayload);
 
     if (applications.length > 0 || services.length > 0 || databases.length > 0) {
-      return await buildLiveOverview(applications, services, databases, projects);
+      return await buildLiveOverview(applications, services, databases, projects, environments);
     }
 
     return {
       ...emptyLiveOverview(),
-      projects
+      projects,
+      environments
     };
   } catch {
     return emptyLiveOverview();

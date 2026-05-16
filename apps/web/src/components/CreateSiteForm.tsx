@@ -36,7 +36,7 @@ export default function CreateSiteForm({ organizationId }: Props) {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error ?? "Failed to create site");
+        setError(data.error ?? "Failed to create app");
         return;
       }
 
@@ -57,14 +57,14 @@ export default function CreateSiteForm({ organizationId }: Props) {
     return (
       <button className="btn" onClick={() => setOpen(true)}>
         <PlusIcon className="btn-icon" />
-        New Site
+        New App
       </button>
     );
   }
 
   return (
     <div className="card" style={{ marginBottom: "1rem" }}>
-      <h3 className="card-title" style={{ marginBottom: "0.75rem" }}>New Site</h3>
+      <h3 className="card-title" style={{ marginBottom: "0.75rem" }}>New App</h3>
       <form onSubmit={handleSubmit} className="form-stack">
         <div>
           <label className="form-label">
@@ -115,7 +115,7 @@ export default function CreateSiteForm({ organizationId }: Props) {
         {error && <p className="form-error">{error}</p>}
         <div className="form-row">
           <button type="submit" className="btn" disabled={loading}>
-            {loading ? "Creating…" : "Create Site"}
+            {loading ? "Creating…" : "Create App"}
           </button>
           <button
             type="button"

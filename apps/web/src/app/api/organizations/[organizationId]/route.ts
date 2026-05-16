@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isAdminRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -104,15 +105,24 @@ export async function PUT(req: Request, { params }: Params) {
       where: {
         id: organizationId,
         deletedAt: null,
-        OR: [
-          { ownerId: session.user.id },
-          { collaborators: { some: { userId: session.user.id, role: { in: ["owner", "admin"] } } } }
-        ]
+        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
+      },
+      include: {
+        collaborators: {
+          where: { userId: session.user.id },
+          select: { role: true }
+        }
       }
     });
 
     if (!org) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+
+    const callerIsOwner = org.ownerId === session.user.id;
+    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
+    if (!callerIsAdmin) {
+      return NextResponse.json({ error: "Only admins can update client settings" }, { status: 403 });
     }
 
     const name = body.name?.trim();

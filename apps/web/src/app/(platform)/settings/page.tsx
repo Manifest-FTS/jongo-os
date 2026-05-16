@@ -1,8 +1,17 @@
 import { getRuntimeConfigStatus } from "@/lib/runtime-config";
 import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
+import { auth } from "@/lib/auth.config";
 
-export default function SettingsPage() {
+function normalizeEmail(value?: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+export default async function SettingsPage() {
+  const session = await auth();
   const runtime = getRuntimeConfigStatus();
+  const sessionEmail = normalizeEmail(session?.user?.email);
+  const bootstrapAdminEmail = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
+  const isAdmin = Boolean(bootstrapAdminEmail && sessionEmail === bootstrapAdminEmail);
 
   return (
     <div>
@@ -42,7 +51,7 @@ export default function SettingsPage() {
           </p>
         </article>
 
-        <OwnershipSyncPanel />
+        {isAdmin ? <OwnershipSyncPanel /> : null}
 
         {/* Organizations */}
         <article className="card tone-card">
@@ -111,6 +120,15 @@ export default function SettingsPage() {
             </ul>
           </details>
         </article>
+
+        {!isAdmin ? (
+          <article className="card tone-card">
+            <h3 className="card-title">Admin-only Controls</h3>
+            <p className="card-muted" style={{ margin: 0 }}>
+              Ownership sync and infrastructure diagnostics are visible only to platform admins.
+            </p>
+          </article>
+        ) : null}
       </div>
     </div>
   );

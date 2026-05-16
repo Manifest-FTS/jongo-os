@@ -22,7 +22,6 @@ export default async function SiteOverviewPage({ params }: Params) {
   ]);
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
-  const siteDeployments = overview.deployments.filter((deployment) => deployment.siteName === site?.name);
   const isWordPress = workspace?.siteType === "wordpress";
 
   return (
@@ -71,21 +70,14 @@ export default async function SiteOverviewPage({ params }: Params) {
           </p>
         </article>
 
-        {/* Team */}
         <article className="card">
           <h3 className="card-title">Team</h3>
-          <p className="card-muted">Collaborators are managed at the client level.</p>
-          {workspace?.ownershipState === "mapped" ? (
-            <p style={{ margin: "0.75rem 0 0" }}>
-              <Link href={`/organizations/${workspace.clientId}`} className="action-link">
-                Manage team access <ArrowRightIcon className="btn-icon" />
-              </Link>
-            </p>
-          ) : (
-            <p className="form-help" style={{ marginTop: "0.75rem" }}>
-              Assign this site to a client workspace to manage team access.
-            </p>
-          )}
+          <p className="card-muted">Team management lives in the dedicated Team tab.</p>
+          <p style={{ margin: "0.75rem 0 0" }}>
+            <Link href={`/sites/${siteId}/team`} className="action-link">
+              Open app team <ArrowRightIcon className="btn-icon" />
+            </Link>
+          </p>
         </article>
       </div>
 
@@ -186,8 +178,8 @@ export default async function SiteOverviewPage({ params }: Params) {
         <article className="card">
           <h3 className="card-title">What to do next</h3>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <Link href={`/sites/${siteId}/deployments`} className="action-link">
-              Review deployment history <ArrowRightIcon className="btn-icon" />
+            <Link href={`/sites/${siteId}/analytics`} className="action-link">
+              Review deployment analytics <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
@@ -204,20 +196,10 @@ export default async function SiteOverviewPage({ params }: Params) {
       </div>
 
       <article className="card" style={{ marginTop: "1rem" }}>
-        <h3 className="card-title">Developer Details</h3>
-        <details>
-          <summary style={{ cursor: "pointer", fontSize: "0.9rem", color: "var(--muted)" }}>
-            View infrastructure metadata
-          </summary>
-          <div style={{ marginTop: "0.6rem", display: "grid", gap: "0.35rem" }}>
-            <p style={{ margin: 0, fontSize: "0.85rem" }}>
-              Known deployment records: {siteDeployments.length}
-            </p>
-            <p style={{ margin: 0, fontSize: "0.85rem" }}>
-              Source mode: {overview.mode}
-            </p>
-          </div>
-        </details>
+        <h3 className="card-title">Need Infrastructure Details?</h3>
+        <p className="card-muted" style={{ marginBottom: 0 }}>
+          Use the Advanced tab for diagnostics and provider-level metadata.
+        </p>
       </article>
     </div>
   );

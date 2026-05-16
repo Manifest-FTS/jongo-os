@@ -11,6 +11,20 @@ datasource db {
 }
 
 // ============================================================
+// Enums
+// ============================================================
+
+enum CollaboratorRole {
+  admin
+  collaborator
+}
+
+enum SiteCollaboratorRole {
+  admin
+  collaborator
+}
+
+// ============================================================
 // Users and Authentication
 // ============================================================
 
@@ -89,6 +103,7 @@ model Site {
   coolifyProjectName  String?
   gitRepositoryUrl    String?
   stagingEnabled      Boolean   @default(false)
+  // Note: Site is referred to as "App" in UI/UX language
 
   // Relations
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -165,7 +180,7 @@ model Collaborator {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String @db.Uuid
   userId      String    @db.Uuid
-  role        String    // 'owner', 'admin', 'operator', 'viewer'
+  role        CollaboratorRole @default(collaborator) // 'admin' or 'collaborator'
   grantedById String?   @db.Uuid
   grantedAt   DateTime  @default(now())
 
@@ -187,7 +202,7 @@ model SiteCollaborator {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   siteId      String    @db.Uuid
   userId      String    @db.Uuid
-  role        String    // 'admin', 'operator', 'viewer'
+  role        SiteCollaboratorRole @default(collaborator) // 'admin' or 'collaborator' (team management at app level)
 
   // Relations
   site        Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)

@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 
@@ -16,56 +17,70 @@ export default async function SiteWorkspaceLayout({
 
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/sites/${siteId}`, match: "exact" },
-    { name: "Deployments", href: `/sites/${siteId}/deployments` },
-    { name: "Settings", href: `/sites/${siteId}/settings` }
+    { name: "Integrations", href: `/sites/${siteId}/integrations` },
+    { name: "Staging", href: `/sites/${siteId}/staging` },
+    { name: "Backups", href: `/sites/${siteId}/backups` },
+    { name: "Analytics", href: `/sites/${siteId}/analytics` },
+    { name: "Team", href: `/sites/${siteId}/team` },
+    { name: "Settings", href: `/sites/${siteId}/settings` },
+    { name: "Advanced", href: `/sites/${siteId}/advanced` }
   ];
 
-  if (site?.stagingEnabled) {
-    tabs.splice(2, 0, { name: "Staging", href: `/sites/${siteId}/staging` });
-  }
+  const ownershipDiagnostic = site?.ownershipDiagnostic;
+  const isMapped = site?.ownershipState === "mapped";
 
   return (
-    <div>
-      <div className="card page-hero" style={{ marginBottom: "1rem" }}>
-        <p className="card-muted" style={{ margin: "0 0 0.35rem" }}>
-          Dashboard / Clients / {site?.clientName ?? "Unknown Client"} / {site?.name ?? siteId}
-        </p>
-        <h1 style={{ margin: 0 }}>{site?.name ?? siteId}</h1>
-        <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Site operations workspace
-        </p>
-
-        <div className="hero-meta-row">
-          <span className={`status-chip ${site?.status ?? "unknown"}`}>Overall {site?.status ?? "unknown"}</span>
-          <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>
-            Prod {site?.productionStatus ?? "unknown"}
-          </span>
-          {site?.stagingEnabled ? (
-            <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
-              Staging {site?.stagingStatus ?? "unknown"}
-            </span>
-          ) : (
-            <span className="tag">Staging disabled</span>
-          )}
-          <span className="tag">Ownership {site?.ownershipState ?? "unavailable"}</span>
-          <span className="tag">Health summary</span>
+    <div className="workspace-shell">
+      <div className="workspace-hero card">
+        <div className="workspace-breadcrumb">
+          <Link href="/sites" className="breadcrumb-link">Apps</Link>
+          <span className="breadcrumb-sep">/</span>
+          {isMapped && site.clientId ? (
+            <>
+              <Link href={`/organizations/${site.clientId}`} className="breadcrumb-link">{site.clientName}</Link>
+              <span className="breadcrumb-sep">/</span>
+            </>
+          ) : null}
+          <span className="breadcrumb-current">{site?.name ?? siteId}</span>
         </div>
 
-        <details style={{ marginTop: "0.75rem" }}>
-          <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)" }}>
-            Developer Details
-          </summary>
-          <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-            Data source: {site?.source ?? "unknown"}
-          </p>
-        </details>
+        <div className="workspace-hero-body">
+          <div className="workspace-hero-title-group">
+            <h1 className="workspace-title">{site?.name ?? siteId}</h1>
+            {site?.description ? (
+              <p className="workspace-subtitle">{site.description}</p>
+            ) : null}
+          </div>
+
+          <div className="workspace-hero-chips">
+            <span className={`status-chip ${site?.status ?? "unknown"}`}>
+              {site?.status ?? "unknown"}
+            </span>
+            <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>
+              Prod
+            </span>
+            {site?.stagingEnabled ? (
+              <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
+                Staging
+              </span>
+            ) : (
+              <span className="tag">No staging</span>
+            )}
+            {ownershipDiagnostic ? (
+              <span className={`tag ${isMapped ? "tag-mapped" : "tag-warning"}`}>
+                {ownershipDiagnostic}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
       </div>
 
-      <div className="card" style={{ marginBottom: "1rem", paddingTop: "0.75rem", paddingBottom: "0.75rem" }}>
+      <div className="workspace-tab-bar card">
         <WorkspaceTabs tabs={tabs} />
       </div>
 
-      <div>{children}</div>
+      <div className="workspace-content">{children}</div>
     </div>
   );
 }

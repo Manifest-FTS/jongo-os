@@ -6,7 +6,7 @@ import BrandLogo from "@/components/BrandLogo";
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardIcon },
   { href: "/organizations", label: "Clients", icon: BuildingOfficeIcon },
-  { href: "/sites", label: "Sites", icon: ServerIcon },
+  { href: "/sites", label: "Apps", icon: ServerIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon }
 ];
 

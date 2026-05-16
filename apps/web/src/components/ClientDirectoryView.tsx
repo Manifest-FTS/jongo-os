@@ -15,7 +15,7 @@ type ClientItem = {
 
 export default function ClientDirectoryView({ clients }: { clients: ClientItem[] }) {
   const [search, setSearch] = useState("");
-  const [siteFilter, setSiteFilter] = useState<"all" | "with-sites" | "empty">("all");
+  const [siteFilter, setSiteFilter] = useState<"all" | "with-apps" | "empty">("all");
   const [view, setView] = useState<"list" | "grid">("list");
 
   const query = search.trim().toLowerCase();
@@ -27,7 +27,7 @@ export default function ClientDirectoryView({ clients }: { clients: ClientItem[]
 
     const matchesSites =
       siteFilter === "all" ||
-      (siteFilter === "with-sites" && client.siteCount > 0) ||
+      (siteFilter === "with-apps" && client.siteCount > 0) ||
       (siteFilter === "empty" && client.siteCount === 0);
 
     return matchesQuery && matchesSites;
@@ -47,8 +47,8 @@ export default function ClientDirectoryView({ clients }: { clients: ClientItem[]
           />
           <div className="filter-group" aria-label="Client filters">
             <button type="button" className={`filter-pill ${siteFilter === "all" ? "is-active" : ""}`} onClick={() => setSiteFilter("all")}>All</button>
-            <button type="button" className={`filter-pill ${siteFilter === "with-sites" ? "is-active" : ""}`} onClick={() => setSiteFilter("with-sites")}>With sites</button>
-            <button type="button" className={`filter-pill ${siteFilter === "empty" ? "is-active" : ""}`} onClick={() => setSiteFilter("empty")}>No sites</button>
+            <button type="button" className={`filter-pill ${siteFilter === "with-apps" ? "is-active" : ""}`} onClick={() => setSiteFilter("with-apps")}>With apps</button>
+            <button type="button" className={`filter-pill ${siteFilter === "empty" ? "is-active" : ""}`} onClick={() => setSiteFilter("empty")}>No apps</button>
           </div>
         </div>
 
@@ -72,7 +72,7 @@ export default function ClientDirectoryView({ clients }: { clients: ClientItem[]
                 </div>
                 <p className="directory-summary">{client.summary}</p>
                 <div className="directory-badges">
-                  <span className="tag">{client.siteCount} site{client.siteCount === 1 ? "" : "s"}</span>
+                  <span className="tag">{client.siteCount} app{client.siteCount === 1 ? "" : "s"}</span>
                   <span className="tag">{client.memberCount} member{client.memberCount === 1 ? "" : "s"}</span>
                 </div>
               </div>

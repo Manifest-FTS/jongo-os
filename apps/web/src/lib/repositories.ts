@@ -1,5 +1,6 @@
 import { getClients, getClientById as getMockClientById, getClientForSite, type ClientRecord } from "./clients";
 import { getCoolifyOverview } from "./coolify";
+import { normalizeRole } from "./roles";
 
 export type ViewerContext = {
   userId?: string;
@@ -53,6 +54,23 @@ function isPrismaSchemaMismatchError(error: unknown): boolean {
   );
 }
 
+function isLegacySchemaMissingError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { code?: string; message?: string; meta?: { message?: string } };
+  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
+
+  return (
+    message.includes("relation") &&
+    (message.includes('"clients" does not exist') ||
+      message.includes('"projects" does not exist') ||
+      message.includes('"org_members" does not exist') ||
+      message.includes('"users" does not exist'))
+  );
+}
+
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
 }
@@ -72,6 +90,8 @@ export type ClientWorkspaceRecord = ClientRecord & {
   dbId?: string; // actual DB UUID (undefined when using mock data)
   siteCount: number;
   memberCount: number;
+  coolifyProjectId?: string;
+  coolifyProjectName?: string;
   /** Where this record was sourced from – "db" means a live Prisma query succeeded. */
   dataSource: "db" | "mock";
 };
@@ -84,6 +104,7 @@ export type SiteDirectoryRecord = {
   clientName: string;
   status: "healthy" | "degraded" | "error" | "unknown";
   ownershipState: "mapped" | "orphaned" | "unavailable";
+  ownershipDiagnostic: string;
   source: "db" | "coolify"; // where the record originates
   coolifyServiceUuid?: string;
   coolifyProjectId?: string;
@@ -109,9 +130,12 @@ export type SiteWorkspaceRecord = {
   coolifyServiceUuid?: string;
   coolifyProjectId?: string;
   coolifyProjectName?: string;
+  coolifyEnvironmentId?: string;
+  coolifyEnvironmentName?: string;
   gitRepositoryUrl?: string;
   organizationId?: string;
   ownershipState: "mapped" | "orphaned" | "unavailable";
+  ownershipDiagnostic: string;
   source: "db" | "coolify";
 };
 
@@ -165,6 +189,213 @@ function buildOrganizationOwnershipIndex(organizations: any[]) {
   return { byProjectId, byProjectName };
 }
 
+function mapLegacyProjectStatus(status?: string | null): "healthy" | "degraded" | "error" | "unknown" {
+  switch ((status ?? "").trim().toLowerCase()) {
+    case "active":
+      return "healthy";
+    case "on_hold":
+      return "degraded";
+    case "planning":
+      return "unknown";
+    default:
+      return "unknown";
+  }
+}
+
+type LegacyClientRow = {
+  id: string;
+  orgId: string;
+  name: string;
+  email?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  userId?: string | null;
+};
+
+type LegacyProjectRow = {
+  id: string;
+  clientId?: string | null;
+  orgId?: string | null;
+  name: string;
+  description?: string | null;
+  status?: string | null;
+};
+
+type LegacyMemberRow = {
+  id: string;
+  userId: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  role: string;
+};
+
+function formatLegacyMemberName(member: LegacyMemberRow): string {
+  const fullName = [member.firstName, member.lastName].filter(Boolean).join(" ").trim();
+  return fullName || member.email;
+}
+
+async function readLegacyClients(prisma: any, viewer?: ViewerContext): Promise<LegacyClientRow[]> {
+  const scopedUserId = getScopedViewerUserId(viewer);
+  const useScope = scopedUserId && !hasBootstrapGlobalAccess(viewer);
+
+  if (useScope) {
+    return prisma.$queryRaw`
+      select
+        c.id as "id",
+        c.org_id as "orgId",
+        c.name as "name",
+        c.email as "email",
+        c.status as "status",
+        c.notes as "notes",
+        c.user_id as "userId"
+      from clients c
+      where c.user_id::text = ${scopedUserId}
+         or exists (
+           select 1
+           from org_members m
+           where m.org_id::text = c.org_id::text
+             and m.user_id::text = ${scopedUserId}
+         )
+      order by c.created_at asc
+    `;
+  }
+
+  return prisma.$queryRaw`
+    select
+      c.id as "id",
+      c.org_id as "orgId",
+      c.name as "name",
+      c.email as "email",
+      c.status as "status",
+      c.notes as "notes",
+      c.user_id as "userId"
+    from clients c
+    order by c.created_at asc
+  `;
+}
+
+async function readLegacyClientProjects(prisma: any, clientId: string): Promise<LegacyProjectRow[]> {
+  return prisma.$queryRaw`
+    select
+      p.id as "id",
+      p.client_id as "clientId",
+      p.org_id as "orgId",
+      p.name as "name",
+      p.description as "description",
+      p.status::text as "status"
+    from projects p
+    where p.client_id::text = ${clientId}
+    order by p.created_at asc
+  `;
+}
+
+async function readLegacyClientMembers(prisma: any, clientRow: LegacyClientRow): Promise<LegacyMemberRow[]> {
+  const orgMembers: LegacyMemberRow[] = await prisma.$queryRaw`
+    select
+      m.id as "id",
+      m.user_id as "userId",
+      u.email as "email",
+      u.first_name as "firstName",
+      u.last_name as "lastName",
+      m.role::text as "role"
+    from org_members m
+    join users u on u.id = m.user_id
+    where m.org_id::text = ${clientRow.orgId}
+    order by m.created_at asc
+  `;
+
+  const ownerRows: LegacyMemberRow[] = clientRow.userId
+    ? await prisma.$queryRaw`
+      select
+        u.id as "id",
+        u.id as "userId",
+        u.email as "email",
+        u.first_name as "firstName",
+        u.last_name as "lastName",
+        'admin' as "role"
+      from users u
+      where u.id::text = ${clientRow.userId}
+    `
+    : [];
+
+  const merged = new Map<string, LegacyMemberRow>();
+  for (const member of [...ownerRows, ...orgMembers]) {
+    merged.set(member.userId, member);
+  }
+
+  return [...merged.values()];
+}
+
+function buildClientWorkspaceFromLegacy(
+  clientRow: LegacyClientRow,
+  projects: LegacyProjectRow[],
+  members: LegacyMemberRow[]
+): ClientWorkspaceRecord {
+  return {
+    id: clientRow.id,
+    dbId: clientRow.id,
+    dataSource: "db" as const,
+    name: clientRow.name,
+    summary: clientRow.notes ?? clientRow.status ?? "Client workspace",
+    siteIds: projects.map((project) => project.id),
+    members: members.map((member) => ({
+      name: formatLegacyMemberName(member),
+      role: normalizeRole(member.role)
+    })),
+    recentActivity: projects.slice(-3).map((project) => `${project.name} ${project.status ?? "unknown"}`),
+    siteCount: projects.length,
+    memberCount: members.length,
+    coolifyProjectId: undefined,
+    coolifyProjectName: undefined
+  };
+}
+
+function buildClientWorkspaceFromPrismaOrganization(org: any): ClientWorkspaceRecord {
+  const collaboratorMembers = (org.collaborators ?? []).map((c: any) => ({
+    userId: c.user?.id,
+    name: c.user?.fullName || c.user?.email || "Unknown",
+    role: normalizeRole(c.role),
+    email: c.user?.email
+  }));
+
+  const ownerMember = {
+    userId: org.owner?.id,
+    name: org.owner?.fullName || org.owner?.email || "Owner",
+    role: "admin" as const,
+    email: org.owner?.email
+  };
+
+  const memberByUserId = new Map<string, { userId?: string; name: string; role: string; email?: string }>();
+  if (ownerMember.userId) {
+    memberByUserId.set(ownerMember.userId, ownerMember);
+  }
+  for (const member of collaboratorMembers) {
+    if (!member.userId) continue;
+    memberByUserId.set(member.userId, member);
+  }
+
+  const sites = org.sites ?? [];
+
+  return {
+    id: org.slug,
+    dbId: org.id,
+    dataSource: "db",
+    name: org.name,
+    summary: org.description ?? "Client workspace",
+    siteIds: sites.map((site: any) => site.id),
+    members: [...memberByUserId.values()].map((member) => ({
+      name: member.name,
+      role: normalizeRole(member.role)
+    })),
+    recentActivity: sites.slice(-3).map((site: any) => `${site.name} active`),
+    siteCount: sites.length,
+    memberCount: memberByUserId.size,
+    coolifyProjectId: org.coolifyProjectId ?? undefined,
+    coolifyProjectName: org.coolifyProjectName ?? undefined
+  };
+}
+
 function resolveOwnershipForCoolifySite(
   site: { id: string; coolifyProjectId?: string; coolifyProjectName?: string },
   mode: "live" | "mock",
@@ -173,6 +404,7 @@ function resolveOwnershipForCoolifySite(
   clientId: string;
   clientName: string;
   ownershipState: "mapped" | "orphaned" | "unavailable";
+  ownershipDiagnostic: string;
 } {
   if (mode === "mock") {
     const mockClient = getClientForSite(site.id);
@@ -180,7 +412,8 @@ function resolveOwnershipForCoolifySite(
       return {
         clientId: mockClient.id,
         clientName: mockClient.name,
-        ownershipState: "mapped"
+        ownershipState: "mapped",
+        ownershipDiagnostic: `Mapped to Client: ${mockClient.name}`
       };
     }
   }
@@ -191,7 +424,8 @@ function resolveOwnershipForCoolifySite(
       return {
         clientId: org.slug,
         clientName: org.name,
-        ownershipState: "mapped"
+        ownershipState: "mapped",
+        ownershipDiagnostic: `Mapped to Client: ${org.name}`
       };
     }
 
@@ -201,7 +435,8 @@ function resolveOwnershipForCoolifySite(
       return {
         clientId: org.slug,
         clientName: org.name,
-        ownershipState: "mapped"
+        ownershipState: "mapped",
+        ownershipDiagnostic: `Mapped to Client: ${org.name}`
       };
     }
   }
@@ -210,15 +445,17 @@ function resolveOwnershipForCoolifySite(
   if (fallbackProject) {
     return {
       clientId: "orphaned",
-      clientName: `Orphaned (${fallbackProject})`,
-      ownershipState: "orphaned"
+      clientName: "Unmapped Client",
+      ownershipState: "orphaned",
+      ownershipDiagnostic: "Project found but no Jongo Client mapped"
     };
   }
 
   return {
     clientId: "orphaned",
-    clientName: "Orphaned (No Coolify Project)",
-    ownershipState: "unavailable"
+    clientName: "Unknown Client",
+    ownershipState: "unavailable",
+    ownershipDiagnostic: "Coolify project unavailable from API"
   };
 }
 
@@ -309,54 +546,49 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
     return fromMockClients();
   }
 
-  const whereClause: any = { deletedAt: null };
-  const scopedUserId = getScopedViewerUserId(viewer);
-  if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
-    whereClause.OR = [
-      { ownerId: scopedUserId },
-      { collaborators: { some: { userId: scopedUserId } } }
-    ];
-  }
+  try {
+    const clients = await readLegacyClients(prisma, viewer);
+    const workspaces = await Promise.all(
+      clients.map(async (clientRow) => {
+        const [projects, members] = await Promise.all([
+          readLegacyClientProjects(prisma, clientRow.id),
+          readLegacyClientMembers(prisma, clientRow)
+        ]);
 
-  const organizations: any[] = await prisma.organization.findMany({
-    where: whereClause,
-    include: {
-      sites: {
-        include: {
-          collaborators: {
-            include: { user: true }
-          },
-          environments: {
-            include: { deployments: true }
-          }
-        }
+        return buildClientWorkspaceFromLegacy(clientRow, projects, members);
+      })
+    );
+
+    return workspaces;
+  } catch (error) {
+    if (!isLegacySchemaMissingError(error)) {
+      throw error;
+    }
+
+    const scopedUserId = getScopedViewerUserId(viewer);
+    const where: any = { deletedAt: null };
+    if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
+      where.OR = [
+        { ownerId: scopedUserId },
+        { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
+      ];
+    }
+
+    const orgs = await prisma.organization.findMany({
+      where,
+      include: {
+        owner: { select: { id: true, email: true, fullName: true } },
+        collaborators: {
+          where: { deletedAt: null },
+          include: { user: { select: { id: true, email: true, fullName: true } } }
+        },
+        sites: { where: { deletedAt: null }, select: { id: true, name: true } }
       },
-      collaborators: {
-        include: { user: true }
-      }
-    },
-    orderBy: { name: "asc" }
-  });
+      orderBy: { createdAt: "asc" }
+    });
 
-  return organizations.map((organization: any) => ({
-    id: organization.slug,
-    dbId: organization.id,
-    dataSource: "db" as const,
-    name: organization.name,
-    summary: organization.description ?? "Client workspace",
-    siteIds: organization.sites.map((site: any) => site.id),
-    members: organization.collaborators.map((collaborator: any) => ({
-      name: collaborator.user.fullName ?? collaborator.user.email,
-      role: collaborator.role
-    })),
-    recentActivity: organization.sites.flatMap((site: any) =>
-      site.environments.flatMap((environment: any) =>
-        environment.deployments.slice(0, 1).map((deployment: any) => `Deployment ${deployment.status} on ${site.name}`)
-      )
-    ),
-    siteCount: organization.sites.length,
-    memberCount: organization.collaborators.length
-  }));
+    return orgs.map((org: any) => buildClientWorkspaceFromPrismaOrganization(org));
+  }
 }
 
 export async function listClientWorkspaces(viewer?: ViewerContext): Promise<ClientWorkspaceRecord[]> {
@@ -406,55 +638,97 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
       };
     }
 
-    const whereClause: any = { slug: clientId };
     const scopedUserId = getScopedViewerUserId(viewer);
-    if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
-      whereClause.OR = [
-        { ownerId: scopedUserId },
-        { collaborators: { some: { userId: scopedUserId } } }
-      ];
-    }
+    try {
+      const clientRows: LegacyClientRow[] = scopedUserId && !hasBootstrapGlobalAccess(viewer)
+        ? await prisma.$queryRaw`
+        select
+          c.id as "id",
+          c.org_id as "orgId",
+          c.name as "name",
+          c.email as "email",
+          c.status as "status",
+          c.notes as "notes",
+          c.user_id as "userId"
+        from clients c
+        where c.id::text = ${clientId}
+          and (
+            c.user_id::text = ${scopedUserId}
+            or exists (
+              select 1
+              from org_members m
+              where m.org_id::text = c.org_id::text
+                and m.user_id::text = ${scopedUserId}
+            )
+          )
+        limit 1
+      `
+      : await prisma.$queryRaw`
+        select
+          c.id as "id",
+          c.org_id as "orgId",
+          c.name as "name",
+          c.email as "email",
+          c.status as "status",
+          c.notes as "notes",
+          c.user_id as "userId"
+        from clients c
+        where c.id::text = ${clientId}
+        limit 1
+      `;
 
-    const organization: any = await prisma.organization.findFirst({
-      where: whereClause,
-      include: {
-        sites: {
-          include: {
-            collaborators: {
-              include: { user: true }
-            },
-            environments: {
-              include: { deployments: true }
-            }
-          }
-        },
-        collaborators: {
-          include: { user: true }
-        }
+      const clientRow = clientRows[0];
+      if (!clientRow) return undefined;
+
+      const [projects, members] = await Promise.all([
+        readLegacyClientProjects(prisma, clientRow.id),
+        readLegacyClientMembers(prisma, clientRow)
+      ]);
+
+      return buildClientWorkspaceFromLegacy(clientRow, projects, members);
+    } catch (error) {
+      if (!isLegacySchemaMissingError(error)) {
+        throw error;
       }
-    });
 
-    if (!organization) return undefined;
+      const identityFilter = isUuid(clientId)
+        ? { OR: [{ id: clientId }, { slug: clientId }] }
+        : { slug: clientId };
 
-    return {
-      id: organization.slug,
-      dbId: organization.id,
-      dataSource: "db" as const,
-      name: organization.name,
-      summary: organization.description ?? "Client workspace",
-      siteIds: organization.sites.map((site: any) => site.id),
-      members: organization.collaborators.map((collaborator: any) => ({
-        name: collaborator.user.fullName ?? collaborator.user.email,
-        role: collaborator.role
-      })),
-      recentActivity: organization.sites.flatMap((site: any) =>
-        site.environments.flatMap((environment: any) =>
-          environment.deployments.slice(0, 1).map((deployment: any) => `Deployment ${deployment.status} on ${site.name}`)
-        )
-      ),
-      siteCount: organization.sites.length,
-      memberCount: organization.collaborators.length
-    };
+      const where: any = {
+        deletedAt: null,
+        ...identityFilter
+      };
+
+      if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
+        where.AND = [
+          {
+            OR: [
+              { ownerId: scopedUserId },
+              { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
+            ]
+          }
+        ];
+      }
+
+      const org = await prisma.organization.findFirst({
+        where,
+        include: {
+          owner: { select: { id: true, email: true, fullName: true } },
+          collaborators: {
+            where: { deletedAt: null },
+            include: { user: { select: { id: true, email: true, fullName: true } } }
+          },
+          sites: { where: { deletedAt: null }, select: { id: true, name: true } }
+        }
+      });
+
+      if (!org) {
+        return undefined;
+      }
+
+      return buildClientWorkspaceFromPrismaOrganization(org);
+    }
   } catch (error) {
     if (isPrismaSchemaMismatchError(error)) {
       console.error(
@@ -482,6 +756,145 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
   }
 }
 
+export type ClientTeamMemberRecord = {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+};
+
+export async function getClientTeamMembers(clientDbId: string): Promise<ClientTeamMemberRecord[]> {
+  const prisma = await maybeGetDb();
+
+  if (!prisma) {
+    return [];
+  }
+
+  try {
+    const clientRows: Array<{ orgId: string; userId: string | null }> = await prisma.$queryRaw`
+      select c.org_id as "orgId", c.user_id as "userId"
+      from clients c
+      where c.id::text = ${clientDbId}
+      limit 1
+    `;
+
+    const clientRow = clientRows[0];
+    if (!clientRow) {
+      return [];
+    }
+
+    const rows: LegacyMemberRow[] = await readLegacyClientMembers(prisma, {
+      id: clientDbId,
+      orgId: clientRow.orgId,
+      name: "",
+      userId: clientRow.userId
+    });
+
+    return rows.map((member) => ({
+      id: member.id,
+      userId: member.userId,
+      name: formatLegacyMemberName(member),
+      email: member.email,
+      role: normalizeRole(member.role)
+    }));
+  } catch (error) {
+    if (!isLegacySchemaMissingError(error)) {
+      throw error;
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: clientDbId },
+      include: {
+        owner: { select: { id: true, email: true, fullName: true } },
+        collaborators: {
+          where: { deletedAt: null },
+          include: { user: { select: { id: true, email: true, fullName: true } } }
+        }
+      }
+    });
+
+    if (!org) {
+      return [];
+    }
+
+    const members = new Map<string, ClientTeamMemberRecord>();
+    if (org.owner?.id) {
+      members.set(org.owner.id, {
+        id: org.owner.id,
+        userId: org.owner.id,
+        name: org.owner.fullName || org.owner.email,
+        email: org.owner.email,
+        role: "admin"
+      });
+    }
+
+    for (const collaborator of org.collaborators ?? []) {
+      if (!collaborator.user?.id) continue;
+      members.set(collaborator.user.id, {
+        id: collaborator.id,
+        userId: collaborator.user.id,
+        name: collaborator.user.fullName || collaborator.user.email,
+        email: collaborator.user.email,
+        role: normalizeRole(collaborator.role)
+      });
+    }
+
+    return [...members.values()];
+  }
+}
+
+export async function isClientAdmin(clientDbId: string, userId: string): Promise<boolean> {
+  const prisma = await maybeGetDb();
+
+  if (!prisma) {
+    return false;
+  }
+
+  try {
+    const rows: Array<{ isOwner: boolean; memberRole: string | null }> = await prisma.$queryRaw`
+      select
+        (c.user_id::text = ${userId}) as "isOwner",
+        m.role::text as "memberRole"
+      from clients c
+      left join org_members m
+        on m.org_id::text = c.org_id::text
+       and m.user_id::text = ${userId}
+      where c.id::text = ${clientDbId}
+      limit 1
+    `;
+
+    const row = rows[0];
+    if (!row) {
+      return false;
+    }
+
+    return row.isOwner || normalizeRole(row.memberRole) === "admin";
+  } catch (error) {
+    if (!isLegacySchemaMissingError(error)) {
+      throw error;
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: clientDbId },
+      select: {
+        ownerId: true,
+        collaborators: {
+          where: { userId, deletedAt: null },
+          select: { role: true },
+          take: 1
+        }
+      }
+    });
+
+    if (!org) {
+      return false;
+    }
+
+    return org.ownerId === userId || normalizeRole(org.collaborators[0]?.role) === "admin";
+  }
+}
+
 export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDirectoryRecord[]> {
   try {
     const prisma = await maybeGetDb();
@@ -498,9 +911,12 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
           clientName: ownership.clientName,
           status: site.status,
           ownershipState: ownership.ownershipState,
+          ownershipDiagnostic: ownership.ownershipDiagnostic,
           source: "coolify" as const,
           coolifyProjectId: site.coolifyProjectId,
-          coolifyProjectName: site.coolifyProjectName
+          coolifyProjectName: site.coolifyProjectName,
+          coolifyEnvironmentId: site.coolifyEnvironmentId,
+          coolifyEnvironmentName: site.coolifyEnvironmentName
         };
       });
     }
@@ -552,10 +968,13 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         clientName: s.organization.name,
         status: coolifyMatch?.status ?? "unknown",
         ownershipState: "mapped" as const,
+        ownershipDiagnostic: `Mapped to Client: ${s.organization.name}`,
         source: "db" as const,
         coolifyServiceUuid: s.coolifyServiceUuid ?? undefined,
         coolifyProjectId: s.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
-        coolifyProjectName: coolifyMatch?.coolifyProjectName
+        coolifyProjectName: coolifyMatch?.coolifyProjectName,
+        coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
+        coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName
       };
     });
 
@@ -572,10 +991,13 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
           clientName: ownership.clientName,
           status: site.status,
           ownershipState: ownership.ownershipState,
+          ownershipDiagnostic: ownership.ownershipDiagnostic,
           source: "coolify" as const,
           coolifyServiceUuid: site.id,
           coolifyProjectId: site.coolifyProjectId,
-          coolifyProjectName: site.coolifyProjectName
+          coolifyProjectName: site.coolifyProjectName,
+          coolifyEnvironmentId: site.coolifyEnvironmentId,
+          coolifyEnvironmentName: site.coolifyEnvironmentName
         };
       });
 
@@ -605,9 +1027,12 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         clientName: ownership.clientName,
         status: site.status,
         ownershipState: ownership.ownershipState,
+        ownershipDiagnostic: ownership.ownershipDiagnostic,
         source: "coolify" as const,
         coolifyProjectId: site.coolifyProjectId,
-        coolifyProjectName: site.coolifyProjectName
+        coolifyProjectName: site.coolifyProjectName,
+        coolifyEnvironmentId: site.coolifyEnvironmentId,
+        coolifyEnvironmentName: site.coolifyEnvironmentName
       };
     });
   }
@@ -619,22 +1044,29 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
     const overview = await getCoolifyOverview();
 
     if (prisma) {
-      // Try DB lookup first (siteId may be a DB UUID)
-      const dbSite: any = await prisma.site.findFirst({
-        where: { id: siteId, deletedAt: null },
-        include: {
-          organization: {
-            select: {
-              id: true,
-              slug: true,
-              name: true,
-              coolifyProjectId: true,
-              coolifyProjectName: true
-            }
-          },
-          environments: { include: { deployments: { orderBy: { triggeredAt: "desc" }, take: 3 } } }
+      let dbSite: any = null;
+      try {
+        // Try DB lookup first (siteId may be a DB UUID)
+        dbSite = await prisma.site.findFirst({
+          where: { id: siteId, deletedAt: null },
+          include: {
+            organization: {
+              select: {
+                id: true,
+                slug: true,
+                name: true,
+                coolifyProjectId: true,
+                coolifyProjectName: true
+              }
+            },
+            environments: { include: { deployments: { orderBy: { triggeredAt: "desc" }, take: 3 } } }
+          }
+        });
+      } catch (error) {
+        if (!isPrismaSchemaMismatchError(error)) {
+          console.error("[jongo] getSiteWorkspace: DB site lookup failed before legacy fallback.", error);
         }
-      });
+      }
 
       if (dbSite) {
         // Enrich with Coolify data if UUID is stored
@@ -665,9 +1097,65 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
           coolifyServiceUuid: dbSite.coolifyServiceUuid ?? undefined,
           coolifyProjectId: dbSite.coolifyProjectId ?? dbSite.organization.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
           coolifyProjectName: dbSite.organization.coolifyProjectName ?? coolifyMatch?.coolifyProjectName,
+          coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
+          coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
           gitRepositoryUrl: dbSite.gitRepositoryUrl ?? undefined,
           organizationId: dbSite.organizationId,
           ownershipState: "mapped",
+          ownershipDiagnostic: `Mapped to Client: ${dbSite.organization.name}`,
+          source: "db" as const
+        };
+      }
+
+      const legacyProjects: Array<{
+        id: string;
+        clientId: string | null;
+        orgId: string | null;
+        name: string;
+        description: string | null;
+        status: string | null;
+        clientName: string | null;
+      }> = await prisma.$queryRaw`
+        select
+          p.id as "id",
+          p.client_id as "clientId",
+          p.org_id as "orgId",
+          p.name as "name",
+          p.description as "description",
+          p.status::text as "status",
+          c.name as "clientName"
+        from projects p
+        left join clients c on c.id = p.client_id
+        where p.id::text = ${siteId}
+        limit 1
+      `;
+
+      const legacyProject = legacyProjects[0];
+      if (legacyProject) {
+        const mappedStatus = mapLegacyProjectStatus(legacyProject.status);
+        return {
+          id: legacyProject.id,
+          name: legacyProject.name,
+          description: legacyProject.description ?? undefined,
+          deployTargetId: legacyProject.id,
+          clientId: legacyProject.clientId ?? legacyProject.orgId ?? "orphaned",
+          clientName: legacyProject.clientName ?? "Client",
+          status: mappedStatus,
+          productionStatus: mappedStatus,
+          stagingStatus: mappedStatus,
+          stagingEnabled: mappedStatus !== "unknown",
+          deploymentCount: 0,
+          recentActivity: legacyProject.status ? [`Project ${legacyProject.status}`] : [],
+          siteType: "generic",
+          coolifyServiceUuid: undefined,
+          coolifyProjectId: undefined,
+          coolifyProjectName: undefined,
+          coolifyEnvironmentId: undefined,
+          coolifyEnvironmentName: undefined,
+          gitRepositoryUrl: undefined,
+          organizationId: legacyProject.clientId ?? legacyProject.orgId ?? undefined,
+          ownershipState: "mapped",
+          ownershipDiagnostic: `Mapped to Client: ${legacyProject.clientName ?? "Client"}`,
           source: "db" as const
         };
       }
@@ -700,7 +1188,10 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
       coolifyServiceUuid: site.id,
       coolifyProjectId: site.coolifyProjectId,
       coolifyProjectName: site.coolifyProjectName,
+      coolifyEnvironmentId: site.coolifyEnvironmentId,
+      coolifyEnvironmentName: site.coolifyEnvironmentName,
       ownershipState: ownership?.ownershipState ?? "unavailable",
+      ownershipDiagnostic: ownership?.ownershipDiagnostic ?? "Coolify project unavailable from API",
       source: "coolify" as const
     };
   } catch {
@@ -726,7 +1217,10 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
       recentActivity: [],
       coolifyProjectId: site.coolifyProjectId,
       coolifyProjectName: site.coolifyProjectName,
+      coolifyEnvironmentId: site.coolifyEnvironmentId,
+      coolifyEnvironmentName: site.coolifyEnvironmentName,
       ownershipState: ownership?.ownershipState ?? "unavailable",
+      ownershipDiagnostic: ownership?.ownershipDiagnostic ?? "Coolify project unavailable from API",
       source: "coolify" as const
     };
   }

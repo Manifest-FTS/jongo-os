@@ -103,7 +103,7 @@ export async function POST(req: Request) {
         collaborators: {
           create: {
             userId: session.user.id,
-            role: "owner"
+            role: "admin"
           }
         }
       }

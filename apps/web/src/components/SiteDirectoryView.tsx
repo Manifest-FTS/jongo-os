@@ -12,7 +12,7 @@ type SiteItem = {
   clientName: string;
   status: "healthy" | "degraded" | "error" | "unknown";
   ownershipState: "mapped" | "orphaned" | "unavailable";
-  coolifyProjectName?: string;
+  ownershipDiagnostic: string;
   source: "db" | "coolify";
   href: string;
   clientHref?: string;
@@ -49,8 +49,8 @@ export default function SiteDirectoryView({
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter sites by name, client, or description"
-            aria-label="Filter sites"
+            placeholder="Filter apps by name, client, or description"
+            aria-label="Filter apps"
           />
           <div className="filter-group" aria-label="Site status filters">
             <button type="button" className={`filter-pill ${statusFilter === "all" ? "is-active" : ""}`} onClick={() => setStatusFilter("all")}>All</button>
@@ -66,11 +66,11 @@ export default function SiteDirectoryView({
         </div>
       </div>
 
-      <p className="card-muted">{filtered.length} site{filtered.length === 1 ? "" : "s"}</p>
+      <p className="card-muted">{filtered.length} app{filtered.length === 1 ? "" : "s"}</p>
 
       {filtered.length === 0 ? (
         <div className="card directory-empty">
-          <p className="card-muted">No sites match those filters.</p>
+          <p className="card-muted">No apps match those filters.</p>
         </div>
       ) : (
         <section className={`directory-results ${view === "list" ? "directory-list" : "directory-grid"}`}>
@@ -83,11 +83,8 @@ export default function SiteDirectoryView({
                 </div>
                 {site.description ? <p className="directory-summary">{site.description}</p> : null}
                 <p className="directory-meta">Client: {site.clientName}</p>
-                {site.coolifyProjectName ? (
-                  <p className="directory-meta">Coolify Project: {site.coolifyProjectName}</p>
-                ) : null}
                 <div className="directory-badges">
-                  <span className="tag">Ownership: {site.ownershipState}</span>
+                  <span className="tag">Ownership: {site.ownershipDiagnostic}</span>
                 </div>
               </div>
 
