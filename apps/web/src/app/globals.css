@@ -945,6 +945,12 @@ main {
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
+.auth-readonly {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #dbe1ea;
+}
+
 .auth-error {
   font-size: 0.85rem;
   color: #8d2631;

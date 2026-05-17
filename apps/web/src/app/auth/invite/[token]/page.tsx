@@ -16,6 +16,9 @@ type InvitePayload = {
     expiresAt: string;
     organizationName: string;
     siteName?: string | null;
+    inviterName: string;
+    existingUser: boolean;
+    redirectTo: string;
   };
 };
 
@@ -26,7 +29,6 @@ export default function AcceptInvitePage() {
 
   const [loading, setLoading] = useState(true);
   const [invite, setInvite] = useState<InvitePayload | null>(null);
-  const [mode, setMode] = useState<"register" | "login">("register");
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
@@ -63,6 +65,9 @@ export default function AcceptInvitePage() {
     return `client ${invite.invite.organizationName}`;
   }, [invite]);
 
+  const isExistingUserFlow = Boolean(invite?.invite?.existingUser);
+  const ctaLabel = isExistingUserFlow ? "Sign in and join" : "Create account and join";
+
   async function acceptInvite(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -72,7 +77,7 @@ export default function AcceptInvitePage() {
       const res = await fetch(`/api/invites/${encodeURIComponent(token)}/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, email, fullName, password })
+        body: JSON.stringify({ email, fullName, password })
       });
 
       const data = await res.json();
@@ -82,17 +87,18 @@ export default function AcceptInvitePage() {
       }
 
       const signInResult = await signIn("credentials", {
-        email,
+        email: email.trim().toLowerCase(),
         password,
         redirect: false
       });
 
       if (signInResult?.error) {
-        router.push(`/auth/login?callbackUrl=${encodeURIComponent("/dashboard")}`);
+        const callbackUrl = data.redirectTo || invite?.invite?.redirectTo || "/dashboard";
+        router.push(`/auth/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
         return;
       }
 
-      router.push("/dashboard");
+      router.push(data.redirectTo || invite?.invite?.redirectTo || "/dashboard");
     } catch {
       setError("Could not accept invitation.");
     } finally {
@@ -112,12 +118,12 @@ export default function AcceptInvitePage() {
 
   if (!invite?.valid || !invite.invite) {
     const reason = invite?.state === "used"
-      ? "This invitation has already been used."
+      ? "This invite has already been used."
       : invite?.state === "expired"
-      ? "This invitation has expired. Ask your admin for a new invite."
+      ? "This invite has expired. Ask your admin for a new one."
       : invite?.state === "revoked"
-      ? "This invitation was revoked."
-      : "This invitation link is invalid.";
+      ? "This invite was canceled by your admin."
+      : "This invite link is no longer available.";
 
     return (
       <div className="auth-page">
@@ -145,32 +151,27 @@ export default function AcceptInvitePage() {
               fallbackText="Jongo"
             />
           </Link>
-          <h1 className="auth-title" style={{ marginBottom: "0.25rem" }}>Accept invitation</h1>
+          <h1 className="auth-title" style={{ marginBottom: "0.25rem" }}>Join {invite.invite.inviterName}</h1>
           <p className="auth-subtitle">
-            You were invited to join {scopeLabel} as <strong>{invite.invite.role}</strong>.
+            You&apos;ve been invited as collaborator.
           </p>
           <p className="card-muted" style={{ marginTop: "0.4rem" }}>
-            Invite email: {invite.invite.email} · Expires: {new Date(invite.invite.expiresAt).toLocaleString()}
+            You&apos;ve been invited as {invite.invite.role} in {scopeLabel}.
           </p>
-        </div>
-
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
-          <button className="btn" type="button" onClick={() => setMode("register")} disabled={busy || mode === "register"}>
-            Create account
-          </button>
-          <button className="btn" type="button" onClick={() => setMode("login")} disabled={busy || mode === "login"}>
-            Log in
-          </button>
+          <p className="card-muted" style={{ marginTop: "0.25rem" }}>
+            Expires: {new Date(invite.invite.expiresAt).toLocaleString()}
+          </p>
         </div>
 
         <form onSubmit={acceptInvite} className="auth-form">
-          {mode === "register" ? (
+          {!isExistingUserFlow ? (
             <div className="auth-field">
               <label htmlFor="fullName">Full name</label>
               <input
                 id="fullName"
                 type="text"
                 autoComplete="name"
+                required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
               />
@@ -185,7 +186,8 @@ export default function AcceptInvitePage() {
               autoComplete="email"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              readOnly
+              className="auth-readonly"
             />
           </div>
 
@@ -194,7 +196,7 @@ export default function AcceptInvitePage() {
             <input
               id="password"
               type="password"
-              autoComplete={mode === "register" ? "new-password" : "current-password"}
+              autoComplete={isExistingUserFlow ? "current-password" : "new-password"}
               required
               minLength={8}
               value={password}
@@ -205,13 +207,9 @@ export default function AcceptInvitePage() {
           {error ? <p className="auth-error">{error}</p> : null}
 
           <button type="submit" className="auth-submit" disabled={busy}>
-            {busy ? "Accepting invitation…" : mode === "register" ? "Create account and join" : "Log in and join"}
+            {busy ? "Joining…" : ctaLabel}
           </button>
         </form>
-
-        <p className="auth-link-row">
-          Already signed in? <Link href="/dashboard">Go to dashboard</Link>
-        </p>
       </div>
     </div>
   );

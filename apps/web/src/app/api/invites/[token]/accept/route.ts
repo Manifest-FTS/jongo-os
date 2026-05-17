@@ -8,7 +8,6 @@ import { normalizeRole } from "@/lib/roles";
 type Params = { params: Promise<{ token: string }> };
 
 type Body = {
-  mode?: "register" | "login";
   email?: string;
   password?: string;
   fullName?: string;
@@ -90,39 +89,68 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     if (!user) {
-      const mode = body.mode;
       const password = body.password ?? "";
       const fullName = body.fullName?.trim() || inviteEmail.split("@")[0];
 
-      if (requestEmail !== inviteEmail) {
+      if (requestEmail && requestEmail !== inviteEmail) {
         return NextResponse.json({ error: "Invite email does not match." }, { status: 400 });
       }
 
-      if (mode === "register") {
-        if (password.length < 8) {
-          return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
-        }
+      if (password.length < 8) {
+        return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+      }
 
-        const existingUser = await db.user.findUnique({ where: { email: inviteEmail } });
-        if (existingUser) {
-          return NextResponse.json({ error: "Account already exists. Please use login to accept invite." }, { status: 409 });
+      const existingUser = await db.user.findFirst({
+        where: {
+          email: {
+            equals: inviteEmail,
+            mode: "insensitive"
+          }
         }
+      });
 
+      if (!existingUser) {
         const passwordHash = await hash(password, 12);
-        const created = await db.user.create({
-          data: {
-            email: inviteEmail,
-            fullName,
-            passwordHash,
-            emailVerified: false,
-            authProvider: "local"
-          },
-          select: { id: true, email: true }
-        });
-        user = created;
-      } else if (mode === "login") {
-        const existingUser = await db.user.findUnique({ where: { email: inviteEmail } });
-        if (!existingUser?.passwordHash) {
+        try {
+          const created = await db.user.create({
+            data: {
+              email: inviteEmail,
+              fullName,
+              passwordHash,
+              emailVerified: false,
+              authProvider: "local"
+            },
+            select: { id: true, email: true }
+          });
+          user = created;
+        } catch (error) {
+          const asMessage = String(error);
+          if (!asMessage.includes("P2002") && !asMessage.toLowerCase().includes("unique")) {
+            throw error;
+          }
+
+          const existingAfterRace = await db.user.findFirst({
+            where: {
+              email: {
+                equals: inviteEmail,
+                mode: "insensitive"
+              }
+            }
+          });
+
+          if (!existingAfterRace?.passwordHash) {
+            return NextResponse.json({ error: "This account already exists and needs a password reset." }, { status: 409 });
+          }
+
+          const validRacePassword = await compare(password, existingAfterRace.passwordHash);
+          if (!validRacePassword) {
+            return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+          }
+
+          user = { id: existingAfterRace.id, email: normalizeEmail(existingAfterRace.email) };
+        }
+      } else {
+        if (!existingUser.passwordHash) {
           return NextResponse.json({ error: "No local password account found for this email." }, { status: 404 });
         }
 
@@ -131,9 +159,7 @@ export async function POST(req: Request, { params }: Params) {
           return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
         }
 
-        user = { id: existingUser.id, email: existingUser.email };
-      } else {
-        return NextResponse.json({ error: "mode must be register or login" }, { status: 400 });
+        user = { id: existingUser.id, email: normalizeEmail(existingUser.email) };
       }
     }
 
@@ -252,7 +278,12 @@ export async function POST(req: Request, { params }: Params) {
       acceptedAt: accepted.acceptedAt,
       email: user.email,
       role,
-      inviteType: invite.inviteType
+      inviteType: invite.inviteType,
+      redirectTo: invite.inviteType === "site" && invite.siteId
+        ? `/apps/${invite.siteId}`
+        : invite.inviteType === "organization"
+        ? `/clients/${invite.organizationId}`
+        : "/dashboard"
     });
   } catch (error) {
     if (error instanceof Error && error.message === "INVITE_INVALID") {

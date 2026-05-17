@@ -15,7 +15,8 @@ export async function GET(_req: Request, { params }: Params) {
       where: { tokenHash },
       include: {
         organization: { select: { id: true, name: true } },
-        site: { select: { id: true, name: true } }
+        site: { select: { id: true, name: true } },
+        invitedBy: { select: { fullName: true, email: true } }
       }
     });
 
@@ -26,7 +27,8 @@ export async function GET(_req: Request, { params }: Params) {
           where: { id: invitationId },
           include: {
             organization: { select: { id: true, name: true } },
-            site: { select: { id: true, name: true } }
+            site: { select: { id: true, name: true } },
+            invitedBy: { select: { fullName: true, email: true } }
           }
         });
       }
@@ -48,15 +50,36 @@ export async function GET(_req: Request, { params }: Params) {
       return NextResponse.json({ valid: false, state: "expired" }, { status: 410 });
     }
 
+    const inviteEmail = invite.email.trim().toLowerCase();
+    const existingUser = await db.user.findFirst({
+      where: {
+        email: {
+          equals: inviteEmail,
+          mode: "insensitive"
+        }
+      },
+      select: { id: true }
+    });
+
+    let redirectTo = "/dashboard";
+    if (invite.inviteType === "site" && invite.siteId) {
+      redirectTo = `/apps/${invite.siteId}`;
+    } else if (invite.inviteType === "organization") {
+      redirectTo = `/clients/${invite.organizationId}`;
+    }
+
     return NextResponse.json({
       valid: true,
       invite: {
-        email: invite.email,
+        email: inviteEmail,
         role: normalizeRole(invite.role),
         inviteType: invite.inviteType,
         expiresAt: invite.expiresAt,
         organizationName: invite.organization.name,
-        siteName: invite.site?.name ?? null
+        siteName: invite.site?.name ?? null,
+        inviterName: invite.invitedBy?.fullName || invite.invitedBy?.email || invite.organization.name,
+        existingUser: Boolean(existingUser),
+        redirectTo
       }
     });
   } catch (error) {

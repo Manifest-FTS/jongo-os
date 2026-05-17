@@ -8,6 +8,10 @@ function isUuid(value?: string | null): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 declare module "next-auth" {
   interface User {
     id: string;
@@ -45,6 +49,8 @@ export const authConfig = {
           return null;
         }
 
+        const normalizedEmail = normalizeEmail(String(credentials.email));
+
         const devAuthEmail = process.env.DEV_AUTH_EMAIL?.trim().toLowerCase();
         const devAuthPassword = process.env.DEV_AUTH_PASSWORD;
         const canUseDevCredentialFallback =
@@ -52,7 +58,7 @@ export const authConfig = {
 
         if (
           canUseDevCredentialFallback &&
-          credentials.email.trim().toLowerCase() === devAuthEmail &&
+          normalizedEmail === devAuthEmail &&
           credentials.password === devAuthPassword
         ) {
           try {
@@ -83,8 +89,13 @@ export const authConfig = {
         // Credentials auth continues with normal DB password validation.
         try {
           const { db } = await import("./db");
-          const user = await db.user.findUnique({
-            where: { email: credentials.email }
+          const user = await db.user.findFirst({
+            where: {
+              email: {
+                equals: normalizedEmail,
+                mode: "insensitive"
+              }
+            }
           });
 
           if (!user?.passwordHash) {
@@ -99,7 +110,7 @@ export const authConfig = {
 
           return {
             id: user.id,
-            email: user.email,
+            email: normalizeEmail(user.email),
             name: user.fullName ?? undefined
           };
         } catch {
