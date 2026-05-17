@@ -72,20 +72,46 @@ export function getCoolifyStatusMessage(
  * Maps app inventory empty state reason codes to explanatory text.
  */
 export function getAppsEmptyStateMessage(
-  mode: "live" | "mock",
-  fetchError?: string
+  reason:
+    | "mock_fallback_active"
+    | "coolify_api_unavailable"
+    | "no_resources_found"
+    | "no_db_mappings_yet"
+    | "viewer_not_authorized"
+    | "none"
 ): { heading: string; description: string } {
-  if (mode === "mock") {
+  if (reason === "mock_fallback_active") {
     return {
       heading: "Coolify is not configured — operating in demo mode",
       description: "Set COOLIFY_API_BASE_URL and COOLIFY_API_TOKEN in your environment to load live app inventory."
     };
   }
 
-  if (fetchError) {
+  if (reason === "coolify_api_unavailable") {
     return {
       heading: "Coolify API unavailable — could not load app inventory",
       description: "Check API configuration in Platform Settings. No apps are visible until connectivity is restored."
+    };
+  }
+
+  if (reason === "viewer_not_authorized") {
+    return {
+      heading: "No authorized apps",
+      description: "Your account can only view mapped apps where you are a client or app collaborator."
+    };
+  }
+
+  if (reason === "no_resources_found") {
+    return {
+      heading: "No live resources found",
+      description: "Coolify is reachable, but no applications/services/databases were returned for inventory."
+    };
+  }
+
+  if (reason === "no_db_mappings_yet") {
+    return {
+      heading: "Live resources found, but no mapped apps are visible",
+      description: "Create or sync Site mappings to associate resources with clients while keeping tenant scoping intact."
     };
   }
 

@@ -862,6 +862,7 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     let services: Record<string, unknown>[] = [];
     let databases: Record<string, unknown>[] = [];
     let usedResourcesPrimary = false;
+    let hadEndpointFailure = false;
 
     try {
       const resourcesPayload = await coolifyFetch("/api/v1/resources");
@@ -877,17 +878,30 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     } catch {
       // Keep legacy endpoint fallback path.
       usedResourcesPrimary = false;
+      hadEndpointFailure = true;
     }
 
     if (!usedResourcesPrimary) {
-      const applicationsPayload = await coolifyFetch("/api/v1/applications");
-      applications = normalizeArrayPayload(applicationsPayload);
+      try {
+        const applicationsPayload = await coolifyFetch("/api/v1/applications");
+        applications = normalizeArrayPayload(applicationsPayload);
+      } catch {
+        hadEndpointFailure = true;
+      }
 
-      const servicesPayload = await coolifyFetch("/api/v1/services");
-      services = normalizeArrayPayload(servicesPayload);
+      try {
+        const servicesPayload = await coolifyFetch("/api/v1/services");
+        services = normalizeArrayPayload(servicesPayload);
+      } catch {
+        hadEndpointFailure = true;
+      }
 
-      const databasesPayload = await coolifyFetch("/api/v1/databases");
-      databases = normalizeArrayPayload(databasesPayload);
+      try {
+        const databasesPayload = await coolifyFetch("/api/v1/databases");
+        databases = normalizeArrayPayload(databasesPayload);
+      } catch {
+        hadEndpointFailure = true;
+      }
     }
 
     if (applications.length > 0 || services.length > 0 || databases.length > 0) {
@@ -913,14 +927,14 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     recordCoolifyInventoryResult({
       mode: "live",
       source: "coolify",
-      success: true,
+      success: !hadEndpointFailure,
       sitesCount: emptyOverview.sites.length,
       deploymentsCount: emptyOverview.deployments.length,
       projectsCount: emptyOverview.projects.length,
       environmentsCount: emptyOverview.environments.length,
-      note: "live_inventory_empty"
+      note: hadEndpointFailure ? "live_inventory_empty_after_endpoint_failure" : "live_inventory_empty"
     });
-    return emptyOverview;
+    return hadEndpointFailure ? { ...emptyOverview, fetchError: "coolify_api_error" } : emptyOverview;
   } catch {
     const fallback = emptyLiveOverview();
     recordCoolifyInventoryResult({

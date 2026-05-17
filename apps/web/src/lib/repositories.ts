@@ -1,5 +1,5 @@
 import { getClients, getClientById as getMockClientById, getClientForSite, type ClientRecord } from "./clients";
-import { getCoolifyOverview } from "./coolify";
+import { getCoolifyOverview, type CoolifyOverview } from "./coolify";
 import { recordRepositoryCall } from "./diagnostics";
 import { normalizeRole } from "./roles";
 
@@ -144,6 +144,28 @@ export type SiteWorkspaceRecord = {
   ownershipState: "mapped" | "orphaned" | "unavailable";
   ownershipDiagnostic: string;
   source: "db" | "coolify";
+};
+
+export type InventoryEmptyReason =
+  | "none"
+  | "mock_fallback_active"
+  | "coolify_api_unavailable"
+  | "no_resources_found"
+  | "no_db_mappings_yet"
+  | "viewer_not_authorized";
+
+export type InventorySnapshot = {
+  overview: CoolifyOverview;
+  siteDirectory: SiteDirectoryRecord[];
+  scopeApplied: boolean;
+  bootstrapGlobalAccess: boolean;
+  emptyReason: InventoryEmptyReason;
+  counts: {
+    visibleSites: number;
+    coolifySites: number;
+    dbMappedVisibleSites: number;
+    coolifyVisibleSites: number;
+  };
 };
 
 export type ActivityFeedItem = {
@@ -587,9 +609,16 @@ async function hasLegacySchema(prisma: any): Promise<boolean> {
   }
 }
 
-export async function getActivityFeed(limit = 6): Promise<ActivityFeedItem[]> {
+export async function getActivityFeed(limit = 6, viewer?: ViewerContext): Promise<ActivityFeedItem[]> {
   const overview = await getCoolifyOverview();
-  const deploymentItems: ActivityFeedItem[] = overview.deployments.slice(0, limit).map((deployment) => ({
+  const visibleSites = await listSiteDirectory(viewer, overview);
+  const visibleNames = new Set(visibleSites.map((site) => normalizedKey(site.name)));
+  const scopeApplied = shouldApplyViewerScope(viewer);
+
+  const deploymentItems: ActivityFeedItem[] = overview.deployments
+    .filter((deployment) => !scopeApplied || visibleNames.has(normalizedKey(deployment.siteName)))
+    .slice(0, limit)
+    .map((deployment) => ({
     id: deployment.id,
     title: deployment.environment === "unknown" ? deployment.siteName : `${deployment.siteName} → ${deployment.environment}`,
     detail: deployment.commitMessage ?? `Deployment ${deployment.status}`,
@@ -1107,10 +1136,11 @@ export async function isClientAdmin(clientDbId: string, userId: string): Promise
   }
 }
 
-export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDirectoryRecord[]> {
+export async function listSiteDirectory(viewer?: ViewerContext, preloadedOverview?: CoolifyOverview): Promise<SiteDirectoryRecord[]> {
   const scopedUserId = getScopedViewerUserId(viewer);
   const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewer);
   const scopeApplied = Boolean(scopedUserId && !bootstrapGlobalAccess);
+  let overview = preloadedOverview;
 
   const recordSiteDirectoryDiagnostics = (records: SiteDirectoryRecord[], fallbackUsed: boolean, note: string) => {
     const dbCount = records.filter((record) => record.source === "db").length;
@@ -1143,7 +1173,12 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
 
   try {
     const prisma = await maybeGetDb();
-    const overview = await getCoolifyOverview();
+    overview = overview ?? (await getCoolifyOverview());
+    const resolvedOverview = overview;
+
+    if (!resolvedOverview) {
+      throw new Error("inventory_overview_unavailable");
+    }
 
     if (!prisma) {
       if (scopeApplied) {
@@ -1151,8 +1186,8 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         return [];
       }
 
-      const records = overview.sites.map((site) => {
-        const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
+      const records = resolvedOverview.sites.map((site) => {
+        const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode);
         return {
           id: site.id,
           slug: toAppSlug(site.name, site.id),
@@ -1215,7 +1250,7 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
 
       const dbRecords: SiteDirectoryRecord[] = dbSites.map((s: any) => {
         const coolifyMatch = s.coolifyServiceUuid
-          ? overview.sites.find((cs) => cs.deployTargetId === s.coolifyServiceUuid || cs.id === s.coolifyServiceUuid)
+          ? resolvedOverview.sites.find((cs) => cs.deployTargetId === s.coolifyServiceUuid || cs.id === s.coolifyServiceUuid)
           : undefined;
 
         return {
@@ -1241,10 +1276,10 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       // --- Coolify-only sites (not linked to any DB record) ---
       const coolifyOnlyRecords: SiteDirectoryRecord[] = scopeApplied
         ? []
-        : overview.sites
+        : resolvedOverview.sites
             .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
             .map((site) => {
-              const ownership = resolveOwnershipForCoolifySite(site, overview.mode, ownershipIndex);
+              const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode, ownershipIndex);
               return {
                 id: site.id,
                 slug: toAppSlug(site.name, site.id),
@@ -1274,10 +1309,10 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       const legacyNames = new Set(legacyRecords.map((record) => normalizedKey(record.name)));
       const coolifyRecords: SiteDirectoryRecord[] = scopeApplied
         ? []
-        : overview.sites
+        : resolvedOverview.sites
             .filter((site) => !legacyNames.has(normalizedKey(site.name)))
             .map((site) => {
-              const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
+              const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode);
               return {
                 id: site.id,
                 slug: toAppSlug(site.name, site.id),
@@ -1324,9 +1359,15 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       "DATABASE_URL present:", !!process.env.DATABASE_URL,
       "Error:", error
     );
-    const overview = await getCoolifyOverview();
-    const fallbackRecords = overview.sites.map((site) => {
-      const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
+    overview = overview ?? (await getCoolifyOverview());
+    const resolvedOverview = overview;
+    if (!resolvedOverview) {
+      recordSiteDirectoryDiagnostics([], true, "top_level_exception_without_overview");
+      return [];
+    }
+
+    const fallbackRecords = resolvedOverview.sites.map((site) => {
+      const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode);
       return {
         id: site.id,
         name: site.name,
@@ -1347,6 +1388,68 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
     recordSiteDirectoryDiagnostics(fallbackRecords, true, "top_level_exception_coolify_only");
     return fallbackRecords;
   }
+}
+
+export async function getInventorySnapshot(viewer?: ViewerContext): Promise<InventorySnapshot> {
+  const scopedUserId = getScopedViewerUserId(viewer);
+  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewer);
+  const scopeApplied = Boolean(scopedUserId && !bootstrapGlobalAccess);
+
+  const overview = await getCoolifyOverview();
+  const siteDirectory = await listSiteDirectory(viewer, overview);
+  const dbMappedVisibleSites = siteDirectory.filter((site) => site.source === "db").length;
+  const coolifyVisibleSites = siteDirectory.filter((site) => site.source === "coolify").length;
+
+  let emptyReason: InventoryEmptyReason = "none";
+  if (siteDirectory.length === 0) {
+    if (overview.mode === "mock") {
+      emptyReason = "mock_fallback_active";
+    } else if (overview.fetchError) {
+      emptyReason = "coolify_api_unavailable";
+    } else if (scopeApplied) {
+      emptyReason = "viewer_not_authorized";
+    } else if (overview.sites.length === 0) {
+      emptyReason = "no_resources_found";
+    } else {
+      emptyReason = "no_db_mappings_yet";
+    }
+  }
+
+  recordRepositoryCall({
+    operation: "listSiteDirectory",
+    source:
+      dbMappedVisibleSites > 0 && coolifyVisibleSites > 0
+        ? "hybrid"
+        : dbMappedVisibleSites > 0
+          ? "db"
+          : coolifyVisibleSites > 0
+            ? "coolify"
+            : "coolify",
+    recordCount: siteDirectory.length,
+    dbCount: dbMappedVisibleSites,
+    coolifyCount: coolifyVisibleSites,
+    mockCount: 0,
+    scopeApplied,
+    viewerUserIdPresent: Boolean(viewer?.userId),
+    viewerUserIdIsUuid: Boolean(scopedUserId),
+    bootstrapGlobalAccess,
+    fallbackUsed: false,
+    note: `inventory_snapshot:${emptyReason}`
+  });
+
+  return {
+    overview,
+    siteDirectory,
+    scopeApplied,
+    bootstrapGlobalAccess,
+    emptyReason,
+    counts: {
+      visibleSites: siteDirectory.length,
+      coolifySites: overview.sites.length,
+      dbMappedVisibleSites,
+      coolifyVisibleSites
+    }
+  };
 }
 
 export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): Promise<SiteWorkspaceRecord | undefined> {

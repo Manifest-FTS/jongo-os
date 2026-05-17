@@ -1,24 +1,38 @@
-import { getCoolifyOverview } from "@/lib/coolify";
-import { getActivityFeed, listClientWorkspaces } from "@/lib/repositories";
+import { getActivityFeed, getInventorySnapshot, listClientWorkspaces } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const session = await auth();
   const email = session?.user?.email ?? "";
   const greeting = email ? email.split("@")[0] : "there";
 
-  const overview = await getCoolifyOverview();
+  const inventory = await getInventorySnapshot({
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
+  const overview = inventory.overview;
+  const visibleSiteDirectory = inventory.siteDirectory;
   const clients = await listClientWorkspaces({
     userId: session?.user?.id,
     email: session?.user?.email
   });
-  const activityFeed = await getActivityFeed();
-  const wordpressSites = overview.sites.filter((site) => site.siteType === "wordpress");
-  const totalSites = Math.max(overview.sites.length, 1);
+  const activityFeed = await getActivityFeed(6, {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
+  const visibleSitesByName = new Set(visibleSiteDirectory.map((site) => site.name.trim().toLowerCase()));
+  const visibleOverviewSites = overview.sites.filter((site) => visibleSitesByName.has(site.name.trim().toLowerCase()));
+  const wordpressSites = visibleOverviewSites.filter((site) => site.siteType === "wordpress");
+  const healthySites = visibleSiteDirectory.filter((site) => site.status === "healthy").length;
+  const degradedSites = visibleSiteDirectory.filter((site) => site.status === "degraded").length;
+  const errorSites = visibleSiteDirectory.filter((site) => site.status === "error").length;
+  const totalSites = Math.max(visibleSiteDirectory.length, 1);
   const healthBars = [
-    { label: "Healthy", value: overview.stats.healthySites, tone: "healthy" },
-    { label: "Degraded", value: overview.stats.degradedSites, tone: "degraded" },
-    { label: "Error", value: overview.stats.errorSites, tone: "error" }
+    { label: "Healthy", value: healthySites, tone: "healthy" },
+    { label: "Degraded", value: degradedSites, tone: "degraded" },
+    { label: "Error", value: errorSites, tone: "error" }
   ];
 
   return (
@@ -32,7 +46,7 @@ export default async function DashboardPage() {
 
       <section className="metric-strip">
         <article className="card metric-card">
-          <p className="metric-value">{overview.sites.length}</p>
+          <p className="metric-value">{visibleSiteDirectory.length}</p>
           <p className="metric-label">Apps</p>
         </article>
         <article className="card metric-card">
@@ -44,7 +58,7 @@ export default async function DashboardPage() {
           <p className="metric-label">Deployments</p>
         </article>
         <article className="card metric-card">
-          <p className="metric-value">{overview.stats.healthySites}</p>
+          <p className="metric-value">{healthySites}</p>
           <p className="metric-label">Healthy</p>
         </article>
       </section>
@@ -56,7 +70,7 @@ export default async function DashboardPage() {
               <p className="panel-kicker">Site health</p>
               <h2 className="card-title">Operational health</h2>
             </div>
-            <span className="status-chip healthy">{overview.stats.healthySites}/{overview.sites.length || 0} healthy</span>
+            <span className="status-chip healthy">{healthySites}/{visibleSiteDirectory.length || 0} healthy</span>
           </div>
 
           <div className="health-summary-grid">

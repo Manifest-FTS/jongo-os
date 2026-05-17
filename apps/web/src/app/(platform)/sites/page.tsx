@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { getCoolifyOverview } from "@/lib/coolify";
 import { getAppsEmptyStateMessage } from "@/lib/reason-messages";
-import { listSiteDirectory } from "@/lib/repositories";
+import { getInventorySnapshot } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import SiteDirectoryView from "@/components/SiteDirectoryView";
+
+export const dynamic = "force-dynamic";
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -19,11 +20,12 @@ function formatAgo(iso: string): string {
 
 export default async function SitesPage() {
   const session = await auth();
-  const overview = await getCoolifyOverview();
-  const siteDirectory = await listSiteDirectory({
+  const inventory = await getInventorySnapshot({
     userId: session?.user?.id,
     email: session?.user?.email
   });
+  const overview = inventory.overview;
+  const siteDirectory = inventory.siteDirectory;
 
   return (
     <div className="page-stack">
@@ -34,9 +36,18 @@ export default async function SitesPage() {
           <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
             <span className={`status-chip ${overview.mode}`}>{overview.mode}</span>
             {overview.mode === "live"
-              ? <>Coolify · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)" }}>· API unavailable</span>}</>
+              ? (
+                <>
+                  Coolify · {formatAgo(overview.generatedAt)}
+                  {overview.fetchError && siteDirectory.length === 0 && <span style={{ color: "var(--error, #c0392b)" }}>· API unavailable</span>}
+                </>
+              )
               : "Coolify not configured — demo mode"}
-            {siteDirectory.length > 0 && <span style={{ color: "var(--muted)" }}>· {siteDirectory.length} app{siteDirectory.length === 1 ? "" : "s"} from DB</span>}
+            {siteDirectory.length > 0 && (
+              <span style={{ color: "var(--muted)" }}>
+                · {siteDirectory.length} app{siteDirectory.length === 1 ? "" : "s"} visible ({inventory.counts.dbMappedVisibleSites} mapped, {inventory.counts.coolifyVisibleSites} live)
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -44,7 +55,7 @@ export default async function SitesPage() {
       {siteDirectory.length === 0 ? (
         <div className="card">
           {(() => {
-            const emptyMsg = getAppsEmptyStateMessage(overview.mode, overview.fetchError);
+            const emptyMsg = getAppsEmptyStateMessage(inventory.emptyReason);
             return (
               <>
                 <p className="card-muted">{emptyMsg.heading}</p>

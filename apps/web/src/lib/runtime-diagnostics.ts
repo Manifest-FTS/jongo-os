@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth.config";
-import { getCoolifyOverview } from "@/lib/coolify";
 import { getRuntimeDiagnosticsSnapshot } from "@/lib/diagnostics";
-import { listClientWorkspaces, listSiteDirectory } from "@/lib/repositories";
+import { getInventorySnapshot, listClientWorkspaces } from "@/lib/repositories";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -40,8 +39,7 @@ export async function runRuntimeDiagnosticsProbe() {
 
   await Promise.all([
     listClientWorkspaces(viewer),
-    listSiteDirectory(viewer),
-    getCoolifyOverview()
+    getInventorySnapshot(viewer)
   ]);
 
   return getRuntimeDiagnosticsSnapshot();
