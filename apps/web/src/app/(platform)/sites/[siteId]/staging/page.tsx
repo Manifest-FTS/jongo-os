@@ -3,6 +3,8 @@ import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import DeployButton from "@/components/DeployButton";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
+import { auth } from "@/lib/auth.config";
+import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -18,7 +20,15 @@ function formatAgo(iso: string): string {
 
 export default async function StagingPage({ params }: Params) {
   const { siteId } = await params;
-  const workspace = await getSiteWorkspace(siteId);
+  const session = await auth();
+  const workspace = await getSiteWorkspace(siteId, {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
+
+  if (!workspace) {
+    notFound();
+  }
 
   const stagingEnabled = Boolean(workspace?.stagingEnabled);
   const appUuid = workspace?.coolifyServiceUuid;

@@ -2,17 +2,29 @@ import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteActivityFeed, getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 import PendingBadge from "@/components/PendingBadge";
+import { auth } from "@/lib/auth.config";
+import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
 
 export default async function IntegrationsPage({ params }: Params) {
   const { siteId } = await params;
+  const session = await auth();
+  const viewer = {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  };
+
   const [workspace, overview, deployments, activity] = await Promise.all([
-    getSiteWorkspace(siteId),
+    getSiteWorkspace(siteId, viewer),
     getCoolifyOverview(),
-    listSiteDeployments(siteId),
-    getSiteActivityFeed(siteId, 4)
+    listSiteDeployments(siteId, viewer),
+    getSiteActivityFeed(siteId, 4, viewer)
   ]);
+
+  if (!workspace) {
+    notFound();
+  }
 
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const coolifySite = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);

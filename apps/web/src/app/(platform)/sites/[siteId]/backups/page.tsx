@@ -1,6 +1,8 @@
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
+import { auth } from "@/lib/auth.config";
+import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -16,7 +18,15 @@ function formatRelativeTime(iso: string): string {
 
 export default async function BackupsPage({ params }: Params) {
   const { siteId } = await params;
-  const workspace = await getSiteWorkspace(siteId);
+  const session = await auth();
+  const workspace = await getSiteWorkspace(siteId, {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
+
+  if (!workspace) {
+    notFound();
+  }
 
   const appUuid = workspace?.coolifyServiceUuid;
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;

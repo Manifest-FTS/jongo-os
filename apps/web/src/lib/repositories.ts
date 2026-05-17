@@ -87,6 +87,10 @@ function hasBootstrapGlobalAccess(viewer?: ViewerContext): boolean {
   return configuredAdmin === viewerEmail;
 }
 
+function shouldApplyViewerScope(viewer?: ViewerContext): boolean {
+  return Boolean(getScopedViewerUserId(viewer) && !hasBootstrapGlobalAccess(viewer));
+}
+
 export type ClientWorkspaceRecord = ClientRecord & {
   dbId?: string; // actual DB UUID (undefined when using mock data)
   siteCount: number;
@@ -621,14 +625,17 @@ export async function getActivityFeed(limit = 6): Promise<ActivityFeedItem[]> {
   }
 }
 
-export async function getSiteActivityFeed(siteId: string, limit = 6): Promise<ActivityFeedItem[]> {
+export async function getSiteActivityFeed(siteId: string, limit = 6, viewer?: ViewerContext): Promise<ActivityFeedItem[]> {
+  const workspace = await getSiteWorkspace(siteId, viewer);
+  if (!workspace) {
+    return [];
+  }
+
   const overview = await getCoolifyOverview();
   const prisma = await maybeGetDb();
   const dbSite = prisma
     ? await prisma.site.findFirst({
-        where: isUuid(siteId)
-          ? { id: siteId, deletedAt: null }
-          : { slug: siteId, deletedAt: null },
+        where: { id: workspace.id, deletedAt: null },
         select: { coolifyServiceUuid: true, name: true }
       })
     : null;
@@ -664,7 +671,7 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
   const prisma = await maybeGetDb();
 
   if (!prisma) {
-    return fromMockClients();
+    return shouldApplyViewerScope(viewer) ? [] : fromMockClients();
   }
 
   const scopedUserId = getScopedViewerUserId(viewer);
@@ -776,7 +783,7 @@ export async function listClientWorkspaces(viewer?: ViewerContext): Promise<Clie
       "Error:", error
     );
 
-    const fallbackRows = fromMockClients();
+    const fallbackRows = scopeApplied ? [] : fromMockClients();
 
     recordRepositoryCall({
       operation: "listClientWorkspaces",
@@ -802,6 +809,10 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
     const prisma = await maybeGetDb();
 
     if (!prisma) {
+      if (shouldApplyViewerScope(viewer)) {
+        return undefined;
+      }
+
       const mockClient = getMockClientById(clientId);
 
       if (!mockClient) return undefined;
@@ -926,6 +937,10 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
       "DATABASE_URL present:", !!process.env.DATABASE_URL,
       "Error:", error
     );
+    if (shouldApplyViewerScope(viewer)) {
+      return undefined;
+    }
+
     const mockClient = getMockClientById(clientId);
 
     if (!mockClient) return undefined;
@@ -1131,6 +1146,11 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
     const overview = await getCoolifyOverview();
 
     if (!prisma) {
+      if (scopeApplied) {
+        recordSiteDirectoryDiagnostics([], true, "db_unavailable_scoped_empty");
+        return [];
+      }
+
       const records = overview.sites.map((site) => {
         const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
         return {
@@ -1157,17 +1177,21 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
 
     // --- DB sites (user-scoped) ---
     const orgWhere: any = { deletedAt: null };
-    const scopedUserId = getScopedViewerUserId(viewer);
-    if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
+    const siteWhere: any = { deletedAt: null };
+    if (scopeApplied && scopedUserId) {
       orgWhere.OR = [
         { ownerId: scopedUserId },
-        { collaborators: { some: { userId: scopedUserId } } }
+        { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
+      ];
+      siteWhere.OR = [
+        { organization: orgWhere },
+        { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
       ];
     }
 
     try {
       const dbSites: any[] = await prisma.site.findMany({
-        where: { deletedAt: null, organization: orgWhere },
+        where: siteWhere,
         include: { organization: { select: { id: true, slug: true, name: true } } },
         orderBy: { name: "asc" }
       });
@@ -1215,28 +1239,30 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
       });
 
       // --- Coolify-only sites (not linked to any DB record) ---
-      const coolifyOnlyRecords: SiteDirectoryRecord[] = overview.sites
-        .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
-        .map((site) => {
-          const ownership = resolveOwnershipForCoolifySite(site, overview.mode, ownershipIndex);
-          return {
-            id: site.id,
-            slug: toAppSlug(site.name, site.id),
-            name: site.name,
-            deployTargetId: site.deployTargetId,
-            clientId: ownership.clientId,
-            clientName: ownership.clientName,
-            status: site.status,
-            ownershipState: ownership.ownershipState,
-            ownershipDiagnostic: ownership.ownershipDiagnostic,
-            source: "coolify" as const,
-            coolifyServiceUuid: site.id,
-            coolifyProjectId: site.coolifyProjectId,
-            coolifyProjectName: site.coolifyProjectName,
-            coolifyEnvironmentId: site.coolifyEnvironmentId,
-            coolifyEnvironmentName: site.coolifyEnvironmentName
-          };
-        });
+      const coolifyOnlyRecords: SiteDirectoryRecord[] = scopeApplied
+        ? []
+        : overview.sites
+            .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
+            .map((site) => {
+              const ownership = resolveOwnershipForCoolifySite(site, overview.mode, ownershipIndex);
+              return {
+                id: site.id,
+                slug: toAppSlug(site.name, site.id),
+                name: site.name,
+                deployTargetId: site.deployTargetId,
+                clientId: ownership.clientId,
+                clientName: ownership.clientName,
+                status: site.status,
+                ownershipState: ownership.ownershipState,
+                ownershipDiagnostic: ownership.ownershipDiagnostic,
+                source: "coolify" as const,
+                coolifyServiceUuid: site.id,
+                coolifyProjectId: site.coolifyProjectId,
+                coolifyProjectName: site.coolifyProjectName,
+                coolifyEnvironmentId: site.coolifyEnvironmentId,
+                coolifyEnvironmentName: site.coolifyEnvironmentName
+              };
+            });
 
       const mergedRecords = [...dbRecords, ...coolifyOnlyRecords];
       recordSiteDirectoryDiagnostics(mergedRecords, false, "db_plus_coolify_merge");
@@ -1246,28 +1272,30 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         ? await readLegacySiteDirectory(prisma, viewer)
         : [];
       const legacyNames = new Set(legacyRecords.map((record) => normalizedKey(record.name)));
-      const coolifyRecords: SiteDirectoryRecord[] = overview.sites
-        .filter((site) => !legacyNames.has(normalizedKey(site.name)))
-        .map((site) => {
-          const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
-          return {
-            id: site.id,
-            slug: toAppSlug(site.name, site.id),
-            name: site.name,
-            deployTargetId: site.deployTargetId,
-            clientId: ownership.clientId,
-            clientName: ownership.clientName,
-            status: site.status,
-            ownershipState: ownership.ownershipState,
-            ownershipDiagnostic: ownership.ownershipDiagnostic,
-            source: "coolify" as const,
-            coolifyServiceUuid: site.id,
-            coolifyProjectId: site.coolifyProjectId,
-            coolifyProjectName: site.coolifyProjectName,
-            coolifyEnvironmentId: site.coolifyEnvironmentId,
-            coolifyEnvironmentName: site.coolifyEnvironmentName
-          };
-        });
+      const coolifyRecords: SiteDirectoryRecord[] = scopeApplied
+        ? []
+        : overview.sites
+            .filter((site) => !legacyNames.has(normalizedKey(site.name)))
+            .map((site) => {
+              const ownership = resolveOwnershipForCoolifySite(site, overview.mode);
+              return {
+                id: site.id,
+                slug: toAppSlug(site.name, site.id),
+                name: site.name,
+                deployTargetId: site.deployTargetId,
+                clientId: ownership.clientId,
+                clientName: ownership.clientName,
+                status: site.status,
+                ownershipState: ownership.ownershipState,
+                ownershipDiagnostic: ownership.ownershipDiagnostic,
+                source: "coolify" as const,
+                coolifyServiceUuid: site.id,
+                coolifyProjectId: site.coolifyProjectId,
+                coolifyProjectName: site.coolifyProjectName,
+                coolifyEnvironmentId: site.coolifyEnvironmentId,
+                coolifyEnvironmentName: site.coolifyEnvironmentName
+              };
+            });
 
       if (legacyRecords.length > 0 || coolifyRecords.length > 0) {
         const mergedFallbackRecords = [...legacyRecords, ...coolifyRecords];
@@ -1284,6 +1312,11 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
         "Run: npx prisma migrate deploy --schema .\\prisma\\schema.prisma",
         "Error:", error
       );
+    }
+
+    if (scopeApplied) {
+      recordSiteDirectoryDiagnostics([], true, "top_level_exception_scoped_empty");
+      return [];
     }
 
     console.error(
@@ -1316,19 +1349,43 @@ export async function listSiteDirectory(viewer?: ViewerContext): Promise<SiteDir
   }
 }
 
-export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRecord | undefined> {
+export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): Promise<SiteWorkspaceRecord | undefined> {
   try {
     const prisma = await maybeGetDb();
     const overview = await getCoolifyOverview();
+    const scopedUserId = getScopedViewerUserId(viewer);
+    const scopeApplied = Boolean(scopedUserId && !hasBootstrapGlobalAccess(viewer));
 
     if (prisma) {
       let dbSite: any = null;
       try {
         // Try DB lookup first (siteId may be a DB UUID)
+        const identityFilter = isUuid(siteId)
+          ? { id: siteId, deletedAt: null }
+          : { OR: [{ slug: siteId }, { id: siteId }], deletedAt: null };
+
+        const where: any = { ...identityFilter };
+        if (scopeApplied && scopedUserId) {
+          where.AND = [
+            {
+              OR: [
+                {
+                  organization: {
+                    deletedAt: null,
+                    OR: [
+                      { ownerId: scopedUserId },
+                      { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
+                    ]
+                  }
+                },
+                { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
+              ]
+            }
+          ];
+        }
+
         dbSite = await prisma.site.findFirst({
-          where: isUuid(siteId)
-            ? { id: siteId, deletedAt: null }
-            : { OR: [{ slug: siteId }, { id: siteId }], deletedAt: null },
+          where,
           include: {
             organization: {
               select: {
@@ -1386,6 +1443,10 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
           ownershipDiagnostic: `Mapped to Client: ${dbSite.organization.name}`,
           source: "db" as const
         };
+      }
+
+      if (scopeApplied) {
+        return undefined;
       }
 
       if (await hasLegacySchema(prisma)) {
@@ -1446,6 +1507,10 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
     }
 
     // Fallback: Coolify-only lookup (for sites not yet in DB)
+    if (scopeApplied) {
+      return undefined;
+    }
+
     const site = overview.sites.find(
       (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
     );
@@ -1482,6 +1547,10 @@ export async function getSiteWorkspace(siteId: string): Promise<SiteWorkspaceRec
       source: "coolify" as const
     };
   } catch {
+    if (shouldApplyViewerScope(viewer)) {
+      return undefined;
+    }
+
     // Last-resort Coolify fallback
     const overview = await getCoolifyOverview();
     const site = overview.sites.find(
@@ -1529,19 +1598,22 @@ export type SiteDeploymentRecord = {
   source: "db" | "coolify";
 };
 
-export async function listSiteDeployments(siteId: string): Promise<SiteDeploymentRecord[]> {
+export async function listSiteDeployments(siteId: string, viewer?: ViewerContext): Promise<SiteDeploymentRecord[]> {
   try {
+    const workspace = await getSiteWorkspace(siteId, viewer);
+    if (!workspace) {
+      return [];
+    }
+
     const prisma = await maybeGetDb();
 
     if (prisma) {
       const dbSite = await prisma.site.findFirst({
-        where: isUuid(siteId)
-          ? { id: siteId, deletedAt: null }
-          : { slug: siteId, deletedAt: null },
+        where: { id: workspace.id, deletedAt: null },
         select: { id: true, coolifyServiceUuid: true, name: true }
       });
 
-      const resolvedSiteId = dbSite?.id ?? (isUuid(siteId) ? siteId : undefined);
+      const resolvedSiteId = dbSite?.id;
       const rows: any[] = resolvedSiteId ? await prisma.deployment.findMany({
         where: {
           environment: {
@@ -1579,8 +1651,18 @@ export async function listSiteDeployments(siteId: string): Promise<SiteDeploymen
   // Fallback: Coolify overview deployments for this site
   try {
     const overview = await getCoolifyOverview();
+    const workspace = await getSiteWorkspace(siteId, viewer);
+    if (!workspace) {
+      return [];
+    }
+
+    const lookupId = workspace.coolifyServiceUuid ?? workspace.id;
     const site = overview.sites.find(
-      (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
+      (item) =>
+        item.id === lookupId ||
+        item.deployTargetId === lookupId ||
+        toAppSlug(item.name, item.id) === siteId ||
+        toAppSlug(item.name, item.id) === lookupId
     );
     if (!site) return [];
 

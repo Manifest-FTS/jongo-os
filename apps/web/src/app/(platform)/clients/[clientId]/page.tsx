@@ -19,7 +19,12 @@ export default async function ClientDetailPage({ params }: Params) {
     notFound();
   }
 
-  const clientSites = await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId)));
+  const viewer = {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  };
+
+  const clientSites = await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId, viewer)));
   const visibleSites = clientSites.filter((site): site is NonNullable<typeof site> => Boolean(site));
 
   return (

@@ -5,6 +5,8 @@ import { getSiteActivityFeed, getSiteWorkspace } from "@/lib/repositories";
 import Link from "next/link";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import PendingBadge from "@/components/PendingBadge";
+import { auth } from "@/lib/auth.config";
+import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -27,11 +29,21 @@ function formatAgo(iso: string): string {
 
 export default async function SiteOverviewPage({ params }: Params) {
   const { siteId } = await params;
+  const session = await auth();
+  const viewer = {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  };
+
   const [overview, workspace, siteActivity] = await Promise.all([
     getCoolifyOverview(),
-    getSiteWorkspace(siteId),
-    getSiteActivityFeed(siteId)
+    getSiteWorkspace(siteId, viewer),
+    getSiteActivityFeed(siteId, 6, viewer)
   ]);
+
+  if (!workspace) {
+    notFound();
+  }
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const isWordPress = workspace?.siteType === "wordpress";

@@ -5,6 +5,8 @@ import SiteInfoForm from "@/components/SiteInfoForm";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
+import { auth } from "@/lib/auth.config";
+import { notFound } from "next/navigation";
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -18,10 +20,20 @@ function formatAgo(iso: string): string {
 
 export default async function SiteSettingsPage({ params }: Params) {
   const { siteId } = await params;
+  const session = await auth();
+  const viewer = {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  };
+
   const [workspace, overview] = await Promise.all([
-    getSiteWorkspace(siteId),
+    getSiteWorkspace(siteId, viewer),
     getCoolifyOverview()
   ]);
+
+  if (!workspace) {
+    notFound();
+  }
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const stagingEnabled = Boolean(workspace?.stagingEnabled);

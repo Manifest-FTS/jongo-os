@@ -4,6 +4,7 @@ import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
 import { auth } from "@/lib/auth.config";
 import { canAccessRuntimeDiagnostics, runRuntimeDiagnosticsProbe } from "@/lib/runtime-diagnostics";
 import PendingBadge from "@/components/PendingBadge";
+import { notFound } from "next/navigation";
 
 function normalizeEmail(value?: string | null) {
   return value?.trim().toLowerCase() ?? "";
@@ -15,6 +16,10 @@ export default async function SettingsPage() {
   const sessionEmail = normalizeEmail(session?.user?.email);
   const bootstrapAdminEmail = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
   const isAdmin = Boolean(bootstrapAdminEmail && sessionEmail === bootstrapAdminEmail);
+  if (!isAdmin) {
+    notFound();
+  }
+
   const canViewDiagnostics = canAccessRuntimeDiagnostics({ sessionEmail: session?.user?.email });
   const diagnostics = canViewDiagnostics ? await runRuntimeDiagnosticsProbe() : null;
   const recentRepoCall = diagnostics?.repositoryCalls[diagnostics.repositoryCalls.length - 1];

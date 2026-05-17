@@ -20,7 +20,12 @@ export default async function ClientAppsPage({ params }: Params) {
     notFound();
   }
 
-  const sites = await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId)));
+  const viewer = {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  };
+
+  const sites = await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId, viewer)));
   const apps = sites.filter((site): site is NonNullable<typeof site> => Boolean(site));
 
   return (

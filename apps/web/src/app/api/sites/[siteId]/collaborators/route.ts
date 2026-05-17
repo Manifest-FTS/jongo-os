@@ -39,10 +39,15 @@ async function getCallerAccess(siteId: string, userId: string): Promise<CallerAc
     where: {
       id: siteId,
       deletedAt: null,
-      organization: {
-        deletedAt: null,
-        OR: [{ ownerId: userId }, { collaborators: { some: { userId } } }]
-      }
+      OR: [
+        {
+          organization: {
+            deletedAt: null,
+            OR: [{ ownerId: userId }, { collaborators: { some: { userId, deletedAt: null } } }]
+          }
+        },
+        { collaborators: { some: { userId, deletedAt: null } } }
+      ]
     },
     include: {
       organization: {

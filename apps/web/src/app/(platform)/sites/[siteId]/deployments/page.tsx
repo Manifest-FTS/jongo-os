@@ -1,6 +1,8 @@
 import DeployButton from "@/components/DeployButton";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
+import { auth } from "@/lib/auth.config";
+import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -29,11 +31,21 @@ function statusTone(status: string): string {
 
 export default async function DeploymentsPage({ params }: Params) {
   const { siteId } = await params;
+  const session = await auth();
+  const viewer = {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  };
+
   const [overview, workspace, deployments] = await Promise.all([
     getCoolifyOverview(),
-    getSiteWorkspace(siteId),
-    listSiteDeployments(siteId)
+    getSiteWorkspace(siteId, viewer),
+    listSiteDeployments(siteId, viewer)
   ]);
+
+  if (!workspace) {
+    notFound();
+  }
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
 

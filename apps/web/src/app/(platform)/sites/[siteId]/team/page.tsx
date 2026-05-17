@@ -1,12 +1,23 @@
 import { auth } from "@/lib/auth.config";
+import { notFound } from "next/navigation";
 import PendingBadge from "@/components/PendingBadge";
 import SiteCollaboratorManager from "@/components/SiteCollaboratorManager";
+import { getSiteWorkspace } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
 
 export default async function AppTeamPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
+
+  const workspace = await getSiteWorkspace(siteId, {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
+
+  if (!workspace) {
+    notFound();
+  }
 
   return (
     <div className="page-stack">

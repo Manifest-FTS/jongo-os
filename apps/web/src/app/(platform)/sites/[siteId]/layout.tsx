@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 
@@ -14,7 +15,11 @@ export default async function SiteWorkspaceLayout({
   params: Promise<{ siteId: string }>;
 }) {
   const { siteId } = await params;
-  const site = await getSiteWorkspace(siteId);
+  const session = await auth();
+  const site = await getSiteWorkspace(siteId, {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  });
 
   if (!site) {
     notFound();

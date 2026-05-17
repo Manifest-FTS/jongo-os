@@ -41,10 +41,15 @@ async function getAccess(siteId: string, userId: string): Promise<Access | null>
     where: {
       id: siteId,
       deletedAt: null,
-      organization: {
-        deletedAt: null,
-        OR: [{ ownerId: userId }, { collaborators: { some: { userId } } }]
-      }
+      OR: [
+        {
+          organization: {
+            deletedAt: null,
+            OR: [{ ownerId: userId }, { collaborators: { some: { userId, deletedAt: null } } }]
+          }
+        },
+        { collaborators: { some: { userId, deletedAt: null } } }
+      ]
     },
     include: {
       organization: {

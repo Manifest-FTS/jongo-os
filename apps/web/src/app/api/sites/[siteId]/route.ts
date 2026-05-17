@@ -11,13 +11,18 @@ async function getSiteForUser(siteId: string, userId: string) {
     where: {
       id: siteId,
       deletedAt: null,
-      organization: {
-        deletedAt: null,
-        OR: [
-          { ownerId: userId },
-          { collaborators: { some: { userId } } }
-        ]
-      }
+      OR: [
+        {
+          organization: {
+            deletedAt: null,
+            OR: [
+              { ownerId: userId },
+              { collaborators: { some: { userId, deletedAt: null } } }
+            ]
+          }
+        },
+        { collaborators: { some: { userId, deletedAt: null } } }
+      ]
     },
     include: { organization: { select: { id: true, ownerId: true } } }
   });
@@ -41,13 +46,18 @@ export async function GET(_req: Request, { params }: Params) {
       where: {
         id: siteId,
         deletedAt: null,
-        organization: {
-          deletedAt: null,
-          OR: [
-            { ownerId: session.user.id },
-            { collaborators: { some: { userId: session.user.id } } }
-          ]
-        }
+        OR: [
+          {
+            organization: {
+              deletedAt: null,
+              OR: [
+                { ownerId: session.user.id },
+                { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+              ]
+            }
+          },
+          { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+        ]
       },
       include: {
         environments: {
