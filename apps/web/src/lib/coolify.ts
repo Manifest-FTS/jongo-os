@@ -66,6 +66,16 @@ export type CoolifyConnectionStatus = {
   error?: string;
 };
 
+type CoolifyOverviewCacheState = {
+  value?: CoolifyOverview;
+  cachedAtMs: number;
+  inFlight?: Promise<CoolifyOverview>;
+};
+
+const overviewCache: CoolifyOverviewCacheState = {
+  cachedAtMs: 0
+};
+
 /**
  * Detect site type from Coolify resource metadata.
  * Priority order (highest confidence first):
@@ -758,6 +768,7 @@ async function buildLiveOverview(
     return !id || !serviceChildDatabaseIds.has(id);
   });
 
+  const deploymentSampleLimit = Math.max(0, Math.min(Number(process.env.COOLIFY_DEPLOYMENT_SAMPLE_LIMIT ?? 8), 20));
   const applicationSitesWithDeployments = await Promise.all(
     standaloneApplications.slice(0, 20).map(async (application, index): Promise<{ site: SiteOverview; deployments: DeploymentRecord[] }> => {
       const site = makeSiteOverview(
@@ -769,7 +780,8 @@ async function buildLiveOverview(
         environmentById,
         environmentByName
       );
-      const deployments = await readApplicationDeployments(site.id, site.name, 8);
+      const shouldFetchDeployments = index < deploymentSampleLimit;
+      const deployments = shouldFetchDeployments ? await readApplicationDeployments(site.id, site.name, 8) : [];
       const productionDeployment = deployments.find((deployment) => deployment.environment === "production");
       const stagingDeployment = deployments.find((deployment) => deployment.environment === "staging");
 
@@ -829,7 +841,38 @@ async function buildLiveOverview(
   };
 }
 
-export async function getCoolifyOverview(): Promise<CoolifyOverview> {
+function getOverviewCacheTtlMs(): number {
+  const parsed = Number(process.env.COOLIFY_OVERVIEW_TTL_MS ?? 5000);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 5000;
+  }
+
+  return Math.min(parsed, 15000);
+}
+
+function readCachedOverview(nowMs: number): CoolifyOverview | undefined {
+  if (!overviewCache.value) {
+    return undefined;
+  }
+
+  const ttlMs = getOverviewCacheTtlMs();
+  if (ttlMs <= 0) {
+    return undefined;
+  }
+
+  if (nowMs - overviewCache.cachedAtMs > ttlMs) {
+    return undefined;
+  }
+
+  return overviewCache.value;
+}
+
+function writeOverviewCache(value: CoolifyOverview) {
+  overviewCache.value = value;
+  overviewCache.cachedAtMs = Date.now();
+}
+
+async function fetchCoolifyOverviewFresh(): Promise<CoolifyOverview> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
 
@@ -876,7 +919,6 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
         usedResourcesPrimary = true;
       }
     } catch {
-      // Keep legacy endpoint fallback path.
       usedResourcesPrimary = false;
       hadEndpointFailure = true;
     }
@@ -949,6 +991,29 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
     });
     return { ...fallback, fetchError: "coolify_api_error" };
   }
+}
+
+export async function getCoolifyOverview(): Promise<CoolifyOverview> {
+  const nowMs = Date.now();
+  const cached = readCachedOverview(nowMs);
+  if (cached) {
+    return cached;
+  }
+
+  if (overviewCache.inFlight) {
+    return overviewCache.inFlight;
+  }
+
+  overviewCache.inFlight = fetchCoolifyOverviewFresh()
+    .then((overview) => {
+      writeOverviewCache(overview);
+      return overview;
+    })
+    .finally(() => {
+      overviewCache.inFlight = undefined;
+    });
+
+  return overviewCache.inFlight;
 }
 
 export async function getCoolifyConnectionStatus(): Promise<CoolifyConnectionStatus> {

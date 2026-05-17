@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import BrandLogo from "@/components/BrandLogo";
 import { BellIcon, ChevronDownIcon } from "@/components/JongoIcons";
 import PlatformPrimaryNav from "@/components/navigation/PlatformPrimaryNav";
+import SignOutButton from "@/components/auth/SignOutButton";
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -41,6 +42,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
               <div className="user-menu-panel">
                 <p className="user-menu-email">{email}</p>
                 <Link href="/settings">Account settings</Link>
+                <SignOutButton />
               </div>
             </details>
           </div>
