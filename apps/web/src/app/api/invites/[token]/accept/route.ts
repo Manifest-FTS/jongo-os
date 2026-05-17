@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { hash, compare } from "bcryptjs";
 import { auth } from "@/lib/auth.config";
 import { isSmtpConfigured, sendInviteAcceptedEmail } from "@/lib/email";
-import { hashInviteToken, isInviteExpired } from "@/lib/invitations";
+import { hashInviteToken, isInviteExpired, parseInvitationIdFromToken } from "@/lib/invitations";
 import { normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ token: string }> };
@@ -21,7 +21,35 @@ function normalizeEmail(value?: string): string {
 function isMissingEnumTypeError(error: unknown): boolean {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   return message.includes("type \"public.collaboratorrole\" does not exist") ||
-    message.includes("type \"public.sitecollaboratorrole\" does not exist");
+    message.includes("type \"public.sitecollaboratorrole\" does not exist") ||
+    message.includes("type \"public.collaboratorrole\"") ||
+    message.includes("type \"public.sitecollaboratorrole\"") ||
+    message.includes("code: \"42704\"");
+}
+
+async function findInvitationByToken(db: any, token: string) {
+  const tokenHash = hashInviteToken(token);
+  const byHash = await db.invitation.findUnique({
+    where: { tokenHash },
+    include: {
+      invitedBy: { select: { email: true } }
+    }
+  });
+  if (byHash) {
+    return byHash;
+  }
+
+  const invitationId = parseInvitationIdFromToken(token);
+  if (!invitationId) {
+    return null;
+  }
+
+  return db.invitation.findUnique({
+    where: { id: invitationId },
+    include: {
+      invitedBy: { select: { email: true } }
+    }
+  });
 }
 
 export async function POST(req: Request, { params }: Params) {
@@ -37,14 +65,7 @@ export async function POST(req: Request, { params }: Params) {
 
   try {
     const { db } = await import("@/lib/db");
-    const tokenHash = hashInviteToken(token);
-
-    const invite = await db.invitation.findUnique({
-      where: { tokenHash },
-      include: {
-        invitedBy: { select: { email: true } }
-      }
-    });
+    const invite = await findInvitationByToken(db, token);
 
     if (!invite) {
       return NextResponse.json({ error: "Invitation not found" }, { status: 404 });

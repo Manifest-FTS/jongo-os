@@ -16,9 +16,13 @@ type PendingInvite = {
   id: string;
   email: string;
   role: string;
-  status?: string;
+  status?: "pending" | "accepted" | "expired" | "revoked";
+  inviteUrl?: string | null;
   delivery?: string;
   note?: string;
+  expiresAt?: string;
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
   createdAt?: string;
 };
 
@@ -42,6 +46,7 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [inviteActionBusyId, setInviteActionBusyId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -144,14 +149,61 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
     }
   }
 
-  async function copyInviteLink() {
-    if (!inviteLink) return;
+  async function copyInviteLink(url?: string | null) {
+    const value = url ?? inviteLink;
+    if (!value) return;
     try {
-      await navigator.clipboard.writeText(inviteLink);
+      await navigator.clipboard.writeText(value);
       setInviteNotice("Invite link copied to clipboard.");
     } catch {
       setInviteError("Could not copy invite link. Copy it manually from the field below.");
     }
+  }
+
+  async function runInviteAction(invitationId: string, action: "resend" | "regenerate" | "revoke") {
+    setInviteActionBusyId(invitationId);
+    setInviteError(null);
+    setInviteNotice(null);
+
+    try {
+      const res = await fetch(`/api/organizations/${organizationId}/collaborators/invitations/${invitationId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteError((data as { error?: string }).error ?? `Could not ${action} invite.`);
+        return;
+      }
+
+      const nextInviteUrl = (data as { inviteUrl?: string }).inviteUrl;
+      if (nextInviteUrl) {
+        setInviteLink(nextInviteUrl);
+      }
+
+      if (action === "revoke") {
+        setInviteNotice("Invitation revoked.");
+      } else if (action === "resend") {
+        setInviteNotice("Invitation resent.");
+      } else {
+        setInviteNotice("New invitation link generated.");
+      }
+
+      await load();
+    } catch {
+      setInviteError("Network error - please try again");
+    } finally {
+      setInviteActionBusyId(null);
+    }
+  }
+
+  function statusLabel(invite: PendingInvite): string {
+    if (invite.status === "accepted") return "accepted";
+    if (invite.status === "revoked") return "revoked";
+    if (invite.status === "expired") return "expired";
+    return "pending";
   }
 
   return (
@@ -222,11 +274,38 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>{invite.email}</p>
               <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-                Invitation pending {invite.note ? `- ${invite.note}` : ""}
+                {invite.status === "accepted"
+                  ? `Accepted${invite.acceptedAt ? ` · ${new Date(invite.acceptedAt).toLocaleString()}` : ""}`
+                  : invite.status === "revoked"
+                  ? `Revoked${invite.revokedAt ? ` · ${new Date(invite.revokedAt).toLocaleString()}` : ""}`
+                  : invite.status === "expired"
+                  ? `Expired${invite.expiresAt ? ` · ${new Date(invite.expiresAt).toLocaleString()}` : ""}`
+                  : `Pending${invite.expiresAt ? ` · Expires ${new Date(invite.expiresAt).toLocaleString()}` : ""}`}
+                {invite.note ? ` · ${invite.note}` : ""}
               </p>
             </div>
             <span className="tag">{normalizeRole(invite.role)}</span>
-            <span className="status-chip unknown">pending</span>
+            <span className="status-chip unknown">{statusLabel(invite)}</span>
+            {invite.status === "pending" ? (
+              <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => copyInviteLink(invite.inviteUrl)} disabled={inviteActionBusyId === invite.id || !invite.inviteUrl}>
+                  Copy
+                </button>
+                <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "resend")} disabled={inviteActionBusyId === invite.id}>
+                  Resend
+                </button>
+                <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "regenerate")} disabled={inviteActionBusyId === invite.id}>
+                  Regenerate
+                </button>
+                <button type="button" className="btn btn-danger" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "revoke")} disabled={inviteActionBusyId === invite.id}>
+                  Revoke
+                </button>
+              </div>
+            ) : invite.status === "expired" || invite.status === "revoked" ? (
+              <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "regenerate")} disabled={inviteActionBusyId === invite.id}>
+                Regenerate
+              </button>
+            ) : null}
           </div>
         ))}
       </div>
@@ -274,7 +353,7 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
           </p>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             <input className="form-input" value={inviteLink} readOnly />
-            <button type="button" className="btn" onClick={copyInviteLink}>Copy link</button>
+            <button type="button" className="btn" onClick={() => copyInviteLink()}>Copy link</button>
           </div>
         </div>
       ) : null}

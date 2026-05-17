@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isSmtpConfigured, sendInviteEmail } from "@/lib/email";
-import { buildInviteUrl, createInviteToken, getInviteExpiryDate, hashInviteToken } from "@/lib/invitations";
+import {
+  buildInviteUrlForInvitation,
+  createInviteToken,
+  createInviteTokenForInvitation,
+  getInviteExpiryDate,
+  hashInviteToken,
+  isInviteExpired
+} from "@/lib/invitations";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ siteId: string }> };
@@ -13,6 +20,17 @@ type CallerAccess = {
   orgOwnerId: string;
   callerRole: "admin" | "collaborator";
 };
+
+function getInvitationStatus(invite: {
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  expiresAt: Date;
+}): "pending" | "accepted" | "expired" | "revoked" {
+  if (invite.revokedAt) return "revoked";
+  if (invite.acceptedAt) return "accepted";
+  if (isInviteExpired(invite.expiresAt)) return "expired";
+  return "pending";
+}
 
 async function getCallerAccess(siteId: string, userId: string): Promise<CallerAccess | null> {
   const { db } = await import("@/lib/db");
@@ -84,16 +102,15 @@ export async function GET(_req: Request, { params }: Params) {
     const pendingInvites = await db.invitation.findMany({
       where: {
         siteId,
-        inviteType: "site",
-        acceptedAt: null,
-        revokedAt: null,
-        expiresAt: { gt: new Date() }
+        inviteType: "site"
       },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
         email: true,
         role: true,
+        acceptedAt: true,
+        revokedAt: true,
         expiresAt: true,
         createdAt: true,
         deliveryStatus: true,
@@ -114,6 +131,10 @@ export async function GET(_req: Request, { params }: Params) {
         id: invite.id,
         email: invite.email,
         role: normalizeRole(invite.role),
+        status: getInvitationStatus(invite),
+        inviteUrl: getInvitationStatus(invite) === "pending" ? buildInviteUrlForInvitation(invite.id) : null,
+        acceptedAt: invite.acceptedAt,
+        revokedAt: invite.revokedAt,
         expiresAt: invite.expiresAt,
         createdAt: invite.createdAt,
         delivery: invite.deliveryStatus,
@@ -210,17 +231,18 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json(
         {
           status: "pending",
+          id: activePending.id,
           email,
           role: normalizeRole(activePending.role),
           expiresAt: activePending.expiresAt,
+          inviteUrl: buildInviteUrlForInvitation(activePending.id),
           message: "A pending invite already exists for this email."
         },
         { status: 202 }
       );
     }
 
-    const token = createInviteToken();
-    const tokenHash = hashInviteToken(token);
+    const tokenHash = hashInviteToken(createInviteToken());
     const expiresAt = getInviteExpiryDate();
 
     const created = await db.invitation.create({
@@ -242,7 +264,14 @@ export async function POST(req: Request, { params }: Params) {
       }
     });
 
-    const inviteUrl = buildInviteUrl(token);
+    const stableToken = createInviteTokenForInvitation(created.id);
+    const stableTokenHash = hashInviteToken(stableToken);
+    await db.invitation.update({
+      where: { id: created.id },
+      data: { tokenHash: stableTokenHash }
+    });
+
+    const inviteUrl = buildInviteUrlForInvitation(created.id);
     const emailConfigured = isSmtpConfigured();
     let delivery: "not_configured" | "sent" | "failed" = "not_configured";
     let deliveryError: string | null = null;

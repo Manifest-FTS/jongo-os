@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { hashInviteToken, isInviteExpired } from "@/lib/invitations";
+import { hashInviteToken, isInviteExpired, parseInvitationIdFromToken } from "@/lib/invitations";
 import { normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ token: string }> };
@@ -11,13 +11,26 @@ export async function GET(_req: Request, { params }: Params) {
     const { db } = await import("@/lib/db");
     const tokenHash = hashInviteToken(token);
 
-    const invite = await db.invitation.findUnique({
+    let invite = await db.invitation.findUnique({
       where: { tokenHash },
       include: {
         organization: { select: { id: true, name: true } },
         site: { select: { id: true, name: true } }
       }
     });
+
+    if (!invite) {
+      const invitationId = parseInvitationIdFromToken(token);
+      if (invitationId) {
+        invite = await db.invitation.findUnique({
+          where: { id: invitationId },
+          include: {
+            organization: { select: { id: true, name: true } },
+            site: { select: { id: true, name: true } }
+          }
+        });
+      }
+    }
 
     if (!invite) {
       return NextResponse.json({ valid: false, state: "not_found" }, { status: 404 });

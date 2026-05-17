@@ -1,10 +1,28 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isSmtpConfigured, sendInviteEmail } from "@/lib/email";
-import { buildInviteUrl, createInviteToken, getInviteExpiryDate, hashInviteToken } from "@/lib/invitations";
+import {
+  buildInviteUrlForInvitation,
+  createInviteToken,
+  createInviteTokenForInvitation,
+  getInviteExpiryDate,
+  hashInviteToken,
+  isInviteExpired
+} from "@/lib/invitations";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ organizationId: string }> };
+
+function getInvitationStatus(invite: {
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  expiresAt: Date;
+}): "pending" | "accepted" | "expired" | "revoked" {
+  if (invite.revokedAt) return "revoked";
+  if (invite.acceptedAt) return "accepted";
+  if (isInviteExpired(invite.expiresAt)) return "expired";
+  return "pending";
+}
 
 /**
  * GET /api/organizations/[organizationId]/collaborators
@@ -46,10 +64,7 @@ export async function GET(_req: Request, { params }: Params) {
     const pendingInvites = await db.invitation.findMany({
       where: {
         organizationId,
-        inviteType: "organization",
-        acceptedAt: null,
-        revokedAt: null,
-        expiresAt: { gt: new Date() }
+        inviteType: "organization"
       },
       orderBy: { createdAt: "desc" },
       take: 100,
@@ -59,6 +74,8 @@ export async function GET(_req: Request, { params }: Params) {
         role: true,
         expiresAt: true,
         createdAt: true,
+        acceptedAt: true,
+        revokedAt: true,
         deliveryStatus: true,
         deliveryError: true
       }
@@ -78,9 +95,12 @@ export async function GET(_req: Request, { params }: Params) {
         id: invite.id,
         email: invite.email,
         role: normalizeRole(invite.role),
-        status: "pending",
+        status: getInvitationStatus(invite),
+        inviteUrl: getInvitationStatus(invite) === "pending" ? buildInviteUrlForInvitation(invite.id) : null,
         delivery: invite.deliveryStatus,
         note: invite.deliveryError ?? null,
+        acceptedAt: invite.acceptedAt,
+        revokedAt: invite.revokedAt,
         expiresAt: invite.expiresAt,
         createdAt: invite.createdAt
       })),
@@ -200,9 +220,11 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json(
         {
           status: "pending",
+          id: existingPending.id,
           email,
           role,
           expiresAt: existingPending.expiresAt,
+          inviteUrl: buildInviteUrlForInvitation(existingPending.id),
           delivery: existingPending.deliveryStatus,
           message: "A pending invitation already exists for this email."
         },
@@ -210,8 +232,7 @@ export async function POST(req: Request, { params }: Params) {
       );
     }
 
-    const token = createInviteToken();
-    const tokenHash = hashInviteToken(token);
+    const tokenHash = hashInviteToken(createInviteToken());
     const expiresAt = getInviteExpiryDate();
 
     const invitation = await db.invitation.create({
@@ -228,11 +249,19 @@ export async function POST(req: Request, { params }: Params) {
         id: true,
         email: true,
         role: true,
+        organization: { select: { name: true } },
         expiresAt: true
       }
     });
 
-    const inviteUrl = buildInviteUrl(token);
+    const stableToken = createInviteTokenForInvitation(invitation.id);
+    const stableTokenHash = hashInviteToken(stableToken);
+    await db.invitation.update({
+      where: { id: invitation.id },
+      data: { tokenHash: stableTokenHash }
+    });
+
+    const inviteUrl = buildInviteUrlForInvitation(invitation.id);
     const emailConfigured = isSmtpConfigured();
     let delivery: "not_configured" | "sent" | "failed" = "not_configured";
     let deliveryError: string | null = null;
@@ -242,7 +271,7 @@ export async function POST(req: Request, { params }: Params) {
         to: email,
         inviteUrl,
         expiresAt,
-        scopeLabel: `client ${org.name}`,
+        scopeLabel: `client ${invitation.organization.name}`,
         role
       });
       delivery = emailResult.sent ? "sent" : "failed";

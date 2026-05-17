@@ -108,6 +108,45 @@ export default async function SettingsPage() {
             </p>
           </details>
         </article>
+
+        <article className="card tone-card">
+          <h3 className="card-title">Email Delivery</h3>
+          <p className="card-muted">Invite and transactional email configuration status.</p>
+          <div style={{ marginTop: "0.8rem", display: "grid", gap: "0.55rem" }}>
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              Provider mode:{" "}
+              <span className={`status-chip ${runtime.emailConfigured ? "healthy" : "unknown"}`}>
+                {runtime.emailProviderMode === "disabled"
+                  ? "Disabled"
+                  : runtime.emailProviderMode === "smtp2go_api"
+                  ? "SMTP2GO API"
+                  : "Generic SMTP"}
+              </span>
+            </p>
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              Status:{" "}
+              <span className={`status-chip ${runtime.emailConfigured ? "healthy" : "unknown"}`}>
+                {runtime.emailConfigured ? "configured" : "not configured"}
+              </span>
+            </p>
+            <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--muted)" }}>
+              {runtime.emailConfigured
+                ? "Email sending is enabled. Secret values remain server-side and are never shown in this UI."
+                : "Email delivery is disabled. Invite links still work via manual copy/share fallback."}
+            </p>
+            <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--muted)" }}>
+              Supported modes: Disabled, Generic SMTP (SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD/SMTP_FROM), SMTP2GO API (SMTP2GO_API_KEY/SMTP_FROM).
+            </p>
+          </div>
+
+          {canViewDiagnostics ? (
+            <EmailTestPanel />
+          ) : (
+            <p className="card-muted" style={{ marginTop: "0.8rem" }}>
+              Test email action is available to admin/dev diagnostics users.
+            </p>
+          )}
+        </article>
       </div>
 
       <div className="grid">

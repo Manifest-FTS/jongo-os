@@ -17,7 +17,11 @@ type PendingInvite = {
   id: string;
   email: string;
   role: string;
+  status?: "pending" | "accepted" | "expired" | "revoked";
+  inviteUrl?: string | null;
   expiresAt: string;
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
   delivery?: string;
   note?: string | null;
 };
@@ -40,6 +44,7 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteActionBusyId, setInviteActionBusyId] = useState<string | null>(null);
 
   const roleOptions = useMemo(() => {
     return callerRole === "admin" ? ["admin", "collaborator"] as const : ["collaborator"] as const;
@@ -113,13 +118,52 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
     }
   }
 
-  async function copyInviteLink() {
-    if (!inviteLink) return;
+  async function copyInviteLink(url?: string | null) {
+    const value = url ?? inviteLink;
+    if (!value) return;
     try {
-      await navigator.clipboard.writeText(inviteLink);
+      await navigator.clipboard.writeText(value);
       setNotice("Invite link copied to clipboard.");
     } catch {
       setError("Could not copy invite link. Copy it manually from the field below.");
+    }
+  }
+
+  async function runInviteAction(invitationId: string, action: "resend" | "regenerate" | "revoke") {
+    setInviteActionBusyId(invitationId);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const res = await fetch(`/api/sites/${siteId}/collaborators/invitations/${invitationId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError((data as { error?: string }).error ?? `Could not ${action} invite.`);
+        return;
+      }
+
+      const nextInviteUrl = (data as { inviteUrl?: string }).inviteUrl;
+      if (nextInviteUrl) {
+        setInviteLink(nextInviteUrl);
+      }
+
+      if (action === "revoke") {
+        setNotice("Invitation revoked.");
+      } else if (action === "resend") {
+        setNotice("Invitation resent.");
+      } else {
+        setNotice("New invitation link generated.");
+      }
+
+      await load();
+    } catch {
+      setError("Network error while managing invitation");
+    } finally {
+      setInviteActionBusyId(null);
     }
   }
 
@@ -219,10 +263,40 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
               <div>
                 <p style={{ margin: 0, fontWeight: 600 }}>{invite.email}</p>
                 <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.82rem" }}>
-                  Pending invite · expires {new Date(invite.expiresAt).toLocaleString()}
+                  {invite.status === "accepted"
+                    ? `Accepted${invite.acceptedAt ? ` · ${new Date(invite.acceptedAt).toLocaleString()}` : ""}`
+                    : invite.status === "revoked"
+                    ? `Revoked${invite.revokedAt ? ` · ${new Date(invite.revokedAt).toLocaleString()}` : ""}`
+                    : invite.status === "expired"
+                    ? `Expired · ${new Date(invite.expiresAt).toLocaleString()}`
+                    : `Pending invite · expires ${new Date(invite.expiresAt).toLocaleString()}`}
+                  {invite.note ? ` · ${invite.note}` : ""}
                 </p>
               </div>
-              <span className="tag">{normalizeRole(invite.role)}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                <span className="tag">{normalizeRole(invite.role)}</span>
+                <span className="status-chip unknown">{invite.status ?? "pending"}</span>
+                {invite.status === "pending" ? (
+                  <>
+                    <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => copyInviteLink(invite.inviteUrl)} disabled={inviteActionBusyId === invite.id || !invite.inviteUrl}>
+                      Copy
+                    </button>
+                    <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "resend")} disabled={inviteActionBusyId === invite.id}>
+                      Resend
+                    </button>
+                    <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "regenerate")} disabled={inviteActionBusyId === invite.id}>
+                      Regenerate
+                    </button>
+                    <button type="button" className="btn btn-danger" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "revoke")} disabled={inviteActionBusyId === invite.id}>
+                      Revoke
+                    </button>
+                  </>
+                ) : invite.status === "expired" || invite.status === "revoked" ? (
+                  <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "regenerate")} disabled={inviteActionBusyId === invite.id}>
+                    Regenerate
+                  </button>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>
@@ -273,7 +347,7 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
           </p>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             <input className="form-input" value={inviteLink} readOnly />
-            <button type="button" className="btn" onClick={copyInviteLink}>Copy link</button>
+            <button type="button" className="btn" onClick={() => copyInviteLink()}>Copy link</button>
           </div>
         </div>
       ) : null}

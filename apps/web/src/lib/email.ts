@@ -1,13 +1,15 @@
 import nodemailer from "nodemailer";
 
+export type EmailProviderMode = "disabled" | "smtp" | "smtp2go_api";
+
 export type EmailResult = {
   sent: boolean;
-  provider: "smtp2go" | "smtp" | "none";
+  provider: "smtp" | "smtp2go_api" | "none";
   error?: string;
   messageId?: string;
 };
 
-export function isSmtpConfigured(): boolean {
+function isGenericSmtpConfigured(): boolean {
   return Boolean(
     process.env.SMTP_HOST?.trim() &&
     process.env.SMTP_PORT?.trim() &&
@@ -15,6 +17,24 @@ export function isSmtpConfigured(): boolean {
     process.env.SMTP_PASSWORD?.trim() &&
     process.env.SMTP_FROM?.trim()
   );
+}
+
+function isSmtp2GoApiConfigured(): boolean {
+  return Boolean(process.env.SMTP2GO_API_KEY?.trim() && process.env.SMTP_FROM?.trim());
+}
+
+export function getEmailProviderMode(): EmailProviderMode {
+  if (isSmtp2GoApiConfigured()) {
+    return "smtp2go_api";
+  }
+  if (isGenericSmtpConfigured()) {
+    return "smtp";
+  }
+  return "disabled";
+}
+
+export function isSmtpConfigured(): boolean {
+  return getEmailProviderMode() !== "disabled";
 }
 
 function getSmtpConfig() {
@@ -25,12 +45,7 @@ function getSmtpConfig() {
   const pass = process.env.SMTP_PASSWORD ?? "";
   const from = process.env.SMTP_FROM?.trim() ?? "noreply@localhost";
 
-  const provider = (process.env.SMTP_PROVIDER ?? "").trim().toLowerCase() === "smtp2go" ||
-    host.toLowerCase().includes("smtp2go")
-    ? "smtp2go"
-    : "smtp";
-
-  return { host, port, secure, user, pass, from, provider: provider as "smtp2go" | "smtp" };
+  return { host, port, secure, user, pass, from, provider: "smtp" as const };
 }
 
 export async function sendTransactionalEmail(input: {
@@ -39,8 +54,58 @@ export async function sendTransactionalEmail(input: {
   text: string;
   html?: string;
 }): Promise<EmailResult> {
-  if (!isSmtpConfigured()) {
+  const mode = getEmailProviderMode();
+  if (mode === "disabled") {
     return { sent: false, provider: "none", error: "SMTP not configured" };
+  }
+
+  if (mode === "smtp2go_api") {
+    const apiKey = process.env.SMTP2GO_API_KEY?.trim() ?? "";
+    const from = process.env.SMTP_FROM?.trim() ?? "noreply@localhost";
+
+    try {
+      const response = await fetch("https://api.smtp2go.com/v3/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: apiKey,
+          to: [input.to],
+          sender: from,
+          subject: input.subject,
+          text_body: input.text,
+          html_body: input.html ?? `<p>${escapeHtml(input.text)}</p>`
+        })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      const requestId = typeof payload?.data?.email_id === "string"
+        ? payload.data.email_id
+        : typeof payload?.request_id === "string"
+        ? payload.request_id
+        : undefined;
+
+      if (!response.ok || Number(payload?.data?.succeeded ?? 0) < 1) {
+        const failureError = payload?.data?.failures?.[0]?.error_code;
+        return {
+          sent: false,
+          provider: "smtp2go_api",
+          error: failureError ? String(failureError) : `SMTP2GO API request failed (${response.status})`
+        };
+      }
+
+      return {
+        sent: true,
+        provider: "smtp2go_api",
+        messageId: requestId
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown SMTP2GO API error";
+      return {
+        sent: false,
+        provider: "smtp2go_api",
+        error: message
+      };
+    }
   }
 
   const config = getSmtpConfig();

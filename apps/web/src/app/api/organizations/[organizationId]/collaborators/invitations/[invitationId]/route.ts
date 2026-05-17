@@ -1,0 +1,258 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth.config";
+import { isSmtpConfigured, sendInviteEmail } from "@/lib/email";
+import {
+  buildInviteUrlForInvitation,
+  createInviteToken,
+  createInviteTokenForInvitation,
+  getInviteExpiryDate,
+  hashInviteToken,
+  isInviteExpired
+} from "@/lib/invitations";
+import { isAdminRole, normalizeRole } from "@/lib/roles";
+
+type Params = { params: Promise<{ organizationId: string; invitationId: string }> };
+
+type Body = {
+  action?: "resend" | "regenerate" | "revoke";
+};
+
+function getInvitationStatus(invite: {
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  expiresAt: Date;
+}): "pending" | "accepted" | "expired" | "revoked" {
+  if (invite.revokedAt) return "revoked";
+  if (invite.acceptedAt) return "accepted";
+  if (isInviteExpired(invite.expiresAt)) return "expired";
+  return "pending";
+}
+
+async function ensureAdminAccess(organizationId: string, userId: string) {
+  const { db } = await import("@/lib/db");
+  const org = await db.organization.findFirst({
+    where: {
+      id: organizationId,
+      deletedAt: null,
+      OR: [{ ownerId: userId }, { collaborators: { some: { userId } } }]
+    },
+    include: {
+      collaborators: {
+        where: { userId },
+        select: { role: true }
+      }
+    }
+  });
+
+  if (!org) {
+    return { ok: false as const, status: 404, error: "Not found" };
+  }
+
+  const callerIsOwner = org.ownerId === userId;
+  const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
+  if (!callerIsAdmin) {
+    return { ok: false as const, status: 403, error: "Only admins can manage invites" };
+  }
+
+  return { ok: true as const, orgName: org.name };
+}
+
+export async function POST(req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { organizationId, invitationId } = await params;
+
+  let body: Body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  if (!body.action || !["resend", "regenerate", "revoke"].includes(body.action)) {
+    return NextResponse.json({ error: "action must be resend, regenerate, or revoke" }, { status: 400 });
+  }
+
+  const access = await ensureAdminAccess(organizationId, session.user.id);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  try {
+    const { db } = await import("@/lib/db");
+    const invite = await db.invitation.findFirst({
+      where: {
+        id: invitationId,
+        organizationId,
+        inviteType: "organization"
+      }
+    });
+
+    if (!invite) {
+      return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
+    }
+
+    const status = getInvitationStatus(invite);
+
+    if (body.action === "revoke") {
+      if (status === "accepted") {
+        return NextResponse.json({ error: "Accepted invites cannot be revoked" }, { status: 409 });
+      }
+
+      if (status !== "revoked") {
+        await db.invitation.update({
+          where: { id: invite.id },
+          data: { revokedAt: new Date() }
+        });
+      }
+
+      return NextResponse.json({ ok: true, status: "revoked", id: invite.id });
+    }
+
+    if (body.action === "resend") {
+      if (status !== "pending") {
+        return NextResponse.json({ error: `Only pending invites can be resent (current: ${status})` }, { status: 409 });
+      }
+
+      const inviteUrl = buildInviteUrlForInvitation(invite.id);
+      const emailConfigured = isSmtpConfigured();
+      if (!emailConfigured) {
+        return NextResponse.json({
+          ok: true,
+          status,
+          inviteUrl,
+          emailDeliveryConfigured: false,
+          message: "Email delivery not configured yet - copy this invite link manually."
+        });
+      }
+
+      const emailResult = await sendInviteEmail({
+        to: invite.email,
+        inviteUrl,
+        expiresAt: invite.expiresAt,
+        scopeLabel: `client ${access.orgName}`,
+        role: normalizeRole(invite.role)
+      });
+
+      await db.invitation.update({
+        where: { id: invite.id },
+        data: {
+          deliveryStatus: emailResult.sent ? "sent" : "failed",
+          deliveryError: emailResult.error ?? null,
+          sentAt: emailResult.sent ? new Date() : null
+        }
+      });
+
+      return NextResponse.json({
+        ok: emailResult.sent,
+        status,
+        inviteUrl,
+        emailDeliveryConfigured: true,
+        delivery: emailResult.sent ? "sent" : "failed",
+        error: emailResult.error ?? null
+      });
+    }
+
+    if (status === "accepted") {
+      return NextResponse.json({ error: "Accepted invites cannot be regenerated" }, { status: 409 });
+    }
+
+    const existingActive = await db.invitation.findFirst({
+      where: {
+        organizationId,
+        inviteType: "organization",
+        email: invite.email,
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+        id: { not: invite.id }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (existingActive) {
+      return NextResponse.json({
+        ok: true,
+        id: existingActive.id,
+        status: "pending",
+        inviteUrl: buildInviteUrlForInvitation(existingActive.id),
+        message: "A pending invitation already exists for this email."
+      });
+    }
+
+    if (!invite.revokedAt) {
+      await db.invitation.update({
+        where: { id: invite.id },
+        data: { revokedAt: new Date() }
+      });
+    }
+
+    const created = await db.invitation.create({
+      data: {
+        organizationId,
+        email: invite.email,
+        role: normalizeRole(invite.role),
+        inviteType: "organization",
+        invitedById: session.user.id,
+        expiresAt: getInviteExpiryDate(),
+        tokenHash: hashInviteToken(createInviteToken())
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        expiresAt: true
+      }
+    });
+
+    const stableToken = createInviteTokenForInvitation(created.id);
+    await db.invitation.update({
+      where: { id: created.id },
+      data: { tokenHash: hashInviteToken(stableToken) }
+    });
+
+    const inviteUrl = buildInviteUrlForInvitation(created.id);
+    const emailConfigured = isSmtpConfigured();
+    let delivery: "not_configured" | "sent" | "failed" = "not_configured";
+    let deliveryError: string | null = null;
+
+    if (emailConfigured) {
+      const emailResult = await sendInviteEmail({
+        to: created.email,
+        inviteUrl,
+        expiresAt: created.expiresAt,
+        scopeLabel: `client ${access.orgName}`,
+        role: normalizeRole(created.role)
+      });
+      delivery = emailResult.sent ? "sent" : "failed";
+      deliveryError = emailResult.error ?? null;
+
+      await db.invitation.update({
+        where: { id: created.id },
+        data: {
+          deliveryStatus: delivery,
+          deliveryError,
+          sentAt: emailResult.sent ? new Date() : null
+        }
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      id: created.id,
+      status: "pending",
+      inviteUrl,
+      delivery,
+      emailDeliveryConfigured: emailConfigured,
+      message: emailConfigured
+        ? "New invitation created and email sent."
+        : "New invitation created. Copy this invite link manually."
+    });
+  } catch (error) {
+    console.error("POST /api/organizations/[organizationId]/collaborators/invitations/[invitationId] error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
