@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isSmtpConfigured, sendInviteEmail } from "@/lib/email";
+import { buildInviteUrl, createInviteToken, getInviteExpiryDate, hashInviteToken } from "@/lib/invitations";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ organizationId: string }> };
@@ -41,42 +43,26 @@ export async function GET(_req: Request, { params }: Params) {
       orderBy: { createdAt: "asc" }
     });
 
-    const pendingInviteLogs = await db.auditLog.findMany({
+    const pendingInvites = await db.invitation.findMany({
       where: {
         organizationId,
-        action: "collaborator_invited_pending"
+        inviteType: "organization",
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
       },
       orderBy: { createdAt: "desc" },
-      take: 100
+      take: 100,
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        expiresAt: true,
+        createdAt: true,
+        deliveryStatus: true,
+        deliveryError: true
+      }
     });
-
-    const existingEmails = new Set(
-      collaborators.map((c: any) => c.user.email.toLowerCase())
-    );
-
-    const pendingInvites = pendingInviteLogs
-      .map((log: any) => {
-        const details = (log.details ?? {}) as {
-          email?: string;
-          role?: string;
-          status?: string;
-          delivery?: string;
-          note?: string;
-        };
-        const email = details.email?.toLowerCase().trim();
-        if (!email) return null;
-        if (existingEmails.has(email)) return null;
-        return {
-          id: log.id,
-          email,
-          role: normalizeRole(details.role),
-          status: details.status ?? "pending",
-          delivery: details.delivery ?? "not_configured",
-          note: details.note ?? "Email delivery not configured yet.",
-          createdAt: log.createdAt
-        };
-      })
-      .filter((item: any): item is NonNullable<typeof item> => Boolean(item));
 
     return NextResponse.json({
       collaborators: collaborators.map((c: any) => ({
@@ -88,8 +74,17 @@ export async function GET(_req: Request, { params }: Params) {
         avatarUrl: c.user.avatarUrl,
         createdAt: c.createdAt
       })),
-      pendingInvites,
-      emailDeliveryConfigured: false
+      pendingInvites: pendingInvites.map((invite: any) => ({
+        id: invite.id,
+        email: invite.email,
+        role: normalizeRole(invite.role),
+        status: "pending",
+        delivery: invite.deliveryStatus,
+        note: invite.deliveryError ?? null,
+        expiresAt: invite.expiresAt,
+        createdAt: invite.createdAt
+      })),
+      emailDeliveryConfigured: isSmtpConfigured()
     });
   } catch (err) {
     console.error("GET /api/organizations/[id]/collaborators error:", err);
@@ -111,7 +106,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const { organizationId } = await params;
 
-  let body: { email?: string; role?: string };
+  let body: { email?: string; role?: string; forceInvite?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -120,6 +115,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const email = body.email?.trim().toLowerCase();
   const role = normalizeRole(body.role);
+  const forceInvite = body.forceInvite === true;
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
@@ -156,9 +152,8 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: "Only admins can invite collaborators" }, { status: 403 });
     }
 
-    // If the user already exists, create collaborator membership immediately.
     const targetUser = await db.user.findUnique({ where: { email } });
-    if (targetUser) {
+    if (targetUser && !forceInvite) {
       const existing = await db.collaborator.findFirst({
         where: { organizationId, userId: targetUser.id }
       });
@@ -189,36 +184,76 @@ export async function POST(req: Request, { params }: Params) {
       );
     }
 
-    // No account yet: create a pending invitation record.
-    const recentPendingLogs = await db.auditLog.findMany({
+    const existingPending = await db.invitation.findFirst({
       where: {
         organizationId,
-        action: "collaborator_invited_pending"
+        inviteType: "organization",
+        email,
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
       },
-      orderBy: { createdAt: "desc" },
-      take: 100
+      orderBy: { createdAt: "desc" }
     });
 
-    const existingPending = recentPendingLogs.find((log: any) => {
-      const details = (log.details ?? {}) as { email?: string };
-      return details.email?.toLowerCase().trim() === email;
+    if (existingPending) {
+      return NextResponse.json(
+        {
+          status: "pending",
+          email,
+          role,
+          expiresAt: existingPending.expiresAt,
+          delivery: existingPending.deliveryStatus,
+          message: "A pending invitation already exists for this email."
+        },
+        { status: 202 }
+      );
+    }
+
+    const token = createInviteToken();
+    const tokenHash = hashInviteToken(token);
+    const expiresAt = getInviteExpiryDate();
+
+    const invitation = await db.invitation.create({
+      data: {
+        organizationId,
+        email,
+        role,
+        tokenHash,
+        inviteType: "organization",
+        invitedById: session.user.id,
+        expiresAt
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        expiresAt: true
+      }
     });
 
-    if (!existingPending) {
-      await db.auditLog.create({
+    const inviteUrl = buildInviteUrl(token);
+    const emailConfigured = isSmtpConfigured();
+    let delivery: "not_configured" | "sent" | "failed" = "not_configured";
+    let deliveryError: string | null = null;
+
+    if (emailConfigured) {
+      const emailResult = await sendInviteEmail({
+        to: email,
+        inviteUrl,
+        expiresAt,
+        scopeLabel: `client ${org.name}`,
+        role
+      });
+      delivery = emailResult.sent ? "sent" : "failed";
+      deliveryError = emailResult.error ?? null;
+
+      await db.invitation.update({
+        where: { id: invitation.id },
         data: {
-          organizationId,
-          actorId: session.user.id,
-          action: "collaborator_invited_pending",
-          resourceType: "collaborator_invitation",
-          resourceId: null,
-          details: {
-            email,
-            role,
-            status: "pending",
-            delivery: "not_configured",
-            note: "Email delivery not configured yet."
-          }
+          deliveryStatus: delivery,
+          deliveryError,
+          sentAt: emailResult.sent ? new Date() : null
         }
       });
     }
@@ -226,10 +261,16 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json(
       {
         status: "pending",
-        email,
-        role,
-        delivery: "not_configured",
-        message: "Invitation pending. Email delivery is not configured yet."
+        id: invitation.id,
+        email: invitation.email,
+        role: normalizeRole(invitation.role),
+        expiresAt: invitation.expiresAt,
+        inviteUrl,
+        delivery,
+        emailDeliveryConfigured: emailConfigured,
+        message: emailConfigured
+          ? "Invitation created and email sent."
+          : "Email delivery not configured yet - copy this invite link manually."
       },
       { status: 202 }
     );

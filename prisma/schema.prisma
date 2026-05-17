@@ -47,6 +47,8 @@ model User {
   auditLogs            AuditLog[]
   deploymentsTriggered Deployment[] @relation("TriggeredBy")
   collaboratorsGranted Collaborator[] @relation("GrantedBy")
+  invitationsSent      Invitation[]   @relation("InvitationInvitedBy")
+  invitationsAccepted  Invitation[]   @relation("InvitationAcceptedBy")
 
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
@@ -75,6 +77,7 @@ model Organization {
   owner            User      @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   sites            Site[]
   collaborators    Collaborator[]
+  invitations     Invitation[]
   apiTokens        ApiToken[]
   auditLogs        AuditLog[]
 
@@ -109,6 +112,7 @@ model Site {
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   environments        Environment[]
   collaborators       SiteCollaborator[]
+  invitations         Invitation[]
 
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -264,4 +268,42 @@ model AuditLog {
 
   @@index([organizationId])
   @@index([createdAt])
+}
+
+// ============================================================
+// Invitations
+// ============================================================
+
+model Invitation {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String    @db.Uuid
+  siteId           String?   @db.Uuid
+  email            String
+  role             String
+  tokenHash        String    @unique
+  inviteType       String    // 'organization' | 'site'
+  invitedById      String?   @db.Uuid
+  acceptedByUserId String?   @db.Uuid
+  acceptedAt       DateTime?
+  expiresAt        DateTime
+  deliveryStatus   String    @default("not_configured") // 'not_configured' | 'sent' | 'failed'
+  deliveryError    String?
+  sentAt           DateTime?
+  revokedAt        DateTime?
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site             Site?        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  invitedBy        User?        @relation("InvitationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedByUser   User?        @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([siteId])
+  @@index([email])
+  @@index([inviteType])
+  @@index([expiresAt])
+  @@index([acceptedAt])
+  @@index([revokedAt])
 }

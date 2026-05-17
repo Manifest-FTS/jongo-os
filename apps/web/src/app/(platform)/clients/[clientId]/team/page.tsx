@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
+import CollaboratorManager from "@/components/CollaboratorManager";
 import PendingBadge from "@/components/PendingBadge";
 import { getClientTeamMembers, getClientWorkspace } from "@/lib/repositories";
 
@@ -25,15 +26,21 @@ export default async function ClientTeamPage({ params }: Params) {
       <article className="card">
         <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
           Client Team
-          <PendingBadge reason="Organization-level team management pending; manage collaborators per app." />
+          <PendingBadge reason="Client-level invites now support invite links and optional SMTP delivery." />
         </h2>
         <p className="card-muted" style={{ marginBottom: "1rem" }}>
-          This tab shows organization-level members from the system. App team management is handled per app — each app can have its own set of collaborators. To invite users, go to the Team tab within an app.
+          Manage organization-level collaborators for this client workspace. App-level team access is still managed per app in each app Team tab.
         </p>
 
-        {team.length === 0 ? (
+        {client.dbId ? (
+          <div style={{ marginBottom: "1rem" }}>
+            <CollaboratorManager organizationId={client.dbId} currentUserId={session?.user?.id ?? ""} />
+          </div>
+        ) : null}
+
+        {!client.dbId && team.length === 0 ? (
           <p className="card-muted">No organization-level collaborators found.</p>
-        ) : (
+        ) : !client.dbId ? (
           <div style={{ display: "grid", gap: "0.55rem" }}>
             {team.map((member) => (
               <div key={member.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", borderBottom: "1px solid var(--border)", paddingBottom: "0.45rem" }}>
@@ -45,7 +52,7 @@ export default async function ClientTeamPage({ params }: Params) {
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </article>
     </div>
   );

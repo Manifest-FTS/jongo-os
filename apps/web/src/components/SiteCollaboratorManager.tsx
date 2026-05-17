@@ -13,6 +13,15 @@ type SiteCollaborator = {
   fullName?: string | null;
 };
 
+type PendingInvite = {
+  id: string;
+  email: string;
+  role: string;
+  expiresAt: string;
+  delivery?: string;
+  note?: string | null;
+};
+
 type Props = {
   siteId: string;
   currentUserId: string;
@@ -20,13 +29,17 @@ type Props = {
 
 export default function SiteCollaboratorManager({ siteId, currentUserId }: Props) {
   const [rows, setRows] = useState<SiteCollaborator[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [emailDeliveryConfigured, setEmailDeliveryConfigured] = useState(false);
   const [callerRole, setCallerRole] = useState<"admin" | "collaborator">("collaborator");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "collaborator">("collaborator");
+  const [forceInvite, setForceInvite] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
 
   const roleOptions = useMemo(() => {
     return callerRole === "admin" ? ["admin", "collaborator"] as const : ["collaborator"] as const;
@@ -44,6 +57,8 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
       }
 
       setRows(data.collaborators ?? []);
+      setPendingInvites(data.pendingInvites ?? []);
+      setEmailDeliveryConfigured(Boolean(data.emailDeliveryConfigured));
       setCallerRole(data.callerRole === "admin" ? "admin" : "collaborator");
       if (data.callerRole !== "admin") {
         setRole("collaborator");
@@ -64,19 +79,18 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
     setBusy(true);
     setError(null);
     setNotice(null);
+    setInviteLink(null);
 
     try {
       const res = await fetch(`/api/sites/${siteId}/collaborators`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role })
+        body: JSON.stringify({ email: email.trim(), role, forceInvite })
       });
       const data = await res.json();
 
       if (!res.ok) {
-        if (res.status === 404) {
-          setError("User not found. Invite requires an existing account. User must sign up first before being added as a collaborator.");
-        } else if (res.status === 409) {
+        if (res.status === 409) {
           setError("User is already a collaborator on this app.");
         } else {
           setError(data.error ?? "Failed to create collaboration invitation");
@@ -84,13 +98,28 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
         return;
       }
 
-      setNotice("Invitation created. Note: Email delivery is not yet configured, so the user was not notified by email. You may need to contact them separately to let them know they've been added.");
+      if (data.status === "active") {
+        setNotice("Team member added immediately.");
+      } else {
+        setInviteLink(typeof data.inviteUrl === "string" ? data.inviteUrl : null);
+        setNotice(data.message ?? "Invitation created.");
+      }
       setEmail("");
       await load();
     } catch {
       setError("Network error while creating collaboration invitation");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setNotice("Invite link copied to clipboard.");
+    } catch {
+      setError("Could not copy invite link. Copy it manually from the field below.");
     }
   }
 
@@ -138,7 +167,7 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
     <div>
       {loading ? <p className="card-muted">Loading app team…</p> : null}
 
-      {!loading && rows.length === 0 ? (
+      {!loading && rows.length === 0 && pendingInvites.length === 0 ? (
         <p className="card-muted">No app collaborators yet.</p>
       ) : null}
 
@@ -183,6 +212,22 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
         </div>
       ) : null}
 
+      {!loading && pendingInvites.length > 0 ? (
+        <div style={{ marginBottom: "1rem", display: "grid", gap: "0.5rem" }}>
+          {pendingInvites.map((invite) => (
+            <div key={invite.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "0.45rem" }}>
+              <div>
+                <p style={{ margin: 0, fontWeight: 600 }}>{invite.email}</p>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.82rem" }}>
+                  Pending invite · expires {new Date(invite.expiresAt).toLocaleString()}
+                </p>
+              </div>
+              <span className="tag">{normalizeRole(invite.role)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <form onSubmit={invite} className="form-row">
         <input
           className="form-input"
@@ -211,10 +256,36 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
         </button>
       </form>
 
+      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.55rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+        <input
+          type="checkbox"
+          checked={forceInvite}
+          onChange={(e) => setForceInvite(e.target.checked)}
+          disabled={busy}
+        />
+        Always issue invite token (even when account already exists)
+      </label>
+
+      {inviteLink && !emailDeliveryConfigured ? (
+        <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.85rem", background: "var(--surface)", border: "1px solid var(--warning)", borderRadius: "6px" }}>
+          <p style={{ margin: "0 0 0.45rem", fontSize: "0.82rem", color: "var(--warning)" }}>
+            Email delivery not configured yet - copy this invite link manually
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input className="form-input" value={inviteLink} readOnly />
+            <button type="button" className="btn" onClick={copyInviteLink}>Copy link</button>
+          </div>
+        </div>
+      ) : null}
+
       <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.85rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px" }}>
         <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
           <PendingBadge reason="Email delivery not configured" />
-          <span>Invitations create access immediately, but email notification is not yet sent.</span>
+          <span>
+            {emailDeliveryConfigured
+              ? "Invite emails are sent automatically when SMTP is configured."
+              : "Email delivery not configured yet - copy this invite link manually."}
+          </span>
         </p>
       </div>
 

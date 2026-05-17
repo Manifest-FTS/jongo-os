@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { PlusIcon } from "@/components/JongoIcons";
 import { normalizeRole } from "@/lib/roles";
 
@@ -25,33 +24,64 @@ type PendingInvite = {
 
 type Props = {
   organizationId: string;
-  collaborators: Collaborator[];
-  pendingInvites?: PendingInvite[];
   currentUserId: string;
 };
 
 const ROLES = ["admin", "collaborator"] as const;
 
-export default function CollaboratorManager({ organizationId, collaborators, pendingInvites = [], currentUserId }: Props) {
-  const router = useRouter();
+export default function CollaboratorManager({ organizationId, currentUserId }: Props) {
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [emailDeliveryConfigured, setEmailDeliveryConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "collaborator">("collaborator");
+  const [forceInvite, setForceInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setInviteError(null);
+
+    try {
+      const res = await fetch(`/api/organizations/${organizationId}/collaborators`, { cache: "no-store" });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setInviteError(data.error ?? "Failed to load collaborators");
+        return;
+      }
+
+      setCollaborators(data.collaborators ?? []);
+      setPendingInvites(data.pendingInvites ?? []);
+      setEmailDeliveryConfigured(Boolean(data.emailDeliveryConfigured));
+    } catch {
+      setInviteError("Network error - please try again");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, [organizationId]);
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     setInviteError(null);
     setInviteNotice(null);
+    setInviteLink(null);
     setInviteLoading(true);
 
     try {
       const res = await fetch(`/api/organizations/${organizationId}/collaborators`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role })
+        body: JSON.stringify({ email: email.trim(), role, forceInvite })
       });
 
       const data = await res.json();
@@ -63,12 +93,15 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
 
       if (data.status === "pending") {
         setInviteNotice(data.message ?? "Invitation pending. Email delivery is not configured yet.");
+        if (typeof data.inviteUrl === "string") {
+          setInviteLink(data.inviteUrl);
+        }
       } else {
         setInviteNotice("Team member added.");
       }
 
       setEmail("");
-      router.refresh();
+      await load();
     } catch {
       setInviteError("Network error - please try again");
     } finally {
@@ -79,10 +112,15 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
   async function handleRemove(collaboratorId: string) {
     setRemovingId(collaboratorId);
     try {
-      await fetch(`/api/organizations/${organizationId}/collaborators/${collaboratorId}`, {
+      const res = await fetch(`/api/organizations/${organizationId}/collaborators/${collaboratorId}`, {
         method: "DELETE"
       });
-      router.refresh();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setInviteError((data as { error?: string }).error ?? "Failed to remove collaborator");
+        return;
+      }
+      await load();
     } finally {
       setRemovingId(null);
     }
@@ -90,19 +128,36 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
 
   async function handleRoleChange(collaboratorId: string, newRole: string) {
     try {
-      await fetch(`/api/organizations/${organizationId}/collaborators/${collaboratorId}`, {
+      const res = await fetch(`/api/organizations/${organizationId}/collaborators/${collaboratorId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: newRole })
       });
-      router.refresh();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setInviteError((data as { error?: string }).error ?? "Failed to update role");
+        return;
+      }
+      await load();
     } catch {
       // no-op on network failure
     }
   }
 
+  async function copyInviteLink() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setInviteNotice("Invite link copied to clipboard.");
+    } catch {
+      setInviteError("Could not copy invite link. Copy it manually from the field below.");
+    }
+  }
+
   return (
     <div>
+      {loading ? <p className="card-muted">Loading organization team...</p> : null}
+
       <div style={{ marginBottom: "1rem" }}>
         {collaborators.length === 0 && pendingInvites.length === 0 ? (
           <p className="card-muted">No team members yet. Invite someone to get started.</p>
@@ -202,9 +257,35 @@ export default function CollaboratorManager({ organizationId, collaborators, pen
         </button>
       </form>
 
+      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.55rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+        <input
+          type="checkbox"
+          checked={forceInvite}
+          onChange={(e) => setForceInvite(e.target.checked)}
+          disabled={inviteLoading}
+        />
+        Always issue invite token (even when account already exists)
+      </label>
+
+      {inviteLink && !emailDeliveryConfigured ? (
+        <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.85rem", background: "var(--surface)", border: "1px solid var(--warning)", borderRadius: "6px" }}>
+          <p style={{ margin: "0 0 0.45rem", fontSize: "0.82rem", color: "var(--warning)" }}>
+            Email delivery not configured yet - copy this invite link manually
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input className="form-input" value={inviteLink} readOnly />
+            <button type="button" className="btn" onClick={copyInviteLink}>Copy link</button>
+          </div>
+        </div>
+      ) : null}
+
       {inviteError && <p className="form-error" style={{ marginTop: "0.5rem" }}>{inviteError}</p>}
       {inviteNotice && <p className="form-help" style={{ marginTop: "0.5rem" }}>{inviteNotice}</p>}
-      <p className="form-help">Invite by email. If the person has not registered yet, the invite will remain pending.</p>
+      <p className="form-help">
+        {emailDeliveryConfigured
+          ? "Invite by email. SMTP delivery is enabled and invite links are sent automatically."
+          : "Email delivery not configured yet - copy this invite link manually."}
+      </p>
     </div>
   );
 }

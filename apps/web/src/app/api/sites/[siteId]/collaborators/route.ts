@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isSmtpConfigured, sendInviteEmail } from "@/lib/email";
+import { buildInviteUrl, createInviteToken, getInviteExpiryDate, hashInviteToken } from "@/lib/invitations";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ siteId: string }> };
 
 type CallerAccess = {
   siteId: string;
+  siteName: string;
   orgId: string;
   orgOwnerId: string;
   callerRole: "admin" | "collaborator";
@@ -50,6 +53,7 @@ async function getCallerAccess(siteId: string, userId: string): Promise<CallerAc
 
   return {
     siteId: site.id,
+    siteName: site.name,
     orgId: site.organization.id,
     orgOwnerId: site.organization.ownerId,
     callerRole: orgAdmin || siteAdmin ? "admin" : "collaborator"
@@ -77,6 +81,26 @@ export async function GET(_req: Request, { params }: Params) {
       orderBy: { createdAt: "asc" }
     });
 
+    const pendingInvites = await db.invitation.findMany({
+      where: {
+        siteId,
+        inviteType: "site",
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        expiresAt: true,
+        createdAt: true,
+        deliveryStatus: true,
+        deliveryError: true
+      }
+    });
+
     return NextResponse.json({
       collaborators: rows.map((row: any) => ({
         id: row.id,
@@ -86,6 +110,16 @@ export async function GET(_req: Request, { params }: Params) {
         fullName: row.user.fullName,
         createdAt: row.createdAt
       })),
+      pendingInvites: pendingInvites.map((invite: any) => ({
+        id: invite.id,
+        email: invite.email,
+        role: normalizeRole(invite.role),
+        expiresAt: invite.expiresAt,
+        createdAt: invite.createdAt,
+        delivery: invite.deliveryStatus,
+        note: invite.deliveryError ?? null
+      })),
+      emailDeliveryConfigured: isSmtpConfigured(),
       callerRole: access.callerRole
     });
   } catch (error) {
@@ -102,7 +136,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const { siteId } = await params;
 
-  let body: { email?: string; role?: string };
+  let body: { email?: string; role?: string; forceInvite?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -111,6 +145,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const email = body.email?.trim().toLowerCase();
   const requestedRole = normalizeRole(body.role);
+  const forceInvite = body.forceInvite === true;
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
@@ -128,35 +163,128 @@ export async function POST(req: Request, { params }: Params) {
 
     const { db } = await import("@/lib/db");
     const targetUser = await db.user.findUnique({ where: { email } });
-    if (!targetUser) {
-      return NextResponse.json({ error: "User account not found for that email" }, { status: 404 });
+
+    if (targetUser && !forceInvite) {
+      const existing = await db.siteCollaborator.findFirst({
+        where: { siteId: access.siteId, userId: targetUser.id }
+      });
+      if (existing) {
+        return NextResponse.json({ error: "That user is already on this app" }, { status: 409 });
+      }
+
+      const created = await db.siteCollaborator.create({
+        data: {
+          siteId: access.siteId,
+          userId: targetUser.id,
+          role: requestedRole
+        },
+        include: { user: { select: { id: true, email: true, fullName: true } } }
+      });
+
+      return NextResponse.json(
+        {
+          status: "active",
+          id: created.id,
+          userId: created.userId,
+          role: normalizeRole(created.role),
+          email: created.user.email,
+          fullName: created.user.fullName
+        },
+        { status: 201 }
+      );
     }
 
-    const existing = await db.siteCollaborator.findFirst({
-      where: { siteId: access.siteId, userId: targetUser.id }
-    });
-    if (existing) {
-      return NextResponse.json({ error: "That user is already on this app" }, { status: 409 });
-    }
-
-    const created = await db.siteCollaborator.create({
-      data: {
+    const activePending = await db.invitation.findFirst({
+      where: {
         siteId: access.siteId,
-        userId: targetUser.id,
-        role: requestedRole
+        inviteType: "site",
+        email,
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
       },
-      include: { user: { select: { id: true, email: true, fullName: true } } }
+      orderBy: { createdAt: "desc" }
     });
+
+    if (activePending) {
+      return NextResponse.json(
+        {
+          status: "pending",
+          email,
+          role: normalizeRole(activePending.role),
+          expiresAt: activePending.expiresAt,
+          message: "A pending invite already exists for this email."
+        },
+        { status: 202 }
+      );
+    }
+
+    const token = createInviteToken();
+    const tokenHash = hashInviteToken(token);
+    const expiresAt = getInviteExpiryDate();
+
+    const created = await db.invitation.create({
+      data: {
+        organizationId: access.orgId,
+        siteId: access.siteId,
+        email,
+        role: requestedRole,
+        inviteType: "site",
+        tokenHash,
+        invitedById: session.user.id,
+        expiresAt
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        expiresAt: true
+      }
+    });
+
+    const inviteUrl = buildInviteUrl(token);
+    const emailConfigured = isSmtpConfigured();
+    let delivery: "not_configured" | "sent" | "failed" = "not_configured";
+    let deliveryError: string | null = null;
+
+    if (emailConfigured) {
+      const scopeLabel = `app ${access.siteName}`;
+      const emailResult = await sendInviteEmail({
+        to: email,
+        inviteUrl,
+        expiresAt,
+        scopeLabel,
+        role: requestedRole
+      });
+
+      delivery = emailResult.sent ? "sent" : "failed";
+      deliveryError = emailResult.error ?? null;
+
+      await db.invitation.update({
+        where: { id: created.id },
+        data: {
+          deliveryStatus: delivery,
+          deliveryError,
+          sentAt: emailResult.sent ? new Date() : null
+        }
+      });
+    }
 
     return NextResponse.json(
       {
+        status: "pending",
         id: created.id,
-        userId: created.userId,
+        email: created.email,
         role: normalizeRole(created.role),
-        email: created.user.email,
-        fullName: created.user.fullName
+        expiresAt: created.expiresAt,
+        inviteUrl,
+        delivery,
+        emailDeliveryConfigured: emailConfigured,
+        message: emailConfigured
+          ? "Invitation created and email sent."
+          : "Email delivery not configured yet - copy this invite link manually."
       },
-      { status: 201 }
+      { status: 202 }
     );
   } catch (error) {
     console.error("POST /api/sites/[siteId]/collaborators error:", error);

@@ -1,4 +1,5 @@
 import { getRuntimeConfigStatus } from "@/lib/runtime-config";
+import EmailTestPanel from "@/components/EmailTestPanel";
 import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
 import { auth } from "@/lib/auth.config";
 import { canAccessRuntimeDiagnostics, runRuntimeDiagnosticsProbe } from "@/lib/runtime-diagnostics";
@@ -186,6 +187,8 @@ export default async function SettingsPage() {
               <p style={{ marginTop: "0.65rem", marginBottom: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
                 Full JSON is available at /api/diagnostics/runtime?probe=1 for authorized admin/dev access.
               </p>
+
+              <EmailTestPanel />
             </details>
           ) : null}
         </article>
