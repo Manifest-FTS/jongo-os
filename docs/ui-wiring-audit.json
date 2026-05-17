@@ -1,0 +1,356 @@
+{
+  "auditDate": "2026-05-16",
+  "scope": "jongo-os platform routes",
+  "routes": [
+    {
+      "path": "/dashboard",
+      "label": "Dashboard",
+      "productionReadiness": "live",
+      "dataSources": [
+        { "label": "Fleet metrics + deployments", "source": "Coolify API", "mode": "live", "fallback": "mock" },
+        { "label": "Client list", "source": "DB (organizations)", "mode": "live", "fallback": "mock" },
+        { "label": "Activity feed", "source": "Coolify API + DB (auditLog)", "mode": "live", "fallback": "coolify-only" }
+      ],
+      "ctas": [],
+      "staticSections": [],
+      "risks": [
+        "No last-refreshed timestamp shown to user",
+        "Activity timestamps can be null for in-progress deployments",
+        "Falls to Coolify-only feed if DB auditLog table missing"
+      ]
+    },
+    {
+      "path": "/clients",
+      "label": "Clients Directory",
+      "productionReadiness": "live",
+      "dataSources": [
+        { "label": "Client list", "source": "DB (organizations)", "mode": "live", "fallback": "mock-with-banner" }
+      ],
+      "ctas": [
+        { "label": "New Client", "endpoint": "POST /api/organizations", "wiring": "live", "db": true, "destructive": false }
+      ],
+      "staticSections": [],
+      "risks": [
+        "Mock data shown without banner if dataSource flag is missing",
+        "No pagination for large client lists"
+      ]
+    },
+    {
+      "path": "/apps",
+      "label": "Apps Directory",
+      "alias": "/sites",
+      "productionReadiness": "live",
+      "dataSources": [
+        { "label": "Site list with status", "source": "DB + Coolify API", "mode": "live", "fallback": "db-only-status-unknown" }
+      ],
+      "ctas": [
+        { "label": "New Client (empty state)", "endpoint": "POST /api/organizations", "wiring": "live", "db": true, "destructive": false }
+      ],
+      "staticSections": [],
+      "risks": []
+    },
+    {
+      "path": "/clients/[clientId]",
+      "label": "Client Detail",
+      "productionReadiness": "partial",
+      "dataSources": [
+        { "label": "Client profile + sites", "source": "DB (organization + sites)", "mode": "live", "fallback": null },
+        { "label": "Recent activity", "source": "DB (org activity)", "mode": "live", "fallback": "empty" }
+      ],
+      "ctas": [],
+      "staticSections": [
+        {
+          "label": "Persistent Notes",
+          "description": "Renders hardcoded 'No stored notes yet.' with no form or write path",
+          "severity": "medium",
+          "pendingBadge": true
+        }
+      ],
+      "risks": [
+        "Persistent Notes section creates false expectation of note-taking functionality"
+      ]
+    },
+    {
+      "path": "/clients/[clientId]/settings",
+      "label": "Client Settings",
+      "productionReadiness": "live",
+      "dataSources": [
+        { "label": "Coolify projects list", "source": "Coolify API", "mode": "live", "fallback": "empty-select" },
+        { "label": "Current mapping", "source": "DB (organization)", "mode": "live", "fallback": null }
+      ],
+      "ctas": [
+        { "label": "Map Project", "endpoint": "POST /api/organizations/[id]/coolify-mapping", "wiring": "live", "db": true, "destructive": false, "gated": "admin-only" }
+      ],
+      "staticSections": [],
+      "risks": [
+        "Non-admins see a placeholder card with no form; could confuse"
+      ]
+    },
+    {
+      "path": "/clients/[clientId]/team",
+      "label": "Client Team",
+      "productionReadiness": "read-only",
+      "dataSources": [
+        { "label": "Team members", "source": "DB (org collaborators)", "mode": "live", "fallback": "empty" }
+      ],
+      "ctas": [],
+      "staticSections": [],
+      "risks": [
+        "No invite CTA at org level; invites only at app level"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]",
+      "label": "App Overview",
+      "productionReadiness": "partial",
+      "dataSources": [
+        { "label": "Site health + status", "source": "Coolify API + DB", "mode": "live", "fallback": "unknown-status" },
+        { "label": "Activity feed", "source": "Coolify API (deployments for site)", "mode": "live", "fallback": "empty" }
+      ],
+      "ctas": [
+        { "label": "Deploy to Production", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "coolify": true, "destructive": false },
+        { "label": "Deploy to Staging", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "coolify": true, "destructive": false, "issue": "shown unconditionally — staging may not exist" }
+      ],
+      "staticSections": [
+        {
+          "label": "WordPress Overview",
+          "description": "WP-detected sites show Core Version, Plugin Updates, Maintenance Mode — all static placeholder text. No WP REST API connected.",
+          "severity": "high",
+          "pendingBadge": true
+        }
+      ],
+      "risks": [
+        "Staging deploy button shown when stagingEnabled=false; may call Coolify with non-existent environment",
+        "WordPress Overview section is 100% static placeholder"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]/deployments",
+      "label": "App Deployments",
+      "productionReadiness": "live",
+      "dataSources": [
+        { "label": "Deployment history", "source": "DB (deployments) → Coolify API fallback", "mode": "live", "fallback": "coolify-overview" },
+        { "label": "Current status", "source": "Coolify API", "mode": "live", "fallback": "unknown" }
+      ],
+      "ctas": [
+        { "label": "Deploy to Production", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "coolify": true, "destructive": false },
+        { "label": "Sync to Staging", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "coolify": true, "destructive": false, "issue": "shown unconditionally — staging may not exist" }
+      ],
+      "staticSections": [],
+      "risks": [
+        "Staging deploy button unconditional",
+        "No rollback or redeploy-from-commit capability",
+        "History capped at 50 records, no pagination"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]/analytics",
+      "label": "App Analytics",
+      "productionReadiness": "stub",
+      "dataSources": [
+        { "label": "Deploy counts (used as fake analytics metrics)", "source": "DB → Coolify API fallback", "mode": "mock", "note": "Not real analytics data" },
+        { "label": "Deployment timeline (re-used as analytics timeline)", "source": "DB → Coolify API fallback", "mode": "mock", "note": "Not real analytics data" }
+      ],
+      "ctas": [
+        { "label": "Deploy to Production", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "issue": "deploy buttons are wrong UX on analytics page" },
+        { "label": "Sync to Staging", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "issue": "deploy buttons are wrong UX on analytics page" }
+      ],
+      "staticSections": [
+        {
+          "label": "Entire page",
+          "description": "Page is titled 'Analytics' but shows deployment history. No real analytics provider (pageviews, sessions, users, etc.) connected.",
+          "severity": "high",
+          "pendingBadge": true,
+          "recommendedFix": "Replace with pending state; remove deploy buttons; optionally keep deployment counts as factual metric strip"
+        }
+      ],
+      "risks": [
+        "Most misleading page in the codebase — clients expect web analytics, see deployment data",
+        "Deploy buttons on analytics page create confusing UX"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]/backups",
+      "label": "App Backups",
+      "productionReadiness": "read-only-live",
+      "dataSources": [
+        { "label": "Backup schedules + execution history", "source": "Coolify API (/api/v1/databases/{uuid}/backups)", "mode": "live", "fallback": "not-configured-state" }
+      ],
+      "ctas": [],
+      "staticSections": [],
+      "risks": [
+        "Coolify backup API requires database UUID, not service UUID — may need project traversal",
+        "No link to Coolify when backups not configured",
+        "No restore or trigger capability"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]/staging",
+      "label": "App Staging",
+      "productionReadiness": "read-only-dryrun",
+      "dataSources": [
+        { "label": "Staging capability", "source": "Coolify API (project environments)", "mode": "live", "fallback": "detected:false" },
+        { "label": "Sync plan", "source": "Computed locally (buildStagingSyncDryRunPlan)", "mode": "dry-run", "fallback": null }
+      ],
+      "ctas": [
+        { "label": "Deploy to Production", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "gated": "stagingEnabled=true" }
+      ],
+      "staticSections": [],
+      "risks": [
+        "Capability detection requires coolifyProjectId or coolifyServiceUuid to be mapped",
+        "No execute path for staging sync (intentional)"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]/settings",
+      "label": "App Settings",
+      "productionReadiness": "live",
+      "dataSources": [
+        { "label": "Site info form initial values", "source": "DB (site)", "mode": "live", "fallback": null },
+        { "label": "App health chips", "source": "DB + Coolify API", "mode": "live", "fallback": "unknown" }
+      ],
+      "ctas": [
+        { "label": "Save site info", "endpoint": "PUT /api/sites/[siteId]", "wiring": "live", "db": true, "destructive": false },
+        { "label": "Deploy to Production", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "coolify": true },
+        { "label": "Sync to Staging", "endpoint": "POST /api/coolify/deploy", "wiring": "live", "coolify": true, "gated": "stagingEnabled=true" }
+      ],
+      "staticSections": [],
+      "risks": [
+        "No confirmation dialog before save — accidental UUID overwrites could break Coolify resolution",
+        "coolifyEnvironmentName not settable via UI form"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]/integrations",
+      "label": "App Integrations",
+      "productionReadiness": "partial",
+      "dataSources": [
+        { "label": "Provider connectivity info", "source": "DB + Coolify API", "mode": "live", "fallback": "empty" },
+        { "label": "Recent integration events", "source": "Coolify API (deployments)", "mode": "live", "fallback": "empty" }
+      ],
+      "ctas": [
+        { "label": "Open advanced diagnostics link", "endpoint": "/apps/${siteId}/advanced", "wiring": "broken", "note": "advanced route now redirects to settings, losing diagnostic intent" }
+      ],
+      "staticSections": [
+        {
+          "label": "WordPress Signals",
+          "description": "Plugin updates, core version, maintenance mode all show 'not connected' — hardcoded strings, no WP API",
+          "severity": "medium",
+          "pendingBadge": true
+        },
+        {
+          "label": "No active integrations (non-WP fallback)",
+          "description": "Placeholder card shown for non-WP sites with no integration data",
+          "severity": "low",
+          "pendingBadge": true
+        }
+      ],
+      "risks": [
+        "Dead link to /advanced (now redirects to Settings)",
+        "WordPress Signals section appears functional but is fully static",
+        "No integration functionality exists at all yet"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]/team",
+      "label": "App Team",
+      "productionReadiness": "live",
+      "dataSources": [
+        { "label": "Collaborator list", "source": "DB (siteCollaborators via /api/sites/[siteId]/collaborators)", "mode": "live", "fallback": null }
+      ],
+      "ctas": [
+        { "label": "Invite collaborator", "endpoint": "POST /api/sites/[siteId]/collaborators", "wiring": "live", "db": true, "destructive": false },
+        { "label": "Remove collaborator", "endpoint": "DELETE /api/sites/[siteId]/collaborators", "wiring": "live", "db": true, "destructive": true }
+      ],
+      "staticSections": [],
+      "risks": [
+        "No email notification sent on invite",
+        "Role escalation: collaborators cannot invite admins (enforced)"
+      ]
+    },
+    {
+      "path": "/apps/[siteId]/advanced",
+      "label": "App Advanced",
+      "productionReadiness": "redirect",
+      "dataSources": [],
+      "ctas": [],
+      "staticSections": [],
+      "risks": ["Redirects to /settings — intent of 'advanced diagnostics' is lost"]
+    },
+    {
+      "path": "/settings",
+      "label": "Platform Settings",
+      "productionReadiness": "partial",
+      "dataSources": [
+        { "label": "Runtime config status", "source": "env vars (getRuntimeConfigStatus)", "mode": "live", "fallback": null },
+        { "label": "Diagnostics probe", "source": "in-memory diagnostics (admin-gated)", "mode": "live", "fallback": null },
+        { "label": "Coolify endpoint call history", "source": "in-memory", "mode": "live", "fallback": null }
+      ],
+      "ctas": [
+        { "label": "Run Ownership Sync", "endpoint": "POST /api/coolify/ownership/sync", "wiring": "live", "gated": "bootstrap-admin-email" }
+      ],
+      "staticSections": [
+        {
+          "label": "Account card",
+          "description": "Lists Profile, Email, 2FA — no form, no API, no navigation",
+          "severity": "medium",
+          "pendingBadge": true
+        },
+        {
+          "label": "API Tokens card",
+          "description": "Describes token generation — no form, no API",
+          "severity": "medium",
+          "pendingBadge": true
+        },
+        {
+          "label": "Organizations card",
+          "description": "Describes org management — static description only",
+          "severity": "low",
+          "pendingBadge": true
+        },
+        {
+          "label": "Publishing Integration body",
+          "description": "Shows runtime mode chip (live) but surrounding text is static description",
+          "severity": "low",
+          "pendingBadge": false,
+          "note": "Mode chip is accurate; body text is informational, not misleading"
+        }
+      ],
+      "risks": [
+        "Account and API Tokens cards create expectation of functionality that doesn't exist"
+      ]
+    }
+  ],
+  "summary": {
+    "totalRoutes": 16,
+    "live": 7,
+    "partial": 4,
+    "readOnly": 2,
+    "stub": 1,
+    "redirect": 1,
+    "staticSectionsTotal": 10,
+    "highPriority": [
+      "Analytics page is misleadingly named and uses wrong data",
+      "Staging deploy buttons shown unconditionally (Overview + Deployments)",
+      "WordPress Overview section is fully static"
+    ],
+    "mediumPriority": [
+      "Integrations WordPress Signals are fully static",
+      "Client Persistent Notes section is fully static",
+      "Settings Account and API Tokens cards are fully static",
+      "Integrations dead link to /advanced"
+    ],
+    "lowPriority": [
+      "No last-refreshed timestamps on health data",
+      "No link to Coolify from Backups page when not configured",
+      "Client Team page has no invite CTA"
+    ],
+    "recommendedNextSlice": [
+      "1. Condition staging deploy buttons on stagingEnabled=true (Overview + Deployments pages)",
+      "2. Replace Analytics page content with honest pending state; remove deploy buttons",
+      "3. Add PendingBadge component to all static sections",
+      "4. Fix dead link in Integrations (advanced → settings or remove)",
+      "5. Add data-as-of timestamp from Coolify overview.generatedAt"
+    ]
+  }
+}

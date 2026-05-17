@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteActivityFeed, getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
+import PendingBadge from "@/components/PendingBadge";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -45,7 +46,10 @@ export default async function IntegrationsPage({ params }: Params) {
 
       {isWordPress ? (
         <article className="card">
-          <h3 className="card-title">WordPress Signals</h3>
+          <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+            WordPress Signals
+            <PendingBadge reason="WordPress REST API connection is not yet configured. Add WP_API_URL to site environment variables to unlock live plugin, version, and maintenance data." />
+          </h3>
           <div style={{ display: "grid", gap: "0.55rem" }}>
             <p style={{ margin: 0 }}>Plugin updates: not connected</p>
             <p style={{ margin: 0 }}>Core version: not connected</p>
@@ -54,7 +58,10 @@ export default async function IntegrationsPage({ params }: Params) {
         </article>
       ) : (
         <article className="card">
-          <h3 className="card-title">No active integrations</h3>
+          <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+            No active integrations
+            <PendingBadge reason="Provider integrations (analytics, monitoring, CMS signals) will connect here as they become available." />
+          </h3>
           <p className="card-muted">Attach provider tooling here as this app stack grows.</p>
         </article>
       )}
@@ -74,7 +81,7 @@ export default async function IntegrationsPage({ params }: Params) {
           </div>
         )}
         <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
-          <Link href={`/apps/${siteId}/advanced`} className="action-link">Open advanced diagnostics</Link>
+          <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings</Link>
         </p>
       </article>
     </div>

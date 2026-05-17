@@ -2,6 +2,7 @@ import { getRuntimeConfigStatus } from "@/lib/runtime-config";
 import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
 import { auth } from "@/lib/auth.config";
 import { canAccessRuntimeDiagnostics, runRuntimeDiagnosticsProbe } from "@/lib/runtime-diagnostics";
+import PendingBadge from "@/components/PendingBadge";
 
 function normalizeEmail(value?: string | null) {
   return value?.trim().toLowerCase() ?? "";
@@ -39,7 +40,9 @@ export default async function SettingsPage() {
       <div className="grid" style={{ marginBottom: "2rem" }}>
         {/* Account Settings */}
         <article className="card tone-card">
-          <h3 className="card-title">Account</h3>
+          <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+            Account <PendingBadge reason="Account profile management is not yet available. Sign-in is handled via the authentication provider." />
+          </h3>
           <p className="card-muted">Manage your profile and sign-in preferences.</p>
           <ul style={{ fontSize: "0.9rem", margin: "0.75rem 0 0", paddingLeft: "1.25rem" }}>
             <li>Profile information</li>
@@ -50,7 +53,9 @@ export default async function SettingsPage() {
 
         {/* API Tokens */}
         <article className="card tone-card">
-          <h3 className="card-title">API Tokens</h3>
+          <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+            API Tokens <PendingBadge reason="API token management is not yet available. Tokens for scripting and integrations will be generated here." />
+          </h3>
           <p className="card-muted">Manage automation access.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
             Generate and manage API tokens for scripting and integrations.
@@ -61,7 +66,9 @@ export default async function SettingsPage() {
 
         {/* Organizations */}
         <article className="card tone-card">
-          <h3 className="card-title">Organizations</h3>
+          <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+            Organizations <PendingBadge reason="Organization-level settings will be surfaced here. Manage clients from the Clients directory for now." />
+          </h3>
           <p className="card-muted">Manage clients and team structure.</p>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
             Create organizations, manage team members, and set team-level permissions.

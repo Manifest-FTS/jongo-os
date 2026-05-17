@@ -1,9 +1,20 @@
 import { getCoolifyAppStagingCapability, buildStagingSyncDryRunPlan } from "@/lib/coolify";
+import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import DeployButton from "@/components/DeployButton";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
+
+function formatAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
 export default async function StagingPage({ params }: Params) {
   const { siteId } = await params;
@@ -89,15 +100,32 @@ export default async function StagingPage({ params }: Params) {
                     Staging environment exists but no application is deployed yet. Contact your platform administrator.
                   </p>
                 )}
+                <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+                  Checked {formatAgo(stagingCapability.checkedAt)}
+                </p>
+                <details style={{ marginTop: "0.25rem" }}>
+                  <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)", userSelect: "none" }}>Diagnostic detail</summary>
+                  <div style={{ marginTop: "0.4rem", fontSize: "0.8rem", color: "var(--muted)", display: "grid", gap: "0.25rem" }}>
+                    {stagingCapability.note ? <p style={{ margin: 0 }}>Note: <code>{stagingCapability.note}</code></p> : null}
+                    {appUuid ? <p style={{ margin: 0 }}>App UUID: <code>{appUuid}</code></p> : null}
+                  </div>
+                </details>
               </div>
             ) : (
               <div>
-                <p className="card-muted">No staging environment detected in Coolify for this application.</p>
-                <p className="card-muted" style={{ marginBottom: 0 }}>
-                  {stagingCapability.note === "no_staging_environment_in_project"
-                    ? "The Coolify project has no environment named 'staging' or 'preview'."
-                    : "Contact your platform administrator to set up a staging environment."}
+                <p className="card-muted">
+                  {getStagingDetectionMessage(stagingCapability.note)}
                 </p>
+                <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+                  Checked {formatAgo(stagingCapability.checkedAt)}
+                </p>
+                <details style={{ marginTop: "0.25rem" }}>
+                  <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)", userSelect: "none" }}>Diagnostic detail</summary>
+                  <div style={{ marginTop: "0.4rem", fontSize: "0.8rem", color: "var(--muted)", display: "grid", gap: "0.25rem" }}>
+                    {stagingCapability.note ? <p style={{ margin: 0 }}>Note: <code>{stagingCapability.note}</code></p> : null}
+                    {appUuid ? <p style={{ margin: 0 }}>App UUID: <code>{appUuid}</code></p> : null}
+                  </div>
+                </details>
               </div>
             )}
           </article>

@@ -1,8 +1,10 @@
 ﻿import { getCoolifyOverview } from "@/lib/coolify";
+import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace } from "@/lib/repositories";
 import Link from "next/link";
 import { ArrowRightIcon } from "@/components/JongoIcons";
+import PendingBadge from "@/components/PendingBadge";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -11,6 +13,16 @@ function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   return remainder > 0 ? `${minutes}m ${remainder}s` : `${minutes}m`;
+}
+
+function formatAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 export default async function SiteOverviewPage({ params }: Params) {
@@ -50,8 +62,15 @@ export default async function SiteOverviewPage({ params }: Params) {
           </p>
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
             <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" />
-            <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" />
+            {workspace?.stagingEnabled && (
+              <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" />
+            )}
           </div>
+          <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+            {overview.mode === "live"
+              ? <>Coolify · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
+              : "Demo mode — live data requires Coolify config"}
+          </p>
         </article>
 
         {/* Publishing */}
@@ -86,6 +105,7 @@ export default async function SiteOverviewPage({ params }: Params) {
             <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               WordPress Overview
               <span className="status-chip unknown" style={{ fontSize: "0.7rem" }}>WP detected</span>
+              <PendingBadge reason="WordPress REST API is not yet connected. Add WP_API_URL to site environment variables to unlock live version, plugin, and maintenance data." />
             </h3>
             <div className="grid" style={{ marginTop: "0.5rem" }}>
               <div>
@@ -113,7 +133,7 @@ export default async function SiteOverviewPage({ params }: Params) {
           <h3 className="card-title">Activity Feed</h3>
           {siteActivity.length === 0 ? (
             <p className="card-muted" style={{ marginBottom: 0 }}>
-              No activity yet. New deployment and staging events will appear here.
+              {getActivityFeedEmptyMessage(!site, Boolean(overview.fetchError))}
             </p>
           ) : (
             <div style={{ marginTop: "0.5rem", display: "grid", gap: "0.55rem" }}>

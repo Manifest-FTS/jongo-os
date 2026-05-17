@@ -87,7 +87,9 @@ export default async function DeploymentsPage({ params }: Params) {
           <h3 className="card-title">Quick Actions</h3>
           <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.75rem" }}>
             <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" label="Deploy to Production" />
-            <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" label="Sync to Staging" />
+            {workspace?.stagingEnabled && (
+              <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" label="Sync to Staging" />
+            )}
           </div>
           <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
             Trigger deploys above. History updates after each action.

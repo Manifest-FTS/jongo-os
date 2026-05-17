@@ -1,5 +1,6 @@
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getSiteWorkspace } from "@/lib/repositories";
+import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -36,6 +37,12 @@ export default async function BackupsPage({ params }: Params) {
             <p className="card-muted" style={{ margin: 0 }}>
               Automated backup schedules and execution history for this app&apos;s databases.
             </p>
+            {inventory && (
+              <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+                Coolify · checked {formatRelativeTime(inventory.checkedAt)}
+                {inventory.source === "unavailable" && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}
+              </p>
+            )}
           </div>
           <span className={`status-chip ${protectionStatus === "protected" ? "healthy" : protectionStatus === "unprotected" ? "degraded" : "unknown"}`}>
             {protectionStatus === "protected" ? "Protected" : protectionStatus === "unprotected" ? "Not protected" : "Status unknown"}
@@ -54,13 +61,14 @@ export default async function BackupsPage({ params }: Params) {
         <article className="card">
           <h3 className="card-title">Backup data unavailable</h3>
           <p className="card-muted">
-            Could not retrieve backup information from Coolify. The API may be unreachable or this resource type may not expose backup config.
+            {getBackupUnavailableMessage(inventory?.note)}
           </p>
-          {inventory?.note ? (
-            <p className="card-muted" style={{ marginBottom: 0 }}>
-              Reason: <code>{inventory.note}</code>
+          <details style={{ marginTop: "0.5rem" }}>
+            <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)", userSelect: "none" }}>Diagnostic detail</summary>
+            <p style={{ margin: "0.4rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+              Reason code: <code>{inventory?.note ?? "unknown"}</code>
             </p>
-          ) : null}
+          </details>
         </article>
       ) : !isConfigured ? (
         <article className="card">
@@ -139,6 +147,36 @@ export default async function BackupsPage({ params }: Params) {
           Backup configuration and restoration are managed through Coolify. Contact your platform administrator to change schedules, retention policies, or to initiate a recovery.
         </p>
       </article>
+
+      {/* Collapsed diagnostic panel — operator use only */}
+      {inventory && (
+        <details>
+          <summary
+            style={{
+              cursor: "pointer",
+              padding: "0.6rem 0.85rem",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "8px",
+              fontSize: "0.8rem",
+              color: "var(--muted)",
+              userSelect: "none"
+            }}
+          >
+            Backup diagnostics
+          </summary>
+          <article className="card" style={{ marginTop: "0.5rem", fontSize: "0.82rem" }}>
+            <div style={{ display: "grid", gap: "0.35rem" }}>
+              <p style={{ margin: 0 }}>Data source: <code>{inventory.source}</code></p>
+              <p style={{ margin: 0 }}>Checked: <code>{formatRelativeTime(inventory.checkedAt)}</code></p>
+              {inventory.note ? <p style={{ margin: 0 }}>Note: <code>{inventory.note}</code></p> : null}
+              <p style={{ margin: 0 }}>Schedules found: <code>{inventory.schedules.length}</code></p>
+              <p style={{ margin: 0 }}>Executions found: <code>{inventory.recentExecutions.length}</code></p>
+              {appUuid ? <p style={{ margin: 0 }}>App UUID: <code>{appUuid}</code></p> : null}
+            </div>
+          </article>
+        </details>
+      )}
     </div>
   );
 }

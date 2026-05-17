@@ -6,6 +6,16 @@ import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
 
+function formatAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default async function SiteSettingsPage({ params }: Params) {
   const { siteId } = await params;
   const [workspace, overview] = await Promise.all([
@@ -141,6 +151,16 @@ export default async function SiteSettingsPage({ params }: Params) {
             Infrastructure identifiers and diagnostic values. For admin use.
           </p>
           <div style={{ display: "grid", gap: "0.4rem", fontSize: "0.88rem" }}>
+            <p style={{ margin: 0 }}>App data source: <code>{workspace?.source ?? "unknown"}</code></p>
+            <p style={{ margin: 0 }}>
+              Coolify data: <code>{overview.mode}</code>{" "}
+              <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>· fetched {formatAgo(overview.generatedAt)}</span>
+            </p>
+            {overview.fetchError ? (
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                Coolify last error: <code>{overview.fetchError}</code>
+              </p>
+            ) : null}
             <p style={{ margin: 0 }}>Source: <code>{workspace?.source ?? "unknown"}</code></p>
             <p style={{ margin: 0 }}>Ownership: <code>{workspace?.ownershipState ?? "unavailable"}</code></p>
             {workspace?.coolifyServiceUuid ? (

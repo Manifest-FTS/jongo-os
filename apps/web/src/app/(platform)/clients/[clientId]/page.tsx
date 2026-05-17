@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
 import { getClientWorkspace, getSiteWorkspace } from "@/lib/repositories";
 import { ArrowRightIcon } from "@/components/JongoIcons";
+import PendingBadge from "@/components/PendingBadge";
 
 type Params = { params: Promise<{ clientId: string }> };
 
@@ -31,7 +32,9 @@ export default async function ClientDetailPage({ params }: Params) {
         </article>
 
         <article className="card">
-          <h3 className="card-title">Persistent Notes</h3>
+          <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+            Persistent Notes <PendingBadge reason="Client notes storage is not yet connected. This section will allow saving handoff context and operational preferences." />
+          </h3>
           <p className="card-muted" style={{ marginBottom: "0.6rem" }}>
             Use this area for handoff context, operational preferences, and known constraints.
           </p>

@@ -1,31 +1,8 @@
-import DeployButton from "@/components/DeployButton";
+import PendingBadge from "@/components/PendingBadge";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
-
-function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function envLabel(env: string) {
-  if (env === "production") return "Production";
-  if (env === "staging") return "Staging";
-  return env;
-}
-
-function statusTone(status: string): string {
-  if (status === "success" || status === "healthy") return "healthy";
-  if (status === "failed" || status === "error") return "error";
-  if (status === "in_progress" || status === "degraded") return "degraded";
-  return "unknown";
-}
 
 export default async function AnalyticsPage({ params }: Params) {
   const { siteId } = await params;
@@ -43,6 +20,7 @@ export default async function AnalyticsPage({ params }: Params) {
 
   return (
     <div className="page-stack">
+      {/* Deployment count summary — factual, not misleading */}
       <section className="metric-strip">
         <article className="card metric-card">
           <p className="metric-value">{deployments.length}</p>
@@ -50,57 +28,34 @@ export default async function AnalyticsPage({ params }: Params) {
         </article>
         <article className="card metric-card">
           <p className="metric-value">{productionDeployments.length}</p>
-          <p className="metric-label">Production</p>
+          <p className="metric-label">Production Deploys</p>
         </article>
         <article className="card metric-card">
           <p className="metric-value">{stagingDeployments.length}</p>
-          <p className="metric-label">Staging</p>
+          <p className="metric-label">Staging Deploys</p>
+        </article>
+        <article className="card metric-card">
+          <p className="metric-value">
+            <span className={`status-chip ${site?.status ?? "unknown"}`} style={{ fontSize: "0.85rem" }}>
+              {site?.status ?? "unknown"}
+            </span>
+          </p>
+          <p className="metric-label">App Status</p>
         </article>
       </section>
 
-      <section className="grid" style={{ marginBottom: "1rem" }}>
-        <article className="card">
-          <h3 className="card-title">Current Status</h3>
-          <p style={{ margin: "0.35rem 0" }}>
-            Production: <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>{site?.productionStatus ?? "unknown"}</span>
-          </p>
-          <p style={{ margin: "0.35rem 0" }}>
-            Staging: <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>{site?.stagingStatus ?? "unknown"}</span>
-          </p>
-        </article>
-
-        <article className="card">
-          <h3 className="card-title">Quick Actions</h3>
-          <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.75rem" }}>
-            <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" label="Deploy to Production" />
-            <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" label="Sync to Staging" />
-          </div>
-        </article>
-      </section>
-
+      {/* Analytics pending notice */}
       <article className="card">
-        <h3 className="card-title">Deployment Timeline</h3>
-        {deployments.length === 0 ? (
-          <p className="card-muted" style={{ marginTop: "0.75rem" }}>No deployments recorded yet.</p>
-        ) : (
-          <div className="deploy-timeline" style={{ marginTop: "1rem" }}>
-            {deployments.map((deployment) => (
-              <div key={deployment.id} className="deploy-row">
-                <div className="deploy-row-indicator">
-                  <span className={`deploy-dot ${statusTone(deployment.status)}`} />
-                </div>
-                <div className="deploy-row-body">
-                  <div className="deploy-row-head">
-                    <span className="deploy-env-label">{envLabel(deployment.environment)}</span>
-                    <span className="deploy-time">{formatRelativeTime(deployment.triggeredAt)}</span>
-                    <span className={`status-chip ${statusTone(deployment.status)}`}>{deployment.status.replace("_", " ")}</span>
-                  </div>
-                  {deployment.commitMessage ? <p className="deploy-commit">{deployment.commitMessage}</p> : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+          Analytics <PendingBadge reason="Web analytics (pageviews, sessions, visitors) are not yet connected. This section will integrate with an analytics provider in a future update." />
+        </h3>
+        <p className="card-muted" style={{ marginTop: "0.5rem" }}>
+          Visitor traffic, pageview trends, and conversion data will appear here once an analytics provider is connected.
+        </p>
+        <p style={{ margin: "0.75rem 0 0", fontSize: "0.88rem", color: "var(--muted)" }}>
+          Deployment counts above reflect deploy history, not web traffic. For full deployment history, see the{" "}
+          <a href={`/apps/${siteId}/deployments`} className="action-link">Deployments</a> tab.
+        </p>
       </article>
     </div>
   );

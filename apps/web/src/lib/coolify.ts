@@ -43,6 +43,8 @@ export type CoolifyEnvironmentRecord = {
 export type CoolifyOverview = {
   mode: "live" | "mock";
   generatedAt: string;
+  /** Present when the Coolify API was reachable but the fetch threw or returned empty unexpectedly. */
+  fetchError?: string;
   projects: CoolifyProjectRecord[];
   environments: CoolifyEnvironmentRecord[];
   sites: SiteOverview[];
@@ -931,7 +933,7 @@ export async function getCoolifyOverview(): Promise<CoolifyOverview> {
       environmentsCount: fallback.environments.length,
       note: "coolify_exception_empty_fallback"
     });
-    return fallback;
+    return { ...fallback, fetchError: "coolify_api_error" };
   }
 }
 
@@ -1085,6 +1087,8 @@ export type StagingCapabilityRecord = {
   fqdn?: string;
   status?: "healthy" | "degraded" | "error" | "unknown";
   note?: string;
+  /** ISO timestamp of when this probe ran. */
+  checkedAt: string;
 };
 
 // ─── Dry-Run Sync Plan Types ──────────────────────────────────────────────────
@@ -1234,9 +1238,10 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
 export async function getCoolifyAppStagingCapability(appUuid: string, projectId?: string): Promise<StagingCapabilityRecord> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
+  const checkedAt = new Date().toISOString();
 
   if (!baseUrl || !token) {
-    return { detected: false, note: "missing_credentials" };
+    return { detected: false, note: "missing_credentials", checkedAt };
   }
 
   try {
@@ -1249,12 +1254,12 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
           resolvedProjectId = stringValue(appPayload as Record<string, unknown>, ["project_uuid", "project_id", "project"], "");
         }
       } catch {
-        return { detected: false, note: "application_not_found" };
+        return { detected: false, note: "application_not_found", checkedAt };
       }
     }
 
     if (!resolvedProjectId) {
-      return { detected: false, note: "no_project_resolved" };
+      return { detected: false, note: "no_project_resolved", checkedAt };
     }
 
     // Get all environments for the project
@@ -1270,7 +1275,7 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     });
 
     if (!stagingEnv) {
-      return { detected: false, note: "no_staging_environment_in_project" };
+      return { detected: false, note: "no_staging_environment_in_project", checkedAt };
     }
 
     const stagingEnvObj = stagingEnv as Record<string, unknown>;
@@ -1286,7 +1291,8 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
         detected: true,
         environmentId: stagingEnvId,
         environmentName: stagingEnvName,
-        note: "staging_environment_exists_no_application"
+        note: "staging_environment_exists_no_application",
+        checkedAt
       };
     }
 
@@ -1303,10 +1309,11 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
       applicationName: stagingAppName || undefined,
       fqdn,
       status,
-      note: "full_staging_detected"
+      note: "full_staging_detected",
+      checkedAt
     };
   } catch {
-    return { detected: false, note: "fetch_error" };
+    return { detected: false, note: "fetch_error", checkedAt };
   }
 }
 

@@ -1,10 +1,21 @@
 import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
+import { getAppsEmptyStateMessage } from "@/lib/reason-messages";
 import { listSiteDirectory } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import SiteDirectoryView from "@/components/SiteDirectoryView";
+
+function formatAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
 export default async function SitesPage() {
   const session = await auth();
@@ -20,15 +31,29 @@ export default async function SitesPage() {
         <div>
           <h1 className="page-title">Apps ({siteDirectory.length})</h1>
           <p className="page-subtitle">Filter by name or health and switch between list and grid as needed.</p>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+            <span className={`status-chip ${overview.mode}`}>{overview.mode}</span>
+            {overview.mode === "live"
+              ? <>Coolify · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)" }}>· API unavailable</span>}</>
+              : "Coolify not configured — demo mode"}
+            {siteDirectory.length > 0 && <span style={{ color: "var(--muted)" }}>· {siteDirectory.length} app{siteDirectory.length === 1 ? "" : "s"} from DB</span>}
+          </p>
         </div>
       </div>
 
       {siteDirectory.length === 0 ? (
         <div className="card">
-          <p className="card-muted">No apps yet. Start by creating a client, then add their first app.</p>
-          <p className="form-help" style={{ marginBottom: "0.75rem" }}>
-            Open a client workspace to create and manage its apps.
-          </p>
+          {(() => {
+            const emptyMsg = getAppsEmptyStateMessage(overview.mode, overview.fetchError);
+            return (
+              <>
+                <p className="card-muted">{emptyMsg.heading}</p>
+                <p className="form-help" style={{ marginBottom: "0.75rem" }}>
+                  {emptyMsg.description}
+                </p>
+              </>
+            );
+          })()}
           <div style={{ marginBottom: "0.75rem" }}>
             <CreateOrganizationForm />
           </div>
