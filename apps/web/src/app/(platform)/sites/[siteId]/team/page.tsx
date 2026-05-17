@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth.config";
+import PendingBadge from "@/components/PendingBadge";
 import SiteCollaboratorManager from "@/components/SiteCollaboratorManager";
 
 type Params = { params: Promise<{ siteId: string }> };
@@ -10,9 +11,12 @@ export default async function AppTeamPage({ params }: Params) {
   return (
     <div className="page-stack">
       <article className="card">
-        <h2 style={{ marginTop: 0 }}>App Team</h2>
+        <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          App Team
+          <PendingBadge reason="Email delivery not yet configured for invitations." />
+        </h2>
         <p className="card-muted" style={{ marginBottom: "1rem" }}>
-          Manage app collaborators here. Admins can invite admins and collaborators. Collaborators can invite collaborators only.
+          Manage app collaborators. Invitations create access records immediately, but email notification is not yet configured. Admins can invite admins and collaborators. Collaborators can invite collaborators only.
         </p>
         <SiteCollaboratorManager siteId={siteId} currentUserId={session?.user?.id ?? ""} />
       </article>

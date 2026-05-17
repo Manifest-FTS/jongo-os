@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PlusIcon } from "@/components/JongoIcons";
+import PendingBadge from "@/components/PendingBadge";
 import { normalizeRole } from "@/lib/roles";
 
 type SiteCollaborator = {
@@ -73,15 +74,21 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error ?? "Failed to add collaborator");
+        if (res.status === 404) {
+          setError("User not found. Invite requires an existing account. User must sign up first before being added as a collaborator.");
+        } else if (res.status === 409) {
+          setError("User is already a collaborator on this app.");
+        } else {
+          setError(data.error ?? "Failed to create collaboration invitation");
+        }
         return;
       }
 
-      setNotice("Collaborator added.");
+      setNotice("Invitation created. Note: Email delivery is not yet configured, so the user was not notified by email. You may need to contact them separately to let them know they've been added.");
       setEmail("");
       await load();
     } catch {
-      setError("Network error while inviting collaborator");
+      setError("Network error while creating collaboration invitation");
     } finally {
       setBusy(false);
     }
@@ -203,6 +210,13 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
           {busy ? "Saving…" : "Invite"}
         </button>
       </form>
+
+      <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.85rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px" }}>
+        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+          <PendingBadge reason="Email delivery not configured" />
+          <span>Invitations create access immediately, but email notification is not yet sent.</span>
+        </p>
+      </div>
 
       {callerRole !== "admin" ? (
         <p className="form-help" style={{ marginTop: "0.55rem" }}>

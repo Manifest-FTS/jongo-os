@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
+import PendingBadge from "@/components/PendingBadge";
 import { getClientTeamMembers, getClientWorkspace } from "@/lib/repositories";
 
 type Params = { params: Promise<{ clientId: string }> };
@@ -22,9 +23,12 @@ export default async function ClientTeamPage({ params }: Params) {
   return (
     <div className="page-stack">
       <article className="card">
-        <h2 style={{ marginTop: 0 }}>Client Team</h2>
+        <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          Client Team
+          <PendingBadge reason="Organization-level team management pending; manage collaborators per app." />
+        </h2>
         <p className="card-muted" style={{ marginBottom: "1rem" }}>
-          Team invitations are managed per app. This tab shows organization-level membership for historical context.
+          This tab shows organization-level members from the system. App team management is handled per app — each app can have its own set of collaborators. To invite users, go to the Team tab within an app.
         </p>
 
         {team.length === 0 ? (
