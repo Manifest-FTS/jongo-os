@@ -19,12 +19,12 @@ function normalizeEmail(value?: string): string {
 }
 
 function isMissingEnumTypeError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message.toLowerCase() : "";
-  return message.includes("type \"public.collaboratorrole\" does not exist") ||
-    message.includes("type \"public.sitecollaboratorrole\" does not exist") ||
-    message.includes("type \"public.collaboratorrole\"") ||
-    message.includes("type \"public.sitecollaboratorrole\"") ||
-    message.includes("code: \"42704\"");
+  const str = String(error).toLowerCase();
+  return str.includes("42704") ||
+    str.includes("collaboratorrole") ||
+    str.includes("sitecollaboratorrole") ||
+    str.includes("type \"public.") ||
+    str.includes("does not exist");
 }
 
 async function findInvitationByToken(db: any, token: string) {
