@@ -129,3 +129,41 @@ Current hardened behavior:
 
 - This pass intentionally focuses on authorization scoping and tenant isolation only.
 - No unrelated feature work was added.
+
+## Strict Verification Run (Production DB)
+
+Run date: 2026-05-17
+Data source: production PostgreSQL (`o4g2cpls648gnz0f1he7be7c`) and live app container env (`dt0v391xre5rgtp50062tunm-181930335742`).
+
+Observed baseline:
+- `BOOTSTRAP_ADMIN_EMAIL` is not present in production app env.
+- Organizations: 2
+- Sites: 0
+- Site collaborators: 0
+- Accepted invitations: organization-only (no site invites accepted)
+- Coolify API token/base URL are present and direct endpoint probes return HTTP 200 from inside app container.
+
+Scenario results:
+
+| # | Scenario | Result | Evidence |
+|---|---|---|---|
+| 1 | Platform admin can see all clients | PASS (effective) | `devkev@manifestfts.com` owns both orgs and is admin collaborator on both; full client visibility via ownership filters. |
+| 2 | Platform admin can see all apps | FAIL | Production has `Site` count = 0; additionally `BOOTSTRAP_ADMIN_EMAIL` missing means no explicit platform-admin bypass identity at runtime. |
+| 3 | Client-level admin/member can see only their client | PASS | `lot6six@gmail.com` visibility query returns only `Kevin Adams`; unrelated `Christian Fuscarino` excluded. |
+| 4 | Client-level admin/member can see all apps under their client | FAIL (data gap) | Member-visible client has zero mapped sites in production, so positive app-visibility condition cannot be satisfied. |
+| 5 | Client-level admin/member cannot see unrelated clients | PASS | Unrelated client is excluded by owner/collaborator filter for `lot6six@gmail.com`. |
+| 6 | Client-level admin/member cannot see unrelated apps | PASS (vacuous) | No site rows exist; no unrelated app can leak. |
+| 7 | App collaborator can see only the specific invited app | FAIL (fixture missing) | No `SiteCollaborator` rows and no sites exist in production, so this cannot be executed. |
+| 8 | App collaborator cannot see unrelated clients | PASS (vacuous) | No app-collaborator fixture exists; no contradictory access observed. |
+| 9 | App collaborator cannot see unrelated apps | PASS (vacuous) | No app-collaborator fixture exists; no app inventory to leak. |
+| 10 | Direct URL to unrelated client returns not found/access denied | PASS (code-enforced) | Client detail resolves through scoped `getClientWorkspace(...)`; unrelated client yields not found. |
+| 11 | Direct URL to unrelated app returns not found/access denied | PASS (code-enforced) | App pages/layout resolve through scoped `getSiteWorkspace(..., viewer)` and return not found when unauthorized. |
+| 12 | Scoped user does not fall back to global mock/Coolify on DB failure | PASS | Scoped fallbacks were changed to fail-closed (empty/not found); production symptom (`Apps (0)`) matches fail-closed behavior rather than global Coolify leak. |
+| 13 | Platform settings hidden for non-platform admins | PASS (code-enforced) | Settings page now requires platform-admin check and returns not found otherwise. |
+| 14 | Team management does not allow privilege escalation | PASS (code-enforced) | Team invite/manage APIs gate admin actions via org/site admin checks; collaborators cannot assign admin role. |
+| 15 | Invite acceptance assigns correct scope and role | PASS (organization scope) | Accepted invitations show organization invite type with collaborator role and matching accepted user email. |
+
+Additional inconsistency findings:
+- Coolify API itself is reachable (`/api/v1/resources`, `/projects`, `/applications`, `/services`, `/databases` all HTTP 200 from app container).
+- The `Apps (0)` production state is primarily explained by zero mapped `Site` rows plus scoped fail-closed behavior for non-platform-admin viewers.
+- Production startup logs show Prisma migration state issue `P3009` (failed `0006_add_collaborator_role_enums` record), which should be resolved operationally.
