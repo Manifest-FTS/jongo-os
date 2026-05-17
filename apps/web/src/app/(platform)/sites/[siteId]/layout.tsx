@@ -24,12 +24,11 @@ export default async function SiteWorkspaceLayout({
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
     { name: "Deployments", href: `/apps/${siteId}/deployments` },
     { name: "Integrations", href: `/apps/${siteId}/integrations` },
-    { name: "Staging", href: `/apps/${siteId}/staging` },
+    ...(site?.stagingEnabled ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
     { name: "Backups", href: `/apps/${siteId}/backups` },
     { name: "Analytics", href: `/apps/${siteId}/analytics` },
     { name: "Team", href: `/apps/${siteId}/team` },
-    { name: "Settings", href: `/apps/${siteId}/settings` },
-    { name: "Advanced", href: `/apps/${siteId}/advanced` }
+    { name: "Settings", href: `/apps/${siteId}/settings` }
   ];
 
   const ownershipDiagnostic = site?.ownershipDiagnostic;

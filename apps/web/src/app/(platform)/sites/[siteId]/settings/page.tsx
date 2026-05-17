@@ -2,6 +2,7 @@ type Params = { params: Promise<{ siteId: string }> };
 
 import DeployButton from "@/components/DeployButton";
 import SiteInfoForm from "@/components/SiteInfoForm";
+import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
 
@@ -13,6 +14,7 @@ export default async function SiteSettingsPage({ params }: Params) {
   ]);
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
+  const stagingEnabled = Boolean(workspace?.stagingEnabled);
 
   return (
     <div>
@@ -47,69 +49,115 @@ export default async function SiteSettingsPage({ params }: Params) {
 
       {workspace?.ownershipState !== "mapped" && (
         <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
-          <strong>Ownership mapping needs attention.</strong> This resource is not mapped to a Client via Coolify Project ownership yet.
-          Map a Coolify Project ID in Site Information to avoid orphaned resources.
+          <strong>Ownership mapping needs attention.</strong> Map a Coolify Project ID in Site Information to avoid orphaned resources.
         </div>
       )}
 
-      <div className="grid" style={{ marginBottom: "2rem" }}>
-        <article className="card">
-          <h3 className="card-title">Publishing</h3>
-          <p className="card-muted">Manage release behavior across production and staging.</p>
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Environment-specific infrastructure fields are available in the Advanced tab.
-          </p>
-        </article>
-
-        <article className="card">
-          <h3 className="card-title">Domains</h3>
-          <p className="card-muted">Manage site domains and SSL certificates.</p>
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Set your primary domain, aliases, and secure routing.
-          </p>
-        </article>
-
-        <article className="card">
-          <h3 className="card-title">Backups</h3>
-          <p className="card-muted">Protect content with automated backups.</p>
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Configure cadence, retention, and recovery expectations.
-          </p>
-        </article>
-
-        <article className="card">
-          <h3 className="card-title">App Health</h3>
-          <p className="card-muted">Current operational status for this site.</p>
-          <div style={{ marginTop: "1rem", display: "grid", gap: "0.45rem" }}>
-            <p style={{ margin: 0, fontSize: "0.9rem" }}>
-              Source: <span className="tag">{workspace?.source === "db" ? "managed" : "external"}</span>
-            </p>
-            <p style={{ margin: 0, fontSize: "0.9rem" }}>
-              Ownership: <span className="tag">{workspace?.ownershipState ?? "unavailable"}</span>
-            </p>
-            <p style={{ margin: 0, fontSize: "0.9rem" }}>
-              Overall: <span className={`status-chip ${workspace?.status ?? "unknown"}`}>{workspace?.status ?? "unknown"}</span>
-            </p>
-            <p style={{ margin: 0, fontSize: "0.9rem" }}>
-              Production: <span className={`status-chip ${workspace?.productionStatus ?? "unknown"}`}>{workspace?.productionStatus ?? "unknown"}</span>
-            </p>
-            <p style={{ margin: 0, fontSize: "0.9rem" }}>
-              Staging: <span className={`status-chip ${workspace?.stagingStatus ?? "unknown"}`}>{workspace?.stagingStatus ?? "unknown"}</span>
+      {/* Staging */}
+      <article className="card" style={{ marginBottom: "1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+          <div>
+            <h3 className="card-title" style={{ margin: 0 }}>Staging Environment</h3>
+            <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
+              {stagingEnabled
+                ? "Staging is enabled. Validate changes before promoting to production."
+                : "Staging is not enabled. Toggle staging in Site Information above to enable it."}
             </p>
           </div>
-        </article>
-      </div>
+          <span className={`status-chip ${stagingEnabled ? "healthy" : "unknown"}`}>
+            {stagingEnabled ? "Enabled" : "Disabled"}
+          </span>
+        </div>
+        {stagingEnabled && (
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
+            <Link href={`/apps/${siteId}/staging`} className="action-link">Open Staging workspace →</Link>
+          </p>
+        )}
+      </article>
 
+      {/* Publishing Actions */}
       <article className="card" style={{ marginBottom: "1.5rem" }}>
         <h3 className="card-title">Publishing Actions</h3>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
-          <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId} environment="staging" label="Sync to Staging" />
-          <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId} environment="production" label="Deploy to Production" />
+          {stagingEnabled && (
+            <DeployButton
+              siteId={siteId}
+              deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
+              environment="staging"
+              label="Sync to Staging"
+            />
+          )}
+          <DeployButton
+            siteId={siteId}
+            deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
+            environment="production"
+            label="Deploy to Production"
+          />
         </div>
         <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-          Actions reuse the same server-side deploy path and stay mock-safe when Coolify values are missing.
+          Actions are mock-safe when Coolify infrastructure values are missing.
         </p>
       </article>
+
+      {/* App Health */}
+      <article className="card" style={{ marginBottom: "1.5rem" }}>
+        <h3 className="card-title">App Health</h3>
+        <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.5rem" }}>
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>
+            Overall: <span className={`status-chip ${workspace?.status ?? "unknown"}`}>{workspace?.status ?? "unknown"}</span>
+          </p>
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>
+            Production: <span className={`status-chip ${workspace?.productionStatus ?? "unknown"}`}>{workspace?.productionStatus ?? "unknown"}</span>
+          </p>
+          {stagingEnabled && (
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              Staging: <span className={`status-chip ${workspace?.stagingStatus ?? "unknown"}`}>{workspace?.stagingStatus ?? "unknown"}</span>
+            </p>
+          )}
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>
+            Ownership: <span className="tag">{workspace?.ownershipState ?? "unavailable"}</span>
+          </p>
+        </div>
+      </article>
+
+      {/* Developer Details (replaces standalone Advanced tab) */}
+      <details style={{ marginBottom: "1.5rem" }}>
+        <summary
+          style={{
+            cursor: "pointer",
+            padding: "0.85rem 1rem",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "10px",
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            userSelect: "none"
+          }}
+        >
+          Developer Details
+        </summary>
+        <article className="card" style={{ marginTop: "0.5rem" }}>
+          <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+            Infrastructure identifiers and diagnostic values. For admin use.
+          </p>
+          <div style={{ display: "grid", gap: "0.4rem", fontSize: "0.88rem" }}>
+            <p style={{ margin: 0 }}>Source: <code>{workspace?.source ?? "unknown"}</code></p>
+            <p style={{ margin: 0 }}>Ownership: <code>{workspace?.ownershipState ?? "unavailable"}</code></p>
+            {workspace?.coolifyServiceUuid ? (
+              <p style={{ margin: 0 }}>Coolify UUID: <code>{workspace.coolifyServiceUuid}</code></p>
+            ) : null}
+            {workspace?.coolifyProjectId ? (
+              <p style={{ margin: 0 }}>Coolify Project ID: <code>{workspace.coolifyProjectId}</code></p>
+            ) : null}
+            {workspace?.coolifyEnvironmentName ? (
+              <p style={{ margin: 0 }}>Coolify Environment: <code>{workspace.coolifyEnvironmentName}</code></p>
+            ) : null}
+            {workspace?.gitRepositoryUrl ? (
+              <p style={{ margin: 0 }}>Repository: <code>{workspace.gitRepositoryUrl}</code></p>
+            ) : null}
+          </div>
+        </article>
+      </details>
     </div>
   );
 }

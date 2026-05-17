@@ -1040,3 +1040,326 @@ export async function triggerCoolifyDeploy(
     clearTimeout(timer);
   }
 }
+
+// ─── Backup Inventory Types ───────────────────────────────────────────────────
+
+export type BackupScheduleRecord = {
+  id: string;
+  resourceId: string;
+  resourceName: string;
+  resourceType: "database" | "application";
+  enabled: boolean;
+  frequency?: string;       // cron e.g. "0 2 * * *"
+  retentionAmount?: number;
+  retentionDays?: number;
+  lastBackupAt?: string;
+  lastBackupStatus?: "success" | "failed" | "running" | "unknown";
+};
+
+export type BackupExecutionRecord = {
+  id: string;
+  status: "success" | "failed" | "running" | "unknown";
+  startedAt?: string;
+  finishedAt?: string;
+  sizeBytes?: number;
+  filename?: string;
+};
+
+export type AppBackupInventory = {
+  configured: boolean;
+  schedules: BackupScheduleRecord[];
+  recentExecutions: BackupExecutionRecord[];
+  source: "live" | "unavailable";
+  note?: string;
+  checkedAt: string;
+};
+
+// ─── Staging Capability Types ─────────────────────────────────────────────────
+
+export type StagingCapabilityRecord = {
+  detected: boolean;
+  environmentId?: string;
+  environmentName?: string;
+  applicationUuid?: string;
+  applicationName?: string;
+  fqdn?: string;
+  status?: "healthy" | "degraded" | "error" | "unknown";
+  note?: string;
+};
+
+// ─── Dry-Run Sync Plan Types ──────────────────────────────────────────────────
+
+export type StagingSyncPlan = {
+  source: { uuid: string; name: string; environment: string; fqdn?: string };
+  target: { uuid: string; name: string; environment: string; fqdn?: string } | null;
+  databaseBehavior: "snapshot-then-overwrite" | "skip" | "unknown";
+  filesBehavior: "rsync-overwrite" | "skip" | "unknown";
+  domainBehavior: "staging-domain-unchanged" | "temporary-domain" | "unknown";
+  risks: string[];
+  warnings: string[];
+  note?: string;
+};
+
+// ─── Backup Inventory Fetching ────────────────────────────────────────────────
+
+function normalizeBackupSchedule(raw: Record<string, unknown>, resourceId: string, resourceName: string): BackupScheduleRecord {
+  const id = stringValue(raw, ["id", "uuid"], resourceId);
+  const enabled = raw.enabled === true || raw.is_enabled === true;
+  const frequency = stringValue(raw, ["frequency", "cron", "schedule"], "") || undefined;
+  const retentionAmount = typeof raw.database_backup_retention_amount_locally === "number"
+    ? raw.database_backup_retention_amount_locally
+    : typeof raw.retention_amount === "number" ? raw.retention_amount : undefined;
+  const retentionDays = typeof raw.database_backup_retention_days_locally === "number"
+    ? raw.database_backup_retention_days_locally
+    : typeof raw.retention_days === "number" ? raw.retention_days : undefined;
+
+  return { id, resourceId, resourceName, resourceType: "database", enabled, frequency, retentionAmount, retentionDays };
+}
+
+function normalizeBackupExecution(raw: Record<string, unknown>): BackupExecutionRecord {
+  const id = stringValue(raw, ["id", "uuid"], `exec-${Date.now()}`);
+  const statusRaw = stringValue(raw, ["status", "result", "state"], "").toLowerCase();
+  let status: BackupExecutionRecord["status"] = "unknown";
+  if (statusRaw.includes("success") || statusRaw.includes("finish") || statusRaw.includes("complet")) {
+    status = "success";
+  } else if (statusRaw.includes("fail") || statusRaw.includes("error")) {
+    status = "failed";
+  } else if (statusRaw.includes("run") || statusRaw.includes("pending") || statusRaw.includes("in_progress")) {
+    status = "running";
+  }
+  const startedAt = stringValue(raw, ["started_at", "created_at"], "") || undefined;
+  const finishedAt = stringValue(raw, ["finished_at", "updated_at"], "") || undefined;
+  const sizeBytes = typeof raw.size === "number" ? raw.size : undefined;
+  const filename = stringValue(raw, ["filename", "file_name", "dump_file"], "") || undefined;
+  return { id, status, startedAt, finishedAt, sizeBytes, filename };
+}
+
+/**
+ * Fetch read-only backup inventory for a Coolify application UUID.
+ * Tries to resolve the application's project/environment, then finds associated
+ * databases and their backup schedules. Never triggers or modifies anything.
+ */
+export async function getCoolifyAppBackupInventory(appUuid: string): Promise<AppBackupInventory> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+  const checkedAt = new Date().toISOString();
+
+  if (!baseUrl || !token) {
+    return { configured: false, schedules: [], recentExecutions: [], source: "unavailable", note: "missing_credentials", checkedAt };
+  }
+
+  try {
+    // Step 1: Fetch the application to find its environment_id
+    let appRaw: Record<string, unknown> | null = null;
+    try {
+      const payload = await coolifyFetch(`/api/v1/applications/${appUuid}`);
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        appRaw = payload as Record<string, unknown>;
+      }
+    } catch {
+      // Application details unavailable – continue to try other paths
+    }
+
+    const schedules: BackupScheduleRecord[] = [];
+    const recentExecutions: BackupExecutionRecord[] = [];
+
+    // Step 2: Try to get databases in the same project/environment
+    const projectId = appRaw
+      ? stringValue(appRaw, ["project_uuid", "project_id", "project"], "")
+      : "";
+    const environmentId = appRaw
+      ? stringValue(appRaw, ["environment_id", "environment_uuid"], "")
+      : "";
+
+    let databases: Record<string, unknown>[] = [];
+
+    if (projectId && environmentId) {
+      try {
+        const envPayload = await coolifyFetch(`/api/v1/projects/${projectId}/environments/${environmentId}`);
+        const envObj = envPayload && typeof envPayload === "object" && !Array.isArray(envPayload)
+          ? (envPayload as Record<string, unknown>)
+          : {};
+        databases = ensureArray(envObj.databases ?? envObj.standalone_postgresqls ?? []);
+      } catch {
+        // Best effort
+      }
+    }
+
+    // Step 3: For each database, attempt to read its backup config
+    for (const db of databases.slice(0, 5)) {
+      const dbId = stringValue(db, ["uuid", "id"], "");
+      const dbName = stringValue(db, ["name", "database_name"], dbId);
+      if (!dbId) continue;
+
+      try {
+        const backupPayload = await coolifyFetch(`/api/v1/databases/${dbId}/backups`);
+        const backupRaw = Array.isArray(backupPayload) ? backupPayload : [];
+
+        for (const bkp of backupRaw) {
+          if (typeof bkp !== "object" || !bkp) continue;
+          const bkpObj = bkp as Record<string, unknown>;
+          schedules.push(normalizeBackupSchedule(bkpObj, dbId, dbName));
+
+          const executions = ensureArray(bkpObj.executions ?? bkpObj.backup_executions ?? []);
+          for (const exec of executions.slice(0, 5)) {
+            recentExecutions.push(normalizeBackupExecution(exec as Record<string, unknown>));
+          }
+        }
+      } catch {
+        // Backup endpoint unavailable for this database
+      }
+    }
+
+    const configured = schedules.some((s) => s.enabled);
+    return {
+      configured,
+      schedules,
+      recentExecutions: recentExecutions.slice(0, 10),
+      source: "live",
+      note: databases.length === 0 ? "no_databases_in_environment" : undefined,
+      checkedAt
+    };
+  } catch {
+    return { configured: false, schedules: [], recentExecutions: [], source: "unavailable", note: "fetch_error", checkedAt };
+  }
+}
+
+// ─── Staging Capability Detection ────────────────────────────────────────────
+
+/**
+ * Detect staging capability for a given Coolify application.
+ * Looks for a staging environment in the same project and for a staging application.
+ * Read-only – never creates or modifies resources.
+ */
+export async function getCoolifyAppStagingCapability(appUuid: string, projectId?: string): Promise<StagingCapabilityRecord> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    return { detected: false, note: "missing_credentials" };
+  }
+
+  try {
+    // Resolve project if not supplied
+    let resolvedProjectId = projectId;
+    if (!resolvedProjectId) {
+      try {
+        const appPayload = await coolifyFetch(`/api/v1/applications/${appUuid}`);
+        if (appPayload && typeof appPayload === "object" && !Array.isArray(appPayload)) {
+          resolvedProjectId = stringValue(appPayload as Record<string, unknown>, ["project_uuid", "project_id", "project"], "");
+        }
+      } catch {
+        return { detected: false, note: "application_not_found" };
+      }
+    }
+
+    if (!resolvedProjectId) {
+      return { detected: false, note: "no_project_resolved" };
+    }
+
+    // Get all environments for the project
+    const projectPayload = await coolifyFetch(`/api/v1/projects/${resolvedProjectId}`);
+    const projectObj = projectPayload && typeof projectPayload === "object" && !Array.isArray(projectPayload)
+      ? (projectPayload as Record<string, unknown>)
+      : {};
+    const environments = ensureArray(projectObj.environments ?? []);
+
+    const stagingEnv = environments.find((env) => {
+      const name = stringValue(env as Record<string, unknown>, ["name"], "").toLowerCase();
+      return name.includes("stag") || name.includes("preview") || name === "dev";
+    });
+
+    if (!stagingEnv) {
+      return { detected: false, note: "no_staging_environment_in_project" };
+    }
+
+    const stagingEnvObj = stagingEnv as Record<string, unknown>;
+    const stagingEnvId = stringValue(stagingEnvObj, ["id", "uuid"], "");
+    const stagingEnvName = stringValue(stagingEnvObj, ["name"], "staging");
+
+    // Look for an application in the staging environment
+    const stagingApplications = ensureArray(stagingEnvObj.applications ?? []);
+    const stagingApp = stagingApplications[0] as Record<string, unknown> | undefined;
+
+    if (!stagingApp) {
+      return {
+        detected: true,
+        environmentId: stagingEnvId,
+        environmentName: stagingEnvName,
+        note: "staging_environment_exists_no_application"
+      };
+    }
+
+    const stagingAppUuid = stringValue(stagingApp, ["uuid", "id"], "");
+    const stagingAppName = stringValue(stagingApp, ["name"], "staging app");
+    const fqdn = stringValue(stagingApp, ["fqdn", "staging_fqdn", "urls"], "") || undefined;
+    const status = statusFromRaw(stagingApp.status ?? stagingApp.current_status);
+
+    return {
+      detected: true,
+      environmentId: stagingEnvId,
+      environmentName: stagingEnvName,
+      applicationUuid: stagingAppUuid || undefined,
+      applicationName: stagingAppName || undefined,
+      fqdn,
+      status,
+      note: "full_staging_detected"
+    };
+  } catch {
+    return { detected: false, note: "fetch_error" };
+  }
+}
+
+// ─── Staging Sync Dry-Run Plan ────────────────────────────────────────────────
+
+/**
+ * Build a read-only dry-run plan for a production→staging sync.
+ * This describes what WOULD happen – never executes anything.
+ */
+export async function buildStagingSyncDryRunPlan(
+  productionAppUuid: string,
+  productionAppName: string,
+  stagingCapability: StagingCapabilityRecord
+): Promise<StagingSyncPlan> {
+  const source = {
+    uuid: productionAppUuid,
+    name: productionAppName,
+    environment: "production"
+  };
+
+  if (!stagingCapability.detected || !stagingCapability.applicationUuid) {
+    return {
+      source,
+      target: null,
+      databaseBehavior: "unknown",
+      filesBehavior: "unknown",
+      domainBehavior: "unknown",
+      risks: ["No staging environment detected – cannot plan sync."],
+      warnings: ["Enable staging first in Settings."]
+    };
+  }
+
+  const target = {
+    uuid: stagingCapability.applicationUuid,
+    name: stagingCapability.applicationName ?? "Staging App",
+    environment: stagingCapability.environmentName ?? "staging",
+    fqdn: stagingCapability.fqdn
+  };
+
+  return {
+    source,
+    target,
+    databaseBehavior: "snapshot-then-overwrite",
+    filesBehavior: "rsync-overwrite",
+    domainBehavior: "staging-domain-unchanged",
+    risks: [
+      "Staging database will be overwritten with a snapshot of production data.",
+      "Any staging-only content will be lost."
+    ],
+    warnings: [
+      "Review staging domain configuration before executing.",
+      "Ensure production is stable before syncing to avoid copying bad state."
+    ],
+    note: "dry_run_only"
+  };
+}
