@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth.config";
 import { getClientWorkspace, getSiteWorkspace, isClientAdmin, listSiteDirectory } from "@/lib/repositories";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import PendingBadge from "@/components/PendingBadge";
+import ClientInfoForm from "@/components/ClientInfoForm";
 
 type Params = { params: Promise<{ clientId: string }> };
 
@@ -30,15 +31,30 @@ export default async function ClientDetailPage({ params }: Params) {
         (site): site is NonNullable<typeof site> => Boolean(site)
       );
   const canViewInternalNotes = Boolean(session?.user?.id && client.dbId && await isClientAdmin(client.dbId, session.user.id));
+  const canEditClient = Boolean(session?.user?.id && client.dbId && await isClientAdmin(client.dbId, session.user.id));
 
   return (
     <div className="page-stack">
       <section className="grid" style={{ marginBottom: "1rem" }}>
-        <article className="card">
-          <h3 className="card-title">Profile & Contact</h3>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.92rem" }}>Client: <strong>{client.name}</strong></p>
-          <p className="card-muted" style={{ margin: 0 }}>{client.summary || "No profile notes yet."}</p>
-        </article>
+        {canEditClient ? (
+          <article className="card">
+            <h3 className="card-title">Profile & Contact</h3>
+            <p className="card-muted" style={{ marginBottom: "1rem" }}>Update client name and profile information.</p>
+            <ClientInfoForm
+              clientId={clientId}
+              initial={{
+                name: client.name,
+                summary: client.summary
+              }}
+            />
+          </article>
+        ) : (
+          <article className="card">
+            <h3 className="card-title">Profile & Contact</h3>
+            <p style={{ margin: "0.35rem 0", fontSize: "0.92rem" }}>Client: <strong>{client.name}</strong></p>
+            <p className="card-muted" style={{ margin: 0 }}>{client.summary || "No profile notes yet."}</p>
+          </article>
+        )}
 
         {canViewInternalNotes ? (
           <article className="card">
