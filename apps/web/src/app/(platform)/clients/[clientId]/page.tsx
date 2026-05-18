@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
-import { getClientWorkspace, getSiteWorkspace } from "@/lib/repositories";
+import { getClientWorkspace, getSiteWorkspace, listSiteDirectory } from "@/lib/repositories";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import PendingBadge from "@/components/PendingBadge";
 
@@ -24,8 +24,11 @@ export default async function ClientDetailPage({ params }: Params) {
     email: session?.user?.email
   };
 
-  const clientSites = await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId, viewer)));
-  const visibleSites = clientSites.filter((site): site is NonNullable<typeof site> => Boolean(site));
+  const visibleSites = client.dataSource === "db"
+    ? (await listSiteDirectory(viewer)).filter((site) => site.clientId === client.id)
+    : (await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId, viewer)))).filter(
+        (site): site is NonNullable<typeof site> => Boolean(site)
+      );
 
   return (
     <div className="page-stack">

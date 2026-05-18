@@ -57,6 +57,7 @@ export default function SiteDirectoryView({
             <button type="button" className={`filter-pill ${statusFilter === "healthy" ? "is-active" : ""}`} onClick={() => setStatusFilter("healthy")}>Healthy</button>
             <button type="button" className={`filter-pill ${statusFilter === "degraded" ? "is-active" : ""}`} onClick={() => setStatusFilter("degraded")}>Degraded</button>
             <button type="button" className={`filter-pill ${statusFilter === "error" ? "is-active" : ""}`} onClick={() => setStatusFilter("error")}>Error</button>
+            <button type="button" className={`filter-pill ${statusFilter === "unknown" ? "is-active" : ""}`} onClick={() => setStatusFilter("unknown")}>Offline</button>
           </div>
         </div>
 
@@ -79,7 +80,7 @@ export default function SiteDirectoryView({
               <div className="directory-main">
                 <div className="directory-title-row">
                   <h2 className="directory-title">{site.name}</h2>
-                  <span className={`status-chip ${site.status}`}>{site.status}</span>
+                  <span className={`status-chip ${site.status}`}>{site.status === "unknown" ? "Offline / Unknown" : site.status}</span>
                 </div>
                 {site.description ? <p className="directory-summary">{site.description}</p> : null}
                 <p className="directory-meta">Client: {site.clientName}</p>

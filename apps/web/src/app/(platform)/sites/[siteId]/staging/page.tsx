@@ -37,9 +37,10 @@ export default async function StagingPage({ params }: Params) {
   const stagingCapability = appUuid
     ? await getCoolifyAppStagingCapability(appUuid, projectId ?? undefined)
     : null;
+  const stagingConfigured = Boolean(stagingEnabled && stagingCapability?.detected);
 
   const dryRunPlan =
-    stagingEnabled && appUuid && stagingCapability
+    stagingConfigured && appUuid && stagingCapability
       ? await buildStagingSyncDryRunPlan(appUuid, workspace?.name ?? siteId, stagingCapability)
       : null;
 
@@ -51,23 +52,23 @@ export default async function StagingPage({ params }: Params) {
           <div>
             <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600 }}>Staging Environment</h2>
             <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
-              {stagingEnabled
+              {stagingConfigured
                 ? "Staging is active. Validate changes here before promoting to production."
-                : "Staging is not enabled for this site."}
+                : "Staging is not configured for this site."}
             </p>
           </div>
-          <span className={`status-chip ${stagingEnabled ? "healthy" : "unknown"}`}>
-            {stagingEnabled ? "Enabled" : "Disabled"}
+          <span className={`status-chip ${stagingConfigured ? "healthy" : "unknown"}`}>
+            {stagingConfigured ? "Enabled" : "Not configured"}
           </span>
         </div>
-        {!stagingEnabled && (
+        {!stagingConfigured && (
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
             Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to manage staging workflows.
           </p>
         )}
       </article>
 
-      {stagingEnabled && (
+      {stagingConfigured ? (
         <>
           {/* Coolify Staging Capability */}
           <article className="card">
@@ -235,6 +236,13 @@ export default async function StagingPage({ params }: Params) {
             </div>
           </article>
         </>
+      ) : (
+        <article className="card">
+          <h3 className="card-title">Staging Not Configured</h3>
+          <p className="card-muted" style={{ marginBottom: 0 }}>
+            Coolify does not currently report a usable staging environment for this app. Staging sync, promote, and dry-run actions stay hidden until one is detected.
+          </p>
+        </article>
       )}
     </div>
   );

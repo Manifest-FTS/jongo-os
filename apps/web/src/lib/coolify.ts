@@ -53,6 +53,7 @@ export type CoolifyOverview = {
     healthySites: number;
     degradedSites: number;
     errorSites: number;
+    unknownSites: number;
   };
 };
 
@@ -130,6 +131,7 @@ function statusFromRaw(value: unknown): SiteOverview["status"] {
     return "error";
   }
 
+  // restarting / exited / stopped / unknown / empty raw status → unknown
   return "unknown";
 }
 
@@ -607,7 +609,8 @@ function mockOverview(): CoolifyOverview {
     stats: {
       healthySites: 1,
       degradedSites: 1,
-      errorSites: 0
+      errorSites: 0,
+      unknownSites: 0
     }
   };
 }
@@ -623,7 +626,8 @@ function emptyLiveOverview(): CoolifyOverview {
     stats: {
       healthySites: 0,
       degradedSites: 0,
-      errorSites: 0
+      errorSites: 0,
+      unknownSites: 0
     }
   };
 }
@@ -714,7 +718,8 @@ function buildSiteStats(sites: SiteOverview[]) {
   return {
     healthySites: sites.filter((site) => site.status === "healthy").length,
     degradedSites: sites.filter((site) => site.status === "degraded").length,
-    errorSites: sites.filter((site) => site.status === "error").length
+    errorSites: sites.filter((site) => site.status === "error").length,
+    unknownSites: sites.filter((site) => site.status === "unknown").length
   };
 }
 

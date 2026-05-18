@@ -18,6 +18,7 @@ export default async function ClientSettingsPage({ params }: Params) {
   if (!client) {
     notFound();
   }
+  const linkedProjects = client.linkedCoolifyProjects ?? [];
 
   const [isAdmin, overview] = await Promise.all([
     client.dbId && session?.user?.id ? isClientAdmin(client.dbId, session.user.id) : Promise.resolve(false),
@@ -37,9 +38,9 @@ export default async function ClientSettingsPage({ params }: Params) {
           <p className="card-muted" style={{ marginBottom: "1rem" }}>
             Link one or more Coolify projects to this client workspace. Project links are explicit and never auto-renamed.
           </p>
-          {!client.coolifyProjectId ? (
+          {linkedProjects.length === 0 ? (
             <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
-              <strong>No project mapped.</strong> Unmapped apps may appear orphaned in diagnostics.
+              <strong>No linked Coolify project.</strong> Unmapped apps may appear orphaned in diagnostics.
             </div>
           ) : null}
           {client.dbId ? (

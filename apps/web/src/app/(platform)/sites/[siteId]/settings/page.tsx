@@ -36,7 +36,7 @@ export default async function SiteSettingsPage({ params }: Params) {
   }
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
-  const stagingEnabled = Boolean(workspace?.stagingEnabled);
+  const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
 
   return (
     <div>
@@ -81,18 +81,22 @@ export default async function SiteSettingsPage({ params }: Params) {
           <div>
             <h3 className="card-title" style={{ margin: 0 }}>Staging Environment</h3>
             <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-              {stagingEnabled
+              {stagingConfigured
                 ? "Staging is enabled. Validate changes before promoting to production."
-                : "Staging is not enabled. Toggle staging in Site Information above to enable it."}
+                : "Staging is not configured for this app yet."}
             </p>
           </div>
-          <span className={`status-chip ${stagingEnabled ? "healthy" : "unknown"}`}>
-            {stagingEnabled ? "Enabled" : "Disabled"}
+          <span className={`status-chip ${stagingConfigured ? "healthy" : "unknown"}`}>
+            {stagingConfigured ? "Enabled" : "Not configured"}
           </span>
         </div>
-        {stagingEnabled && (
+        {stagingConfigured ? (
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
             <Link href={`/apps/${siteId}/staging`} className="action-link">Open Staging workspace →</Link>
+          </p>
+        ) : (
+          <p className="card-muted" style={{ margin: "0.75rem 0 0" }}>
+            Deploy and sync controls remain hidden until staging is detected in Coolify.
           </p>
         )}
       </article>
@@ -100,25 +104,31 @@ export default async function SiteSettingsPage({ params }: Params) {
       {/* Publishing Actions */}
       <article className="card" style={{ marginBottom: "1.5rem" }}>
         <h3 className="card-title">Publishing Actions</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
-          {stagingEnabled && (
-            <DeployButton
-              siteId={siteId}
-              deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
-              environment="staging"
-              label="Sync to Staging"
-            />
-          )}
-          <DeployButton
-            siteId={siteId}
-            deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
-            environment="production"
-            label="Deploy to Production"
-          />
-        </div>
-        <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-          Actions are mock-safe when Coolify infrastructure values are missing.
-        </p>
+        {stagingConfigured ? (
+          <>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+              <DeployButton
+                siteId={siteId}
+                deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
+                environment="staging"
+                label="Sync to Staging"
+              />
+              <DeployButton
+                siteId={siteId}
+                deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
+                environment="production"
+                label="Deploy to Production"
+              />
+            </div>
+            <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+              Actions are mock-safe when Coolify infrastructure values are missing.
+            </p>
+          </>
+        ) : (
+          <p className="card-muted" style={{ marginBottom: 0 }}>
+            Staging is not configured yet, so deploy and sync actions are hidden.
+          </p>
+        )}
       </article>
 
       {/* App Health */}
@@ -131,9 +141,13 @@ export default async function SiteSettingsPage({ params }: Params) {
           <p style={{ margin: 0, fontSize: "0.9rem" }}>
             Production: <span className={`status-chip ${workspace?.productionStatus ?? "unknown"}`}>{workspace?.productionStatus ?? "unknown"}</span>
           </p>
-          {stagingEnabled && (
+          {stagingConfigured ? (
             <p style={{ margin: 0, fontSize: "0.9rem" }}>
               Staging: <span className={`status-chip ${workspace?.stagingStatus ?? "unknown"}`}>{workspace?.stagingStatus ?? "unknown"}</span>
+            </p>
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              Staging: <span className="status-chip unknown">not configured</span>
             </p>
           )}
           <p style={{ margin: 0, fontSize: "0.9rem" }}>

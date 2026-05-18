@@ -407,12 +407,22 @@ main {
 
 .metric-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 0.85rem;
 }
 
 .metric-card {
   padding: 1rem 1.05rem;
+}
+
+.metric-card--compact {
+  padding: 0.75rem 0.9rem;
+  background: #f7faf8;
+  border-color: #d8e4da;
+}
+
+.metric-value--muted {
+  color: #7a8c8e;
 }
 
 .metric-value {
@@ -468,7 +478,7 @@ main {
 
 .health-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
@@ -500,6 +510,10 @@ main {
 
 .health-stat-value.error {
   color: #8d2631;
+}
+
+.health-stat-value.unknown {
+  color: #6a7d7f;
 }
 
 .health-stat-label {
@@ -548,6 +562,20 @@ main {
 
 .health-bar-fill.error {
   background: #d46b75;
+}
+
+.health-bar-fill.unknown {
+  background: #a8b8ba;
+}
+
+.health-reconcile-note {
+  margin: 0.85rem 0 0;
+  font-size: 0.82rem;
+  color: #7a8c8e;
+  padding: 0.6rem 0.8rem;
+  background: #f2f5f5;
+  border-radius: 8px;
+  border: 1px solid #dce6e7;
 }
 
 .dashboard-inline-note {

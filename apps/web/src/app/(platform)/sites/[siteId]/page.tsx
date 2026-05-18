@@ -46,6 +46,7 @@ export default async function SiteOverviewPage({ params }: Params) {
   }
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
+  const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
   const isWordPress = workspace?.siteType === "wordpress";
 
   return (
@@ -72,12 +73,16 @@ export default async function SiteOverviewPage({ params }: Params) {
               {site?.status ?? "unknown"}
             </span>
           </p>
-          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
-            <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" />
-            {workspace?.stagingEnabled && (
+          {stagingConfigured ? (
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
+              <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" />
               <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" />
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="diagnostic-banner" style={{ marginTop: "0.85rem" }}>
+              <strong>Staging not configured.</strong> Deploy and sync actions stay hidden until this app has a real staging environment.
+            </div>
+          )}
           <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             {overview.mode === "live"
               ? <>Coolify · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
@@ -88,15 +93,21 @@ export default async function SiteOverviewPage({ params }: Params) {
         {/* Publishing */}
         <article className="card">
           <h3 className="card-title">Publishing</h3>
-          <p className="card-muted">Move changes safely from staging to production.</p>
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Use staging sync for review, then promote when ready.
-          </p>
-          <p style={{ margin: "0.75rem 0 0" }}>
-            <Link href={`/apps/${siteId}/staging`} className="action-link">
-              Open publishing workflow <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
+          {stagingConfigured ? (
+            <>
+              <p className="card-muted">Move changes safely from staging to production.</p>
+              <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
+                Use staging sync for review, then promote when ready.
+              </p>
+              <p style={{ margin: "0.75rem 0 0" }}>
+                <Link href={`/apps/${siteId}/staging`} className="action-link">
+                  Open publishing workflow <ArrowRightIcon className="btn-icon" />
+                </Link>
+              </p>
+            </>
+          ) : (
+            <p className="card-muted">Staging is not configured yet, so publishing workflow actions are hidden.</p>
+          )}
         </article>
 
         <article className="card">
@@ -197,11 +208,15 @@ export default async function SiteOverviewPage({ params }: Params) {
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
             Production, Staging, Development
           </p>
-          <p style={{ fontSize: "0.9rem" }}>
-            <Link href={`/apps/${siteId}/settings`} className="action-link">
-              Configure environments <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
+          {stagingConfigured ? (
+            <p style={{ fontSize: "0.9rem" }}>
+              <Link href={`/apps/${siteId}/settings`} className="action-link">
+                Configure environments <ArrowRightIcon className="btn-icon" />
+              </Link>
+            </p>
+          ) : (
+            <p className="card-muted" style={{ marginBottom: 0 }}>Staging configuration is required before environment actions are shown.</p>
+          )}
         </article>
 
         {/* Next Steps */}
@@ -213,9 +228,13 @@ export default async function SiteOverviewPage({ params }: Params) {
             </Link>
           </p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <Link href={`/apps/${siteId}/staging`} className="action-link">
-              Run publishing workflow <ArrowRightIcon className="btn-icon" />
-            </Link>
+            {stagingConfigured ? (
+              <Link href={`/apps/${siteId}/staging`} className="action-link">
+                Run publishing workflow <ArrowRightIcon className="btn-icon" />
+              </Link>
+            ) : (
+              <span className="card-muted">Publishing workflow is hidden until staging is configured.</span>
+            )}
           </p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
             <Link href={`/apps/${siteId}/settings`} className="action-link">

@@ -121,6 +121,11 @@ export type ClientWorkspaceRecord = ClientRecord & {
   memberCount: number;
   coolifyProjectId?: string;
   coolifyProjectName?: string;
+  linkedCoolifyProjects?: Array<{
+    coolifyProjectId: string;
+    coolifyProjectName?: string | null;
+    isPrimary?: boolean;
+  }>;
   /** Where this record was sourced from – "db" means a live Prisma query succeeded. */
   dataSource: "db" | "mock";
 };
@@ -522,7 +527,8 @@ function buildClientWorkspaceFromLegacy(
     siteCount: projects.length,
     memberCount: members.length,
     coolifyProjectId: undefined,
-    coolifyProjectName: undefined
+    coolifyProjectName: undefined,
+    linkedCoolifyProjects: []
   };
 }
 
@@ -576,7 +582,22 @@ function buildClientWorkspaceFromPrismaOrganization(org: any): ClientWorkspaceRe
     siteCount: sites.length,
     memberCount: memberByUserId.size,
     coolifyProjectId: primaryMapping?.coolifyProjectId ?? org.coolifyProjectId ?? undefined,
-    coolifyProjectName: primaryMapping?.coolifyProjectName ?? org.coolifyProjectName ?? undefined
+    coolifyProjectName: primaryMapping?.coolifyProjectName ?? org.coolifyProjectName ?? undefined,
+    linkedCoolifyProjects: linkMappings.length > 0
+      ? linkMappings.map((link: any) => ({
+          coolifyProjectId: link.coolifyProjectId,
+          coolifyProjectName: link.coolifyProjectName,
+          isPrimary: Boolean(link.isPrimary)
+        }))
+      : org.coolifyProjectId
+        ? [
+            {
+              coolifyProjectId: org.coolifyProjectId,
+              coolifyProjectName: org.coolifyProjectName,
+              isPrimary: true
+            }
+          ]
+        : []
   };
 }
 

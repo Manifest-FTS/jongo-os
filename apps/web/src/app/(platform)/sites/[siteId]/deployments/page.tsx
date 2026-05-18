@@ -48,6 +48,7 @@ export default async function DeploymentsPage({ params }: Params) {
   }
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
+  const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
 
   const productionDeployments = deployments.filter((d) => d.environment === "production");
   const stagingDeployments = deployments.filter((d) => d.environment === "staging");
@@ -97,15 +98,21 @@ export default async function DeploymentsPage({ params }: Params) {
 
         <article className="card">
           <h3 className="card-title">Quick Actions</h3>
-          <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.75rem" }}>
-            <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" label="Deploy to Production" />
-            {workspace?.stagingEnabled && (
-              <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" label="Sync to Staging" />
-            )}
-          </div>
-          <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-            Trigger deploys above. History updates after each action.
-          </p>
+          {stagingConfigured ? (
+            <>
+              <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.75rem" }}>
+                <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" label="Deploy to Production" />
+                <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" label="Sync to Staging" />
+              </div>
+              <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+                Trigger deploys above. History updates after each action.
+              </p>
+            </>
+          ) : (
+            <p className="card-muted" style={{ marginBottom: 0 }}>
+              Staging is not configured for this app, so deploy and sync actions are hidden.
+            </p>
+          )}
         </article>
       </section>
 

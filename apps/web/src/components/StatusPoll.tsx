@@ -14,7 +14,7 @@ type PollResult = {
   ok: boolean;
   mode?: "live" | "mock";
   generatedAt?: string;
-  stats?: { healthySites: number; degradedSites: number; errorSites: number };
+  stats?: { healthySites: number; degradedSites: number; errorSites: number; unknownSites?: number };
   sites?: SiteStatus[];
   error?: string;
 };
@@ -76,6 +76,11 @@ export default function StatusPoll({ intervalMs = 30_000 }: Props) {
           <p style={{ margin: "0.25rem 0", fontSize: "0.9rem" }}>
             <span style={{ color: "var(--danger, #ef4444)" }}>●</span> Error: <strong>{data.stats.errorSites}</strong>
           </p>
+          {(data.stats.unknownSites ?? 0) > 0 && (
+            <p style={{ margin: "0.25rem 0", fontSize: "0.9rem" }}>
+              <span style={{ color: "#a8b8ba" }}>●</span> Offline / Unknown: <strong>{data.stats.unknownSites}</strong>
+            </p>
+          )}
         </div>
       )}
 

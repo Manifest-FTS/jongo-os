@@ -28,11 +28,13 @@ export default async function DashboardPage() {
   const healthySites = visibleSiteDirectory.filter((site) => site.status === "healthy").length;
   const degradedSites = visibleSiteDirectory.filter((site) => site.status === "degraded").length;
   const errorSites = visibleSiteDirectory.filter((site) => site.status === "error").length;
+  const unknownSites = visibleSiteDirectory.filter((site) => site.status === "unknown").length;
   const totalSites = Math.max(visibleSiteDirectory.length, 1);
   const healthBars = [
     { label: "Healthy", value: healthySites, tone: "healthy" },
     { label: "Degraded", value: degradedSites, tone: "degraded" },
-    { label: "Error", value: errorSites, tone: "error" }
+    { label: "Error", value: errorSites, tone: "error" },
+    ...(unknownSites > 0 ? [{ label: "Offline / Unknown", value: unknownSites, tone: "unknown" }] : [])
   ];
 
   return (
@@ -61,6 +63,12 @@ export default async function DashboardPage() {
           <p className="metric-value">{healthySites}</p>
           <p className="metric-label">Healthy</p>
         </article>
+        {unknownSites > 0 && (
+          <article className="card metric-card metric-card--compact">
+            <p className="metric-value metric-value--muted">{unknownSites}</p>
+            <p className="metric-label">Offline</p>
+          </article>
+        )}
       </section>
 
       <section className="dashboard-shell">
@@ -95,6 +103,12 @@ export default async function DashboardPage() {
               </div>
             ))}
           </div>
+
+          {unknownSites > 0 && (
+            <p className="health-reconcile-note">
+              {unknownSites} app{unknownSites === 1 ? " is" : "s are"} offline or restarting — not counted in healthy or degraded.
+            </p>
+          )}
 
           {wordpressSites.length > 0 ? (
             <div className="dashboard-inline-note">

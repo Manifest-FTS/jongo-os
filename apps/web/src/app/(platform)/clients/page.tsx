@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth.config";
-import { listClientWorkspaces } from "@/lib/repositories";
+import { listClientWorkspaces, listSiteDirectory } from "@/lib/repositories";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import ClientDirectoryView from "@/components/ClientDirectoryView";
 
@@ -9,6 +9,13 @@ export default async function ClientsPage() {
     userId: session?.user?.id,
     email: session?.user?.email
   });
+  const visibleSites = clients.length > 0 && clients[0].dataSource === "db"
+    ? await listSiteDirectory({ userId: session?.user?.id, email: session?.user?.email })
+    : [];
+  const siteCountsByClientId = new Map<string, number>();
+  for (const site of visibleSites) {
+    siteCountsByClientId.set(site.clientId, (siteCountsByClientId.get(site.clientId) ?? 0) + 1);
+  }
 
   const isMock = clients.length > 0 && clients[0].dataSource === "mock";
 
@@ -44,7 +51,7 @@ export default async function ClientsPage() {
             id: client.id,
             name: client.name,
             summary: client.summary,
-            siteCount: client.siteCount,
+            siteCount: siteCountsByClientId.get(client.id) ?? client.siteCount,
             memberCount: client.memberCount,
             href: `/clients/${client.id}`
           }))}
