@@ -21,6 +21,22 @@ type CallerAccess = {
   callerRole: "admin" | "collaborator";
 };
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function buildSiteIdentityWhere(siteId: string): Record<string, unknown> {
+  if (isUuid(siteId)) {
+    return {
+      OR: [{ id: siteId }, { slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
+    };
+  }
+
+  return {
+    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
+  };
+}
+
 function getInvitationStatus(invite: {
   acceptedAt: Date | null;
   revokedAt: Date | null;
@@ -37,7 +53,7 @@ async function getCallerAccess(siteId: string, userId: string): Promise<CallerAc
 
   const site = await db.site.findFirst({
     where: {
-      id: siteId,
+      ...buildSiteIdentityWhere(siteId),
       deletedAt: null,
       OR: [
         {
@@ -99,14 +115,14 @@ export async function GET(_req: Request, { params }: Params) {
 
     const { db } = await import("@/lib/db");
     const rows = await db.siteCollaborator.findMany({
-      where: { siteId },
+      where: { siteId: access.siteId },
       include: { user: { select: { id: true, email: true, fullName: true } } },
       orderBy: { createdAt: "asc" }
     });
 
     const pendingInvites = await db.invitation.findMany({
       where: {
-        siteId,
+        siteId: access.siteId,
         inviteType: "site"
       },
       orderBy: { createdAt: "desc" },
