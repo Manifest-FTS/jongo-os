@@ -45,6 +45,7 @@ export type ResourceTypeMetadata = {
 export function detectResourceType(resource: Record<string, unknown>): ResourceTypeMetadata {
   const evidence = flattenResourceEvidence(resource);
   const tokens = evidence.toLowerCase();
+  const hasGitRepository = /git_repository:/.test(tokens);
 
   let wpScore = 0;
   let dbScore = 0;
@@ -74,6 +75,14 @@ export function detectResourceType(resource: Record<string, unknown>): ResourceT
     /postgres:\/\/|mysql:\/\//,
     /\b(postgres|mysql|mariadb|redis|mongodb):(\d+)?\b/
   ];
+  const dbNameSignals = [
+    /\bpostgresql-database-[a-z0-9-]+\b/,
+    /\bpostgres(ql)?\b.*\bdatabase\b/,
+    /\bmysql\b.*\bdatabase\b/,
+    /\bmariadb\b.*\bdatabase\b/,
+    /\bredis\b.*\bdatabase\b/,
+    /\bpdb[_-][a-z0-9_-]+\b/
+  ];
   const serviceSignals = [/docker_compose/, /compose:/, /traefik\./, /worker/, /cron/];
   const webSignals = [/git_repository/, /https?:\/\//, /domain/, /ssl/, /nextjs|react|vue|nuxt|svelte|laravel/];
   const mobileSignals = [/android|ios|react-native|expo|flutter|xcode|apk|ipa/];
@@ -86,6 +95,9 @@ export function detectResourceType(resource: Record<string, unknown>): ResourceT
   }
   for (const pattern of dbStrong) {
     if (pattern.test(tokens)) dbScore += 4;
+  }
+  for (const pattern of dbNameSignals) {
+    if (pattern.test(tokens)) dbScore += 2;
   }
   for (const pattern of serviceSignals) {
     if (pattern.test(tokens)) serviceScore += 2;
@@ -110,7 +122,7 @@ export function detectResourceType(resource: Record<string, unknown>): ResourceT
   }
 
   // Database classification is reserved for actual stateful DB resources.
-  if (dbScore >= 6 && wpScore < 4) {
+  if (dbScore >= 6 && wpScore < 4 && !hasGitRepository) {
     return {
       type: "Database",
       confidence: dbScore >= 8 ? "high" : "medium",
