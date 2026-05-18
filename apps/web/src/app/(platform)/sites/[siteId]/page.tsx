@@ -1,7 +1,7 @@
 ﻿import { getCoolifyOverview } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import DeployButton from "@/components/DeployButton";
-import { getSiteActivityFeed, getSiteWorkspace } from "@/lib/repositories";
+import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import Link from "next/link";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import PendingBadge from "@/components/PendingBadge";
@@ -44,6 +44,11 @@ export default async function SiteOverviewPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+  const canViewInternalMetadata = Boolean(
+    session?.user?.id &&
+    workspace.organizationId &&
+    await isClientAdmin(workspace.organizationId, session.user.id)
+  );
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
@@ -85,8 +90,8 @@ export default async function SiteOverviewPage({ params }: Params) {
           )}
           <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             {overview.mode === "live"
-              ? <>Coolify · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
-              : "Demo mode — live data requires Coolify config"}
+              ? <>Live telemetry · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
+              : "Demo mode — live telemetry requires provider config"}
           </p>
         </article>
 
@@ -244,12 +249,14 @@ export default async function SiteOverviewPage({ params }: Params) {
         </article>
       </div>
 
-      <article className="card" style={{ marginTop: "1rem" }}>
-        <h3 className="card-title">Need Infrastructure Details?</h3>
-        <p className="card-muted" style={{ marginBottom: 0 }}>
-          Use the Advanced tab for diagnostics and provider-level metadata.
-        </p>
-      </article>
+      {canViewInternalMetadata ? (
+        <article className="card" style={{ marginTop: "1rem" }}>
+          <h3 className="card-title">Need Infrastructure Details?</h3>
+          <p className="card-muted" style={{ marginBottom: 0 }}>
+            Use the Advanced tab for diagnostics and provider-level metadata.
+          </p>
+        </article>
+      ) : null}
     </div>
   );
 }

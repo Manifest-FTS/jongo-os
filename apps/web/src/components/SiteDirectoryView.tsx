@@ -20,6 +20,7 @@ type SiteItem = {
   href: string;
   clientHref?: string;
   resourceType?: string;
+  showInternalMetadata?: boolean;
 };
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType | "all", string> = {
@@ -140,22 +141,24 @@ export default function SiteDirectoryView({
       ) : (
         <section className={`directory-results ${view === "list" ? "directory-list" : "directory-grid"}`}>
           {filtered.map((site) => {
-            const resolvedType = isKnownResourceType(site.resourceType) ? site.resourceType : null;
+            const resolvedType = isKnownResourceType(site.resourceType) ? site.resourceType : "Web App";
             return (
               <article key={site.id} className="card tone-card directory-row">
                 <div className="directory-main">
-                  <div className="directory-title-row">
-                    <h2 className="directory-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                      {site.name}
-                      {resolvedType && <ResourceTypePill type={resolvedType} size="xs" />}
-                    </h2>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.45rem", flexWrap: "wrap" }}>
+                    <ResourceTypePill type={resolvedType} size="sm" />
                     <span className={`status-chip ${site.status}`}>{site.status === "unknown" ? "Offline / Unknown" : site.status}</span>
+                  </div>
+                  <div className="directory-title-row">
+                    <h2 className="directory-title" style={{ fontSize: "1.06rem", lineHeight: 1.2 }}>{site.name}</h2>
                   </div>
                   {site.description ? <p className="directory-summary">{site.description}</p> : null}
                   <p className="directory-meta">Client: {site.clientName}</p>
-                  <div className="directory-badges">
-                    <span className="tag">Ownership: {site.ownershipDiagnostic}</span>
-                  </div>
+                  {site.showInternalMetadata ? (
+                    <div className="directory-badges">
+                      <span className="tag">Ownership: {site.ownershipDiagnostic}</span>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="directory-actions">

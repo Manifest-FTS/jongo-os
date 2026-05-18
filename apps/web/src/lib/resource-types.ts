@@ -43,42 +43,173 @@ export type ResourceTypeMetadata = {
  * Returns "Unknown/Other" when detection cannot be confident.
  */
 export function detectResourceType(resource: Record<string, unknown>): ResourceTypeMetadata {
-  // Check 1: Database type indicators (highest confidence)
-  const dbResult = checkDatabaseType(resource);
-  if (dbResult) {
-    return dbResult;
+  const evidence = flattenResourceEvidence(resource);
+  const tokens = evidence.toLowerCase();
+
+  let wpScore = 0;
+  let dbScore = 0;
+  let serviceScore = 0;
+  let webScore = 0;
+  let mobileScore = 0;
+
+  const wpStrong = [
+    /\bwordpress\b/,
+    /bitnami\/wordpress/,
+    /wp-content/,
+    /wp-admin/,
+    /wp-json/,
+    /WORDPRESS_DB_HOST/i,
+    /WORDPRESS_CONFIG_EXTRA/i,
+    /wp-config\.php/
+  ];
+  const wpMedium = [
+    /\bwp[-_]/,
+    /php.*apache|apache.*php/,
+    /themes\/|plugins\//,
+    /waterfallkeepers/i
+  ];
+  const dbStrong = [
+    /\b(resource_type|type|kind|service_type)\b[^\n]*\b(database|postgres|mysql|mariadb|redis|mongodb)\b/,
+    /\b(database_type|engine|db_type)\b[^\n]*\b(postgres|mysql|mariadb|redis|mongodb|sqlite|sqlserver)\b/,
+    /postgres:\/\/|mysql:\/\//,
+    /\b(postgres|mysql|mariadb|redis|mongodb):(\d+)?\b/
+  ];
+  const serviceSignals = [/docker_compose/, /compose:/, /traefik\./, /worker/, /cron/];
+  const webSignals = [/git_repository/, /https?:\/\//, /domain/, /ssl/, /nextjs|react|vue|nuxt|svelte|laravel/];
+  const mobileSignals = [/android|ios|react-native|expo|flutter|xcode|apk|ipa/];
+
+  for (const pattern of wpStrong) {
+    if (pattern.test(tokens)) wpScore += 4;
+  }
+  for (const pattern of wpMedium) {
+    if (pattern.test(tokens)) wpScore += 2;
+  }
+  for (const pattern of dbStrong) {
+    if (pattern.test(tokens)) dbScore += 4;
+  }
+  for (const pattern of serviceSignals) {
+    if (pattern.test(tokens)) serviceScore += 2;
+  }
+  for (const pattern of webSignals) {
+    if (pattern.test(tokens)) webScore += 2;
+  }
+  for (const pattern of mobileSignals) {
+    if (pattern.test(tokens)) mobileScore += 3;
   }
 
-  // Check 2: Docker image indicators for WordPress
-  const wpResult = checkWordPressImage(resource);
-  if (wpResult) {
-    return wpResult;
+  // WordPress app should win over incidental DB hints from linked services.
+  if (wpScore >= 4 && wpScore >= dbScore) {
+    return {
+      type: "WordPress",
+      confidence: wpScore >= 8 ? "high" : "medium",
+      detectionReason: `WordPress evidence score ${wpScore} (db score ${dbScore})`,
+      isWordPress: true,
+      hasDockerCompose: /docker_compose/.test(tokens),
+      hasGitRepository: /git_repository/.test(tokens)
+    };
   }
 
-  // Check 3: Deployment mechanism and structure
-  const deploymentResult = checkDeploymentMechanism(resource);
-  if (deploymentResult) {
-    return deploymentResult;
+  // Database classification is reserved for actual stateful DB resources.
+  if (dbScore >= 6 && wpScore < 4) {
+    return {
+      type: "Database",
+      confidence: dbScore >= 8 ? "high" : "medium",
+      detectionReason: `Database evidence score ${dbScore}`,
+      isDatabase: true
+    };
   }
 
-  // Check 4: Resource type and service indicators
-  const typeResult = checkResourceTypeFields(resource);
-  if (typeResult) {
-    return typeResult;
+  if (mobileScore >= 4) {
+    return {
+      type: "Mobile App",
+      confidence: mobileScore >= 6 ? "high" : "medium",
+      detectionReason: `Mobile evidence score ${mobileScore}`
+    };
   }
 
-  // Check 5: Free-text fallback
-  const textResult = checkFreeTextIndicators(resource);
-  if (textResult) {
-    return textResult;
+  if (serviceScore >= 4 && webScore < 4) {
+    return {
+      type: "Service",
+      confidence: "medium",
+      detectionReason: `Service evidence score ${serviceScore}`,
+      hasDockerCompose: /docker_compose/.test(tokens)
+    };
   }
 
-  // Default: unknown
+  // Low-confidence unknowns should feel product-friendly: default to Web App.
+  if (webScore > 0 || serviceScore > 0 || wpScore > 0 || dbScore > 0) {
+    return {
+      type: "Web App",
+      confidence: "low",
+      detectionReason: `Fallback Web App classification (wp=${wpScore}, db=${dbScore}, svc=${serviceScore}, web=${webScore})`,
+      hasGitRepository: /git_repository/.test(tokens)
+    };
+  }
+
   return {
-    type: "Unknown/Other",
+    type: "Web App",
     confidence: "low",
-    detectionReason: "No confident type indicators found in metadata"
+    detectionReason: "No confident metadata signals; defaulting to Web App"
   };
+}
+
+function flattenResourceEvidence(resource: Record<string, unknown>): string {
+  const topLevelKeys = [
+    "name",
+    "application_name",
+    "service_name",
+    "description",
+    "resource_type",
+    "type",
+    "kind",
+    "service_type",
+    "database_type",
+    "engine",
+    "db_type",
+    "docker_registry_image_name",
+    "static_image",
+    "image",
+    "docker_image",
+    "git_repository",
+    "domain",
+    "domains",
+    "fqdn",
+    "container_labels",
+    "custom_labels",
+    "docker_compose",
+    "docker_compose_raw",
+    "environment_variables",
+    "env",
+    "environment"
+  ];
+
+  const chunks: string[] = [];
+  for (const key of topLevelKeys) {
+    const value = resource[key];
+    if (typeof value === "string") {
+      chunks.push(`${key}:${value}`);
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      chunks.push(`${key}:${value.map((item) => stringifyEvidenceValue(item)).join(" ")}`);
+      continue;
+    }
+
+    if (value && typeof value === "object") {
+      chunks.push(`${key}:${JSON.stringify(value)}`);
+    }
+  }
+
+  return chunks.join("\n");
+}
+
+function stringifyEvidenceValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return "";
 }
 
 function checkDatabaseType(resource: Record<string, unknown>): ResourceTypeMetadata | null {

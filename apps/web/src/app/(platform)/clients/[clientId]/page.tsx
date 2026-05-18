@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
-import { getClientWorkspace, getSiteWorkspace, listSiteDirectory } from "@/lib/repositories";
+import { getClientWorkspace, getSiteWorkspace, isClientAdmin, listSiteDirectory } from "@/lib/repositories";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import PendingBadge from "@/components/PendingBadge";
 
@@ -29,6 +29,7 @@ export default async function ClientDetailPage({ params }: Params) {
     : (await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId, viewer)))).filter(
         (site): site is NonNullable<typeof site> => Boolean(site)
       );
+  const canViewInternalNotes = Boolean(session?.user?.id && client.dbId && await isClientAdmin(client.dbId, session.user.id));
 
   return (
     <div className="page-stack">
@@ -39,15 +40,17 @@ export default async function ClientDetailPage({ params }: Params) {
           <p className="card-muted" style={{ margin: 0 }}>{client.summary || "No profile notes yet."}</p>
         </article>
 
-        <article className="card">
-          <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-            Persistent Notes <PendingBadge reason="Client notes storage is not yet connected. This section will allow saving handoff context and operational preferences." />
-          </h3>
-          <p className="card-muted" style={{ marginBottom: "0.6rem" }}>
-            Use this area for handoff context, operational preferences, and known constraints.
-          </p>
-          <p style={{ margin: 0, fontSize: "0.88rem" }}>No stored notes yet.</p>
-        </article>
+        {canViewInternalNotes ? (
+          <article className="card">
+            <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+              Persistent Notes <PendingBadge reason="Client notes storage is not yet connected. This section will allow saving handoff context and operational preferences." />
+            </h3>
+            <p className="card-muted" style={{ marginBottom: "0.6rem" }}>
+              Use this area for handoff context, operational preferences, and known constraints.
+            </p>
+            <p style={{ margin: 0, fontSize: "0.88rem" }}>No stored notes yet.</p>
+          </article>
+        ) : null}
 
         <article className="card">
           <h3 className="card-title">App Summary</h3>

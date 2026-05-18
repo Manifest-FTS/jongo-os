@@ -136,6 +136,7 @@ export type SiteDirectoryRecord = {
   name: string;
   deployTargetId: string;
   clientId: string;
+  clientDbId?: string;
   clientName: string;
   status: "healthy" | "degraded" | "error" | "unknown";
   ownershipState: "mapped" | "orphaned" | "unavailable";
@@ -609,6 +610,7 @@ function resolveOwnershipForCoolifySite(
   index?: { byProjectId: Map<string, OwnershipOrgRecord[]>; byProjectName: Map<string, OwnershipOrgRecord[]> }
 ): {
   clientId: string;
+  clientDbId?: string;
   clientName: string;
   ownershipState: "mapped" | "orphaned" | "unavailable";
   ownershipDiagnostic: string;
@@ -618,6 +620,7 @@ function resolveOwnershipForCoolifySite(
     if (mockClient) {
       return {
         clientId: mockClient.id,
+        clientDbId: undefined,
         clientName: mockClient.name,
         ownershipState: "mapped",
         ownershipDiagnostic: `Mapped to Client: ${mockClient.name}`
@@ -631,6 +634,7 @@ function resolveOwnershipForCoolifySite(
       if (org) {
         return {
           clientId: org.slug,
+          clientDbId: org.id,
           clientName: org.name,
           ownershipState: "mapped",
           ownershipDiagnostic: `Mapped to Client: ${org.name}`
@@ -651,6 +655,7 @@ function resolveOwnershipForCoolifySite(
       if (org) {
         return {
           clientId: org.slug,
+          clientDbId: org.id,
           clientName: org.name,
           ownershipState: "mapped",
           ownershipDiagnostic: `Mapped to Client: ${org.name}`
@@ -1366,6 +1371,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           name: site.name,
           deployTargetId: site.deployTargetId,
           clientId: ownership.clientId,
+          clientDbId: ownership.clientDbId,
           clientName: ownership.clientName,
           status: site.status,
           ownershipState: ownership.ownershipState,
@@ -1453,6 +1459,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           description: s.description ?? undefined,
           deployTargetId: coolifyMatch?.deployTargetId ?? s.coolifyServiceUuid ?? "",
           clientId: s.organization.slug,
+          clientDbId: s.organization.id,
           clientName: s.organization.name,
           status: coolifyMatch?.status ?? "unknown",
           ownershipState: "mapped" as const,
@@ -1480,6 +1487,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
                 name: site.name,
                 deployTargetId: site.deployTargetId,
                 clientId: ownership.clientId,
+                clientDbId: ownership.clientDbId,
                 clientName: ownership.clientName,
                 status: site.status,
                 ownershipState: ownership.ownershipState,
@@ -1514,6 +1522,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
                 name: site.name,
                 deployTargetId: site.deployTargetId,
                 clientId: ownership.clientId,
+                clientDbId: ownership.clientDbId,
                 clientName: ownership.clientName,
                 status: site.status,
                 ownershipState: ownership.ownershipState,

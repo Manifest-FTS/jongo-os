@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
-import { getSiteWorkspace } from "@/lib/repositories";
+import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 
 type Params = { params: Promise<{ siteId: string }> };
@@ -25,6 +25,12 @@ export default async function SiteWorkspaceLayout({
     notFound();
   }
 
+  const canViewInternalMetadata = Boolean(
+    session?.user?.id &&
+    site.organizationId &&
+    await isClientAdmin(site.organizationId, session.user.id)
+  );
+
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
     { name: "Deployments", href: `/apps/${siteId}/deployments` },
@@ -36,7 +42,7 @@ export default async function SiteWorkspaceLayout({
     { name: "Settings", href: `/apps/${siteId}/settings` }
   ];
 
-  const ownershipDiagnostic = site?.ownershipDiagnostic;
+  const ownershipDiagnostic = canViewInternalMetadata ? site?.ownershipDiagnostic : undefined;
   const isMapped = site?.ownershipState === "mapped";
 
   return (

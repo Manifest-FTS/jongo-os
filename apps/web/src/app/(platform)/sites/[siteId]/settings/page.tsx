@@ -3,7 +3,7 @@ type Params = { params: Promise<{ siteId: string }> };
 import DeployButton from "@/components/DeployButton";
 import SiteInfoForm from "@/components/SiteInfoForm";
 import Link from "next/link";
-import { getSiteWorkspace } from "@/lib/repositories";
+import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
@@ -34,6 +34,11 @@ export default async function SiteSettingsPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+  const canViewInternalMetadata = Boolean(
+    session?.user?.id &&
+    workspace.organizationId &&
+    await isClientAdmin(workspace.organizationId, session.user.id)
+  );
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
@@ -69,7 +74,7 @@ export default async function SiteSettingsPage({ params }: Params) {
         </article>
       )}
 
-      {workspace?.ownershipState !== "mapped" && (
+      {canViewInternalMetadata && workspace?.ownershipState !== "mapped" && (
         <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
           <strong>Ownership mapping needs attention.</strong> Map a Coolify Project ID in Site Information to avoid orphaned resources.
         </div>
@@ -96,7 +101,7 @@ export default async function SiteSettingsPage({ params }: Params) {
           </p>
         ) : (
           <p className="card-muted" style={{ margin: "0.75rem 0 0" }}>
-            Deploy and sync controls remain hidden until staging is detected in Coolify.
+            Deploy and sync controls remain hidden until staging is detected.
           </p>
         )}
       </article>
@@ -150,13 +155,16 @@ export default async function SiteSettingsPage({ params }: Params) {
               Staging: <span className="status-chip unknown">not configured</span>
             </p>
           )}
-          <p style={{ margin: 0, fontSize: "0.9rem" }}>
-            Ownership: <span className="tag">{workspace?.ownershipState ?? "unavailable"}</span>
-          </p>
+          {canViewInternalMetadata ? (
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              Ownership: <span className="tag">{workspace?.ownershipState ?? "unavailable"}</span>
+            </p>
+          ) : null}
         </div>
       </article>
 
       {/* Developer Details (replaces standalone Advanced tab) */}
+      {canViewInternalMetadata ? (
       <details style={{ marginBottom: "1.5rem" }}>
         <summary
           style={{
@@ -204,6 +212,7 @@ export default async function SiteSettingsPage({ params }: Params) {
           </div>
         </article>
       </details>
+      ) : null}
     </div>
   );
 }

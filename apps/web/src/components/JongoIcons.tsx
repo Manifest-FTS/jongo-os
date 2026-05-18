@@ -113,3 +113,64 @@ export function ChevronDownIcon(props: IconProps) {
     </BaseIcon>
   );
 }
+
+export function GlobeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a15 15 0 0 1 0 18" />
+      <path d="M12 3a15 15 0 0 0 0 18" />
+    </BaseIcon>
+  );
+}
+
+export function DatabaseStackIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <ellipse cx="12" cy="6" rx="7" ry="3" />
+      <path d="M5 6v5c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
+      <path d="M5 11v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5" />
+    </BaseIcon>
+  );
+}
+
+export function LayersStackIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+      <path d="m3 12 9 5 9-5" />
+      <path d="m3 16 9 5 9-5" />
+    </BaseIcon>
+  );
+}
+
+export function SmartphoneIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="7" y="2" width="10" height="20" rx="2" />
+      <path d="M11 19h2" />
+    </BaseIcon>
+  );
+}
+
+export function WordPressMarkIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className={props.className}
+      {...props}
+    >
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.7" />
+      <path
+        d="M6.8 8.2c.6 0 1 .4 1.1.9l1.6 6 1.9-6.7c.1-.4.5-.7.9-.7s.8.3.9.7l1.9 6.7 1.5-5.8c.2-.8.8-1.1 1.4-1.1"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

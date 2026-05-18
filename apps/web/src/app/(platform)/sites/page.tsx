@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAppsEmptyStateMessage } from "@/lib/reason-messages";
-import { getInventorySnapshot } from "@/lib/repositories";
+import { getInventorySnapshot, isClientAdmin } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
@@ -20,12 +20,21 @@ function formatAgo(iso: string): string {
 
 export default async function SitesPage() {
   const session = await auth();
+  const viewerUserId = session?.user?.id;
   const inventory = await getInventorySnapshot({
-    userId: session?.user?.id,
+    userId: viewerUserId,
     email: session?.user?.email
   });
   const overview = inventory.overview;
   const siteDirectory = inventory.siteDirectory;
+
+  const uniqueClientDbIds = [...new Set(siteDirectory.map((site) => site.clientDbId).filter((id): id is string => Boolean(id)))];
+  const adminStateEntries = viewerUserId
+    ? await Promise.all(
+        uniqueClientDbIds.map(async (clientDbId) => [clientDbId, await isClientAdmin(clientDbId, viewerUserId)] as const)
+      )
+    : [];
+  const clientAdminState = new Map(adminStateEntries);
 
   return (
     <div className="page-stack">
@@ -38,11 +47,11 @@ export default async function SitesPage() {
             {overview.mode === "live"
               ? (
                 <>
-                  Coolify · {formatAgo(overview.generatedAt)}
+                  Live provider · {formatAgo(overview.generatedAt)}
                   {overview.fetchError && siteDirectory.length === 0 && <span style={{ color: "var(--error, #c0392b)" }}>· API unavailable</span>}
                 </>
               )
-              : "Coolify not configured — demo mode"}
+              : "Provider not configured — demo mode"}
             {siteDirectory.length > 0 && (
               <span style={{ color: "var(--muted)" }}>
                 · {siteDirectory.length} app{siteDirectory.length === 1 ? "" : "s"} visible ({inventory.counts.dbMappedVisibleSites} mapped, {inventory.counts.coolifyVisibleSites} live)
@@ -77,6 +86,7 @@ export default async function SitesPage() {
           userId={session?.user?.id}
           sites={siteDirectory.map((site) => {
             const overviewSite = overview.sites.find((item) => item.id === site.coolifyServiceUuid || item.id === site.id);
+            const showInternalMetadata = site.clientDbId ? Boolean(clientAdminState.get(site.clientDbId)) : false;
 
             return {
               id: site.id,
@@ -90,7 +100,8 @@ export default async function SitesPage() {
               source: site.source,
               href: `/apps/${site.slug ?? site.id}`,
               clientHref: site.ownershipState === "mapped" ? `/clients/${site.clientId}` : undefined,
-              resourceType: site.resourceType
+              resourceType: site.resourceType,
+              showInternalMetadata
             };
           })}
         />

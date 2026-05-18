@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
-import { getClientWorkspace, getSiteWorkspace, listSiteDirectory } from "@/lib/repositories";
+import { getClientWorkspace, getSiteWorkspace, isClientAdmin, listSiteDirectory } from "@/lib/repositories";
 import CreateSiteForm from "@/components/CreateSiteForm";
 import ResourceTypePill from "@/components/ResourceTypePill";
 import { ArrowRightIcon } from "@/components/JongoIcons";
@@ -33,6 +33,7 @@ export default async function ClientAppsPage({ params }: Params) {
     : (await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId, viewer)))).filter(
         (site): site is NonNullable<typeof site> => Boolean(site)
       );
+  const canViewInternalMetadata = Boolean(session?.user?.id && client.dbId && await isClientAdmin(client.dbId, session.user.id));
 
   return (
     <div className="page-stack">
@@ -64,7 +65,7 @@ export default async function ClientAppsPage({ params }: Params) {
                 </div>
                 <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
                   <span className={`status-chip ${app.status}`}>{app.status}</span>
-                  {app.ownershipState !== "mapped" ? (
+                  {canViewInternalMetadata && app.ownershipState !== "mapped" ? (
                     <span className="tag tag-warning" style={{ fontSize: "0.75rem" }}>{app.ownershipDiagnostic}</span>
                   ) : null}
                 </div>
