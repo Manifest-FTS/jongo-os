@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 
+function normalize(value?: string | null): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
 /**
  * GET /api/organizations
  * Returns all organizations the current user belongs to (as owner or collaborator).
@@ -29,21 +33,68 @@ export async function GET() {
       orderBy: { name: "asc" }
     });
 
-    return NextResponse.json(
-      organizations.map((org: any) => ({
-        id: org.id,
-        slug: org.slug,
-        name: org.name,
-        description: org.description,
-        logoUrl: org.logoUrl,
-        coolifyProjectId: org.coolifyProjectId,
-        coolifyProjectName: org.coolifyProjectName,
-        ownerId: org.ownerId,
-        siteCount: org._count.sites,
-        memberCount: org._count.collaborators,
-        createdAt: org.createdAt
-      }))
+    const orgsWithMappings = await Promise.all(
+      organizations.map(async (org: any) => {
+        let linkedProjects: Array<{ coolifyProjectId: string; coolifyProjectName: string | null; isPrimary: boolean; driftState: "aligned" | "name_drift" | "unknown" }> = [];
+        try {
+          const links = await db.$queryRaw<Array<{ coolifyProjectId: string; coolifyProjectName: string | null; isPrimary: boolean }>>`
+            select
+              l."coolifyProjectId",
+              l."coolifyProjectName",
+              l."isPrimary"
+            from "OrganizationCoolifyProjectLink" l
+            where l."organizationId" = ${org.id}
+              and l."deletedAt" is null
+            order by l."isPrimary" desc, l."createdAt" asc
+          `;
+
+          linkedProjects = links.map((link: { coolifyProjectId: string; coolifyProjectName: string | null; isPrimary: boolean }) => ({
+            coolifyProjectId: link.coolifyProjectId,
+            coolifyProjectName: link.coolifyProjectName,
+            isPrimary: link.isPrimary,
+            driftState:
+              !link.coolifyProjectName
+                ? "unknown"
+                : normalize(link.coolifyProjectName) === normalize(org.name)
+                  ? "aligned"
+                  : "name_drift"
+          }));
+        } catch {
+          linkedProjects = [];
+        }
+
+        if (linkedProjects.length === 0 && org.coolifyProjectId) {
+          linkedProjects.push({
+            coolifyProjectId: org.coolifyProjectId,
+            coolifyProjectName: org.coolifyProjectName,
+            isPrimary: true,
+            driftState:
+              !org.coolifyProjectName
+                ? "unknown"
+                : normalize(org.coolifyProjectName) === normalize(org.name)
+                  ? "aligned"
+                  : "name_drift"
+          });
+        }
+
+        return {
+          id: org.id,
+          slug: org.slug,
+          name: org.name,
+          description: org.description,
+          logoUrl: org.logoUrl,
+          coolifyProjectId: org.coolifyProjectId,
+          coolifyProjectName: org.coolifyProjectName,
+          linkedCoolifyProjects: linkedProjects,
+          ownerId: org.ownerId,
+          siteCount: org._count.sites,
+          memberCount: org._count.collaborators,
+          createdAt: org.createdAt
+        };
+      })
     );
+
+    return NextResponse.json(orgsWithMappings);
   } catch (err) {
     console.error("GET /api/organizations error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -92,6 +143,25 @@ export async function POST(req: Request) {
       );
     }
 
+    if (body.coolifyProjectId?.trim()) {
+      const existingLink = await db.$queryRaw<Array<{ organizationName: string }>>`
+        select o.name as "organizationName"
+        from "OrganizationCoolifyProjectLink" l
+        join "Organization" o on o.id = l."organizationId"
+        where l."coolifyProjectId" = ${body.coolifyProjectId.trim()}
+          and l."deletedAt" is null
+          and o."deletedAt" is null
+        limit 1
+      `;
+
+      if (existingLink.length > 0) {
+        return NextResponse.json(
+          { error: `That Coolify Project is already linked to ${existingLink[0].organizationName}.` },
+          { status: 409 }
+        );
+      }
+    }
+
     const org = await db.organization.create({
       data: {
         slug,
@@ -109,6 +179,32 @@ export async function POST(req: Request) {
       }
     });
 
+    if (org.coolifyProjectId) {
+      try {
+        await db.$executeRaw`
+          insert into "OrganizationCoolifyProjectLink" (
+            id,
+            "organizationId",
+            "coolifyProjectId",
+            "coolifyProjectName",
+            "isPrimary",
+            "createdAt",
+            "updatedAt"
+          ) values (
+            gen_random_uuid(),
+            ${org.id},
+            ${org.coolifyProjectId},
+            ${org.coolifyProjectName},
+            true,
+            now(),
+            now()
+          )
+        `;
+      } catch {
+        // Legacy compatibility: keep org-level fields even if link row cannot be created.
+      }
+    }
+
     return NextResponse.json(
       {
         id: org.id,
@@ -117,6 +213,21 @@ export async function POST(req: Request) {
         description: org.description,
         coolifyProjectId: org.coolifyProjectId,
         coolifyProjectName: org.coolifyProjectName,
+        linkedCoolifyProjects: org.coolifyProjectId
+          ? [
+              {
+                coolifyProjectId: org.coolifyProjectId,
+                coolifyProjectName: org.coolifyProjectName,
+                isPrimary: true,
+                driftState:
+                  !org.coolifyProjectName
+                    ? "unknown"
+                    : normalize(org.coolifyProjectName) === normalize(org.name)
+                      ? "aligned"
+                      : "name_drift"
+              }
+            ]
+          : [],
         ownerId: org.ownerId,
         siteCount: 0,
         memberCount: 1,

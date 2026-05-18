@@ -76,6 +76,7 @@ model Organization {
   // Relations
   owner            User      @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   sites            Site[]
+  coolifyProjectLinks OrganizationCoolifyProjectLink[]
   collaborators    Collaborator[]
   invitations     Invitation[]
   apiTokens        ApiToken[]
@@ -87,6 +88,24 @@ model Organization {
 
   @@index([ownerId])
   @@index([slug])
+  @@index([coolifyProjectName])
+}
+
+model OrganizationCoolifyProjectLink {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String    @db.Uuid
+  coolifyProjectId  String
+  coolifyProjectName String?
+  isPrimary         Boolean   @default(false)
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, coolifyProjectId])
+  @@index([organizationId])
+  @@index([coolifyProjectId])
   @@index([coolifyProjectName])
 }
 

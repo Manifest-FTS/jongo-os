@@ -35,7 +35,7 @@ export default async function ClientSettingsPage({ params }: Params) {
         <article className="card">
           <h3 className="card-title">Coolify Project Mapping</h3>
           <p className="card-muted" style={{ marginBottom: "1rem" }}>
-            Map this client to a Coolify project so related apps resolve ownership automatically.
+            Link one or more Coolify projects to this client workspace. Project links are explicit and never auto-renamed.
           </p>
           {!client.coolifyProjectId ? (
             <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
@@ -45,8 +45,7 @@ export default async function ClientSettingsPage({ params }: Params) {
           {client.dbId ? (
             <CoolifyProjectMappingForm
               organizationDbId={client.dbId}
-              currentProjectId={client.coolifyProjectId}
-              currentProjectName={client.coolifyProjectName}
+              organizationName={client.name}
               availableProjects={overview.projects.map((project) => ({ id: project.id, name: project.name }))}
             />
           ) : (
