@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
 import { getClientWorkspace, getSiteWorkspace, listSiteDirectory } from "@/lib/repositories";
 import CreateSiteForm from "@/components/CreateSiteForm";
+import ResourceTypePill from "@/components/ResourceTypePill";
 import { ArrowRightIcon } from "@/components/JongoIcons";
+import type { ResourceType } from "@/lib/resource-types";
+import { RESOURCE_TYPES } from "@/lib/resource-types";
 
 type Params = { params: Promise<{ clientId: string }> };
 
@@ -51,9 +54,14 @@ export default async function ClientAppsPage({ params }: Params) {
                 key={app.id}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.65rem", flexWrap: "wrap" }}
               >
-                <Link href={`/apps/${app.slug ?? app.id}`} className="action-link" style={{ fontWeight: 600 }}>
-                  {app.name} <ArrowRightIcon className="btn-icon" />
-                </Link>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <Link href={`/apps/${app.slug ?? app.id}`} className="action-link" style={{ fontWeight: 600 }}>
+                    {app.name} <ArrowRightIcon className="btn-icon" />
+                  </Link>
+                  {app.resourceType && RESOURCE_TYPES.includes(app.resourceType as ResourceType) && (
+                    <ResourceTypePill type={app.resourceType as ResourceType} size="xs" />
+                  )}
+                </div>
                 <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
                   <span className={`status-chip ${app.status}`}>{app.status}</span>
                   {app.ownershipState !== "mapped" ? (

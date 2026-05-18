@@ -74,6 +74,7 @@ export default async function SitesPage() {
         </div>
       ) : (
         <SiteDirectoryView
+          userId={session?.user?.id}
           sites={siteDirectory.map((site) => {
             const overviewSite = overview.sites.find((item) => item.id === site.coolifyServiceUuid || item.id === site.id);
 
@@ -88,7 +89,8 @@ export default async function SitesPage() {
               ownershipDiagnostic: site.ownershipDiagnostic,
               source: site.source,
               href: `/apps/${site.slug ?? site.id}`,
-              clientHref: site.ownershipState === "mapped" ? `/clients/${site.clientId}` : undefined
+              clientHref: site.ownershipState === "mapped" ? `/clients/${site.clientId}` : undefined,
+              resourceType: site.resourceType
             };
           })}
         />

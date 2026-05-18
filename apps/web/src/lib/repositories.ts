@@ -145,6 +145,7 @@ export type SiteDirectoryRecord = {
   coolifyProjectId?: string;
   coolifyProjectName?: string;
   description?: string;
+    resourceType?: string;
 };
 
 export type SiteWorkspaceRecord = {
@@ -162,6 +163,7 @@ export type SiteWorkspaceRecord = {
   deploymentCount: number;
   recentActivity: string[];
   siteType: "wordpress" | "generic";
+    resourceType?: string;
   // DB-native fields (only present for DB-backed sites)
   coolifyServiceUuid?: string;
   coolifyProjectId?: string;
@@ -1460,7 +1462,8 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           coolifyProjectId: s.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
           coolifyProjectName: coolifyMatch?.coolifyProjectName,
           coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
-          coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName
+          coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
+          resourceType: coolifyMatch?.resourceType
         };
       });
 
@@ -1486,7 +1489,8 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
                 coolifyProjectId: site.coolifyProjectId,
                 coolifyProjectName: site.coolifyProjectName,
                 coolifyEnvironmentId: site.coolifyEnvironmentId,
-                coolifyEnvironmentName: site.coolifyEnvironmentName
+                coolifyEnvironmentName: site.coolifyEnvironmentName,
+                resourceType: site.resourceType
               };
             });
 
@@ -1757,6 +1761,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
           deploymentCount: dbSite.environments.reduce((n: number, env: any) => n + env.deployments.length, 0),
           recentActivity,
           siteType: coolifyMatch?.siteType ?? "generic",
+            resourceType: coolifyMatch?.resourceType,
           coolifyServiceUuid: dbSite.coolifyServiceUuid ?? undefined,
           coolifyProjectId:
             dbSite.coolifyProjectId ??
@@ -1823,6 +1828,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
             deploymentCount: 0,
             recentActivity: legacyProject.status ? [`Project ${legacyProject.status}`] : [],
             siteType: "generic",
+              resourceType: undefined,
             coolifyServiceUuid: undefined,
             coolifyProjectId: undefined,
             coolifyProjectName: undefined,
@@ -1865,6 +1871,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
       stagingEnabled: site.stagingStatus !== "unknown",
       deploymentCount,
       siteType: site.siteType,
+      resourceType: site.resourceType,
       recentActivity: overview.deployments
         .filter((dep) => dep.siteName === site.name)
         .slice(0, 3)
@@ -1905,6 +1912,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
       stagingEnabled: site.stagingStatus !== "unknown",
       deploymentCount: overview.deployments.filter((dep) => dep.siteName === site.name).length,
       siteType: site.siteType,
+      resourceType: site.resourceType,
       recentActivity: [],
       coolifyProjectId: site.coolifyProjectId,
       coolifyProjectName: site.coolifyProjectName,

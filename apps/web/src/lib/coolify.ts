@@ -1,4 +1,5 @@
 import { recordCoolifyEndpointCall, recordCoolifyInventoryResult } from "@/lib/diagnostics";
+import { detectResourceType } from "./resource-types";
 
 export type DeploymentRecord = {
   id: string;
@@ -25,6 +26,7 @@ export type SiteOverview = {
   coolifyProjectName?: string;
   coolifyEnvironmentId?: string;
   coolifyEnvironmentName?: string;
+  resourceType?: string;
 };
 
 export type CoolifyProjectRecord = {
@@ -663,6 +665,7 @@ function makeSiteOverview(
   const productionStatus = statusFromRaw(resource.production_status ?? resource.status ?? resource.current_status ?? resource.state ?? resource.server_status);
   const stagingStatus = statusFromRaw(resource.staging_status ?? resource.preview_status);
   const project = resolveProjectForResource(resource, projectsById, projectsByName, environmentById, environmentByName);
+    const resourceTypeMetadata = detectResourceType(resource);
 
   return {
     id,
@@ -675,7 +678,8 @@ function makeSiteOverview(
     coolifyProjectId: project.id,
     coolifyProjectName: project.name,
     coolifyEnvironmentId: project.environmentId,
-    coolifyEnvironmentName: project.environmentName
+    coolifyEnvironmentName: project.environmentName,
+    resourceType: resourceTypeMetadata.type
   };
 }
 

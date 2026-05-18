@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRightIcon } from "@/components/JongoIcons";
+import ResourceTypePill from "@/components/ResourceTypePill";
+import { useAppDirectoryPreferences } from "@/hooks/useAppDirectoryPreferences";
+import { RESOURCE_TYPES, type ResourceType } from "@/lib/resource-types";
 
 type SiteItem = {
   id: string;
@@ -16,16 +19,51 @@ type SiteItem = {
   source: "db" | "coolify";
   href: string;
   clientHref?: string;
+  resourceType?: string;
 };
 
+const RESOURCE_TYPE_LABELS: Record<ResourceType | "all", string> = {
+  all: "All Types",
+  WordPress: "WordPress",
+  "Web App": "Web App",
+  Database: "Database",
+  Service: "Service",
+  "Mobile App": "Mobile",
+  "Unknown/Other": "Unknown"
+};
+
+function isKnownResourceType(value: string | undefined): value is ResourceType {
+  if (!value) return false;
+  return RESOURCE_TYPES.includes(value as ResourceType);
+}
+
+function hasSomeType(sites: SiteItem[], type: ResourceType): boolean {
+  return sites.some((s) => s.resourceType === type);
+}
+
 export default function SiteDirectoryView({
-  sites
+  sites,
+  userId
 }: {
   sites: SiteItem[];
+  userId?: string;
 }) {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | SiteItem["status"]>("all");
-  const [view, setView] = useState<"list" | "grid">("list");
+  const { prefs, setPrefs, ready } = useAppDirectoryPreferences(userId);
+
+  // Derive available resource types from current site list (only show types with at least one match)
+  const availableTypes = RESOURCE_TYPES.filter((t) => hasSomeType(sites, t));
+
+  const resourceTypeFilter = prefs.resourceTypeFilter;
+  const statusFilter = prefs.statusFilter;
+  const view = prefs.view;
+
+  // Reset resource type filter if it no longer matches available types
+  useEffect(() => {
+    if (ready && resourceTypeFilter !== "all" && !hasSomeType(sites, resourceTypeFilter)) {
+      setPrefs({ resourceTypeFilter: "all" });
+    }
+  }, [ready, resourceTypeFilter, sites, setPrefs]);
 
   const query = search.trim().toLowerCase();
   const filtered = sites.filter((site) => {
@@ -37,12 +75,16 @@ export default function SiteDirectoryView({
 
     const matchesStatus = statusFilter === "all" || site.status === statusFilter;
 
-    return matchesQuery && matchesStatus;
+    const matchesType =
+      resourceTypeFilter === "all" ||
+      site.resourceType === resourceTypeFilter;
+
+    return matchesQuery && matchesStatus && matchesType;
   });
 
   return (
     <div className="page-stack">
-      <div className="card directory-toolbar">
+      <div className="card directory-toolbar" style={{ gap: "0.75rem" }}>
         <div className="directory-toolbar-primary">
           <input
             className="directory-search"
@@ -53,17 +95,39 @@ export default function SiteDirectoryView({
             aria-label="Filter apps"
           />
           <div className="filter-group" aria-label="Site status filters">
-            <button type="button" className={`filter-pill ${statusFilter === "all" ? "is-active" : ""}`} onClick={() => setStatusFilter("all")}>All</button>
-            <button type="button" className={`filter-pill ${statusFilter === "healthy" ? "is-active" : ""}`} onClick={() => setStatusFilter("healthy")}>Healthy</button>
-            <button type="button" className={`filter-pill ${statusFilter === "degraded" ? "is-active" : ""}`} onClick={() => setStatusFilter("degraded")}>Degraded</button>
-            <button type="button" className={`filter-pill ${statusFilter === "error" ? "is-active" : ""}`} onClick={() => setStatusFilter("error")}>Error</button>
-            <button type="button" className={`filter-pill ${statusFilter === "unknown" ? "is-active" : ""}`} onClick={() => setStatusFilter("unknown")}>Offline</button>
+            <button type="button" className={`filter-pill ${statusFilter === "all" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "all" })}>All</button>
+            <button type="button" className={`filter-pill ${statusFilter === "healthy" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "healthy" })}>Healthy</button>
+            <button type="button" className={`filter-pill ${statusFilter === "degraded" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "degraded" })}>Degraded</button>
+            <button type="button" className={`filter-pill ${statusFilter === "error" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "error" })}>Error</button>
+            <button type="button" className={`filter-pill ${statusFilter === "unknown" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "unknown" })}>Offline</button>
           </div>
         </div>
 
+        {availableTypes.length > 0 && (
+          <div className="filter-group" aria-label="Resource type filters" style={{ flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className={`filter-pill ${resourceTypeFilter === "all" ? "is-active" : ""}`}
+              onClick={() => setPrefs({ resourceTypeFilter: "all" })}
+            >
+              {RESOURCE_TYPE_LABELS["all"]}
+            </button>
+            {availableTypes.map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`filter-pill ${resourceTypeFilter === type ? "is-active" : ""}`}
+                onClick={() => setPrefs({ resourceTypeFilter: type })}
+              >
+                {RESOURCE_TYPE_LABELS[type]}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="view-toggle" aria-label="Site view toggle">
-          <button type="button" className={`view-pill ${view === "list" ? "is-active" : ""}`} onClick={() => setView("list")}>List</button>
-          <button type="button" className={`view-pill ${view === "grid" ? "is-active" : ""}`} onClick={() => setView("grid")}>Grid</button>
+          <button type="button" className={`view-pill ${view === "list" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "list" })}>List</button>
+          <button type="button" className={`view-pill ${view === "grid" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "grid" })}>Grid</button>
         </div>
       </div>
 
@@ -75,32 +139,38 @@ export default function SiteDirectoryView({
         </div>
       ) : (
         <section className={`directory-results ${view === "list" ? "directory-list" : "directory-grid"}`}>
-          {filtered.map((site) => (
-            <article key={site.id} className="card tone-card directory-row">
-              <div className="directory-main">
-                <div className="directory-title-row">
-                  <h2 className="directory-title">{site.name}</h2>
-                  <span className={`status-chip ${site.status}`}>{site.status === "unknown" ? "Offline / Unknown" : site.status}</span>
+          {filtered.map((site) => {
+            const resolvedType = isKnownResourceType(site.resourceType) ? site.resourceType : null;
+            return (
+              <article key={site.id} className="card tone-card directory-row">
+                <div className="directory-main">
+                  <div className="directory-title-row">
+                    <h2 className="directory-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                      {site.name}
+                      {resolvedType && <ResourceTypePill type={resolvedType} size="xs" />}
+                    </h2>
+                    <span className={`status-chip ${site.status}`}>{site.status === "unknown" ? "Offline / Unknown" : site.status}</span>
+                  </div>
+                  {site.description ? <p className="directory-summary">{site.description}</p> : null}
+                  <p className="directory-meta">Client: {site.clientName}</p>
+                  <div className="directory-badges">
+                    <span className="tag">Ownership: {site.ownershipDiagnostic}</span>
+                  </div>
                 </div>
-                {site.description ? <p className="directory-summary">{site.description}</p> : null}
-                <p className="directory-meta">Client: {site.clientName}</p>
-                <div className="directory-badges">
-                  <span className="tag">Ownership: {site.ownershipDiagnostic}</span>
-                </div>
-              </div>
 
-              <div className="directory-actions">
-                {site.clientHref ? (
-                  <Link href={site.clientHref} className="action-link">
-                    View client <ArrowRightIcon className="btn-icon" />
+                <div className="directory-actions">
+                  {site.clientHref ? (
+                    <Link href={site.clientHref} className="action-link">
+                      View client <ArrowRightIcon className="btn-icon" />
+                    </Link>
+                  ) : null}
+                  <Link href={site.href} className="action-link">
+                    Open workspace <ArrowRightIcon className="btn-icon" />
                   </Link>
-                ) : null}
-                <Link href={site.href} className="action-link">
-                  Open workspace <ArrowRightIcon className="btn-icon" />
-                </Link>
-              </div>
-            </article>
-          ))}
+                </div>
+              </article>
+            );
+          })}
         </section>
       )}
     </div>
