@@ -53,7 +53,7 @@ async function loadActiveMappings(organizationId: string): Promise<MappingRow[]>
       l."createdAt",
       l."updatedAt"
     from "OrganizationCoolifyProjectLink" l
-    where l."organizationId" = ${organizationId}
+    where l."organizationId" = ${organizationId}::uuid
       and l."deletedAt" is null
     order by l."isPrimary" desc, l."createdAt" asc
   `;
@@ -174,7 +174,7 @@ export async function POST(request: Request, { params }: Params) {
     join "Organization" o on o.id = l."organizationId"
     where l."coolifyProjectId" = ${coolifyProjectId}
       and l."deletedAt" is null
-      and l."organizationId" <> ${organizationId}
+      and l."organizationId" <> ${organizationId}::uuid
       and o."deletedAt" is null
     limit 1
   `;
@@ -192,7 +192,7 @@ export async function POST(request: Request, { params }: Params) {
     await db.$executeRaw`
       update "OrganizationCoolifyProjectLink"
       set "deletedAt" = now(), "isPrimary" = false, "updatedAt" = now()
-      where "organizationId" = ${organizationId}
+      where "organizationId" = ${organizationId}::uuid
         and "coolifyProjectId" = ${coolifyProjectId}
         and "deletedAt" is null
     `;
@@ -211,13 +211,13 @@ export async function POST(request: Request, { params }: Params) {
       await db.$executeRaw`
         update "OrganizationCoolifyProjectLink"
         set "isPrimary" = false, "updatedAt" = now()
-        where "organizationId" = ${organizationId}
+        where "organizationId" = ${organizationId}::uuid
           and "deletedAt" is null
       `;
       await db.$executeRaw`
         update "OrganizationCoolifyProjectLink"
         set "isPrimary" = true, "updatedAt" = now()
-        where "organizationId" = ${organizationId}
+        where "organizationId" = ${organizationId}::uuid
           and "coolifyProjectId" = ${primary.coolifyProjectId}
           and "deletedAt" is null
       `;
@@ -237,7 +237,7 @@ export async function POST(request: Request, { params }: Params) {
   const existingForOrg = await db.$queryRaw<Array<{ coolifyProjectId: string; deletedAt: Date | null }>>`
     select "coolifyProjectId", "deletedAt"
     from "OrganizationCoolifyProjectLink"
-    where "organizationId" = ${organizationId}
+    where "organizationId" = ${organizationId}::uuid
       and "coolifyProjectId" = ${coolifyProjectId}
     limit 1
   `;
@@ -249,7 +249,7 @@ export async function POST(request: Request, { params }: Params) {
         "coolifyProjectName" = ${coolifyProjectName},
         "deletedAt" = null,
         "updatedAt" = now()
-      where "organizationId" = ${organizationId}
+      where "organizationId" = ${organizationId}::uuid
         and "coolifyProjectId" = ${coolifyProjectId}
     `;
   } else {
@@ -265,7 +265,7 @@ export async function POST(request: Request, { params }: Params) {
       )
       values (
         gen_random_uuid(),
-        ${organizationId},
+        ${organizationId}::uuid,
         ${coolifyProjectId},
         ${coolifyProjectName},
         false,
@@ -281,14 +281,14 @@ export async function POST(request: Request, { params }: Params) {
     await db.$executeRaw`
       update "OrganizationCoolifyProjectLink"
       set "isPrimary" = false, "updatedAt" = now()
-      where "organizationId" = ${organizationId}
+      where "organizationId" = ${organizationId}::uuid
         and "deletedAt" is null
     `;
 
     await db.$executeRaw`
       update "OrganizationCoolifyProjectLink"
       set "isPrimary" = true, "updatedAt" = now()
-      where "organizationId" = ${organizationId}
+      where "organizationId" = ${organizationId}::uuid
         and "coolifyProjectId" = ${coolifyProjectId}
         and "deletedAt" is null
     `;
