@@ -1941,7 +1941,7 @@ export async function listSiteDeployments(siteId: string, viewer?: ViewerContext
 
     if (prisma) {
       const dbSite = await prisma.site.findFirst({
-        where: { id: workspace.id, deletedAt: null },
+        where: { ...buildSiteIdentityWhere(workspace.id), deletedAt: null },
         select: { id: true, coolifyServiceUuid: true, name: true }
       });
 
