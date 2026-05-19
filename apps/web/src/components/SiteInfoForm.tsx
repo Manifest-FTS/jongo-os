@@ -55,7 +55,13 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
       }
 
       setSuccess(true);
-      router.refresh();
+      // If the slug changed (name rename), navigate to the new URL so the page
+      // doesn't 404 on the old siteId.
+      if (data.slug && data.slug !== siteId) {
+        router.replace(`/apps/${data.slug}/settings`);
+      } else {
+        router.refresh();
+      }
     } catch {
       setError("Network error — please try again");
     } finally {
