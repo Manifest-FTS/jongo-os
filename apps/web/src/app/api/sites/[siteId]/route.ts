@@ -4,13 +4,30 @@ import { isAdminRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ siteId: string }> };
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function buildSiteIdentityWhere(siteId: string) {
+  if (isUuid(siteId)) {
+    return {
+      OR: [{ id: siteId }, { slug: siteId }],
+      deletedAt: null
+    };
+  }
+
+  return {
+    slug: siteId,
+    deletedAt: null
+  };
+}
+
 async function getSiteForUser(siteId: string, userId: string) {
   const { db } = await import("@/lib/db");
 
   return db.site.findFirst({
     where: {
-      id: siteId,
-      deletedAt: null,
+      ...buildSiteIdentityWhere(siteId),
       OR: [
         {
           organization: {
@@ -44,8 +61,7 @@ export async function GET(_req: Request, { params }: Params) {
 
     const site = await db.site.findFirst({
       where: {
-        id: siteId,
-        deletedAt: null,
+        ...buildSiteIdentityWhere(siteId),
         OR: [
           {
             organization: {
@@ -134,8 +150,7 @@ export async function PUT(req: Request, { params }: Params) {
 
     const site = await db.site.findFirst({
       where: {
-        id: siteId,
-        deletedAt: null,
+        ...buildSiteIdentityWhere(siteId),
         organization: {
           deletedAt: null,
           OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
@@ -182,7 +197,7 @@ export async function PUT(req: Request, { params }: Params) {
     if ("gitRepositoryUrl" in body) updates.gitRepositoryUrl = body.gitRepositoryUrl?.trim() || null;
     if ("stagingEnabled" in body && typeof body.stagingEnabled === "boolean") updates.stagingEnabled = body.stagingEnabled;
 
-    const updated = await db.site.update({ where: { id: siteId }, data: updates });
+    const updated = await db.site.update({ where: { id: site.id }, data: updates });
 
     return NextResponse.json({ id: updated.id, slug: updated.slug, name: updated.name });
   } catch (err) {
@@ -208,8 +223,7 @@ export async function DELETE(_req: Request, { params }: Params) {
 
     const site = await db.site.findFirst({
       where: {
-        id: siteId,
-        deletedAt: null,
+        ...buildSiteIdentityWhere(siteId),
         organization: {
           deletedAt: null,
           OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
@@ -232,7 +246,7 @@ export async function DELETE(_req: Request, { params }: Params) {
       return NextResponse.json({ error: "Only admins can delete apps" }, { status: 403 });
     }
 
-    await db.site.update({ where: { id: siteId }, data: { deletedAt: new Date() } });
+    await db.site.update({ where: { id: site.id }, data: { deletedAt: new Date() } });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
