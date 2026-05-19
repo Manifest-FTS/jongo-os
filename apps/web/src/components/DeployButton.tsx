@@ -7,13 +7,26 @@ type Props = {
   deployTargetId?: string;
   environment?: "production" | "staging";
   label?: string;
+  disabled?: boolean;
+  disabledReason?: string;
 };
 
-export default function DeployButton({ siteId, deployTargetId, environment = "production", label }: Props) {
+export default function DeployButton({
+  siteId,
+  deployTargetId,
+  environment = "production",
+  label,
+  disabled = false,
+  disabledReason
+}: Props) {
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
 
   async function handleDeploy() {
+    if (disabled) {
+      return;
+    }
+
     setStatus("pending");
     setMessage("");
 
@@ -45,12 +58,17 @@ export default function DeployButton({ siteId, deployTargetId, environment = "pr
     <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
       <button
         onClick={handleDeploy}
-        disabled={status === "pending"}
+        disabled={status === "pending" || disabled}
         className="deploy-btn"
         data-env={environment}
       >
         {status === "pending" ? "Deploying…" : buttonLabel}
       </button>
+      {disabled && disabledReason && (
+        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+          {disabledReason}
+        </p>
+      )}
       {message && (
         <p
           style={{

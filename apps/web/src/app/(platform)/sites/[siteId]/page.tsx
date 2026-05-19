@@ -1,6 +1,7 @@
 ﻿import { getCoolifyOverview } from "@/lib/coolify";
 import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
+import { getDeployLockReason } from "@/lib/deploy-guards";
 import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import Link from "next/link";
@@ -111,6 +112,7 @@ export default async function SiteOverviewPage({ params }: Params) {
   const recentBackupHealthy = lastSuccessfulBackup ? isRecentBackup(lastSuccessfulBackup, 7) : false;
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
   const isWordPress = workspace?.siteType === "wordpress";
+  const deployLockReason = getDeployLockReason(backupInventory, workspace?.coolifyServiceUuid);
 
   const readinessChecks: ReadinessCheck[] = [
     {
@@ -285,8 +287,20 @@ export default async function SiteOverviewPage({ params }: Params) {
           </p>
           {stagingConfigured ? (
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
-              <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" />
-              <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" />
+              <DeployButton
+                siteId={siteId}
+                deployTargetId={site?.deployTargetId}
+                environment="production"
+                disabled={Boolean(deployLockReason)}
+                disabledReason={deployLockReason ?? undefined}
+              />
+              <DeployButton
+                siteId={siteId}
+                deployTargetId={site?.deployTargetId}
+                environment="staging"
+                disabled={Boolean(deployLockReason)}
+                disabledReason={deployLockReason ?? undefined}
+              />
             </div>
           ) : (
             <div className="diagnostic-banner" style={{ marginTop: "0.85rem" }}>

@@ -1,5 +1,7 @@
 import { getCoolifyAppStagingCapability, buildStagingSyncDryRunPlan } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
+import { getDeployLockReason } from "@/lib/deploy-guards";
 import DeployButton from "@/components/DeployButton";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
@@ -34,10 +36,14 @@ export default async function StagingPage({ params }: Params) {
   const appUuid = workspace?.coolifyServiceUuid;
   const projectId = workspace?.coolifyProjectId;
 
-  const stagingCapability = appUuid
-    ? await getCoolifyAppStagingCapability(appUuid, projectId ?? undefined)
-    : null;
+  const [stagingCapability, backupInventory] = appUuid
+    ? await Promise.all([
+      getCoolifyAppStagingCapability(appUuid, projectId ?? undefined),
+      getCoolifyAppBackupInventory(appUuid)
+    ])
+    : [null, null];
   const stagingConfigured = Boolean(stagingEnabled && stagingCapability?.detected);
+  const deployLockReason = getDeployLockReason(backupInventory, appUuid);
 
   const dryRunPlan =
     stagingConfigured && appUuid && stagingCapability
@@ -220,6 +226,8 @@ export default async function StagingPage({ params }: Params) {
               deployTargetId={workspace?.deployTargetId}
               environment="production"
               label="Deploy to Production"
+              disabled={Boolean(deployLockReason)}
+              disabledReason={deployLockReason ?? undefined}
             />
           </article>
 

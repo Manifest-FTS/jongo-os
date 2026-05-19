@@ -1,5 +1,6 @@
 import DeployButton from "@/components/DeployButton";
-import { getCoolifyOverview } from "@/lib/coolify";
+import { getCoolifyOverview, getCoolifyAppBackupInventory } from "@/lib/coolify";
+import { getDeployLockReason } from "@/lib/deploy-guards";
 import { getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
@@ -49,6 +50,10 @@ export default async function DeploymentsPage({ params }: Params) {
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
+  const backupInventory = workspace?.coolifyServiceUuid
+    ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
+    : null;
+  const deployLockReason = getDeployLockReason(backupInventory, workspace?.coolifyServiceUuid);
 
   const productionDeployments = deployments.filter((d) => d.environment === "production");
   const stagingDeployments = deployments.filter((d) => d.environment === "staging");
@@ -101,8 +106,22 @@ export default async function DeploymentsPage({ params }: Params) {
           {stagingConfigured ? (
             <>
               <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.75rem" }}>
-                <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="production" label="Deploy to Production" />
-                <DeployButton siteId={siteId} deployTargetId={site?.deployTargetId} environment="staging" label="Sync to Staging" />
+                <DeployButton
+                  siteId={siteId}
+                  deployTargetId={site?.deployTargetId}
+                  environment="production"
+                  label="Deploy to Production"
+                  disabled={Boolean(deployLockReason)}
+                  disabledReason={deployLockReason ?? undefined}
+                />
+                <DeployButton
+                  siteId={siteId}
+                  deployTargetId={site?.deployTargetId}
+                  environment="staging"
+                  label="Sync to Staging"
+                  disabled={Boolean(deployLockReason)}
+                  disabledReason={deployLockReason ?? undefined}
+                />
               </div>
               <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
                 Trigger deploys above. History updates after each action.

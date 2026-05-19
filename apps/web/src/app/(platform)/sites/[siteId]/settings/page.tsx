@@ -4,7 +4,8 @@ import DeployButton from "@/components/DeployButton";
 import SiteInfoForm from "@/components/SiteInfoForm";
 import Link from "next/link";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
-import { getCoolifyOverview } from "@/lib/coolify";
+import { getCoolifyOverview, getCoolifyAppBackupInventory } from "@/lib/coolify";
+import { getDeployLockReason } from "@/lib/deploy-guards";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -42,6 +43,10 @@ export default async function SiteSettingsPage({ params }: Params) {
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
+  const backupInventory = workspace?.coolifyServiceUuid
+    ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
+    : null;
+  const deployLockReason = getDeployLockReason(backupInventory, workspace?.coolifyServiceUuid);
 
   return (
     <div>
@@ -117,12 +122,16 @@ export default async function SiteSettingsPage({ params }: Params) {
                 deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
                 environment="staging"
                 label="Sync to Staging"
+                disabled={Boolean(deployLockReason)}
+                disabledReason={deployLockReason ?? undefined}
               />
               <DeployButton
                 siteId={siteId}
                 deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
                 environment="production"
                 label="Deploy to Production"
+                disabled={Boolean(deployLockReason)}
+                disabledReason={deployLockReason ?? undefined}
               />
             </div>
             <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
