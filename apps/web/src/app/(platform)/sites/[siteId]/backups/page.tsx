@@ -1,4 +1,4 @@
-import { getCoolifyAppBackupInventory } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { auth } from "@/lib/auth.config";
@@ -14,6 +14,56 @@ function formatRelativeTime(iso: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function getLastSuccessfulBackup(inventory: AppBackupInventory | null): { timestamp: string; relativeTime: string } | null {
+  if (!inventory?.recentExecutions || inventory.recentExecutions.length === 0) return null;
+  const successful = inventory.recentExecutions.find((exec) => exec.status === "success");
+  if (!successful || !successful.finishedAt) return null;
+  return {
+    timestamp: successful.finishedAt,
+    relativeTime: formatRelativeTime(successful.finishedAt)
+  };
+}
+
+function getHoursAgo(iso: string): number {
+  const diff = Date.now() - new Date(iso).getTime();
+  return diff / (3_600_000);
+}
+
+function getDaysAgo(iso: string): number {
+  return getHoursAgo(iso) / 24;
+}
+
+function isBackupStale(lastBackup: string | null, retentionDays?: number): boolean {
+  if (!lastBackup) return true;
+  const daysOld = getDaysAgo(lastBackup);
+  const staleThreshold = Math.max(retentionDays ?? 7, 7); // At least 7 days for freshness
+  return daysOld > staleThreshold;
+}
+
+function hasFailureChain(inventory: AppBackupInventory | null): boolean {
+  if (!inventory?.recentExecutions || inventory.recentExecutions.length < 3) return false;
+  const lastThree = inventory.recentExecutions.slice(0, 3);
+  return lastThree.every((exec) => exec.status === "failed");
+}
+
+function isRunningBackup(inventory: AppBackupInventory | null): boolean {
+  if (!inventory?.recentExecutions || inventory.recentExecutions.length === 0) return false;
+  return inventory.recentExecutions.some((exec) => exec.status === "running");
+}
+
+function getProtectionStatus(
+  hasLiveData: boolean,
+  isConfigured: boolean,
+  lastBackup: string | null,
+  retentionDays?: number
+): "protected-recent" | "protected-stale" | "unprotected" | "unknown" {
+  if (!hasLiveData) return "unknown";
+  if (!isConfigured) return "unprotected";
+  if (!lastBackup) return "unprotected";
+  if (isBackupStale(lastBackup, retentionDays)) return "protected-stale";
+  return "protected-recent";
 }
 
 export default async function BackupsPage({ params }: Params) {
@@ -35,8 +85,55 @@ export default async function BackupsPage({ params }: Params) {
   const hasLiveData = inventory?.source === "live";
   const enabledSchedules = inventory?.schedules.filter((s) => s.enabled) ?? [];
   const recentExecutions = inventory?.recentExecutions ?? [];
+  const lastSuccessfulBackup = getLastSuccessfulBackup(inventory);
+  const failureChain = hasFailureChain(inventory);
+  const backupRunning = isRunningBackup(inventory);
 
-  const protectionStatus = !hasLiveData ? "unknown" : isConfigured ? "protected" : "unprotected";
+  // Group schedules by database name
+  const schedulesByDatabase = enabledSchedules.reduce(
+    (acc, schedule) => {
+      const dbName = schedule.resourceName || "Unknown Database";
+      if (!acc[dbName]) {
+        acc[dbName] = [];
+      }
+      acc[dbName].push(schedule);
+      return acc;
+    },
+    {} as Record<string, typeof enabledSchedules>
+  );
+
+  const databaseNames = Object.keys(schedulesByDatabase);
+  const maxRetentionDays = Math.max(
+    ...databaseNames.map((dbName) =>
+      Math.max(...(schedulesByDatabase[dbName].map((s) => s.retentionDays ?? 7) ?? [7]))
+    ),
+    7
+  );
+
+  const protectionStatus = getProtectionStatus(
+    hasLiveData,
+    isConfigured,
+    lastSuccessfulBackup?.timestamp ?? null,
+    maxRetentionDays
+  );
+
+  const statusChipClass =
+    protectionStatus === "protected-recent"
+      ? "healthy"
+      : protectionStatus === "protected-stale"
+        ? "degraded"
+        : protectionStatus === "unprotected"
+          ? "error"
+          : "unknown";
+
+  const statusLabel =
+    protectionStatus === "protected-recent"
+      ? "Protected (recent)"
+      : protectionStatus === "protected-stale"
+        ? "Protected (stale)"
+        : protectionStatus === "unprotected"
+          ? "Not protected"
+          : "Status unknown";
 
   return (
     <div className="page-stack">
@@ -54,8 +151,8 @@ export default async function BackupsPage({ params }: Params) {
               </p>
             )}
           </div>
-          <span className={`status-chip ${protectionStatus === "protected" ? "healthy" : protectionStatus === "unprotected" ? "degraded" : "unknown"}`}>
-            {protectionStatus === "protected" ? "Protected" : protectionStatus === "unprotected" ? "Not protected" : "Status unknown"}
+          <span className={`status-chip ${statusChipClass}`}>
+            {statusLabel}
           </span>
         </div>
       </article>
@@ -92,27 +189,73 @@ export default async function BackupsPage({ params }: Params) {
         </article>
       ) : null}
 
-      {enabledSchedules.length > 0 ? (
+      {/* Last Successful Backup Status */}
+      {isConfigured && hasLiveData ? (
+        <article className="card" style={{ borderLeft: `4px solid var(--${statusChipClass === "error" ? "error" : statusChipClass === "degraded" ? "warning" : "success"}, #00c853)` }}>
+          <h3 className="card-title" style={{ marginBottom: "0.5rem" }}>Recent Backup Status</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "0.5rem" }}>
+            <div>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>Last Successful Backup</p>
+              <p style={{ margin: "0.2rem 0 0", fontSize: "1rem", fontWeight: 600 }}>
+                {lastSuccessfulBackup ? lastSuccessfulBackup.relativeTime : "Never"}
+              </p>
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>Retention Policy</p>
+              <p style={{ margin: "0.2rem 0 0", fontSize: "1rem", fontWeight: 600 }}>
+                {maxRetentionDays >= 7 ? `${maxRetentionDays} days` : `${maxRetentionDays} days (⚠ short)`}
+              </p>
+            </div>
+          </div>
+          {failureChain && (
+            <div style={{ padding: "0.6rem 0.75rem", background: "var(--error, #c0392b)", borderRadius: "4px", marginTop: "0.5rem" }}>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "white", fontWeight: 500 }}>
+                ⚠ Last 3 backups failed. Check Coolify for errors.
+              </p>
+            </div>
+          )}
+          {backupRunning && (
+            <div style={{ padding: "0.6rem 0.75rem", background: "var(--info, #2196f3)", borderRadius: "4px", marginTop: "0.5rem" }}>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "white", fontWeight: 500 }}>
+                ⓘ Backup in progress...
+              </p>
+            </div>
+          )}
+        </article>
+      ) : null}
+
+      {databaseNames.length > 0 ? (
         <article className="card">
-          <h3 className="card-title">Active Backup Schedules</h3>
+          <h3 className="card-title">Database Backup Schedules</h3>
           <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.5rem" }}>
-            {enabledSchedules.map((schedule) => (
-              <div key={schedule.id} style={{ padding: "0.75rem", background: "var(--surface-alt)", borderRadius: "8px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>{schedule.resourceName}</p>
-                    <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-                      {schedule.frequency ? `Schedule: ${schedule.frequency}` : "Schedule: custom"}
-                    </p>
+            {databaseNames.map((dbName) => {
+              const dbSchedules = schedulesByDatabase[dbName];
+              const lastExecForDb = recentExecutions.find((exec) => exec.filename?.includes(dbName) || true)?.finishedAt;
+              return (
+                <div key={dbName} style={{ padding: "0.75rem", background: "var(--surface-alt)", borderRadius: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "0.5rem" }}>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>{dbName}</p>
+                      <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+                        {dbSchedules.length} schedule{dbSchedules.length !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                    <span className="status-chip healthy">enabled</span>
                   </div>
-                  <span className="status-chip healthy">enabled</span>
+                  <div style={{ display: "grid", gap: "0.3rem", fontSize: "0.82rem", color: "var(--muted)" }}>
+                    {dbSchedules.map((s, idx) => (
+                      <div key={idx}>
+                        <span>
+                          {s.frequency ? `Schedule: ${s.frequency}` : "Schedule: custom"}
+                          {s.retentionAmount != null ? ` · ${s.retentionAmount} backups` : ""}
+                          {s.retentionDays != null ? ` · ${s.retentionDays}d retention` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ marginTop: "0.5rem", display: "flex", gap: "1.25rem", fontSize: "0.82rem", color: "var(--muted)" }}>
-                  {schedule.retentionAmount != null ? <span>Retention: {schedule.retentionAmount} backups</span> : null}
-                  {schedule.retentionDays != null ? <span>{schedule.retentionDays} days</span> : null}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </article>
       ) : null}
@@ -137,8 +280,13 @@ export default async function BackupsPage({ params }: Params) {
                     {exec.filename ? (
                       <p style={{ margin: "0.1rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>{exec.filename}</p>
                     ) : null}
+                    {exec.sizeBytes ? (
+                      <p style={{ margin: "0.1rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                        Size: {(exec.sizeBytes / (1024 * 1024)).toFixed(2)} MB
+                      </p>
+                    ) : null}
                   </div>
-                  <span className={`status-chip ${exec.status === "success" ? "healthy" : exec.status === "failed" ? "error" : "unknown"}`}>
+                  <span className={`status-chip ${exec.status === "success" ? "healthy" : exec.status === "failed" ? "error" : exec.status === "running" ? "unknown" : "unknown"}`}>
                     {exec.status}
                   </span>
                 </div>
@@ -180,8 +328,11 @@ export default async function BackupsPage({ params }: Params) {
               <p style={{ margin: 0 }}>Data source: <code>{inventory.source}</code></p>
               <p style={{ margin: 0 }}>Checked: <code>{formatRelativeTime(inventory.checkedAt)}</code></p>
               {inventory.note ? <p style={{ margin: 0 }}>Note: <code>{inventory.note}</code></p> : null}
+              <p style={{ margin: 0 }}>Protection status: <code>{protectionStatus}</code></p>
               <p style={{ margin: 0 }}>Schedules found: <code>{inventory.schedules.length}</code></p>
+              <p style={{ margin: 0 }}>Enabled schedules: <code>{enabledSchedules.length}</code></p>
               <p style={{ margin: 0 }}>Executions found: <code>{inventory.recentExecutions.length}</code></p>
+              {lastSuccessfulBackup ? <p style={{ margin: 0 }}>Last successful: <code>{lastSuccessfulBackup.timestamp}</code></p> : null}
               {appUuid ? <p style={{ margin: 0 }}>App UUID: <code>{appUuid}</code></p> : null}
             </div>
           </article>
