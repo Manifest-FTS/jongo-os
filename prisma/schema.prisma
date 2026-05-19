@@ -49,6 +49,7 @@ model User {
   collaboratorsGranted Collaborator[] @relation("GrantedBy")
   invitationsSent      Invitation[]   @relation("InvitationInvitedBy")
   invitationsAccepted  Invitation[]   @relation("InvitationAcceptedBy")
+  passwordResetTokens  PasswordResetToken[]
 
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
@@ -287,6 +288,24 @@ model AuditLog {
 
   @@index([organizationId])
   @@index([createdAt])
+}
+
+// ============================================================
+// Password Reset Tokens
+// ============================================================
+
+model PasswordResetToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique  // SHA-256 of the raw token sent in the email
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // ============================================================

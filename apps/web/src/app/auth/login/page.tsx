@@ -65,6 +65,9 @@ function LoginForm() {
         {loading ? "Signing in…" : "Sign in"}
       </button>
       <p className="auth-link-row">
+        <Link href="/auth/forgot-password" className="auth-inline-link">Forgot password?</Link>
+      </p>
+      <p className="auth-link-row">
         Need an account? <Link href="/auth/register">Create one</Link>
       </p>
     </form>

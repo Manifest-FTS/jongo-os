@@ -194,6 +194,33 @@ export async function sendInviteAcceptedEmail(input: {
   });
 }
 
+export async function sendPasswordResetEmail(input: {
+  to: string;
+  resetUrl: string;
+  expiresAt: Date;
+}): Promise<EmailResult> {
+  const expiry = input.expiresAt.toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC";
+  const subject = "Reset your Jongo password";
+  const text = [
+    "You requested a password reset for your Jongo account.",
+    "",
+    `Reset your password: ${input.resetUrl}`,
+    `This link expires at: ${expiry}`,
+    "",
+    "If you did not request this, you can safely ignore this email. Your password will not change."
+  ].join("\n");
+
+  const html = [
+    "<p>You requested a password reset for your Jongo account.</p>",
+    `<p><a href="${escapeHtml(input.resetUrl)}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;font-weight:600;">Reset password</a></p>`,
+    `<p>Or copy this link: <code>${escapeHtml(input.resetUrl)}</code></p>`,
+    `<p style="color:#6b7280;font-size:0.9em;">This link expires at ${escapeHtml(expiry)}.</p>`,
+    `<p style="color:#6b7280;font-size:0.9em;">If you did not request this, you can safely ignore this email.</p>`
+  ].join("");
+
+  return sendTransactionalEmail({ to: input.to, subject, text, html });
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
