@@ -8,4 +8,4 @@ cmds = ["npm ci", "npm run prisma:generate"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "(npm run db:migrate:deploy || echo '[startup] prisma migrate deploy failed; continuing startup') && HOSTNAME=0.0.0.0 npm run start --workspace @jongo-os/web"
+cmd = "npm run start"

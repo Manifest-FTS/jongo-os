@@ -28,6 +28,9 @@ This repository now includes pass-2 implementation for branded UI and read-only 
 - `npm run start`
 - `npm run type-check`
 - `npm run build`
+- `npm run db:migrate`
+- `npm run db:migrate:deploy`
+- `npm run db:migrate:status`
 - `npm run bootstrap:local`
 - `npm run smoke:coolify`
 - `npm run dev:web:env`
@@ -37,32 +40,39 @@ This repository now includes pass-2 implementation for branded UI and read-only 
 
 ## Production Runtime Notes
 
-- This project uses Next.js `output: standalone`.
-- Production start command must run the standalone server output, not `next start`.
-- Default start path is:
-	- `HOSTNAME=0.0.0.0 npm run start --workspace @jongo-os/web`
-	- This forces the standalone server to bind to `0.0.0.0` so reverse proxies can reach the app inside container environments.
+- This project uses the regular Next.js server runtime.
+- Canonical production entrypoint is `npm run start`.
+- `npm run start` runs Prisma client generation, then `prisma migrate deploy`, then starts the web server.
+- Startup aborts with a non-zero exit code if migrations fail, so broken schema changes do not serve traffic.
+- Docker and Nixpacks/Coolify both use the same `npm run start` entrypoint.
 
 Prisma client generation is required for production bootstrap/auth/database routes.
 
 - Prisma generation is wired into:
 	- `postinstall` (runs on install)
 	- `build` (runs before Next build)
-	- `start` (runs before app start)
+	- `start` (runs before migration and app start)
 
 For Coolify/Nixpacks deployments, this repository includes `nixpacks.toml` to enforce:
 
 - `npm ci`
 - `npm run prisma:generate`
 - `npm run build`
-- start with standalone server path above
+- start with `npm run start`
 
 Startup behavior:
 
-- Runtime attempts `npm run db:migrate:deploy` on boot.
-- If migrations fail (for example, transient DB/network startup timing), app startup continues so the service can come up instead of returning Bad Gateway.
-- Run migrations manually in your deployment shell when needed:
-	- `npm run db:migrate:deploy`
+- Runtime applies committed Prisma migrations on boot before the app starts.
+- If migrations fail, startup stops and logs the failure with `[startup]` messages.
+- Normal upgrades should not require SSH access or manual SQL.
+- Advanced recovery steps are documented in [docs/self-hosted-database-migrations.md](docs/self-hosted-database-migrations.md).
+
+## Migration Workflow
+
+- Development schema changes should use `npm run db:migrate -- --name <migration_name>` and commit the generated `prisma/migrations/*` directory.
+- Production and self-hosted deployments should use `npm run start`, which includes `npm run db:migrate:deploy` automatically.
+- `prisma db push` is not part of the normal Jongo OS development or production workflow.
+- See [docs/self-hosted-database-migrations.md](docs/self-hosted-database-migrations.md) for self-hosted upgrades, deployment expectations, and failure recovery.
 
 ## Environment
 
@@ -88,6 +98,8 @@ If your Coolify credentials are in root `.env`, use `npm run dev:web:env` so the
 2. Prepare `.env` from `.env.example`
 3. Run `npm run docker:up`
 4. Open `http://localhost:3000`
+
+The web container runs `npm run start`, so committed Prisma migrations are applied automatically before the app accepts traffic.
 
 ## Real Coolify Validation
 

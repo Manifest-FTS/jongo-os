@@ -231,7 +231,8 @@ Once migration 0005 is applied, execute the checklist below against the live env
 - Container: `dt0v391xre5rgtp50062tunm-002216038801`
 - Git Repo: `Manifest-FTS/jongo-os` (`main` branch)
 - Build Command: `npm run build`
-- Start Command: `npm run db:migrate:deploy || echo migrate_failed_continuing && HOSTNAME=0.0.0.0 PORT=3000 npm run start --workspace apps/web`
+- Historical Start Command At Incident Time: `npm run db:migrate:deploy || echo migrate_failed_continuing && HOSTNAME=0.0.0.0 PORT=3000 npm run start --workspace apps/web`
+- Current Canonical Start Command: `npm run start`
 - Base URL: `https://jongo.manifest-fts.com`
 
 **Database**:
@@ -285,6 +286,7 @@ Once migration 0005 is applied, execute the checklist below against the live env
 
 ## Notes for Future Deployments
 
-- This migration should have been applied during the Coolify build step. The start command includes `npm run db:migrate:deploy || echo migrate_failed_continuing`, which ran but silently failed or was skipped.
+- At incident time, the deployment used a start command that swallowed `prisma migrate deploy` failures and allowed the app to keep booting.
+- Current deployments should use `npm run start`, which runs `prisma migrate deploy` and aborts startup on failure.
 - Verify build logs in Coolify to see why migration was not applied during initial deployment.
 - Ensure future deployments have clean build/migration windows without data conflicts.

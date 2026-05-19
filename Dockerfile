@@ -16,6 +16,7 @@ ENV NODE_ENV=production
 
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/apps/web/package.json /app/apps/web/package.json
+COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/web/.next ./apps/web/.next
 COPY --from=build /app/apps/web/public ./apps/web/public
@@ -25,4 +26,4 @@ COPY --from=build /app/prisma ./prisma
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "(npm run db:migrate:deploy || echo '[startup] prisma migrate deploy failed; continuing startup') && HOSTNAME=0.0.0.0 npm run start --workspace @jongo-os/web"]
+CMD ["npm", "run", "start"]

@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node ./scripts/copy-standalone-static.cjs",
-    "start": "node ./scripts/start-standalone.cjs",
+    "build": "next build",
+    "start": "next start",
     "start:next": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit"

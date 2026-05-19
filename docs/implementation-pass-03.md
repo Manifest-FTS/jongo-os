@@ -33,7 +33,7 @@ Phase 1 establishes the complete product architecture for self-hosted deployment
 - Root package.json updated with db management scripts:
   - `npm run db:migrate` — create and apply migrations in dev
   - `npm run db:migrate:deploy` — deploy migrations in production
-  - `npm run db:push` — sync schema with database
+   - `npm run db:migrate:status` — inspect migration state for deploy/recovery checks
 - Singleton pattern prevents multiple Prisma instances in dev
 
 ### Configuration and Environment
@@ -114,7 +114,7 @@ Phase 1 establishes the complete product architecture for self-hosted deployment
 
 3. Run migrations:
    ```bash
-   npm run db:push
+   npm run db:migrate -- --name init
    ```
 
 4. Seed initial data (when available):
