@@ -66,7 +66,7 @@ export default function DeployButton({
       </button>
       {disabled && disabledReason && (
         <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-          {disabledReason}
+          Why locked: {disabledReason}
         </p>
       )}
       {message && (

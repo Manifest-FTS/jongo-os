@@ -1,6 +1,7 @@
 import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
+import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -80,6 +81,7 @@ export default async function BackupsPage({ params }: Params) {
 
   const appUuid = workspace?.coolifyServiceUuid;
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
+  const backupReadiness = getBackupReadiness(inventory, appUuid);
 
   const isConfigured = inventory?.configured ?? false;
   const hasLiveData = inventory?.source === "live";
@@ -134,6 +136,37 @@ export default async function BackupsPage({ params }: Params) {
         : protectionStatus === "unprotected"
           ? "Not protected"
           : "Status unknown";
+
+      const diagnosisItems = [
+        {
+          label: "Backups configured",
+          tone: isConfigured ? "healthy" : "error",
+          detail: isConfigured
+            ? "Automated schedules are configured."
+            : "No active backup schedules are configured."
+        },
+        {
+          label: "Successful backup",
+          tone: lastSuccessfulBackup ? "healthy" : "error",
+          detail: lastSuccessfulBackup
+            ? `Last successful backup: ${lastSuccessfulBackup.relativeTime}`
+            : "No successful backup found."
+        },
+        {
+          label: "Backup telemetry",
+          tone: hasLiveData ? "healthy" : "unknown",
+          detail: hasLiveData
+            ? "Live backup telemetry available."
+            : "Backup telemetry unavailable."
+        },
+        {
+          label: "Backup freshness",
+          tone: backupReadiness.code === "backup_stale" ? "error" : backupReadiness.locked ? "degraded" : "healthy",
+          detail: backupReadiness.code === "backup_stale"
+            ? `Backup stale. Last success exceeds ${BACKUP_STALE_AFTER_HOURS}h.`
+            : `Warning threshold: ${BACKUP_WARN_AFTER_HOURS}h · lock threshold: ${BACKUP_STALE_AFTER_HOURS}h`
+        }
+      ];
 
   return (
     <div className="page-stack">
@@ -207,6 +240,9 @@ export default async function BackupsPage({ params }: Params) {
               </p>
             </div>
           </div>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+            Freshness thresholds: warn after {BACKUP_WARN_AFTER_HOURS}h, lock after {BACKUP_STALE_AFTER_HOURS}h.
+          </p>
           {failureChain && (
             <div style={{ padding: "0.6rem 0.75rem", background: "var(--error, #c0392b)", borderRadius: "4px", marginTop: "0.5rem" }}>
               <p style={{ margin: 0, fontSize: "0.82rem", color: "white", fontWeight: 500 }}>
@@ -223,6 +259,29 @@ export default async function BackupsPage({ params }: Params) {
           )}
         </article>
       ) : null}
+
+      <article className="card">
+        <h3 className="card-title">Readiness Diagnosis</h3>
+        <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+          Use this to identify whether deploy/sync locks are caused by configuration, failed backups, telemetry outage, or stale backups.
+        </p>
+        <div style={{ display: "grid", gap: "0.6rem" }}>
+          {diagnosisItems.map((item) => (
+            <div key={item.label} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                <strong style={{ fontSize: "0.88rem" }}>{item.label}</strong>
+                <span className={`status-chip ${item.tone}`}>{item.tone === "healthy" ? "OK" : item.tone === "error" ? "Action needed" : "Check"}</span>
+              </div>
+              <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{item.detail}</p>
+            </div>
+          ))}
+        </div>
+        {backupReadiness.nextStep ? (
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem" }}>
+            <strong>Next step:</strong> {backupReadiness.nextStep}
+          </p>
+        ) : null}
+      </article>
 
       {databaseNames.length > 0 ? (
         <article className="card">

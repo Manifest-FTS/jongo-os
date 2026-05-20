@@ -1,7 +1,7 @@
 ﻿import { getCoolifyOverview } from "@/lib/coolify";
 import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
-import { getDeployLockReason } from "@/lib/deploy-guards";
+import { getBackupReadiness } from "@/lib/deploy-guards";
 import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import Link from "next/link";
@@ -108,11 +108,14 @@ export default async function SiteOverviewPage({ params }: Params) {
   const backupInventory = workspace?.coolifyServiceUuid
     ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
     : null;
+  const backupReadiness = getBackupReadiness(backupInventory, workspace?.coolifyServiceUuid);
+  const backupLockReason = backupReadiness.locked
+    ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
+    : "Dry-run mode: execution remains disabled in this interface.";
   const lastSuccessfulBackup = getLastSuccessfulBackupTime(backupInventory);
   const recentBackupHealthy = lastSuccessfulBackup ? isRecentBackup(lastSuccessfulBackup, 7) : false;
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
   const isWordPress = workspace?.siteType === "wordpress";
-  const deployLockReason = getDeployLockReason(backupInventory, workspace?.coolifyServiceUuid);
 
   const readinessChecks: ReadinessCheck[] = [
     {
@@ -285,28 +288,24 @@ export default async function SiteOverviewPage({ params }: Params) {
               {site?.status ?? "unknown"}
             </span>
           </p>
-          {stagingConfigured ? (
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
-              <DeployButton
-                siteId={siteId}
-                deployTargetId={site?.deployTargetId}
-                environment="production"
-                disabled={Boolean(deployLockReason)}
-                disabledReason={deployLockReason ?? undefined}
-              />
-              <DeployButton
-                siteId={siteId}
-                deployTargetId={site?.deployTargetId}
-                environment="staging"
-                disabled={Boolean(deployLockReason)}
-                disabledReason={deployLockReason ?? undefined}
-              />
-            </div>
-          ) : (
-            <div className="diagnostic-banner" style={{ marginTop: "0.85rem" }}>
-              <strong>Staging not configured.</strong> Deploy and sync actions stay hidden until this app has a real staging environment.
-            </div>
-          )}
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
+            <DeployButton
+              siteId={siteId}
+              deployTargetId={site?.deployTargetId}
+              environment="production"
+              disabled
+              disabledReason={backupLockReason}
+            />
+            <DeployButton
+              siteId={siteId}
+              deployTargetId={site?.deployTargetId}
+              environment="staging"
+              disabled
+              disabledReason={stagingConfigured
+                ? backupLockReason
+                : "Staging is not configured. Next step: enable staging in Settings and verify Coolify staging detection."}
+            />
+          </div>
           <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             {overview.mode === "live"
               ? <>Live telemetry · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
@@ -330,7 +329,7 @@ export default async function SiteOverviewPage({ params }: Params) {
               </p>
             </>
           ) : (
-            <p className="card-muted">Staging is not configured yet, so publishing workflow actions are hidden.</p>
+            <p className="card-muted">Staging is not configured yet, so publishing actions are shown in a locked state.</p>
           )}
         </article>
 

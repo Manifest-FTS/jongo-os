@@ -1,7 +1,7 @@
 import { getCoolifyAppStagingCapability, buildStagingSyncDryRunPlan } from "@/lib/coolify";
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
-import { getDeployLockReason } from "@/lib/deploy-guards";
+import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import DeployButton from "@/components/DeployButton";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
@@ -43,7 +43,12 @@ export default async function StagingPage({ params }: Params) {
     ])
     : [null, null];
   const stagingConfigured = Boolean(stagingEnabled && stagingCapability?.detected);
-  const deployLockReason = getDeployLockReason(backupInventory, appUuid);
+  const backupReadiness = getBackupReadiness(backupInventory, appUuid);
+  const deployLockReason = backupReadiness.locked
+    ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
+    : "Dry-run mode: execution remains disabled in this interface.";
+  const prodToStagingPreflight = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
+  const stagingToProdPreflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
 
   const dryRunPlan =
     stagingConfigured && appUuid && stagingCapability
@@ -74,8 +79,32 @@ export default async function StagingPage({ params }: Params) {
         )}
       </article>
 
-      {stagingConfigured ? (
-        <>
+      <>
+          <article className="card">
+            <h3 className="card-title">Pre-flight Status</h3>
+            <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+              Execution remains disabled in this interface. Use these checks to confirm readiness.
+            </p>
+            <div style={{ display: "grid", gap: "0.65rem" }}>
+              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.65rem 0.75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                  <strong style={{ fontSize: "0.9rem" }}>Production to Staging</strong>
+                  <span className={`status-chip ${prodToStagingPreflight.tone}`}>{prodToStagingPreflight.label}</span>
+                </div>
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{prodToStagingPreflight.detail}</p>
+              </div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.65rem 0.75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                  <strong style={{ fontSize: "0.9rem" }}>Staging to Production</strong>
+                  <span className={`status-chip ${stagingToProdPreflight.tone}`}>{stagingToProdPreflight.label}</span>
+                </div>
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{stagingToProdPreflight.detail}</p>
+              </div>
+            </div>
+          </article>
+
+          {stagingConfigured ? (
+            <>
           {/* Coolify Staging Capability */}
           <article className="card">
             <h3 className="card-title">Staging Capability</h3>
@@ -219,14 +248,14 @@ export default async function StagingPage({ params }: Params) {
           <article className="card">
             <h3 className="card-title">Promote to Production</h3>
             <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-              After validating in staging, deploy the current build to production.
+              After validating in staging, promote to production once backup readiness is healthy.
             </p>
             <DeployButton
               siteId={siteId}
               deployTargetId={workspace?.deployTargetId}
               environment="production"
               label="Deploy to Production"
-              disabled={Boolean(deployLockReason)}
+              disabled
               disabledReason={deployLockReason ?? undefined}
             />
           </article>
@@ -243,15 +272,34 @@ export default async function StagingPage({ params }: Params) {
               </p>
             </div>
           </article>
-        </>
-      ) : (
+            </>
+          ) : (
         <article className="card">
           <h3 className="card-title">Staging Not Configured</h3>
           <p className="card-muted" style={{ marginBottom: 0 }}>
-            Coolify does not currently report a usable staging environment for this app. Staging sync, promote, and dry-run actions stay hidden until one is detected.
+            Coolify does not currently report a usable staging environment for this app. Sync and promote actions are shown as locked until staging is detected.
           </p>
+          <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.65rem" }}>
+            <DeployButton
+              siteId={siteId}
+              deployTargetId={workspace?.deployTargetId}
+              environment="staging"
+              label="Sync to Staging"
+              disabled
+              disabledReason="Staging is not configured. Next step: configure staging in Settings and ensure Coolify detects a staging environment."
+            />
+            <DeployButton
+              siteId={siteId}
+              deployTargetId={workspace?.deployTargetId}
+              environment="production"
+              label="Deploy to Production"
+              disabled
+              disabledReason={deployLockReason ?? "Action locked until backup readiness checks pass."}
+            />
+          </div>
         </article>
       )}
+      </>
     </div>
   );
 }

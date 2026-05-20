@@ -1,6 +1,6 @@
 import DeployButton from "@/components/DeployButton";
 import { getCoolifyOverview, getCoolifyAppBackupInventory } from "@/lib/coolify";
-import { getDeployLockReason } from "@/lib/deploy-guards";
+import { getBackupReadiness } from "@/lib/deploy-guards";
 import { getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
@@ -53,7 +53,10 @@ export default async function DeploymentsPage({ params }: Params) {
   const backupInventory = workspace?.coolifyServiceUuid
     ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
     : null;
-  const deployLockReason = getDeployLockReason(backupInventory, workspace?.coolifyServiceUuid);
+  const backupReadiness = getBackupReadiness(backupInventory, workspace?.coolifyServiceUuid);
+  const deployLockReason = backupReadiness.locked
+    ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
+    : "Dry-run mode: execution remains disabled in this interface.";
 
   const productionDeployments = deployments.filter((d) => d.environment === "production");
   const stagingDeployments = deployments.filter((d) => d.environment === "staging");
@@ -103,35 +106,29 @@ export default async function DeploymentsPage({ params }: Params) {
 
         <article className="card">
           <h3 className="card-title">Quick Actions</h3>
-          {stagingConfigured ? (
-            <>
-              <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.75rem" }}>
-                <DeployButton
-                  siteId={siteId}
-                  deployTargetId={site?.deployTargetId}
-                  environment="production"
-                  label="Deploy to Production"
-                  disabled={Boolean(deployLockReason)}
-                  disabledReason={deployLockReason ?? undefined}
-                />
-                <DeployButton
-                  siteId={siteId}
-                  deployTargetId={site?.deployTargetId}
-                  environment="staging"
-                  label="Sync to Staging"
-                  disabled={Boolean(deployLockReason)}
-                  disabledReason={deployLockReason ?? undefined}
-                />
-              </div>
-              <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-                Trigger deploys above. History updates after each action.
-              </p>
-            </>
-          ) : (
-            <p className="card-muted" style={{ marginBottom: 0 }}>
-              Staging is not configured for this app, so deploy and sync actions are hidden.
-            </p>
-          )}
+          <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.75rem" }}>
+            <DeployButton
+              siteId={siteId}
+              deployTargetId={site?.deployTargetId}
+              environment="production"
+              label="Deploy to Production"
+              disabled
+              disabledReason={deployLockReason}
+            />
+            <DeployButton
+              siteId={siteId}
+              deployTargetId={site?.deployTargetId}
+              environment="staging"
+              label="Sync to Staging"
+              disabled
+              disabledReason={stagingConfigured
+                ? deployLockReason
+                : "Staging is not configured. Next step: enable staging and verify Coolify staging detection."}
+            />
+          </div>
+          <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+            Actions are intentionally dry-run only in this interface.
+          </p>
         </article>
       </section>
 
