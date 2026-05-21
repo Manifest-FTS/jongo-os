@@ -21,7 +21,17 @@ export default async function SitePluginsPage({ params }: Params) {
 
   const isWordPress = workspace.siteType === "wordpress";
   if (!isWordPress) {
-    notFound();
+    return (
+      <div className="page-stack">
+        <article className="card">
+          <h2 style={{ marginTop: 0 }}>Plugin Stats</h2>
+          <p className="card-muted">Plugin stats are available only for WordPress app types.</p>
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.88rem" }}>
+            <Link href={`/apps/${siteId}/integrations`} className="action-link">Open integrations</Link>
+          </p>
+        </article>
+      </div>
+    );
   }
 
   const resolvedSiteId = workspace.slug ?? workspace.id ?? siteId;
