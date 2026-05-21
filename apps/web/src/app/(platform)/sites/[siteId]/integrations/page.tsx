@@ -82,20 +82,6 @@ export default async function IntegrationsPage({ params }: Params) {
               Collector status: <span className="tag">{wpTelemetry.collectorStatus.replace(/_/g, " ")}</span>
             </p>
           </div>
-          <div className="grid" style={{ marginTop: "0.75rem" }}>
-            <article className="card" style={{ padding: "0.7rem" }}>
-              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Plugin status</p>
-              <p style={{ margin: "0.3rem 0 0", fontSize: "0.95rem", fontWeight: 600 }}>{wpTelemetry.signals.pluginStatus}</p>
-            </article>
-            <article className="card" style={{ padding: "0.7rem" }}>
-              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Updates</p>
-              <p style={{ margin: "0.3rem 0 0", fontSize: "0.95rem", fontWeight: 600 }}>{wpTelemetry.signals.updateAvailability}</p>
-            </article>
-            <article className="card" style={{ padding: "0.7rem" }}>
-              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Collector</p>
-              <p style={{ margin: "0.3rem 0 0", fontSize: "0.95rem", fontWeight: 600 }}>{wpTelemetry.collectorStatus.replace(/_/g, " ")}</p>
-            </article>
-          </div>
           {wpTelemetry.needsSetup && wpTelemetry.setupSteps.length > 0 ? (
             <div style={{ marginTop: "0.65rem" }}>
               <p style={{ margin: "0 0 0.4rem", fontSize: "0.82rem", fontWeight: 600 }}>Guided setup</p>
