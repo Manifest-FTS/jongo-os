@@ -236,10 +236,10 @@ Jongo OS should support WordPress-specific operational telemetry:
 - maintenance mode
 - basic site health signals
 
-Direction for telemetry setup:
+Telemetry setup direction:
 
 - For WordPress resources provisioned by Jongo, telemetry should be enabled automatically during provisioning.
-- For existing or imported WordPress resources, Jongo should detect missing telemetry capability and show a guided setup path.
+- For existing or imported WordPress resources, Jongo should detect missing telemetry capability and present a guided setup path.
 - Prefer a lightweight Jongo companion plugin or secure REST integration.
 - Do not assume public unauthenticated WordPress REST endpoints are enough for plugin, theme, or update data.
 - Do not expose sensitive WordPress admin data to collaborators unless permissions allow it.
@@ -379,11 +379,11 @@ Future user flow:
 
 Product constraints:
 
-- Admins should not always need to go directly into Coolify for normal resource creation.
+- Admins should not need to leave Jongo for routine resource creation.
 - Coolify remains the infrastructure engine.
 - Jongo remains the operational UX and orchestration layer.
-- Do not implement provisioning yet unless it is already scheduled.
-- Document this as future phased work after observation, mapping, and readiness are stable.
+- Do not implement provisioning yet unless it is already scheduled elsewhere.
+- Keep this as phased future work after observation, mapping, and readiness are stable.
 
 Type-specific future behavior:
 
