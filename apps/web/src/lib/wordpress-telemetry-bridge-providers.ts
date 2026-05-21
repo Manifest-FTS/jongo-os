@@ -61,6 +61,25 @@ type RestSiteConfig = {
   appPassword?: string;
 };
 
+function normalizeWordPressBaseUrl(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+
+    let path = (parsed.pathname || "").replace(/\/+$/, "");
+    path = path.replace(/\/wp-admin(?:\/.*)?$/i, "");
+    path = path.replace(/\/wp-login\.php$/i, "");
+    path = path.replace(/\/wp-json(?:\/.*)?$/i, "");
+
+    const normalizedPath = path && path !== "/" ? path : "";
+    return `${parsed.origin}${normalizedPath}`;
+  } catch {
+    return null;
+  }
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -257,7 +276,7 @@ export async function collectFromRestCredentials(
   credentials: WordPressRestCredentials,
   source: string
 ): Promise<CollectorSnapshotPayload | null> {
-  const siteUrl = credentials.siteUrl.trim();
+  const siteUrl = normalizeWordPressBaseUrl(credentials.siteUrl);
   const username = credentials.username.trim();
   const appPassword = credentials.appPassword.trim();
 

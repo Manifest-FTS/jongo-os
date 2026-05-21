@@ -37,7 +37,14 @@ function normalizeUrl(value: string): string {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("WordPress site URL must start with http:// or https://");
   }
-  return parsed.toString().replace(/\/+$/, "");
+
+  let path = (parsed.pathname || "").replace(/\/+$/, "");
+  path = path.replace(/\/wp-admin(?:\/.*)?$/i, "");
+  path = path.replace(/\/wp-login\.php$/i, "");
+  path = path.replace(/\/wp-json(?:\/.*)?$/i, "");
+
+  const normalizedPath = path && path !== "/" ? path : "";
+  return `${parsed.origin}${normalizedPath}`;
 }
 
 async function resolveAuthorizedSite(siteId: string) {
@@ -281,7 +288,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json(
       {
         ok: false,
-        error: "Connection test failed. Verify URL, user, and WordPress application password.",
+        error: "Connection test failed. Use the site base URL (not /wp-admin) and a WordPress application password (not your normal login password).",
         testedAt: lastTestedAt.toISOString()
       },
       { status: 400 }
