@@ -117,29 +117,35 @@ export default async function SiteSettingsPage({ params }: Params) {
       {/* Publishing Actions */}
       <article className="card" style={{ marginBottom: "1.5rem" }}>
         <h3 className="card-title">Publishing Actions</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
-          <DeployButton
-            siteId={siteId}
-            deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
-            environment="staging"
-            label="Sync to Staging"
-            disabled
-            disabledReason={stagingConfigured
-              ? deployLockReason
-              : "Staging is not configured. Next step: enable staging and confirm Coolify staging detection."}
-          />
-          <DeployButton
-            siteId={siteId}
-            deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
-            environment="production"
-            label="Deploy to Production"
-            disabled
-            disabledReason={deployLockReason}
-          />
-        </div>
-        <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-          Actions are intentionally dry-run only in this interface.
-        </p>
+        {stagingConfigured ? (
+          <>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+              <DeployButton
+                siteId={siteId}
+                deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
+                environment="staging"
+                label="Sync to Staging"
+                disabled
+                disabledReason={deployLockReason}
+              />
+              <DeployButton
+                siteId={siteId}
+                deployTargetId={site?.deployTargetId ?? workspace?.deployTargetId}
+                environment="production"
+                label="Deploy to Production"
+                disabled
+                disabledReason={deployLockReason}
+              />
+            </div>
+            <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+              Actions are intentionally dry-run only in this interface.
+            </p>
+          </>
+        ) : (
+          <p className="card-muted" style={{ marginBottom: 0 }}>
+            Staging is not configured. Publishing controls appear after a staging environment is detected.
+          </p>
+        )}
       </article>
 
       {/* App Health */}

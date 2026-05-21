@@ -20,6 +20,58 @@ function formatAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function getStagingModelCopy(siteType?: string): { title: string; body: string; bullets: string[] } {
+  if (siteType === "wordpress") {
+    return {
+      title: "WordPress staging model (future)",
+      body: "WordPress staging will follow a clone-style workflow similar to Flywheel, focused on safe content and update testing.",
+      bullets: [
+        "Create Staging from Production",
+        "Sync Production to Staging",
+        "Push Staging to Production",
+        "Selective DB/media pull (later)",
+        "Execution gated by backup readiness and admin/operator controls"
+      ]
+    };
+  }
+
+  if (siteType === "database") {
+    return {
+      title: "Database resource model",
+      body: "Database resources do not use website-style staging workflows.",
+      bullets: [
+        "Focus on backup readiness",
+        "Restore validation and recovery runbooks",
+        "Operational safety checks before destructive actions"
+      ]
+    };
+  }
+
+  if (siteType === "service") {
+    return {
+      title: "Service resource model",
+      body: "Service resources prioritize runtime health and recoverability over clone-style staging.",
+      bullets: [
+        "Service health and restart readiness",
+        "Log and runtime diagnostics",
+        "Backup/readiness signals for stateful services"
+      ]
+    };
+  }
+
+  return {
+    title: "Web app staging model (future)",
+    body: "Web app staging should behave like preview deployments rather than clone-style site staging.",
+    bullets: [
+      "Branch/PR preview environments",
+      "Temporary preview URLs",
+      "Pre-merge validation before main deployment",
+      "Prefer Coolify preview/staging by git branch when supported",
+      "Execution gated by backup readiness and admin/operator controls"
+    ]
+  };
+}
+
 export default async function StagingPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -49,6 +101,7 @@ export default async function StagingPage({ params }: Params) {
     : "Dry-run mode: execution remains disabled in this interface.";
   const prodToStagingPreflight = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
   const stagingToProdPreflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
+  const stagingModelCopy = getStagingModelCopy(workspace?.siteType);
 
   const dryRunPlan =
     stagingConfigured && appUuid && stagingCapability
@@ -80,6 +133,16 @@ export default async function StagingPage({ params }: Params) {
       </article>
 
       <>
+          <article className="card">
+            <h3 className="card-title">{stagingModelCopy.title}</h3>
+            <p className="card-muted" style={{ marginBottom: "0.65rem" }}>{stagingModelCopy.body}</p>
+            <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.25rem" }}>
+              {stagingModelCopy.bullets.map((item) => (
+                <li key={item} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{item}</li>
+              ))}
+            </ul>
+          </article>
+
           <article className="card">
             <h3 className="card-title">Pre-flight Status</h3>
             <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
@@ -277,26 +340,11 @@ export default async function StagingPage({ params }: Params) {
         <article className="card">
           <h3 className="card-title">Staging Not Configured</h3>
           <p className="card-muted" style={{ marginBottom: 0 }}>
-            Coolify does not currently report a usable staging environment for this app. Sync and promote actions are shown as locked until staging is detected.
+                Coolify does not currently report a usable staging environment for this app. Sync and promote controls stay hidden until staging is detected.
           </p>
-          <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.65rem" }}>
-            <DeployButton
-              siteId={siteId}
-              deployTargetId={workspace?.deployTargetId}
-              environment="staging"
-              label="Sync to Staging"
-              disabled
-              disabledReason="Staging is not configured. Next step: configure staging in Settings and ensure Coolify detects a staging environment."
-            />
-            <DeployButton
-              siteId={siteId}
-              deployTargetId={workspace?.deployTargetId}
-              environment="production"
-              label="Deploy to Production"
-              disabled
-              disabledReason={deployLockReason ?? "Action locked until backup readiness checks pass."}
-            />
-          </div>
+              <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
+                Next step: configure staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link>, then return here for dry-run preflight and workflow previews.
+              </p>
         </article>
       )}
       </>

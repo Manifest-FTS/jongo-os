@@ -1,8 +1,17 @@
 # Backups + Operational Readiness UX - Implementation Plan
 
 **Date:** 2026-05-18  
-**Status:** PLANNED (next slice after settings persistence)  
+**Status:** IN PROGRESS (dry-run UX active; execution still disabled)  
 **Scope:** Improve backup visibility and operational confidence for deploy/sync/promote actions
+
+## Production Validation Note (2026-05-21)
+
+- Backup readiness guard UX validated in production for live apps.
+- Observed lock state in current production data: `Backups not configured` and `No successful backup found` diagnostics.
+- Implemented but not currently observable in production data:
+  - `Backup telemetry unavailable`
+  - `Backup stale`
+- Keep these variants implemented and covered by local/controlled test scenarios until production data surfaces them naturally.
 
 ---
 
@@ -12,6 +21,60 @@
 2. **Improve backup visibility before enabling destructive actions** — stronger pre-flight checks for deploy/sync/promote
 3. **Dry-run operational UX** — previews of what will happen without execution
 4. **No execution** — this pass is observation & preview only; no actual restore/promote/sync yet
+
+---
+
+## Resource-Type Staging Model Direction
+
+Jongo should not treat all resource types as the same staging workflow.
+
+### WordPress staging model (future)
+
+- Should feel similar to Flywheel clone-style staging.
+- Primary workflow: clone production WordPress site to staging.
+- Use cases:
+  - plugin testing
+  - theme testing
+  - WordPress/core updates
+  - content/layout checks
+  - maintenance workflows
+- Future actions:
+  - Create Staging from Production
+  - Sync Production to Staging
+  - Push Staging to Production
+  - Selective DB/media pull (later)
+- Execution requirements:
+  - backup readiness required before execution
+  - admin/operator control required initially
+
+### Next.js / Nixpacks / web app staging model (future)
+
+- Should feel more like Vercel preview deployments.
+- Primary workflow should be branch/PR/environment based.
+- Use cases:
+  - preview a branch
+  - test before merging to main
+  - temporary preview URL
+- Do not model this as WordPress clone staging.
+- Prefer preview/staging environments created from git branches when Coolify supports it.
+
+### Database resource model
+
+- Do not show website-style staging UX.
+- Prioritize backup/restore/readiness UX.
+
+### Service resource model
+
+- Do not default to website-style staging UX.
+- Prioritize service health, restart readiness, and log-readiness UX.
+
+### Staging visibility rule (current)
+
+- If staging is not enabled/configured, do not show staging-heavy sync/promote CTAs across primary app pages.
+- Keep staging discoverable via Settings and lightweight Overview messaging.
+- Staging page should show `Staging not configured` explanation and setup path.
+- Do not show production/staging sync/promote controls unless staging exists.
+- Keep execution dry-run/disabled only; do not create resources or trigger sync/promote from UI in this phase.
 
 ---
 

@@ -225,47 +225,7 @@ export default async function SiteOverviewPage({ params }: Params) {
   return (
     <div>
       <div className="grid" style={{ marginBottom: "1rem" }}>
-        <article className="card" style={{ gridColumn: "1 / -1" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-            <div>
-              <h3 className="card-title" style={{ marginTop: 0 }}>Operational Readiness</h3>
-              <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-                Read-only operational signals for production readiness. No actions here trigger deployments.
-              </p>
-            </div>
-            <span className={`status-chip ${chipClassForReadiness(readinessSummary.state)}`}>
-              {labelForReadiness(readinessSummary.state)}
-            </span>
-          </div>
-
-          <p style={{ margin: "0.6rem 0 0", fontSize: "0.88rem", color: "var(--muted)" }}>
-            {readinessSummary.detail}
-          </p>
-
-          <div style={{ display: "grid", gap: "0.7rem", marginTop: "0.85rem" }}>
-            {readinessChecks.map((check) => (
-              <div key={check.key} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.65rem 0.75rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                  <strong style={{ fontSize: "0.9rem" }}>{check.label}</strong>
-                  <span className={`status-chip ${chipClassForReadiness(check.state)}`}>{labelForReadiness(check.state)}</span>
-                </div>
-                <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{check.detail}</p>
-                {check.state !== "ready" && check.nextStep ? (
-                  <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem" }}>
-                    <strong>Next step:</strong> {check.nextStep}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          </div>
-
-          <details style={{ marginTop: "0.8rem" }}>
-            <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)" }}>Developer Details</summary>
-            <p style={{ margin: "0.45rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-              Source mode: {overview.mode} · Coolify fetch error: {overview.fetchError ? "yes" : "no"} · Backup source: {backupInventory?.source ?? "none"}
-            </p>
-          </details>
-        </article>
+        
 
         {/* Site Health */}
         <article className="card">
@@ -288,24 +248,28 @@ export default async function SiteOverviewPage({ params }: Params) {
               {site?.status ?? "unknown"}
             </span>
           </p>
-          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
-            <DeployButton
-              siteId={siteId}
-              deployTargetId={site?.deployTargetId}
-              environment="production"
-              disabled
-              disabledReason={backupLockReason}
-            />
-            <DeployButton
-              siteId={siteId}
-              deployTargetId={site?.deployTargetId}
-              environment="staging"
-              disabled
-              disabledReason={stagingConfigured
-                ? backupLockReason
-                : "Staging is not configured. Next step: enable staging in Settings and verify Coolify staging detection."}
-            />
-          </div>
+          {stagingConfigured ? (
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
+              <DeployButton
+                siteId={siteId}
+                deployTargetId={site?.deployTargetId}
+                environment="production"
+                disabled
+                disabledReason={backupLockReason}
+              />
+              <DeployButton
+                siteId={siteId}
+                deployTargetId={site?.deployTargetId}
+                environment="staging"
+                disabled
+                disabledReason={backupLockReason}
+              />
+            </div>
+          ) : (
+            <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+              Staging controls are hidden until a staging environment is configured. Configure staging in Settings.
+            </p>
+          )}
           <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             {overview.mode === "live"
               ? <>Live telemetry · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
@@ -329,7 +293,7 @@ export default async function SiteOverviewPage({ params }: Params) {
               </p>
             </>
           ) : (
-            <p className="card-muted">Staging is not configured yet, so publishing actions are shown in a locked state.</p>
+            <p className="card-muted">Staging is not configured yet. Configure it in Settings to unlock staging workflows.</p>
           )}
         </article>
 
@@ -373,6 +337,48 @@ export default async function SiteOverviewPage({ params }: Params) {
           </article>
         </div>
       )}
+
+      <article className="card" style={{ gridColumn: "1 / -1" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <h3 className="card-title" style={{ marginTop: 0 }}>Operational Readiness</h3>
+            <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
+              Read-only operational signals for production readiness. No actions here trigger deployments.
+            </p>
+          </div>
+          <span className={`status-chip ${chipClassForReadiness(readinessSummary.state)}`}>
+            {labelForReadiness(readinessSummary.state)}
+          </span>
+        </div>
+
+        <p style={{ margin: "0.6rem 0 0", fontSize: "0.88rem", color: "var(--muted)" }}>
+          {readinessSummary.detail}
+        </p>
+
+        <div style={{ display: "grid", gap: "0.7rem", marginTop: "0.85rem" }}>
+          {readinessChecks.map((check) => (
+            <div key={check.key} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.65rem 0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <strong style={{ fontSize: "0.9rem" }}>{check.label}</strong>
+                <span className={`status-chip ${chipClassForReadiness(check.state)}`}>{labelForReadiness(check.state)}</span>
+              </div>
+              <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{check.detail}</p>
+              {check.state !== "ready" && check.nextStep ? (
+                <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem" }}>
+                  <strong>Next step:</strong> {check.nextStep}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+
+        <details style={{ marginTop: "0.8rem" }}>
+          <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)" }}>Developer Details</summary>
+          <p style={{ margin: "0.45rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+            Source mode: {overview.mode} · Coolify fetch error: {overview.fetchError ? "yes" : "no"} · Backup source: {backupInventory?.source ?? "none"}
+          </p>
+        </details>
+      </article>
 
       <div style={{ display: "grid", gap: "1rem", marginBottom: "1rem" }}>
         <article className="card">
