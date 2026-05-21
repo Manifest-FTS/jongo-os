@@ -74,3 +74,32 @@ Return JSON with any subset of fields below. Missing fields keep the fallback va
 - `pluginInsights.inventoryConnected` should be `true` only when counts are from a live source.
 - Count fields accept numbers or `null`.
 - Use non-2xx status codes for collector-side failures; Jongo will fall back.
+
+## Internal Bridge (Optional)
+
+For staged testing, Jongo includes an internal collector bridge endpoint:
+
+- Route: `POST /api/internal/wordpress-collector`
+- Enable with: `WORDPRESS_TELEMETRY_COLLECTOR_BRIDGE_ENABLED=true`
+- Requires: `WORDPRESS_TELEMETRY_COLLECTOR_TOKEN`
+
+Set the main collector URL to this route to test end-to-end rendering without an external collector:
+
+- `WORDPRESS_TELEMETRY_COLLECTOR_URL=https://<your-jongo-host>/api/internal/wordpress-collector`
+
+Optional mock payload source:
+
+- `WORDPRESS_TELEMETRY_COLLECTOR_MOCK_DATA`
+- JSON object keyed by site slug or site id, for example:
+
+```json
+{
+  "waterfallkeepersofnc-org": {
+    "activePlugins": 28,
+    "inactivePlugins": 5,
+    "updatesAvailable": 2,
+    "securityIssues": 0,
+    "coreVersion": "6.5.5"
+  }
+}
+```
