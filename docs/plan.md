@@ -392,6 +392,17 @@ Type-specific future behavior:
 - Database provisioning should emphasize backup and restore readiness.
 - Service provisioning should emphasize health, logs, and restart readiness.
 
+### Sequencing Guidance
+
+The implementation order should stay conservative:
+
+1. Observation, inventory mapping, and readiness signals
+2. WordPress telemetry groundwork and guided setup for imported resources
+3. App/resource provisioning flows from Jongo into Coolify
+4. Execution paths for backup, restore, sync, and promote only after the above are stable
+
+This keeps Jongo focused on operational visibility first, with provisioning and execution introduced only after the mapping and readiness model is reliable.
+
 ## Backup Architecture Note (Stateful-First)
 
 For Git-based apps, source code is already backed up in GitHub. Jongo backup readiness should focus on stateful data and operational recoverability, not code repository duplication.
