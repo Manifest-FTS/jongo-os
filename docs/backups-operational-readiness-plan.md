@@ -12,6 +12,10 @@
   - `Backup telemetry unavailable`
   - `Backup stale`
 - Keep these variants implemented and covered by local/controlled test scenarios until production data surfaces them naturally.
+- Deployments page resource workflow model card validated in production:
+  - Web App copy confirmed on `/apps/jongo-open-source/deployments`
+  - WordPress copy confirmed on `/apps/airbb-wordpress/deployments`
+  - Card stays informational only; execution controls remain dry-run/disabled
 
 ---
 
