@@ -16,6 +16,14 @@ type CollectorMockRecord = {
   updateAvailability?: string;
   maintenanceMode?: string;
   siteHealth?: string;
+  siteUrl?: string;
+  pluginInventory?: Array<{
+    name?: string;
+    status?: string;
+    version?: string | null;
+    updateStatus?: string;
+    securityIssues?: string | null;
+  }>;
 };
 
 function parseMockMap(): Record<string, CollectorMockRecord> {
@@ -39,6 +47,30 @@ function readFinite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function normalizePluginInventory(
+  rows: CollectorMockRecord["pluginInventory"]
+): Array<{
+  name: string;
+  status: string;
+  version: string | null;
+  updateStatus: string;
+  securityIssues: string | null;
+}> {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  return rows
+    .filter((row) => Boolean(row && typeof row === "object" && row.name?.trim()))
+    .map((row) => ({
+      name: row.name!.trim(),
+      status: row.status?.trim() || "Unknown",
+      version: row.version === null ? null : row.version?.trim() || null,
+      updateStatus: row.updateStatus?.trim() || "Unknown",
+      securityIssues: row.securityIssues === null ? null : row.securityIssues?.trim() || null
+    }));
+}
+
 function buildSnapshot(record?: CollectorMockRecord) {
   const activePlugins = readFinite(record?.activePlugins);
   const inactivePlugins = readFinite(record?.inactivePlugins);
@@ -46,6 +78,7 @@ function buildSnapshot(record?: CollectorMockRecord) {
   const securityIssues = readFinite(record?.securityIssues);
   const inventoryConnected =
     activePlugins !== null || inactivePlugins !== null || updatesAvailable !== null || securityIssues !== null;
+  const pluginInventory = normalizePluginInventory(record?.pluginInventory);
 
   return {
     checkedAt: new Date().toISOString(),
@@ -59,6 +92,7 @@ function buildSnapshot(record?: CollectorMockRecord) {
     guidance: inventoryConnected
       ? "Review plugin and update metrics below."
       : "Add this site to WORDPRESS_TELEMETRY_COLLECTOR_MOCK_DATA to test live inventory rendering.",
+    siteUrl: record?.siteUrl?.trim() || null,
     needsSetup: !inventoryConnected,
     setupSteps: inventoryConnected
       ? []
@@ -81,7 +115,8 @@ function buildSnapshot(record?: CollectorMockRecord) {
       inactivePlugins,
       updatesAvailable,
       securityIssues
-    }
+    },
+    pluginInventory
   };
 }
 

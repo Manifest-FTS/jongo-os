@@ -49,6 +49,7 @@ Return JSON with any subset of fields below. Missing fields keep the fallback va
   "label": "Live",
   "summary": "Live WordPress monitoring is active.",
   "guidance": "Review plugin and security insights below.",
+  "siteUrl": "https://waterfallkeepersofnc.org",
   "needsSetup": false,
   "setupSteps": [],
   "signals": {
@@ -65,7 +66,23 @@ Return JSON with any subset of fields below. Missing fields keep the fallback va
     "inactivePlugins": 5,
     "updatesAvailable": 2,
     "securityIssues": 0
-  }
+  },
+  "pluginInventory": [
+    {
+      "name": "Advanced Custom Fields",
+      "status": "Active",
+      "version": "6.2.6",
+      "updateStatus": "Up-to-date",
+      "securityIssues": null
+    },
+    {
+      "name": "Admin Menu Editor",
+      "status": "Active",
+      "version": "1.15",
+      "updateStatus": "Update available",
+      "securityIssues": "None"
+    }
+  ]
 }
 ```
 
@@ -73,6 +90,8 @@ Return JSON with any subset of fields below. Missing fields keep the fallback va
 
 - `pluginInsights.inventoryConnected` should be `true` only when counts are from a live source.
 - Count fields accept numbers or `null`.
+- `siteUrl` is optional and is shown in product header sections when present.
+- `pluginInventory` is optional and powers the Plugins tabular section.
 - Use non-2xx status codes for collector-side failures; Jongo will fall back.
 
 ## Internal Bridge (Optional)

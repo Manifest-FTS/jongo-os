@@ -5,6 +5,7 @@ export type WordPressTelemetryPolicy = {
   label: string;
   summary: string;
   guidance: string;
+  siteUrl: string | null;
   collectorStatus: "pipeline_pending" | "ready_for_pull";
   setupSteps: string[];
   signals: {
@@ -22,6 +23,13 @@ export type WordPressTelemetryPolicy = {
     updatesAvailable: number | null;
     securityIssues: number | null;
   };
+  pluginInventory: Array<{
+    name: string;
+    status: string;
+    version: string | null;
+    updateStatus: string;
+    securityIssues: string | null;
+  }>;
 };
 
 export function formatWordPressTelemetryValue(value: string): string {
@@ -126,6 +134,7 @@ export function getWordPressTelemetryPolicy(params: {
       label: "Not applicable",
       summary: "WordPress monitoring is available only for WordPress apps.",
       guidance: "",
+      siteUrl: null,
       collectorStatus: "pipeline_pending",
       setupSteps: [],
       signals: {
@@ -142,7 +151,8 @@ export function getWordPressTelemetryPolicy(params: {
         inactivePlugins: null,
         updatesAvailable: null,
         securityIssues: null
-      }
+      },
+      pluginInventory: []
     };
   }
 
@@ -154,6 +164,7 @@ export function getWordPressTelemetryPolicy(params: {
       label: "Needs mapping",
       summary: "WordPress monitoring is on by default, but this app still needs hosting mapping before signals can load.",
       guidance: "Open Settings and connect this app to the right hosting connection to finish monitoring setup.",
+      siteUrl: null,
       collectorStatus: "pipeline_pending",
       setupSteps: [
         "Open Settings and confirm this app is connected to the correct hosting service.",
@@ -174,7 +185,8 @@ export function getWordPressTelemetryPolicy(params: {
         inactivePlugins: null,
         updatesAvailable: null,
         securityIssues: null
-      }
+      },
+      pluginInventory: []
     };
   }
 
@@ -185,6 +197,7 @@ export function getWordPressTelemetryPolicy(params: {
     label: "Auto-enabled",
     summary: "WordPress monitoring is enabled by default for WordPress apps.",
     guidance: "Detailed plugin, theme, and update insights will appear automatically as setup completes.",
+    siteUrl: null,
     collectorStatus: "ready_for_pull",
     setupSteps: [],
     signals: {
@@ -201,6 +214,7 @@ export function getWordPressTelemetryPolicy(params: {
       inactivePlugins: null,
       updatesAvailable: null,
       securityIssues: null
-    }
+    },
+    pluginInventory: []
   };
 }

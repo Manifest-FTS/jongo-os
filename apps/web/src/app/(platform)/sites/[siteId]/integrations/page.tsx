@@ -58,12 +58,22 @@ export default async function IntegrationsPage({ params }: Params) {
     : wpTelemetrySnapshot.source === "collector"
       ? "Collector response is active."
       : "Collector is configured, but this snapshot is currently using fallback policy data.";
+  const siteUrl = wpTelemetry.siteUrl?.trim() || "";
+  const siteUrlLabel = siteUrl ? siteUrl.replace(/^https?:\/\//, "") : null;
 
   return (
     <div className="page-stack">
       <article className="card">
         <h2 style={{ marginTop: 0 }}>Integrations</h2>
         <p className="card-muted">Provider plugins, WordPress signals, and integration status.</p>
+        {siteUrlLabel ? (
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.86rem", color: "var(--muted)" }}>
+            Site URL:{" "}
+            <a href={siteUrl} target="_blank" rel="noreferrer" className="action-link">
+              {siteUrlLabel}
+            </a>
+          </p>
+        ) : null}
       </article>
 
       <article className="card">

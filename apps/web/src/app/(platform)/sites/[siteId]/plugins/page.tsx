@@ -62,12 +62,26 @@ export default async function SitePluginsPage({ params }: Params) {
       ? "Collector response is active."
       : "Collector is configured, but this snapshot is currently using fallback policy data.";
   const renderMetric = (value: number | null) => (value == null ? "Not available yet" : String(value));
+  const siteUrl = policy.siteUrl?.trim() || "";
+  const siteUrlLabel = siteUrl ? siteUrl.replace(/^https?:\/\//, "") : null;
 
   return (
     <div className="page-stack">
       <article className="card">
         <h2 style={{ marginTop: 0 }}>Plugin Stats</h2>
         <p className="card-muted">WordPress plugin monitoring summary for this app.</p>
+        <p style={{ margin: "0.5rem 0 0", fontSize: "0.86rem", color: "var(--muted)" }}>
+          Project: {workspace.name}
+          {siteUrlLabel ? (
+            <>
+              {" | "}
+              URL:{" "}
+              <a href={siteUrl} target="_blank" rel="noreferrer" className="action-link">
+                {siteUrlLabel}
+              </a>
+            </>
+          ) : null}
+        </p>
       </article>
 
       <div className="grid">
@@ -152,6 +166,43 @@ export default async function SitePluginsPage({ params }: Params) {
             Monitoring data is older than expected. Refresh this page after collector sync completes.
           </p>
         ) : null}
+      </article>
+
+      <article className="card">
+        <h3 className="card-title">Installed Plugins</h3>
+        <p className="card-muted" style={{ marginTop: 0 }}>
+          Specific plugin rows appear here when the collector returns tabular plugin inventory for this site.
+        </p>
+        {policy.pluginInventory.length > 0 ? (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Plugin</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Active/Inactive</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Version</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Updates</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Security Issues</th>
+                </tr>
+              </thead>
+              <tbody>
+                {policy.pluginInventory.map((plugin) => (
+                  <tr key={`${plugin.name}-${plugin.version ?? "n/a"}`}>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.name}</td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.status}</td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.version ?? "-"}</td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.updateStatus}</td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.securityIssues ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--muted)" }}>
+            No specific plugin rows are available yet for this site.
+          </p>
+        )}
       </article>
     </div>
   );

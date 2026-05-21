@@ -9,6 +9,7 @@ type CollectorPayload = {
   label?: string;
   summary?: string;
   guidance?: string;
+  siteUrl?: string;
   needsSetup?: boolean;
   setupSteps?: string[];
   signals?: Partial<WordPressTelemetrySnapshot["policy"]["signals"]>;
@@ -19,6 +20,13 @@ type CollectorPayload = {
     updatesAvailable?: number | null;
     securityIssues?: number | null;
   };
+  pluginInventory?: Array<{
+    name?: string;
+    status?: string;
+    version?: string | null;
+    updateStatus?: string;
+    securityIssues?: string | null;
+  }>;
 };
 
 type CollectorRequestPayload = {
@@ -42,6 +50,22 @@ function parseCollectorPayload(value: unknown): CollectorPayload | null {
     return null;
   }
   return value as CollectorPayload;
+}
+
+function normalizePluginInventory(value: CollectorPayload["pluginInventory"]): WordPressTelemetrySnapshot["policy"]["pluginInventory"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((row) => Boolean(row && typeof row === "object" && row.name?.trim()))
+    .map((row) => ({
+      name: row.name!.trim(),
+      status: row.status?.trim() || "Unknown",
+      version: row.version === null ? null : row.version?.trim() || null,
+      updateStatus: row.updateStatus?.trim() || "Unknown",
+      securityIssues: row.securityIssues === null ? null : row.securityIssues?.trim() || null
+    }));
 }
 
 function mergeCollectorSnapshot(
@@ -70,6 +94,7 @@ function mergeCollectorSnapshot(
     securityIssues:
       incomingInsights.securityIssues === null ? null : toFiniteOrNull(incomingInsights.securityIssues) ?? fallbackInsights.securityIssues
   };
+  const mergedInventory = normalizePluginInventory(payload.pluginInventory);
 
   const source = payload.source?.trim() ? "collector" : fallback.source;
 
@@ -84,10 +109,12 @@ function mergeCollectorSnapshot(
       label: payload.label ?? fallback.policy.label,
       summary: payload.summary ?? fallback.policy.summary,
       guidance: payload.guidance ?? fallback.policy.guidance,
+      siteUrl: payload.siteUrl?.trim() || fallback.policy.siteUrl,
       needsSetup: payload.needsSetup ?? fallback.policy.needsSetup,
       setupSteps: Array.isArray(payload.setupSteps) ? payload.setupSteps : fallback.policy.setupSteps,
       signals: mergedSignals,
-      pluginInsights: mergedInsights
+      pluginInsights: mergedInsights,
+      pluginInventory: mergedInventory.length > 0 ? mergedInventory : fallback.policy.pluginInventory
     }
   };
 }
