@@ -426,6 +426,33 @@ The implementation order should stay conservative:
 
 This keeps Jongo focused on operational visibility first, with provisioning and execution introduced only after the mapping and readiness model is reliable.
 
+### Phase Gates (Readiness Before Provisioning/Execution)
+
+Gate A: Observation and mapping baseline
+
+- Coolify inventory is stable through resources-primary with fallbacks.
+- App/resource type mapping is reliable across WordPress, Web App, Database, and Service.
+- Backup readiness reasons are visible and consistent across primary app pages.
+- Staging visibility rules are consistent (no staging-heavy controls when staging is not configured).
+
+Gate B: Telemetry baseline
+
+- WordPress telemetry contract is defined (data model, permissions, secure transport).
+- Provisioned WordPress resources can auto-enable telemetry capability.
+- Imported WordPress resources surface guided telemetry setup.
+- Integrations tab is the primary telemetry surface with role-aware data visibility.
+
+Gate C: Provisioning baseline
+
+- Create-client and create-resource flows are validated in dry-run/planned mode.
+- Coolify UUID persistence and dependency mapping are deterministic.
+- Post-create readiness checklist is available and actionable.
+- Rollback/recovery expectations for failed create operations are documented.
+
+Execution unlock rule:
+
+- Do not enable backup/restore/sync/promote execution paths until Gates A-C are complete and stable.
+
 ## Backup Architecture Note (Stateful-First)
 
 For Git-based apps, source code is already backed up in GitHub. Jongo backup readiness should focus on stateful data and operational recoverability, not code repository duplication.
