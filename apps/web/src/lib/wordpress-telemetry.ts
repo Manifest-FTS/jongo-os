@@ -48,6 +48,54 @@ export type WordPressTelemetrySnapshot = {
   policy: WordPressTelemetryPolicy;
 };
 
+export function formatWordPressTelemetrySource(source: WordPressTelemetrySnapshot["source"]): string {
+  if (source === "collector") {
+    return "Live collector";
+  }
+  return "Platform default";
+}
+
+export function getWordPressTelemetryFreshness(checkedAt: string): {
+  label: string;
+  tone: "healthy" | "degraded" | "unknown";
+  isStale: boolean;
+} {
+  const checkedTs = new Date(checkedAt).getTime();
+  if (!Number.isFinite(checkedTs)) {
+    return {
+      label: "Update time unavailable",
+      tone: "unknown",
+      isStale: true
+    };
+  }
+
+  const ageMs = Date.now() - checkedTs;
+  const ageMins = Math.max(0, Math.floor(ageMs / 60_000));
+
+  if (ageMins <= 15) {
+    return {
+      label: ageMins < 1 ? "Updated just now" : `Updated ${ageMins}m ago`,
+      tone: "healthy",
+      isStale: false
+    };
+  }
+
+  if (ageMins <= 60) {
+    return {
+      label: `Updated ${ageMins}m ago`,
+      tone: "degraded",
+      isStale: false
+    };
+  }
+
+  const ageHours = Math.floor(ageMins / 60);
+  return {
+    label: `Updated ${ageHours}h ago`,
+    tone: "degraded",
+    isStale: true
+  };
+}
+
 type WordPressTelemetrySnapshotInput = {
   siteId: string;
   isWordPress: boolean;

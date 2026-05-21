@@ -3,7 +3,12 @@ import Link from "next/link";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
-import { formatWordPressCollectorStatus, formatWordPressTelemetryValue } from "@/lib/wordpress-telemetry";
+import {
+  formatWordPressCollectorStatus,
+  formatWordPressTelemetrySource,
+  formatWordPressTelemetryValue,
+  getWordPressTelemetryFreshness
+} from "@/lib/wordpress-telemetry";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +54,13 @@ export default async function SitePluginsPage({ params }: Params) {
     hasCoolifyServiceUuid: Boolean(workspace.coolifyServiceUuid)
   });
   const policy = snapshot.policy;
+  const freshness = getWordPressTelemetryFreshness(snapshot.checkedAt);
+  const collectorConfigured = Boolean(process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim());
+  const collectorDiagnostic = !collectorConfigured
+    ? "Collector endpoint is not configured."
+    : snapshot.source === "collector"
+      ? "Collector response is active."
+      : "Collector is configured, but this snapshot is currently using fallback policy data.";
   const renderMetric = (value: number | null) => (value == null ? "Not available yet" : String(value));
 
   return (
@@ -78,14 +90,32 @@ export default async function SitePluginsPage({ params }: Params) {
         <p className="card-muted" style={{ marginBottom: 0 }}>
           Last updated: {new Date(snapshot.checkedAt).toLocaleString()}
         </p>
+        <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+          {freshness.label}
+          {freshness.isStale ? " - data may be out of date" : ""}
+        </p>
         {canViewInternalMetadata ? (
           <details style={{ marginTop: "0.4rem" }}>
             <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "var(--muted)" }}>
               Technical details
             </summary>
-            <p style={{ margin: "0.4rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
-              Data source: {snapshot.source}
-            </p>
+            <div style={{ marginTop: "0.4rem", display: "grid", gap: "0.25rem" }}>
+              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                Data source: {formatWordPressTelemetrySource(snapshot.source)}
+              </p>
+              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                Inventory feed: {policy.pluginInsights.inventoryConnected ? "connected" : "not connected"}
+              </p>
+              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                Freshness: {freshness.label}
+              </p>
+              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                Collector mode: {collectorConfigured ? "configured" : "not configured"}
+              </p>
+              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                Diagnostic: {collectorDiagnostic}
+              </p>
+            </div>
           </details>
         ) : null}
       </article>

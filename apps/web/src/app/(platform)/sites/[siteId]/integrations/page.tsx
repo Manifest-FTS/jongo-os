@@ -3,7 +3,12 @@ import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin, listSiteDeployments } from "@/lib/repositories";
 import PendingBadge from "@/components/PendingBadge";
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
-import { formatWordPressCollectorStatus, formatWordPressTelemetryValue } from "@/lib/wordpress-telemetry";
+import {
+  formatWordPressCollectorStatus,
+  formatWordPressTelemetrySource,
+  formatWordPressTelemetryValue,
+  getWordPressTelemetryFreshness
+} from "@/lib/wordpress-telemetry";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -46,6 +51,13 @@ export default async function IntegrationsPage({ params }: Params) {
     hasCoolifyServiceUuid: Boolean(workspace?.coolifyServiceUuid)
   });
   const wpTelemetry = wpTelemetrySnapshot.policy;
+  const freshness = getWordPressTelemetryFreshness(wpTelemetrySnapshot.checkedAt);
+  const collectorConfigured = Boolean(process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim());
+  const collectorDiagnostic = !collectorConfigured
+    ? "Collector endpoint is not configured."
+    : wpTelemetrySnapshot.source === "collector"
+      ? "Collector response is active."
+      : "Collector is configured, but this snapshot is currently using fallback policy data.";
 
   return (
     <div className="page-stack">
@@ -106,14 +118,32 @@ export default async function IntegrationsPage({ params }: Params) {
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             Last updated: {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
           </p>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+            {freshness.label}
+            {freshness.isStale ? " - data may be out of date" : ""}
+          </p>
           {canViewInternalMetadata ? (
             <details style={{ marginTop: "0.4rem" }}>
               <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "var(--muted)" }}>
                 Technical details
               </summary>
-              <p style={{ margin: "0.4rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
-                Data source: {wpTelemetrySnapshot.source}
-              </p>
+              <div style={{ marginTop: "0.4rem", display: "grid", gap: "0.25rem" }}>
+                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                  Data source: {formatWordPressTelemetrySource(wpTelemetrySnapshot.source)}
+                </p>
+                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                  Inventory feed: {wpTelemetry.pluginInsights.inventoryConnected ? "connected" : "not connected"}
+                </p>
+                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                  Freshness: {freshness.label}
+                </p>
+                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                  Collector mode: {collectorConfigured ? "configured" : "not configured"}
+                </p>
+                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
+                  Diagnostic: {collectorDiagnostic}
+                </p>
+              </div>
             </details>
           ) : null}
           <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
