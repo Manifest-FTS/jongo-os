@@ -387,15 +387,15 @@ export default async function SiteOverviewPage({ params }: Params) {
             <div className="grid" style={{ marginTop: "0.5rem" }}>
               <div>
                 <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Core Version</p>
-                <p className="card-muted" style={{ margin: 0 }}>Telemetry pipeline pending</p>
+                <p className="card-muted" style={{ margin: 0 }}>{wpTelemetry.signals.coreVersion}</p>
               </div>
               <div>
                 <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Plugin Updates</p>
-                <p className="card-muted" style={{ margin: 0 }}>Telemetry pipeline pending</p>
+                <p className="card-muted" style={{ margin: 0 }}>{wpTelemetry.signals.updateAvailability}</p>
               </div>
               <div>
                 <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Maintenance Mode</p>
-                <p className="card-muted" style={{ margin: 0 }}>Telemetry pipeline pending</p>
+                <p className="card-muted" style={{ margin: 0 }}>{wpTelemetry.signals.maintenanceMode}</p>
               </div>
             </div>
             <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>

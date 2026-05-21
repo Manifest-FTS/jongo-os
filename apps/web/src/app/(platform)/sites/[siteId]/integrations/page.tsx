@@ -69,10 +69,26 @@ export default async function IntegrationsPage({ params }: Params) {
           </h3>
           <p className="card-muted" style={{ marginTop: 0 }}>{wpTelemetry.summary}</p>
           <div style={{ display: "grid", gap: "0.55rem" }}>
-            <p style={{ margin: 0 }}>Plugin updates: telemetry pipeline pending</p>
-            <p style={{ margin: 0 }}>Core version: telemetry pipeline pending</p>
-            <p style={{ margin: 0 }}>Maintenance mode: telemetry pipeline pending</p>
+            <p style={{ margin: 0 }}>Core version: {wpTelemetry.signals.coreVersion}</p>
+            <p style={{ margin: 0 }}>Plugin status: {wpTelemetry.signals.pluginStatus}</p>
+            <p style={{ margin: 0 }}>Theme status: {wpTelemetry.signals.themeStatus}</p>
+            <p style={{ margin: 0 }}>Update availability: {wpTelemetry.signals.updateAvailability}</p>
+            <p style={{ margin: 0 }}>Maintenance mode: {wpTelemetry.signals.maintenanceMode}</p>
+            <p style={{ margin: 0 }}>Site health: {wpTelemetry.signals.siteHealth}</p>
+            <p style={{ margin: 0 }}>
+              Collector status: <span className="tag">{wpTelemetry.collectorStatus.replace(/_/g, " ")}</span>
+            </p>
           </div>
+          {wpTelemetry.needsSetup && wpTelemetry.setupSteps.length > 0 ? (
+            <div style={{ marginTop: "0.65rem" }}>
+              <p style={{ margin: "0 0 0.4rem", fontSize: "0.82rem", fontWeight: 600 }}>Guided setup</p>
+              <ol style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.25rem" }}>
+                {wpTelemetry.setupSteps.map((step) => (
+                  <li key={step} style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{step}</li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
           <p style={{ margin: "0.7rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
             {wpTelemetry.guidance}
           </p>
