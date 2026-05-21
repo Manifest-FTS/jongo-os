@@ -8,8 +8,12 @@ import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
 
-export default async function IntegrationsPage({ params }: Params) {
+export default async function IntegrationsPage({
+  params,
+  searchParams
+}: Params & { searchParams?: Promise<{ focus?: string }> }) {
   const { siteId } = await params;
+  const search = searchParams ? await searchParams : undefined;
   const session = await auth();
   const viewer = {
     userId: session?.user?.id,
@@ -31,6 +35,7 @@ export default async function IntegrationsPage({ params }: Params) {
   const coolifySite = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const isWordPress = workspace?.siteType === "wordpress";
   const deploymentSource = deployments[0]?.source ?? overview.mode;
+  const isPluginsFocus = search?.focus === "plugins";
   const resolvedSiteId = workspace?.slug ?? workspace?.id ?? siteId;
   const wpTelemetrySnapshot = await getWordPressTelemetrySnapshotForRequest({
     siteId: resolvedSiteId,
@@ -42,27 +47,33 @@ export default async function IntegrationsPage({ params }: Params) {
   return (
     <div className="page-stack">
       <article className="card">
-        <h2 style={{ marginTop: 0 }}>Integrations</h2>
-        <p className="card-muted">Provider plugins, WordPress signals, and integration status.</p>
+        <h2 style={{ marginTop: 0 }}>{isPluginsFocus ? "Plugin Stats" : "Integrations"}</h2>
+        <p className="card-muted">
+          {isPluginsFocus
+            ? "WordPress plugin telemetry snapshot for this app."
+            : "Provider plugins, WordPress signals, and integration status."}
+        </p>
       </article>
 
-      <article className="card">
-        <h3 className="card-title">Provider Connectivity</h3>
-        <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.55rem" }}>
-          <p style={{ margin: 0 }}>
-            Deployment source: <span className="tag">{deploymentSource}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Coolify service: <span className="tag">{workspace?.coolifyServiceUuid ?? coolifySite?.id ?? "not linked"}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Coolify project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Environment: <span className="tag">{workspace?.coolifyEnvironmentName ?? coolifySite?.coolifyEnvironmentName ?? "default"}</span>
-          </p>
-        </div>
-      </article>
+      {!isPluginsFocus ? (
+        <article className="card">
+          <h3 className="card-title">Provider Connectivity</h3>
+          <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.55rem" }}>
+            <p style={{ margin: 0 }}>
+              Deployment source: <span className="tag">{deploymentSource}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Coolify service: <span className="tag">{workspace?.coolifyServiceUuid ?? coolifySite?.id ?? "not linked"}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Coolify project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Environment: <span className="tag">{workspace?.coolifyEnvironmentName ?? coolifySite?.coolifyEnvironmentName ?? "default"}</span>
+            </p>
+          </div>
+        </article>
+      ) : null}
 
       {isWordPress ? (
         <article className="card">
@@ -112,9 +123,15 @@ export default async function IntegrationsPage({ params }: Params) {
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             Snapshot source: <code>{wpTelemetrySnapshot.source}</code> - checked {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
           </p>
-          <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
-            <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugin stats tab</Link>
-          </p>
+          {!isPluginsFocus ? (
+            <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
+              <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugin stats tab</Link>
+            </p>
+          ) : (
+            <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
+              <Link href={`/apps/${siteId}/integrations`} className="action-link">Open full integrations view</Link>
+            </p>
+          )}
         </article>
       ) : (
         <article className="card">
@@ -126,24 +143,26 @@ export default async function IntegrationsPage({ params }: Params) {
         </article>
       )}
 
-      <article className="card">
-        <h3 className="card-title">Recent Integration Events</h3>
-        {activity.length === 0 ? (
-          <p className="card-muted" style={{ marginBottom: 0 }}>No deployment events available yet.</p>
-        ) : (
-          <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.6rem" }}>
-            {activity.map((item) => (
-              <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.65rem" }}>
-                <p style={{ margin: 0, fontSize: "0.88rem" }}>{item.detail}</p>
-                <span className={`status-chip ${item.status}`}>{item.status}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
-          <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings</Link>
-        </p>
-      </article>
+      {!isPluginsFocus ? (
+        <article className="card">
+          <h3 className="card-title">Recent Integration Events</h3>
+          {activity.length === 0 ? (
+            <p className="card-muted" style={{ marginBottom: 0 }}>No deployment events available yet.</p>
+          ) : (
+            <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.6rem" }}>
+              {activity.map((item) => (
+                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.65rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.88rem" }}>{item.detail}</p>
+                  <span className={`status-chip ${item.status}`}>{item.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
+            <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings</Link>
+          </p>
+        </article>
+      ) : null}
     </div>
   );
 }
