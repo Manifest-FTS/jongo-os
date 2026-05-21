@@ -105,9 +105,14 @@ export default async function IntegrationsPage({ params }: Params) {
             Last updated: {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
           </p>
           {canViewInternalMetadata ? (
-            <p style={{ margin: "0.25rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
-              Data source: <code>{wpTelemetrySnapshot.source}</code>
-            </p>
+            <details style={{ marginTop: "0.4rem" }}>
+              <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "var(--muted)" }}>
+                Technical details
+              </summary>
+              <p style={{ margin: "0.4rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
+                Data source: {wpTelemetrySnapshot.source}
+              </p>
+            </details>
           ) : null}
           <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
             <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugin stats tab</Link>

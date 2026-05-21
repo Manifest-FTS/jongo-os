@@ -76,9 +76,14 @@ export default async function SitePluginsPage({ params }: Params) {
           Last updated: {new Date(snapshot.checkedAt).toLocaleString()}
         </p>
         {canViewInternalMetadata ? (
-          <p style={{ margin: "0.35rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
-            Data source: <code>{snapshot.source}</code>
-          </p>
+          <details style={{ marginTop: "0.4rem" }}>
+            <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "var(--muted)" }}>
+              Technical details
+            </summary>
+            <p style={{ margin: "0.4rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
+              Data source: {snapshot.source}
+            </p>
+          </details>
         ) : null}
       </article>
 
