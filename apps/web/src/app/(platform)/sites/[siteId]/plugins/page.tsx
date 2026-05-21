@@ -137,12 +137,21 @@ export default async function SitePluginsPage({ params }: Params) {
             ? "Live plugin inventory is connected."
             : "Live plugin inventory is not connected yet. You should not expect active/inactive, version, update, or security counts yet."}
         </p>
+        <p style={{ margin: "0 0 0.55rem", fontSize: "0.82rem", color: "var(--muted)" }}>
+          Data freshness: {freshness.label}
+          {freshness.isStale ? " (stale)" : ""}
+        </p>
         <div style={{ display: "grid", gap: "0.45rem" }}>
           <p style={{ margin: 0 }}>Active plugins: {renderMetric(policy.pluginInsights.activePlugins)}</p>
           <p style={{ margin: 0 }}>Inactive plugins: {renderMetric(policy.pluginInsights.inactivePlugins)}</p>
           <p style={{ margin: 0 }}>Updates available: {renderMetric(policy.pluginInsights.updatesAvailable)}</p>
           <p style={{ margin: 0 }}>Security issues: {renderMetric(policy.pluginInsights.securityIssues)}</p>
         </div>
+        {freshness.isStale ? (
+          <p style={{ margin: "0.55rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+            Monitoring data is older than expected. Refresh this page after collector sync completes.
+          </p>
+        ) : null}
       </article>
     </div>
   );

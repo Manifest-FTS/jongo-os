@@ -115,6 +115,10 @@ export default async function IntegrationsPage({ params }: Params) {
           <p style={{ margin: "0.7rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
             {wpTelemetry.guidance}
           </p>
+          <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+            Data freshness: {freshness.label}
+            {freshness.isStale ? " (stale)" : ""}
+          </p>
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             Last updated: {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
           </p>
