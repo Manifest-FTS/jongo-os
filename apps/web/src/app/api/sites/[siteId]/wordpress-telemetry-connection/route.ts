@@ -14,6 +14,24 @@ type WordPressConfigBody = {
   appPassword?: string;
 };
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function buildSiteIdentityWhere(siteId: string) {
+  if (isUuid(siteId)) {
+    return {
+      OR: [{ id: siteId }, { slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }],
+      deletedAt: null
+    };
+  }
+
+  return {
+    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }],
+    deletedAt: null
+  };
+}
+
 function normalizeUrl(value: string): string {
   const normalized = value.trim();
   const parsed = new URL(normalized);
@@ -43,8 +61,8 @@ async function resolveAuthorizedSite(siteId: string) {
     return { error: NextResponse.json({ error: "Database is not available" }, { status: 503 }) };
   }
 
-  const site = await db.site.findUnique({
-    where: { id: workspace.id },
+  const site = await db.site.findFirst({
+    where: buildSiteIdentityWhere(siteId),
     include: {
       organization: {
         select: {
@@ -78,7 +96,7 @@ async function resolveAuthorizedSite(siteId: string) {
     return { error: NextResponse.json({ error: "Only admins can manage WordPress telemetry connections" }, { status: 403 }) };
   }
 
-  return { db, workspace };
+  return { db, workspace, site };
 }
 
 async function parseBody(req: Request): Promise<WordPressConfigBody | NextResponse> {
@@ -115,7 +133,7 @@ export async function GET(_req: Request, { params }: Params) {
   }
 
   const config = await resolved.db.wordPressTelemetryConfig.findUnique({
-    where: { siteId: resolved.workspace.id },
+    where: { siteId: resolved.site.id },
     select: {
       siteUrl: true,
       username: true,
@@ -158,9 +176,9 @@ export async function PUT(req: Request, { params }: Params) {
   const passwordCiphertext = encryptSecret(appPassword);
 
   const saved = await resolved.db.wordPressTelemetryConfig.upsert({
-    where: { siteId: resolved.workspace.id },
+    where: { siteId: resolved.site.id },
     create: {
-      siteId: resolved.workspace.id,
+      siteId: resolved.site.id,
       siteUrl,
       username,
       passwordCiphertext,
@@ -206,7 +224,7 @@ export async function POST(req: Request, { params }: Params) {
 
   if (!siteUrl || !username || !appPassword) {
     const saved = await resolved.db.wordPressTelemetryConfig.findUnique({
-      where: { siteId: resolved.workspace.id },
+      where: { siteId: resolved.site.id },
       select: {
         siteUrl: true,
         username: true,
@@ -247,7 +265,7 @@ export async function POST(req: Request, { params }: Params) {
   const success = Boolean(snapshot);
 
   await resolved.db.wordPressTelemetryConfig.updateMany({
-    where: { siteId: resolved.workspace.id },
+    where: { siteId: resolved.site.id },
     data: {
       lastTestedAt,
       lastTestStatus: success ? "connected" : "failed",
@@ -283,7 +301,7 @@ export async function DELETE(_req: Request, { params }: Params) {
   }
 
   await resolved.db.wordPressTelemetryConfig.deleteMany({
-    where: { siteId: resolved.workspace.id }
+    where: { siteId: resolved.site.id }
   });
 
   return NextResponse.json({ ok: true });

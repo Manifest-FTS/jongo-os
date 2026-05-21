@@ -19,6 +19,24 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ siteId: string }> };
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function buildSiteIdentityWhere(siteId: string) {
+  if (isUuid(siteId)) {
+    return {
+      OR: [{ id: siteId }, { slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }],
+      deletedAt: null
+    };
+  }
+
+  return {
+    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }],
+    deletedAt: null
+  };
+}
+
 export default async function IntegrationsPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -43,11 +61,11 @@ export default async function IntegrationsPage({ params }: Params) {
     workspace.organizationId &&
     await isClientAdmin(workspace.organizationId, session.user.id)
   );
-  if (session?.user?.id && workspace.source === "db") {
+  if (session?.user?.id) {
     const db = await getDb();
     if (db) {
-      const site = await db.site.findUnique({
-        where: { id: workspace.id },
+      const site = await db.site.findFirst({
+        where: buildSiteIdentityWhere(siteId),
         include: {
           organization: {
             select: {
