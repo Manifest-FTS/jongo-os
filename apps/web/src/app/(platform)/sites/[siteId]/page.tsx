@@ -2,7 +2,7 @@
 import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import { getBackupReadiness } from "@/lib/deploy-guards";
-import { getWordPressTelemetryPolicy } from "@/lib/wordpress-telemetry";
+import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
 import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import Link from "next/link";
@@ -167,10 +167,13 @@ export default async function SiteOverviewPage({ params }: Params) {
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
   const isWordPress = workspace?.siteType === "wordpress";
   const workflowModel = getResourceWorkflowModel(workspace?.siteType);
-  const wpTelemetry = getWordPressTelemetryPolicy({
+  const resolvedSiteId = workspace?.slug ?? workspace?.id ?? siteId;
+  const wpTelemetrySnapshot = await getWordPressTelemetrySnapshotForRequest({
+    siteId: resolvedSiteId,
     isWordPress,
     hasCoolifyServiceUuid: Boolean(workspace?.coolifyServiceUuid)
   });
+  const wpTelemetry = wpTelemetrySnapshot.policy;
 
   const readinessChecks: ReadinessCheck[] = [
     {
@@ -400,6 +403,9 @@ export default async function SiteOverviewPage({ params }: Params) {
             </div>
             <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
               {wpTelemetry.guidance}
+            </p>
+            <p style={{ margin: "0.45rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+              Snapshot source: <code>{wpTelemetrySnapshot.source}</code> - checked {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
             </p>
           </article>
         </div>

@@ -1,59 +1,12 @@
 import Link from "next/link";
-import { cookies, headers } from "next/headers";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteActivityFeed, getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 import PendingBadge from "@/components/PendingBadge";
-import { getWordPressTelemetrySnapshot, type WordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
+import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
-
-async function getTelemetrySnapshotForPage(input: {
-  siteId: string;
-  isWordPress: boolean;
-  hasCoolifyServiceUuid: boolean;
-}): Promise<WordPressTelemetrySnapshot> {
-  const fallback = getWordPressTelemetrySnapshot(input);
-  const cookieHeader = (await cookies()).toString();
-  if (!cookieHeader) {
-    return fallback;
-  }
-
-  const headerStore = await headers();
-  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
-  if (!host) {
-    return fallback;
-  }
-
-  const proto = headerStore.get("x-forwarded-proto") ?? "https";
-  const origin = `${proto}://${host}`;
-
-  try {
-    const response = await fetch(`${origin}/api/sites/${encodeURIComponent(input.siteId)}/wordpress-telemetry`, {
-      headers: { cookie: cookieHeader },
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      return fallback;
-    }
-
-    const snapshot = (await response.json()) as Partial<WordPressTelemetrySnapshot>;
-    if (!snapshot || typeof snapshot !== "object" || !snapshot.policy) {
-      return fallback;
-    }
-
-    return {
-      siteId: snapshot.siteId ?? fallback.siteId,
-      checkedAt: snapshot.checkedAt ?? fallback.checkedAt,
-      source: snapshot.source ?? fallback.source,
-      policy: snapshot.policy
-    };
-  } catch {
-    return fallback;
-  }
-}
 
 export default async function IntegrationsPage({ params }: Params) {
   const { siteId } = await params;
@@ -79,7 +32,7 @@ export default async function IntegrationsPage({ params }: Params) {
   const isWordPress = workspace?.siteType === "wordpress";
   const deploymentSource = deployments[0]?.source ?? overview.mode;
   const resolvedSiteId = workspace?.slug ?? workspace?.id ?? siteId;
-  const wpTelemetrySnapshot = await getTelemetrySnapshotForPage({
+  const wpTelemetrySnapshot = await getWordPressTelemetrySnapshotForRequest({
     siteId: resolvedSiteId,
     isWordPress,
     hasCoolifyServiceUuid: Boolean(workspace?.coolifyServiceUuid)
