@@ -253,6 +253,7 @@ Telemetry setup direction:
 4. **Configure app** → App Settings tab
 5. **Invite team members** → App Team tab (not client level)
 6. **View app history** → App Analytics/Monitoring tab (deployments, logs, performance)
+7. **Create resources** → Client workspace → create App/Resource in Jongo → provision through Coolify (future)
 
 ### UI Structure Philosophy (No Card Sprawl)
 
