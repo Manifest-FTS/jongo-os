@@ -16,6 +16,10 @@
   - Web App copy confirmed on `/apps/jongo-open-source/deployments`
   - WordPress copy confirmed on `/apps/airbb-wordpress/deployments`
   - Card stays informational only; execution controls remain dry-run/disabled
+- Follow-up fix shipped for resource-type mapping:
+  - `fix(site-type): classify database and service resources in workspace` (`e593c77`)
+  - This resolves Database/Service workspaces falling back to Web App copy due legacy `siteType` narrowing.
+  - Pending final smoke re-check on authenticated production session (scripted manifest-domain auth currently returns `401`).
 
 ---
 
