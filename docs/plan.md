@@ -169,6 +169,28 @@ Site-level configuration:
 - Advanced operational settings
 - Collaborator access (site-level overrides)
 
+#### Provisioning / Creation (Future)
+The App workspace should eventually support creating resources directly from Jongo instead of forcing normal setup into Coolify:
+
+- Create Client
+- Create App / Resource under a Client
+- Choose resource type:
+  - WordPress Site
+  - Web App / Next.js / Nixpacks
+  - Database
+  - Service
+- Provision through Coolify API
+- Store Coolify UUIDs immediately
+- Apply naming, domain, and dependency conventions
+- Show a readiness checklist after creation
+
+Type-specific future behavior:
+
+- WordPress provisioning should create the WordPress app plus its DB/media dependency mapping.
+- Web app provisioning should support preview/branch-style workflows.
+- Database provisioning should emphasize backup and restore readiness.
+- Service provisioning should emphasize health, logs, and restart readiness.
+
 ### Team Roles & Permissions
 
 **Simplified Role Model:**
