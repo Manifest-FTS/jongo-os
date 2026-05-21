@@ -262,10 +262,23 @@ Telemetry setup direction:
 
 - For WordPress resources provisioned by Jongo, telemetry should be enabled automatically during provisioning.
 - For existing or imported WordPress resources, Jongo should detect missing telemetry capability and present a guided setup path.
-- Prefer a lightweight Jongo companion plugin or secure REST integration.
+- Prefer platform-level inspection first for Coolify-managed WordPress resources.
+- Use secure REST/application-password telemetry as the default fallback when platform inspection is not available.
+- Keep a Jongo companion plugin optional for deeper telemetry, migration workflows, or external/non-standard WordPress environments.
 - Do not assume public unauthenticated WordPress REST endpoints are enough for plugin, theme, or update data.
 - Do not expose sensitive WordPress admin data to collaborators unless permissions allow it.
 - WordPress telemetry should live mainly under the Integrations tab.
+
+Provider hierarchy (MVP and OSS self-hosted default):
+
+1. Coolify/container-level inspection (WP-CLI/filesystem/env/container metadata) where available.
+2. Secure WordPress REST with application passwords.
+3. Optional companion plugin and/or custom upstream collector for deep telemetry.
+
+Open-source deployment expectation:
+
+- Jongo users who run their own Coolify stack should be able to configure telemetry without requiring a custom external collector service by default.
+- The external collector path is optional and should be documented as an advanced extension, not the baseline MVP path.
 
 ### Primary Workflows
 

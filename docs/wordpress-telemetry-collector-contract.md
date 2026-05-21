@@ -1,18 +1,32 @@
 # WordPress Telemetry Collector Contract
 
-This document defines the optional collector endpoint used by Jongo to populate live WordPress plugin insights.
+This document defines the WordPress telemetry provider contract used by Jongo to populate plugin insights.
+
+For deployment strategy and self-hosted configuration order, see `docs/wordpress-telemetry-provider-hierarchy.md`.
 
 ## Purpose
 
-When `WORDPRESS_TELEMETRY_COLLECTOR_URL` is configured, the route `GET /api/sites/[siteId]/wordpress-telemetry` will call the external collector and merge returned values over the built-in policy fallback.
+Jongo uses a provider hierarchy and merges returned values over built-in policy fallback.
 
-If the collector is unavailable, returns non-2xx, or returns invalid JSON, Jongo falls back automatically.
+Preferred provider order:
+
+1. Platform-level inspection (Coolify/container runtime signals when available)
+2. Secure WordPress REST + application-password provider
+3. Optional test/mock provider
+4. Optional upstream collector passthrough
+
+If all providers are unavailable, Jongo falls back automatically.
 
 ## Environment Variables
 
-- `WORDPRESS_TELEMETRY_COLLECTOR_URL`: Collector endpoint URL (required to enable collector mode).
-- `WORDPRESS_TELEMETRY_COLLECTOR_TOKEN`: Optional bearer token.
+- `WORDPRESS_TELEMETRY_COLLECTOR_URL`: Jongo telemetry endpoint used by app pages.
+- `WORDPRESS_TELEMETRY_COLLECTOR_TOKEN`: Bearer token for the internal bridge endpoint.
 - `WORDPRESS_TELEMETRY_COLLECTOR_TIMEOUT_MS`: Optional timeout in milliseconds (default `5000`).
+- `WORDPRESS_TELEMETRY_REST_SITE_MAP`: Optional REST auth map keyed by site slug/id.
+- `WORDPRESS_TELEMETRY_REST_TIMEOUT_MS`: Optional REST timeout (default `5000`).
+- `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_URL`: Optional external collector passthrough endpoint.
+- `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TOKEN`: Optional upstream bearer token.
+- `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TIMEOUT_MS`: Optional upstream timeout (default `5000`).
 
 ## Request
 
@@ -96,15 +110,30 @@ Return JSON with any subset of fields below. Missing fields keep the fallback va
 
 ## Internal Bridge (Optional)
 
-For staged testing, Jongo includes an internal collector bridge endpoint:
+For staged testing and self-hosted provider composition, Jongo includes an internal collector bridge endpoint:
 
 - Route: `POST /api/internal/wordpress-collector`
 - Enable with: `WORDPRESS_TELEMETRY_COLLECTOR_BRIDGE_ENABLED=true`
 - Requires: `WORDPRESS_TELEMETRY_COLLECTOR_TOKEN`
 
-Set the main collector URL to this route to test end-to-end rendering without an external collector:
+Set the main collector URL to this route to enable the provider chain:
 
 - `WORDPRESS_TELEMETRY_COLLECTOR_URL=https://<your-jongo-host>/api/internal/wordpress-collector`
+
+Optional REST provider source (recommended before plugin/upstream for many self-hosted sites):
+
+- `WORDPRESS_TELEMETRY_REST_SITE_MAP`
+- JSON object keyed by site slug or site id:
+
+```json
+{
+  "waterfallkeepersofnc-org": {
+    "siteUrl": "https://waterfallkeepersofnc.org",
+    "username": "telemetry-bot",
+    "appPassword": "xxxx xxxx xxxx xxxx xxxx xxxx"
+  }
+}
+```
 
 Optional mock payload source:
 
@@ -123,7 +152,7 @@ Optional mock payload source:
 }
 ```
 
-Optional upstream passthrough (real data mode without changing UI wiring):
+Optional upstream passthrough (for custom telemetry services, plugin-assisted deep telemetry, or migration workflows):
 
 - `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_URL`
 - `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TOKEN`

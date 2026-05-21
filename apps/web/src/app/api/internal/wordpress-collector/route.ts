@@ -1,37 +1,13 @@
 import { NextResponse } from "next/server";
+import {
+  collectFromPlatformInspection,
+  collectFromRestSiteMap,
+  normalizeCollectorSnapshot
+} from "@/lib/wordpress-telemetry-bridge-providers";
 
 type CollectorRequest = {
   siteId?: string;
   slug?: string;
-};
-
-type CollectorSnapshotPayload = {
-  checkedAt?: string;
-  source?: string;
-  collectorStatus?: "pipeline_pending" | "ready_for_pull";
-  tone?: "healthy" | "degraded" | "unknown";
-  label?: string;
-  summary?: string;
-  guidance?: string;
-  siteUrl?: string | null;
-  needsSetup?: boolean;
-  setupSteps?: string[];
-  signals?: {
-    coreVersion?: string;
-    pluginStatus?: string;
-    themeStatus?: string;
-    updateAvailability?: string;
-    maintenanceMode?: string;
-    siteHealth?: string;
-  };
-  pluginInsights?: {
-    inventoryConnected?: boolean;
-    activePlugins?: number | null;
-    inactivePlugins?: number | null;
-    updatesAvailable?: number | null;
-    securityIssues?: number | null;
-  };
-  pluginInventory?: CollectorMockRecord["pluginInventory"];
 };
 
 type CollectorMockRecord = {
@@ -76,10 +52,6 @@ function readFinite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
 function normalizePluginInventory(
   rows: CollectorMockRecord["pluginInventory"]
 ): Array<{
@@ -102,45 +74,6 @@ function normalizePluginInventory(
       updateStatus: row.updateStatus?.trim() || "Unknown",
       securityIssues: row.securityIssues === null ? null : row.securityIssues?.trim() || null
     }));
-}
-
-function normalizeCollectorSnapshot(value: unknown): CollectorSnapshotPayload | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const payload = value as CollectorSnapshotPayload;
-  const insights = isRecord(payload.pluginInsights) ? payload.pluginInsights : undefined;
-  const signals = isRecord(payload.signals) ? payload.signals : undefined;
-
-  return {
-    checkedAt: typeof payload.checkedAt === "string" ? payload.checkedAt : new Date().toISOString(),
-    source: typeof payload.source === "string" && payload.source.trim() ? payload.source.trim() : "collector_upstream",
-    collectorStatus: payload.collectorStatus === "pipeline_pending" ? "pipeline_pending" : "ready_for_pull",
-    tone: payload.tone === "healthy" || payload.tone === "degraded" ? payload.tone : "unknown",
-    label: typeof payload.label === "string" ? payload.label : "Live",
-    summary: typeof payload.summary === "string" ? payload.summary : "Live WordPress telemetry is connected.",
-    guidance: typeof payload.guidance === "string" ? payload.guidance : "Review plugin and update metrics below.",
-    siteUrl: typeof payload.siteUrl === "string" ? payload.siteUrl.trim() || null : null,
-    needsSetup: typeof payload.needsSetup === "boolean" ? payload.needsSetup : false,
-    setupSteps: Array.isArray(payload.setupSteps) ? payload.setupSteps.filter((step) => typeof step === "string") : [],
-    signals: {
-      coreVersion: typeof signals?.coreVersion === "string" ? signals.coreVersion : "collector_pending",
-      pluginStatus: typeof signals?.pluginStatus === "string" ? signals.pluginStatus : "collector_pending",
-      themeStatus: typeof signals?.themeStatus === "string" ? signals.themeStatus : "collector_pending",
-      updateAvailability: typeof signals?.updateAvailability === "string" ? signals.updateAvailability : "collector_pending",
-      maintenanceMode: typeof signals?.maintenanceMode === "string" ? signals.maintenanceMode : "collector_pending",
-      siteHealth: typeof signals?.siteHealth === "string" ? signals.siteHealth : "collector_pending"
-    },
-    pluginInsights: {
-      inventoryConnected: typeof insights?.inventoryConnected === "boolean" ? insights.inventoryConnected : false,
-      activePlugins: readFinite(insights?.activePlugins),
-      inactivePlugins: readFinite(insights?.inactivePlugins),
-      updatesAvailable: readFinite(insights?.updatesAvailable),
-      securityIssues: readFinite(insights?.securityIssues)
-    },
-    pluginInventory: normalizePluginInventory(payload.pluginInventory)
-  };
 }
 
 function buildSnapshot(record?: CollectorMockRecord) {
@@ -223,40 +156,52 @@ export async function POST(request: Request) {
   const map = parseMockMap();
   const record = siteKey ? map[siteKey] : undefined;
 
-  if (!record) {
-    const upstreamUrl = process.env.WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_URL?.trim();
-    if (upstreamUrl) {
-      const timeoutMs = Number.parseInt(process.env.WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TIMEOUT_MS ?? "5000", 10);
-      const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000;
-      const abort = new AbortController();
-      const timer = setTimeout(() => abort.abort(), timeout);
+  const platformSnapshot = await collectFromPlatformInspection(body);
+  if (platformSnapshot) {
+    return NextResponse.json(platformSnapshot);
+  }
 
-      try {
-        const upstreamToken = process.env.WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TOKEN?.trim();
-        const response = await fetch(upstreamUrl, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(upstreamToken ? { authorization: `Bearer ${upstreamToken}` } : {})
-          },
-          body: JSON.stringify({ siteId: body.siteId, slug: body.slug }),
-          cache: "no-store",
-          signal: abort.signal
-        });
+  const restSnapshot = await collectFromRestSiteMap(body);
+  if (restSnapshot) {
+    return NextResponse.json(restSnapshot);
+  }
 
-        if (response.ok) {
-          const normalized = normalizeCollectorSnapshot(await response.json());
-          if (normalized) {
-            return NextResponse.json(normalized);
-          }
+  if (record) {
+    return NextResponse.json(buildSnapshot(record));
+  }
+
+  const upstreamUrl = process.env.WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_URL?.trim();
+  if (upstreamUrl) {
+    const timeoutMs = Number.parseInt(process.env.WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TIMEOUT_MS ?? "5000", 10);
+    const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), timeout);
+
+    try {
+      const upstreamToken = process.env.WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TOKEN?.trim();
+      const response = await fetch(upstreamUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(upstreamToken ? { authorization: `Bearer ${upstreamToken}` } : {})
+        },
+        body: JSON.stringify({ siteId: body.siteId, slug: body.slug }),
+        cache: "no-store",
+        signal: abort.signal
+      });
+
+      if (response.ok) {
+        const normalized = normalizeCollectorSnapshot(await response.json());
+        if (normalized) {
+          return NextResponse.json(normalized);
         }
-      } catch {
-        // Fall through to bridge fallback payload when upstream is unavailable.
-      } finally {
-        clearTimeout(timer);
       }
+    } catch {
+      // Fall through to bridge fallback payload when upstream is unavailable.
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  return NextResponse.json(buildSnapshot(record));
+  return NextResponse.json(buildSnapshot(undefined));
 }
