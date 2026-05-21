@@ -81,6 +81,56 @@ function summarizeReadiness(checks: ReadinessCheck[]): { state: ReadinessState; 
   return { state: "unknown", detail: "Readiness status is mixed and inconclusive." };
 }
 
+function getResourceWorkflowModel(siteType?: string): { title: string; body: string; bullets: string[] } {
+  if (siteType === "wordpress") {
+    return {
+      title: "WordPress clone-style staging (future)",
+      body: "WordPress workflows will follow clone-style staging for safe plugin, theme, content, and update validation.",
+      bullets: [
+        "Create Staging from Production",
+        "Sync Production to Staging",
+        "Push Staging to Production",
+        "Admin/operator-controlled execution with backup readiness gates"
+      ]
+    };
+  }
+
+  if (siteType === "database") {
+    return {
+      title: "Database readiness model",
+      body: "Database resources prioritize backup, restore, and readiness safety instead of website-style staging.",
+      bullets: [
+        "Backup health and freshness",
+        "Restore validation readiness",
+        "No website-style staging controls"
+      ]
+    };
+  }
+
+  if (siteType === "service") {
+    return {
+      title: "Service operations model",
+      body: "Service resources prioritize runtime health and recovery workflows over staging-site clone flows.",
+      bullets: [
+        "Health, restart, and logs readiness",
+        "Stateful safety checks where applicable",
+        "No website-style staging controls by default"
+      ]
+    };
+  }
+
+  return {
+    title: "Web app preview-style staging (future)",
+    body: "Web app workflows should behave like preview deployments tied to branches/PRs, not clone-style WordPress staging.",
+    bullets: [
+      "Branch/PR preview environments",
+      "Temporary preview URLs",
+      "Pre-merge validation before main deployment",
+      "Execution remains dry-run/disabled in this phase"
+    ]
+  };
+}
+
 export default async function SiteOverviewPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -116,6 +166,7 @@ export default async function SiteOverviewPage({ params }: Params) {
   const recentBackupHealthy = lastSuccessfulBackup ? isRecentBackup(lastSuccessfulBackup, 7) : false;
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
   const isWordPress = workspace?.siteType === "wordpress";
+  const workflowModel = getResourceWorkflowModel(workspace?.siteType);
 
   const readinessChecks: ReadinessCheck[] = [
     {
@@ -295,6 +346,17 @@ export default async function SiteOverviewPage({ params }: Params) {
           ) : (
             <p className="card-muted">Staging is not configured yet. Configure it in Settings to unlock staging workflows.</p>
           )}
+        </article>
+
+        <article className="card">
+          <h3 className="card-title">Resource Workflow Model</h3>
+          <p className="card-muted" style={{ marginBottom: "0.5rem" }}>{workflowModel.body}</p>
+          <span className="tag" style={{ marginBottom: "0.5rem", display: "inline-flex" }}>{workflowModel.title}</span>
+          <ul style={{ margin: 0, paddingLeft: "1.15rem", display: "grid", gap: "0.25rem" }}>
+            {workflowModel.bullets.map((item) => (
+              <li key={item} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{item}</li>
+            ))}
+          </ul>
         </article>
 
         <article className="card">
