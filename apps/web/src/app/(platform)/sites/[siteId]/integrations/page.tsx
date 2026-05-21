@@ -65,7 +65,21 @@ export default async function IntegrationsPage({ params }: Params) {
     const db = await getDb();
     if (db) {
       const site = await db.site.findFirst({
-        where: buildSiteIdentityWhere(siteId),
+        where: {
+          ...buildSiteIdentityWhere(siteId),
+          OR: [
+            {
+              organization: {
+                deletedAt: null,
+                OR: [
+                  { ownerId: session.user.id },
+                  { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+                ]
+              }
+            },
+            { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+          ]
+        },
         include: {
           organization: {
             select: {
