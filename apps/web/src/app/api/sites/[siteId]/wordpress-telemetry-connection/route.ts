@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
-import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { collectFromRestCredentials } from "@/lib/wordpress-telemetry-bridge-providers";
 import { decryptSecret, encryptSecret } from "@/lib/wordpress-telemetry-secrets";
 import { isAdminRole } from "@/lib/roles";
@@ -47,22 +46,27 @@ async function resolveAuthorizedSite(siteId: string) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  const workspace = await getSiteWorkspace(siteId, {
-    userId: session.user.id,
-    email: session.user.email
-  });
-
-  if (!workspace) {
-    return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
-  }
-
   const db = await getDb();
   if (!db) {
     return { error: NextResponse.json({ error: "Database is not available" }, { status: 503 }) };
   }
 
   const site = await db.site.findFirst({
-    where: buildSiteIdentityWhere(siteId),
+    where: {
+      ...buildSiteIdentityWhere(siteId),
+      OR: [
+        {
+          organization: {
+            deletedAt: null,
+            OR: [
+              { ownerId: session.user.id },
+              { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+            ]
+          }
+        },
+        { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+      ]
+    },
     include: {
       organization: {
         select: {
@@ -84,8 +88,8 @@ async function resolveAuthorizedSite(siteId: string) {
     return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
   }
 
-  const orgAdmin = workspace.organizationId
-    ? await isClientAdmin(workspace.organizationId, session.user.id)
+  const orgAdmin = site.organization
+    ? site.organization.ownerId === session.user.id || isAdminRole(site.organization.collaborators[0]?.role)
     : false;
   const ownerAdmin = site.organization?.ownerId === session.user.id;
   const siteAdmin = isAdminRole(site.collaborators[0]?.role);
@@ -96,7 +100,7 @@ async function resolveAuthorizedSite(siteId: string) {
     return { error: NextResponse.json({ error: "Only admins can manage WordPress telemetry connections" }, { status: 403 }) };
   }
 
-  return { db, workspace, site };
+  return { db, site };
 }
 
 async function parseBody(req: Request): Promise<WordPressConfigBody | NextResponse> {
