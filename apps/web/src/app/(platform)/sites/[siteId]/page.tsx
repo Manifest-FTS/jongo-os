@@ -2,7 +2,6 @@
 import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import { getBackupReadiness } from "@/lib/deploy-guards";
-import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
 import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import Link from "next/link";
@@ -165,15 +164,7 @@ export default async function SiteOverviewPage({ params }: Params) {
   const lastSuccessfulBackup = getLastSuccessfulBackupTime(backupInventory);
   const recentBackupHealthy = lastSuccessfulBackup ? isRecentBackup(lastSuccessfulBackup, 7) : false;
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
-  const isWordPress = workspace?.siteType === "wordpress";
   const workflowModel = getResourceWorkflowModel(workspace?.siteType);
-  const resolvedSiteId = workspace?.slug ?? workspace?.id ?? siteId;
-  const wpTelemetrySnapshot = await getWordPressTelemetrySnapshotForRequest({
-    siteId: resolvedSiteId,
-    isWordPress,
-    hasCoolifyServiceUuid: Boolean(workspace?.coolifyServiceUuid)
-  });
-  const wpTelemetry = wpTelemetrySnapshot.policy;
 
   const readinessChecks: ReadinessCheck[] = [
     {
@@ -376,40 +367,6 @@ export default async function SiteOverviewPage({ params }: Params) {
           </p>
         </article>
       </div>
-
-      {/* WordPress context - shown only when site type is detected as WordPress */}
-      {isWordPress && (
-        <div style={{ marginBottom: "1rem" }}>
-          <article className="card">
-            <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              WordPress Overview
-              <span className="status-chip unknown" style={{ fontSize: "0.7rem" }}>WP detected</span>
-              <span className={`status-chip ${wpTelemetry.tone}`} style={{ fontSize: "0.7rem" }}>{wpTelemetry.label}</span>
-            </h3>
-            <p className="card-muted" style={{ marginTop: 0 }}>{wpTelemetry.summary}</p>
-            <div className="grid" style={{ marginTop: "0.5rem" }}>
-              <div>
-                <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Core Version</p>
-                <p className="card-muted" style={{ margin: 0 }}>{wpTelemetry.signals.coreVersion}</p>
-              </div>
-              <div>
-                <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Plugin Updates</p>
-                <p className="card-muted" style={{ margin: 0 }}>{wpTelemetry.signals.updateAvailability}</p>
-              </div>
-              <div>
-                <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Maintenance Mode</p>
-                <p className="card-muted" style={{ margin: 0 }}>{wpTelemetry.signals.maintenanceMode}</p>
-              </div>
-            </div>
-            <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-              {wpTelemetry.guidance}
-            </p>
-            <p style={{ margin: "0.45rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-              Snapshot source: <code>{wpTelemetrySnapshot.source}</code> - checked {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
-            </p>
-          </article>
-        </div>
-      )}
 
       <article className="card" style={{ gridColumn: "1 / -1" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>

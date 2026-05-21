@@ -35,6 +35,7 @@ export default async function SiteWorkspaceLayout({
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
     { name: "Deployments", href: `/apps/${siteId}/deployments` },
     { name: "Integrations", href: `/apps/${siteId}/integrations` },
+    ...(site?.siteType === "wordpress" ? [{ name: "Plugins", href: `/apps/${siteId}/plugins` } as WorkspaceTab] : []),
     ...(site?.stagingEnabled ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
     { name: "Backups", href: `/apps/${siteId}/backups` },
     { name: "Analytics", href: `/apps/${siteId}/analytics` },
