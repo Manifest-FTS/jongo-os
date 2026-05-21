@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteActivityFeed, getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 import PendingBadge from "@/components/PendingBadge";
-import { getWordPressTelemetryPolicy } from "@/lib/wordpress-telemetry";
+import { getWordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -31,10 +31,12 @@ export default async function IntegrationsPage({ params }: Params) {
   const coolifySite = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const isWordPress = workspace?.siteType === "wordpress";
   const deploymentSource = deployments[0]?.source ?? overview.mode;
-  const wpTelemetry = getWordPressTelemetryPolicy({
+  const wpTelemetrySnapshot = getWordPressTelemetrySnapshot({
+    siteId,
     isWordPress,
     hasCoolifyServiceUuid: Boolean(workspace?.coolifyServiceUuid)
   });
+  const wpTelemetry = wpTelemetrySnapshot.policy;
 
   return (
     <div className="page-stack">
@@ -91,6 +93,9 @@ export default async function IntegrationsPage({ params }: Params) {
           ) : null}
           <p style={{ margin: "0.7rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
             {wpTelemetry.guidance}
+          </p>
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+            Snapshot source: <code>{wpTelemetrySnapshot.source}</code> · checked just now
           </p>
         </article>
       ) : (

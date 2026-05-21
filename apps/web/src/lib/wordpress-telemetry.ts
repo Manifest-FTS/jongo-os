@@ -17,6 +17,31 @@ export type WordPressTelemetryPolicy = {
   };
 };
 
+export type WordPressTelemetrySnapshot = {
+  siteId: string;
+  checkedAt: string;
+  source: "policy_default";
+  policy: WordPressTelemetryPolicy;
+};
+
+type WordPressTelemetrySnapshotInput = {
+  siteId: string;
+  isWordPress: boolean;
+  hasCoolifyServiceUuid: boolean;
+};
+
+export function getWordPressTelemetrySnapshot(input: WordPressTelemetrySnapshotInput): WordPressTelemetrySnapshot {
+  return {
+    siteId: input.siteId,
+    checkedAt: new Date().toISOString(),
+    source: "policy_default",
+    policy: getWordPressTelemetryPolicy({
+      isWordPress: input.isWordPress,
+      hasCoolifyServiceUuid: input.hasCoolifyServiceUuid
+    })
+  };
+}
+
 export function getWordPressTelemetryPolicy(params: {
   isWordPress: boolean;
   hasCoolifyServiceUuid: boolean;
