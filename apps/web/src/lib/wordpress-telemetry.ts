@@ -15,6 +15,13 @@ export type WordPressTelemetryPolicy = {
     maintenanceMode: string;
     siteHealth: string;
   };
+  pluginInsights: {
+    inventoryConnected: boolean;
+    activePlugins: number | null;
+    inactivePlugins: number | null;
+    updatesAvailable: number | null;
+    securityIssues: number | null;
+  };
 };
 
 export function formatWordPressTelemetryValue(value: string): string {
@@ -80,6 +87,13 @@ export function getWordPressTelemetryPolicy(params: {
         updateAvailability: "not_applicable",
         maintenanceMode: "not_applicable",
         siteHealth: "not_applicable"
+      },
+      pluginInsights: {
+        inventoryConnected: false,
+        activePlugins: null,
+        inactivePlugins: null,
+        updatesAvailable: null,
+        securityIssues: null
       }
     };
   }
@@ -105,6 +119,13 @@ export function getWordPressTelemetryPolicy(params: {
         updateAvailability: "pending_mapping",
         maintenanceMode: "pending_mapping",
         siteHealth: "pending_mapping"
+      },
+      pluginInsights: {
+        inventoryConnected: false,
+        activePlugins: null,
+        inactivePlugins: null,
+        updatesAvailable: null,
+        securityIssues: null
       }
     };
   }
@@ -125,6 +146,13 @@ export function getWordPressTelemetryPolicy(params: {
       updateAvailability: "collector_pending",
       maintenanceMode: "collector_pending",
       siteHealth: "collector_pending"
+    },
+    pluginInsights: {
+      inventoryConnected: false,
+      activePlugins: null,
+      inactivePlugins: null,
+      updatesAvailable: null,
+      securityIssues: null
     }
   };
 }

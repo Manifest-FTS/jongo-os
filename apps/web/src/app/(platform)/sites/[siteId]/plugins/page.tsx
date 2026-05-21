@@ -49,6 +49,7 @@ export default async function SitePluginsPage({ params }: Params) {
     hasCoolifyServiceUuid: Boolean(workspace.coolifyServiceUuid)
   });
   const policy = snapshot.policy;
+  const renderMetric = (value: number | null) => (value == null ? "Not available yet" : String(value));
 
   return (
     <div className="page-stack">
@@ -97,6 +98,21 @@ export default async function SitePluginsPage({ params }: Params) {
         <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
           <Link href={`/apps/${siteId}/integrations`} className="action-link">Open integrations overview</Link>
         </p>
+      </article>
+
+      <article className="card">
+        <h3 className="card-title">Plugin Insights</h3>
+        <p className="card-muted" style={{ marginTop: 0 }}>
+          {policy.pluginInsights.inventoryConnected
+            ? "Live plugin inventory is connected."
+            : "Live plugin inventory is not connected yet. You should not expect active/inactive, version, update, or security counts yet."}
+        </p>
+        <div style={{ display: "grid", gap: "0.45rem" }}>
+          <p style={{ margin: 0 }}>Active plugins: {renderMetric(policy.pluginInsights.activePlugins)}</p>
+          <p style={{ margin: 0 }}>Inactive plugins: {renderMetric(policy.pluginInsights.inactivePlugins)}</p>
+          <p style={{ margin: 0 }}>Updates available: {renderMetric(policy.pluginInsights.updatesAvailable)}</p>
+          <p style={{ margin: 0 }}>Security issues: {renderMetric(policy.pluginInsights.securityIssues)}</p>
+        </div>
       </article>
     </div>
   );
