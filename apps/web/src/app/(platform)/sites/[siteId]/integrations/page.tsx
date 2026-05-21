@@ -11,6 +11,8 @@ import {
   getWordPressTelemetryFreshness
 } from "@/lib/wordpress-telemetry";
 import { auth } from "@/lib/auth.config";
+import { getDb } from "@/lib/db";
+import { isAdminRole } from "@/lib/roles";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -35,11 +37,40 @@ export default async function IntegrationsPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+  let canManageTelemetry = false;
   const canViewInternalMetadata = Boolean(
     session?.user?.id &&
     workspace.organizationId &&
     await isClientAdmin(workspace.organizationId, session.user.id)
   );
+  if (session?.user?.id && workspace.source === "db") {
+    const db = await getDb();
+    if (db) {
+      const site = await db.site.findUnique({
+        where: { id: workspace.id },
+        include: {
+          organization: {
+            select: {
+              ownerId: true,
+              collaborators: {
+                where: { userId: session.user.id, deletedAt: null },
+                select: { role: true }
+              }
+            }
+          },
+          collaborators: {
+            where: { userId: session.user.id, deletedAt: null },
+            select: { role: true }
+          }
+        }
+      });
+
+      const ownerAdmin = site?.organization?.ownerId === session.user.id;
+      const orgCollaboratorAdmin = isAdminRole(site?.organization?.collaborators?.[0]?.role);
+      const siteAdmin = isAdminRole(site?.collaborators?.[0]?.role);
+      canManageTelemetry = Boolean(canViewInternalMetadata || ownerAdmin || orgCollaboratorAdmin || siteAdmin);
+    }
+  }
 
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const coolifySite = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
@@ -175,7 +206,7 @@ export default async function IntegrationsPage({ params }: Params) {
         </article>
       )}
 
-      {isWordPress && canViewInternalMetadata ? (
+      {isWordPress && canManageTelemetry ? (
         <article className="card">
           <h3 className="card-title">Connect Telemetry</h3>
           <p className="card-muted" style={{ marginTop: 0 }}>

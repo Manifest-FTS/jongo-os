@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { collectFromRestCredentials } from "@/lib/wordpress-telemetry-bridge-providers";
 import { decryptSecret, encryptSecret } from "@/lib/wordpress-telemetry-secrets";
+import { isAdminRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -37,18 +38,44 @@ async function resolveAuthorizedSite(siteId: string) {
     return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
   }
 
-  if (!workspace.organizationId) {
-    return { error: NextResponse.json({ error: "App is not linked to an organization" }, { status: 400 }) };
-  }
-
-  const canManage = await isClientAdmin(workspace.organizationId, session.user.id);
-  if (!canManage) {
-    return { error: NextResponse.json({ error: "Only admins can manage WordPress telemetry connections" }, { status: 403 }) };
-  }
-
   const db = await getDb();
   if (!db) {
     return { error: NextResponse.json({ error: "Database is not available" }, { status: 503 }) };
+  }
+
+  const site = await db.site.findUnique({
+    where: { id: workspace.id },
+    include: {
+      organization: {
+        select: {
+          ownerId: true,
+          collaborators: {
+            where: { userId: session.user.id, deletedAt: null },
+            select: { role: true }
+          }
+        }
+      },
+      collaborators: {
+        where: { userId: session.user.id, deletedAt: null },
+        select: { role: true }
+      }
+    }
+  });
+
+  if (!site) {
+    return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
+  }
+
+  const orgAdmin = workspace.organizationId
+    ? await isClientAdmin(workspace.organizationId, session.user.id)
+    : false;
+  const ownerAdmin = site.organization?.ownerId === session.user.id;
+  const siteAdmin = isAdminRole(site.collaborators[0]?.role);
+  const orgCollaboratorAdmin = isAdminRole(site.organization?.collaborators[0]?.role);
+  const canManage = Boolean(orgAdmin || ownerAdmin || siteAdmin || orgCollaboratorAdmin);
+
+  if (!canManage) {
+    return { error: NextResponse.json({ error: "Only admins can manage WordPress telemetry connections" }, { status: 403 }) };
   }
 
   return { db, workspace };
