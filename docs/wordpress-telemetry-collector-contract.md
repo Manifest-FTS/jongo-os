@@ -122,3 +122,11 @@ Optional mock payload source:
   }
 }
 ```
+
+Optional upstream passthrough (real data mode without changing UI wiring):
+
+- `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_URL`
+- `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TOKEN`
+- `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TIMEOUT_MS`
+
+When `WORDPRESS_TELEMETRY_COLLECTOR_MOCK_DATA` has no matching site key, the internal bridge will call `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_URL` and return that response (normalized to this contract).
