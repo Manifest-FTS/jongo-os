@@ -225,6 +225,26 @@ For WordPress apps, include contextual operational information:
 
 WordPress details live in the **Integrations** tab, not fragmented across the UI.
 
+### WordPress Telemetry / REST Integration Direction
+
+Jongo OS should support WordPress-specific operational telemetry:
+
+- core version
+- plugin list/status
+- theme status
+- update availability
+- maintenance mode
+- basic site health signals
+
+Direction for telemetry setup:
+
+- For WordPress resources provisioned by Jongo, telemetry should be enabled automatically during provisioning.
+- For existing or imported WordPress resources, Jongo should detect missing telemetry capability and show a guided setup path.
+- Prefer a lightweight Jongo companion plugin or secure REST integration.
+- Do not assume public unauthenticated WordPress REST endpoints are enough for plugin, theme, or update data.
+- Do not expose sensitive WordPress admin data to collaborators unless permissions allow it.
+- WordPress telemetry should live mainly under the Integrations tab.
+
 ### Primary Workflows
 
 1. **View operational health** → Dashboard + Client Overview + App Overview
@@ -337,6 +357,40 @@ The plan should eventually cover:
 - backup and restore state
 - infrastructure and environment configuration
 - operational workflows for self-hosted teams and agencies
+
+### App / Resource Provisioning Direction
+
+Jongo currently supports adding Clients, but the long-term product must also support creating Apps and Resources from Jongo OS.
+
+Future user flow:
+
+1. Create Client
+2. Create App / Resource under Client
+3. Choose type:
+  - WordPress Site
+  - Web App / Next.js / Nixpacks
+  - Database
+  - Service
+4. Jongo provisions the resource through the Coolify API
+5. Jongo stores Coolify UUIDs immediately
+6. Jongo applies naming and domain conventions
+7. Jongo links databases, volumes, and dependencies where relevant
+8. Jongo shows a readiness checklist after creation
+
+Product constraints:
+
+- Admins should not always need to go directly into Coolify for normal resource creation.
+- Coolify remains the infrastructure engine.
+- Jongo remains the operational UX and orchestration layer.
+- Do not implement provisioning yet unless it is already scheduled.
+- Document this as future phased work after observation, mapping, and readiness are stable.
+
+Type-specific future behavior:
+
+- WordPress provisioning should eventually create both the WordPress app and its DB/media dependency mapping.
+- Web app provisioning should eventually support preview/branch-style workflows.
+- Database provisioning should emphasize backup and restore readiness.
+- Service provisioning should emphasize health, logs, and restart readiness.
 
 ## Backup Architecture Note (Stateful-First)
 
