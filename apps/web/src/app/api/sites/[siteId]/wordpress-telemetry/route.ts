@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getWordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
+import { getWordPressTelemetrySnapshotFromCollector } from "@/lib/wordpress-telemetry-collector";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -27,11 +28,18 @@ export async function GET(_req: Request, { params }: Params) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const snapshot = getWordPressTelemetrySnapshot({
+    const fallbackSnapshot = getWordPressTelemetrySnapshot({
       siteId: workspace.slug ?? workspace.id,
       isWordPress: workspace.siteType === "wordpress",
       hasCoolifyServiceUuid: Boolean(workspace.coolifyServiceUuid)
     });
+
+    const collectorSnapshot = await getWordPressTelemetrySnapshotFromCollector({
+      fallback: fallbackSnapshot,
+      workspace
+    });
+
+    const snapshot = collectorSnapshot ?? fallbackSnapshot;
 
     return NextResponse.json(snapshot);
   } catch (error) {

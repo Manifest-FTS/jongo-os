@@ -44,7 +44,7 @@ export function formatWordPressCollectorStatus(status: WordPressTelemetryPolicy[
 export type WordPressTelemetrySnapshot = {
   siteId: string;
   checkedAt: string;
-  source: "policy_default";
+  source: "policy_default" | "collector";
   policy: WordPressTelemetryPolicy;
 };
 
