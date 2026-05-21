@@ -214,6 +214,45 @@ async function fetchJson(url: string, headers: Record<string, string>, timeoutMs
   }
 }
 
+async function fetchJsonWithStatus(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs: number
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      signal: abort.signal
+    });
+
+    let data: unknown = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data
+    };
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      data: null
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function collectFromRestCredentials(
   credentials: WordPressRestCredentials,
   source: string
@@ -236,12 +275,44 @@ export async function collectFromRestCredentials(
   };
 
   const normalizedBase = siteUrl.replace(/\/+$/, "");
+  const authCheck = await fetchJsonWithStatus(`${normalizedBase}/wp-json/wp/v2/users/me`, headers, timeout);
+  if (!authCheck.ok || !isRecord(authCheck.data)) {
+    return null;
+  }
+
   const root = await fetchJson(`${normalizedBase}/wp-json`, headers, timeout);
   const pluginList = await fetchJson(`${normalizedBase}/wp-json/wp/v2/plugins?per_page=100`, headers, timeout);
   const pluginInventory = parsePluginRows(pluginList);
 
   if (pluginInventory.length === 0) {
-    return null;
+    return {
+      checkedAt: new Date().toISOString(),
+      source,
+      collectorStatus: "ready_for_pull",
+      tone: "degraded",
+      label: "Connected",
+      summary: "WordPress telemetry credentials are valid, but plugin inventory endpoint access is limited.",
+      guidance: "Keep this connection saved. Plugin inventory will appear when REST plugin permissions are enabled for this user.",
+      siteUrl: normalizedBase,
+      needsSetup: false,
+      setupSteps: [],
+      signals: {
+        coreVersion: extractCoreVersion(root),
+        pluginStatus: "limited_access",
+        themeStatus: "collector_pending",
+        updateAvailability: "collector_pending",
+        maintenanceMode: "collector_pending",
+        siteHealth: "good"
+      },
+      pluginInsights: {
+        inventoryConnected: false,
+        activePlugins: null,
+        inactivePlugins: null,
+        updatesAvailable: null,
+        securityIssues: null
+      },
+      pluginInventory: []
+    };
   }
 
   const activePlugins = pluginInventory.filter((row) => row.status === "Active").length;
