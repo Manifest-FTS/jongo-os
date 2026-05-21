@@ -7,6 +7,8 @@ import { formatWordPressCollectorStatus, formatWordPressTelemetryValue } from "@
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: Promise<{ siteId: string }> };
 
 export default async function IntegrationsPage({ params }: Params) {

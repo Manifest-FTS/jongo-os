@@ -9,6 +9,8 @@ import { ArrowRightIcon } from "@/components/JongoIcons";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: Promise<{ siteId: string }> };
 
 type ReadinessState = "ready" | "attention" | "not_configured" | "unknown";

@@ -5,6 +5,8 @@ import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
 import { formatWordPressCollectorStatus, formatWordPressTelemetryValue } from "@/lib/wordpress-telemetry";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: Promise<{ siteId: string }> };
 
 export default async function SitePluginsPage({ params }: Params) {
