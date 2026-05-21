@@ -21,6 +21,10 @@
   - This resolves Database/Service workspaces falling back to Web App copy due legacy `siteType` narrowing.
   - Authenticated production browser validation confirms Database mapping now resolves correctly (e.g. `/apps/pdb-jongo-saas-prod/deployments` shows Database workflow model copy).
   - Authenticated `/api/coolify/overview` currently reports `siteType=database` for database resources and no `siteType=service` resources in live inventory (service matrix check pending when one is present).
+- WordPress telemetry-default messaging shipped (`391152f`):
+  - WordPress Integrations and Overview now treat telemetry as default-enabled policy instead of requiring manual `WP_API_URL` setup copy.
+  - UI now reports auto-enabled/needs-mapping policy states based on WordPress detection and Coolify mapping presence.
+  - Data fields remain telemetry-pipeline pending until collector implementation is added.
 
 ---
 
