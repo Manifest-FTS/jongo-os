@@ -338,6 +338,33 @@ The plan should eventually cover:
 - infrastructure and environment configuration
 - operational workflows for self-hosted teams and agencies
 
+## Backup Architecture Note (Stateful-First)
+
+For Git-based apps, source code is already backed up in GitHub. Jongo backup readiness should focus on stateful data and operational recoverability, not code repository duplication.
+
+Jongo backup readiness scope for app-level operations:
+
+- databases
+- uploaded files and media
+- persistent volumes
+- environment and configuration metadata
+
+Infrastructure snapshot policy:
+
+- Hetzner/server snapshots are disaster-recovery controls only.
+- Snapshots are not the primary app-level restore UX in Jongo.
+
+WordPress completeness rule:
+
+- Backup readiness is incomplete unless both data planes are covered:
+  - WordPress database
+  - `wp-content/uploads` and media assets
+
+Execution boundary for this phase:
+
+- Document and surface readiness signals only.
+- Do not implement backup execution, restore execution, or destructive backup actions yet.
+
 ### API Alignment Track (Current Priority)
 
 Near-term roadmap work should keep the implementation aligned to current Coolify API docs:
