@@ -30,6 +30,56 @@ function statusTone(status: string): string {
   return "unknown";
 }
 
+function getResourceWorkflowModel(siteType?: string): { title: string; body: string; bullets: string[] } {
+  if (siteType === "wordpress") {
+    return {
+      title: "WordPress clone-style staging (future)",
+      body: "WordPress workflows prioritize clone-style staging for plugin, theme, content, and update validation before production actions.",
+      bullets: [
+        "Create Staging from Production",
+        "Sync Production to Staging",
+        "Push Staging to Production",
+        "Execution remains admin/operator-controlled and backup-gated"
+      ]
+    };
+  }
+
+  if (siteType === "database") {
+    return {
+      title: "Database operations model",
+      body: "Database resources prioritize backup and restore readiness instead of website-style staging workflows.",
+      bullets: [
+        "Backup freshness and readiness",
+        "Restore validation readiness",
+        "No staging-site clone controls"
+      ]
+    };
+  }
+
+  if (siteType === "service") {
+    return {
+      title: "Service operations model",
+      body: "Service resources focus on runtime health and recovery workflows over website-style staging controls.",
+      bullets: [
+        "Health, restart, and logs readiness",
+        "Stateful safety checks where applicable",
+        "No staging-site clone controls by default"
+      ]
+    };
+  }
+
+  return {
+    title: "Web app preview-style model (future)",
+    body: "Web app workflows should map to branch/PR preview deployments rather than clone-style staging.",
+    bullets: [
+      "Branch/PR preview environments",
+      "Temporary preview URLs",
+      "Pre-merge checks before main deployment",
+      "Execution remains dry-run/disabled in this phase"
+    ]
+  };
+}
+
 export default async function DeploymentsPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -57,6 +107,7 @@ export default async function DeploymentsPage({ params }: Params) {
   const deployLockReason = backupReadiness.locked
     ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
     : "Dry-run mode: execution remains disabled in this interface.";
+  const workflowModel = getResourceWorkflowModel(workspace?.siteType);
 
   const productionDeployments = deployments.filter((d) => d.environment === "production");
   const stagingDeployments = deployments.filter((d) => d.environment === "staging");
@@ -135,6 +186,17 @@ export default async function DeploymentsPage({ params }: Params) {
               Staging is not configured. Sync and promote controls appear here after staging is detected.
             </p>
           )}
+        </article>
+
+        <article className="card">
+          <h3 className="card-title">Resource Workflow Model</h3>
+          <p className="card-muted" style={{ marginBottom: "0.5rem" }}>{workflowModel.body}</p>
+          <span className="tag" style={{ marginBottom: "0.5rem", display: "inline-flex" }}>{workflowModel.title}</span>
+          <ul style={{ margin: 0, paddingLeft: "1.15rem", display: "grid", gap: "0.25rem" }}>
+            {workflowModel.bullets.map((item) => (
+              <li key={item} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{item}</li>
+            ))}
+          </ul>
         </article>
       </section>
 
