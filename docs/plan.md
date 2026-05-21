@@ -453,6 +453,21 @@ Execution unlock rule:
 
 - Do not enable backup/restore/sync/promote execution paths until Gates A-C are complete and stable.
 
+### Current Phase Definition of Done
+
+The current phase (observation, mapping, readiness UX) is complete only when all of the following are true:
+
+- Cross-type inventory is stable in production (WordPress, Web App, Database, Service when present).
+- App workspace model copy matches resource type across Overview, Settings, Staging, and Deployments.
+- Backup readiness reasons are explicit and consistent in all locked action surfaces.
+- Staging visibility rules are consistent (no staging-heavy actions when staging is not configured).
+- Backup architecture messaging is stateful-first and visible in planning docs.
+- WordPress telemetry direction is documented with auto-enable for provisioned resources and guided setup for imported resources.
+- Future provisioning direction is documented, but provisioning execution remains disabled.
+- Production smoke checks are captured in docs/runbooks for each completed roadmap increment.
+
+Only after this checklist is satisfied should implementation move to telemetry plumbing and provisioning dry-run flows.
+
 ## Backup Architecture Note (Stateful-First)
 
 For Git-based apps, source code is already backed up in GitHub. Jongo backup readiness should focus on stateful data and operational recoverability, not code repository duplication.
