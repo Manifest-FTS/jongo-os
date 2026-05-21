@@ -163,7 +163,7 @@ export type SiteWorkspaceRecord = {
   stagingEnabled: boolean;
   deploymentCount: number;
   recentActivity: string[];
-  siteType: "wordpress" | "generic";
+  siteType: "wordpress" | "database" | "service" | "generic";
     resourceType?: string;
   // DB-native fields (only present for DB-backed sites)
   coolifyServiceUuid?: string;

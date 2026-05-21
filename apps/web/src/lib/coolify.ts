@@ -12,7 +12,7 @@ export type DeploymentRecord = {
   durationSeconds?: number;
 };
 
-export type SiteType = "wordpress" | "generic";
+export type SiteType = "wordpress" | "database" | "service" | "generic";
 
 export type SiteOverview = {
   id: string;
@@ -80,39 +80,15 @@ const overviewCache: CoolifyOverviewCacheState = {
 };
 
 /**
- * Detect site type from Coolify resource metadata.
- * Priority order (highest confidence first):
- *   1. docker_registry_image_name — image for Docker Image deployments (e.g. "wordpress", "bitnami/wordpress")
- *   2. static_image              — static/pre-built image field
- *   3. git_repository            — repository URL may contain "wordpress"
- *   4. description               — free-text description field
- *   5. name                      — resource name: last resort, most fragile
- *
- * Returns "wordpress" only if one of the above clearly indicates WordPress.
- * Falls back to "generic" when metadata is absent or inconclusive.
+ * Detect site type from Coolify resource metadata using centralized
+ * resource-type detection, then map to workspace-facing site types.
  */
 export function detectSiteType(resource: Record<string, unknown>): SiteType {
-  const wp = /wordpress|bitnami\/wordpress/i;
+  const resourceType = detectResourceType(resource).type;
 
-  // 1 & 2: image fields — highest signal
-  for (const field of ["docker_registry_image_name", "static_image"]) {
-    const val = resource[field];
-    if (typeof val === "string" && wp.test(val)) return "wordpress";
-  }
-
-  // 3: git repository URL
-  const gitRepo = resource.git_repository;
-  if (typeof gitRepo === "string" && /wordpress/i.test(gitRepo)) return "wordpress";
-
-  // 4: description free text
-  const description = resource.description;
-  if (typeof description === "string" && /wordpress/i.test(description)) return "wordpress";
-
-  // 5: name — last fallback
-  const name = resource.name;
-  if (typeof name === "string" && (/wordpress/i.test(name) || /\bwp[-_ ]/i.test(name) || /[-_ ]wp\b/i.test(name))) {
-    return "wordpress";
-  }
+  if (resourceType === "WordPress") return "wordpress";
+  if (resourceType === "Database") return "database";
+  if (resourceType === "Service") return "service";
 
   return "generic";
 }
