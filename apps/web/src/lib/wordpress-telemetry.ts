@@ -91,12 +91,12 @@ export function getWordPressTelemetryPolicy(params: {
       tone: "degraded",
       label: "Needs mapping",
       summary: "WordPress monitoring is on by default, but this app still needs hosting mapping before signals can load.",
-      guidance: "Open Settings and connect this app to the correct hosting service to finish monitoring setup.",
+      guidance: "Open Settings and connect this app to the right hosting connection to finish monitoring setup.",
       collectorStatus: "pipeline_pending",
       setupSteps: [
-        "Open Settings and confirm the app is mapped to the correct Coolify service UUID.",
-        "Verify the app is classified as WordPress in the Apps inventory.",
-        "Return to Integrations to confirm telemetry policy is active."
+        "Open Settings and confirm this app is connected to the correct hosting service.",
+        "Verify this app is marked as WordPress in the app list.",
+        "Return to Integrations to confirm monitoring is active."
       ],
       signals: {
         coreVersion: "pending_mapping",
@@ -115,7 +115,7 @@ export function getWordPressTelemetryPolicy(params: {
     tone: "healthy",
     label: "Auto-enabled",
     summary: "WordPress monitoring is enabled by default for WordPress apps.",
-    guidance: "Detailed plugin, theme, and update insights will appear automatically as monitoring setup completes.",
+    guidance: "Detailed plugin, theme, and update insights will appear automatically as setup completes.",
     collectorStatus: "ready_for_pull",
     setupSteps: [],
     signals: {

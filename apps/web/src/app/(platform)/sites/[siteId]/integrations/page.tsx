@@ -59,7 +59,7 @@ export default async function IntegrationsPage({ params }: Params) {
             Deployment provider: <span className="tag">{deploymentSource}</span>
           </p>
           <p style={{ margin: 0 }}>
-            Hosting service: <span className="tag">{workspace?.coolifyServiceUuid ?? coolifySite?.id ?? "not linked"}</span>
+            Hosting connection: <span className="tag">{workspace?.coolifyServiceUuid || coolifySite?.id ? "connected" : "not linked"}</span>
           </p>
           <p style={{ margin: 0 }}>
             Project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>

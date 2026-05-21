@@ -90,10 +90,10 @@ export default async function SitePluginsPage({ params }: Params) {
       <article className="card">
         <h3 className="card-title">Next Step</h3>
         <p className="card-muted" style={{ marginBottom: 0 }}>
-          Plugin inventory counts and version drift metrics will populate here once WordPress collector pull integration is enabled.
+          Plugin inventory and version update insights will appear here as setup completes.
         </p>
         <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
-          <Link href={`/apps/${siteId}/integrations`} className="action-link">Open integrations telemetry</Link>
+          <Link href={`/apps/${siteId}/integrations`} className="action-link">Open integrations overview</Link>
         </p>
       </article>
     </div>
