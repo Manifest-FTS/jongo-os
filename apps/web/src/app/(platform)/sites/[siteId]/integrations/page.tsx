@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteActivityFeed, getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 import PendingBadge from "@/components/PendingBadge";
+import { getWordPressTelemetryPolicy } from "@/lib/wordpress-telemetry";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -30,6 +31,10 @@ export default async function IntegrationsPage({ params }: Params) {
   const coolifySite = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const isWordPress = workspace?.siteType === "wordpress";
   const deploymentSource = deployments[0]?.source ?? overview.mode;
+  const wpTelemetry = getWordPressTelemetryPolicy({
+    isWordPress,
+    hasCoolifyServiceUuid: Boolean(workspace?.coolifyServiceUuid)
+  });
 
   return (
     <div className="page-stack">
@@ -60,13 +65,17 @@ export default async function IntegrationsPage({ params }: Params) {
         <article className="card">
           <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
             WordPress Signals
-            <PendingBadge reason="WordPress REST API connection is not yet configured. Add WP_API_URL to site environment variables to unlock live plugin, version, and maintenance data." />
+            <span className={`status-chip ${wpTelemetry.tone}`}>{wpTelemetry.label}</span>
           </h3>
+          <p className="card-muted" style={{ marginTop: 0 }}>{wpTelemetry.summary}</p>
           <div style={{ display: "grid", gap: "0.55rem" }}>
-            <p style={{ margin: 0 }}>Plugin updates: not connected</p>
-            <p style={{ margin: 0 }}>Core version: not connected</p>
-            <p style={{ margin: 0 }}>Maintenance mode: not connected</p>
+            <p style={{ margin: 0 }}>Plugin updates: telemetry pipeline pending</p>
+            <p style={{ margin: 0 }}>Core version: telemetry pipeline pending</p>
+            <p style={{ margin: 0 }}>Maintenance mode: telemetry pipeline pending</p>
           </div>
+          <p style={{ margin: "0.7rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+            {wpTelemetry.guidance}
+          </p>
         </article>
       ) : (
         <article className="card">

@@ -2,11 +2,11 @@
 import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import { getBackupReadiness } from "@/lib/deploy-guards";
+import { getWordPressTelemetryPolicy } from "@/lib/wordpress-telemetry";
 import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import Link from "next/link";
 import { ArrowRightIcon } from "@/components/JongoIcons";
-import PendingBadge from "@/components/PendingBadge";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -167,6 +167,10 @@ export default async function SiteOverviewPage({ params }: Params) {
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
   const isWordPress = workspace?.siteType === "wordpress";
   const workflowModel = getResourceWorkflowModel(workspace?.siteType);
+  const wpTelemetry = getWordPressTelemetryPolicy({
+    isWordPress,
+    hasCoolifyServiceUuid: Boolean(workspace?.coolifyServiceUuid)
+  });
 
   const readinessChecks: ReadinessCheck[] = [
     {
@@ -377,24 +381,25 @@ export default async function SiteOverviewPage({ params }: Params) {
             <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               WordPress Overview
               <span className="status-chip unknown" style={{ fontSize: "0.7rem" }}>WP detected</span>
-              <PendingBadge reason="WordPress REST API is not yet connected. Add WP_API_URL to site environment variables to unlock live version, plugin, and maintenance data." />
+              <span className={`status-chip ${wpTelemetry.tone}`} style={{ fontSize: "0.7rem" }}>{wpTelemetry.label}</span>
             </h3>
+            <p className="card-muted" style={{ marginTop: 0 }}>{wpTelemetry.summary}</p>
             <div className="grid" style={{ marginTop: "0.5rem" }}>
               <div>
                 <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Core Version</p>
-                <p className="card-muted" style={{ margin: 0 }}>Connect WordPress REST API to show version</p>
+                <p className="card-muted" style={{ margin: 0 }}>Telemetry pipeline pending</p>
               </div>
               <div>
                 <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Plugin Updates</p>
-                <p className="card-muted" style={{ margin: 0 }}>Connect WordPress REST API to show pending updates</p>
+                <p className="card-muted" style={{ margin: 0 }}>Telemetry pipeline pending</p>
               </div>
               <div>
                 <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", fontWeight: 500 }}>Maintenance Mode</p>
-                <p className="card-muted" style={{ margin: 0 }}>Enable WP API settings to control maintenance mode</p>
+                <p className="card-muted" style={{ margin: 0 }}>Telemetry pipeline pending</p>
               </div>
             </div>
             <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-              Add <code>WP_API_URL</code> to site environment variables to unlock WordPress operational data.
+              {wpTelemetry.guidance}
             </p>
           </article>
         </div>
