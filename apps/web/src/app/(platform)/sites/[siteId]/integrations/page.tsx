@@ -95,7 +95,7 @@ export default async function IntegrationsPage({ params }: Params) {
             {wpTelemetry.guidance}
           </p>
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-            Snapshot source: <code>{wpTelemetrySnapshot.source}</code> · checked just now
+            Snapshot source: <code>{wpTelemetrySnapshot.source}</code> - checked just now
           </p>
         </article>
       ) : (
