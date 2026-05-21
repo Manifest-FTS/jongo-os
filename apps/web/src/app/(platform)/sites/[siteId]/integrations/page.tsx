@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin, listSiteDeployments } from "@/lib/repositories";
 import PendingBadge from "@/components/PendingBadge";
+import WordPressTelemetryConnectionPanel from "@/components/WordPressTelemetryConnectionPanel";
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
 import {
   formatWordPressCollectorStatus,
@@ -173,6 +174,16 @@ export default async function IntegrationsPage({ params }: Params) {
           <p className="card-muted">Attach provider tooling here as this app stack grows.</p>
         </article>
       )}
+
+      {isWordPress && canViewInternalMetadata ? (
+        <article className="card">
+          <h3 className="card-title">Connect Telemetry</h3>
+          <p className="card-muted" style={{ marginTop: 0 }}>
+            Save per-app WordPress REST credentials to collect live plugin telemetry.
+          </p>
+          <WordPressTelemetryConnectionPanel siteId={siteId} />
+        </article>
+      ) : null}
 
       <article className="card">
         <h3 className="card-title">Recent Integration Events</h3>

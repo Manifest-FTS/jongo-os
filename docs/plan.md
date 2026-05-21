@@ -263,7 +263,8 @@ Telemetry setup direction:
 - For WordPress resources provisioned by Jongo, telemetry should be enabled automatically during provisioning.
 - For existing or imported WordPress resources, Jongo should detect missing telemetry capability and present a guided setup path.
 - Prefer platform-level inspection first for Coolify-managed WordPress resources.
-- Use secure REST/application-password telemetry as the default fallback when platform inspection is not available.
+- Use app-level Connect Telemetry (saved REST/application-password credentials) as the default product path when platform inspection is not available.
+- Keep env-based REST site maps as dev/testing fallback only, not as the primary product path.
 - Keep a Jongo companion plugin optional for deeper telemetry, migration workflows, or external/non-standard WordPress environments.
 - Do not assume public unauthenticated WordPress REST endpoints are enough for plugin, theme, or update data.
 - Do not expose sensitive WordPress admin data to collaborators unless permissions allow it.

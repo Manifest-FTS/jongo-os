@@ -1,6 +1,15 @@
+import { getDb } from "@/lib/db";
+import { decryptSecret } from "@/lib/wordpress-telemetry-secrets";
+
 type CollectorRequest = {
   siteId?: string;
   slug?: string;
+};
+
+export type WordPressRestCredentials = {
+  siteUrl: string;
+  username: string;
+  appPassword: string;
 };
 
 type PluginInventoryRow = {
@@ -51,6 +60,10 @@ type RestSiteConfig = {
   username?: string;
   appPassword?: string;
 };
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -201,27 +214,15 @@ async function fetchJson(url: string, headers: Record<string, string>, timeoutMs
   }
 }
 
-export async function collectFromPlatformInspection(_input: CollectorRequest): Promise<CollectorSnapshotPayload | null> {
-  // Placeholder for Coolify/container-level providers (WP-CLI, filesystem metadata, env introspection).
-  return null;
-}
+export async function collectFromRestCredentials(
+  credentials: WordPressRestCredentials,
+  source: string
+): Promise<CollectorSnapshotPayload | null> {
+  const siteUrl = credentials.siteUrl.trim();
+  const username = credentials.username.trim();
+  const appPassword = credentials.appPassword.trim();
 
-export async function collectFromRestSiteMap(input: CollectorRequest): Promise<CollectorSnapshotPayload | null> {
-  const siteKey = input.siteId?.trim() || input.slug?.trim() || "";
-  if (!siteKey) {
-    return null;
-  }
-
-  const map = parseRestSiteMap();
-  const config = map[siteKey];
-  const siteUrl = config?.siteUrl?.trim();
-  if (!siteUrl) {
-    return null;
-  }
-
-  const username = config.username?.trim();
-  const appPassword = config.appPassword?.trim();
-  if (!username || !appPassword) {
+  if (!siteUrl || !username || !appPassword) {
     return null;
   }
 
@@ -249,7 +250,7 @@ export async function collectFromRestSiteMap(input: CollectorRequest): Promise<C
 
   return {
     checkedAt: new Date().toISOString(),
-    source: "collector_rest",
+    source,
     collectorStatus: "ready_for_pull",
     tone: "healthy",
     label: "Live",
@@ -275,4 +276,82 @@ export async function collectFromRestSiteMap(input: CollectorRequest): Promise<C
     },
     pluginInventory
   };
+}
+
+export async function collectFromStoredRestConfig(input: CollectorRequest): Promise<CollectorSnapshotPayload | null> {
+  const siteKey = input.siteId?.trim() || input.slug?.trim() || "";
+  if (!siteKey) {
+    return null;
+  }
+
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  const identityWhere = isUuid(siteKey)
+    ? { OR: [{ id: siteKey }, { slug: siteKey }], deletedAt: null }
+    : { slug: siteKey, deletedAt: null };
+
+  const site = await db.site.findFirst({
+    where: identityWhere,
+    select: {
+      wordpressTelemetryConfig: {
+        select: {
+          siteUrl: true,
+          username: true,
+          passwordCiphertext: true
+        }
+      }
+    }
+  });
+
+  const config = site?.wordpressTelemetryConfig;
+  if (!config) {
+    return null;
+  }
+
+  let appPassword = "";
+  try {
+    appPassword = decryptSecret(config.passwordCiphertext);
+  } catch {
+    return null;
+  }
+
+  return collectFromRestCredentials(
+    {
+      siteUrl: config.siteUrl,
+      username: config.username,
+      appPassword
+    },
+    "collector_rest_saved"
+  );
+}
+
+export async function collectFromPlatformInspection(_input: CollectorRequest): Promise<CollectorSnapshotPayload | null> {
+  // Placeholder for Coolify/container-level providers (WP-CLI, filesystem metadata, env introspection).
+  return null;
+}
+
+export async function collectFromRestSiteMap(input: CollectorRequest): Promise<CollectorSnapshotPayload | null> {
+  const siteKey = input.siteId?.trim() || input.slug?.trim() || "";
+  if (!siteKey) {
+    return null;
+  }
+
+  const map = parseRestSiteMap();
+  const config = map[siteKey];
+  const siteUrl = config?.siteUrl?.trim();
+  if (!siteUrl) {
+    return null;
+  }
+
+  return collectFromRestCredentials(
+    {
+      siteUrl,
+      username: config.username?.trim() || "",
+      appPassword: config.appPassword?.trim() || ""
+    },
+    "collector_rest_env_map"
+  );
 }

@@ -22,11 +22,22 @@ If all providers are unavailable, Jongo falls back automatically.
 - `WORDPRESS_TELEMETRY_COLLECTOR_URL`: Jongo telemetry endpoint used by app pages.
 - `WORDPRESS_TELEMETRY_COLLECTOR_TOKEN`: Bearer token for the internal bridge endpoint.
 - `WORDPRESS_TELEMETRY_COLLECTOR_TIMEOUT_MS`: Optional timeout in milliseconds (default `5000`).
-- `WORDPRESS_TELEMETRY_REST_SITE_MAP`: Optional REST auth map keyed by site slug/id.
+- `WORDPRESS_TELEMETRY_ENCRYPTION_SECRET`: Optional secret used to encrypt saved app-level WordPress credentials (falls back to `NEXTAUTH_SECRET`).
+- `WORDPRESS_TELEMETRY_REST_SITE_MAP`: Optional dev/testing REST auth fallback map keyed by site slug/id.
 - `WORDPRESS_TELEMETRY_REST_TIMEOUT_MS`: Optional REST timeout (default `5000`).
 - `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_URL`: Optional external collector passthrough endpoint.
 - `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TOKEN`: Optional upstream bearer token.
 - `WORDPRESS_TELEMETRY_COLLECTOR_UPSTREAM_TIMEOUT_MS`: Optional upstream timeout (default `5000`).
+
+## Product Path
+
+Primary production flow:
+
+1. Open App > Integrations > Connect Telemetry.
+2. Save site URL, telemetry username, and WordPress application password.
+3. Run Test Connection.
+
+Saved credentials are encrypted server-side and passwords are never returned to the browser after save.
 
 ## Request
 
@@ -120,7 +131,7 @@ Set the main collector URL to this route to enable the provider chain:
 
 - `WORDPRESS_TELEMETRY_COLLECTOR_URL=https://<your-jongo-host>/api/internal/wordpress-collector`
 
-Optional REST provider source (recommended before plugin/upstream for many self-hosted sites):
+Optional REST provider source (dev/testing fallback):
 
 - `WORDPRESS_TELEMETRY_REST_SITE_MAP`
 - JSON object keyed by site slug or site id:

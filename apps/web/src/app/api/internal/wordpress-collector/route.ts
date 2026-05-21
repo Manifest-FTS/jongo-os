@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   collectFromPlatformInspection,
+  collectFromStoredRestConfig,
   collectFromRestSiteMap,
   normalizeCollectorSnapshot
 } from "@/lib/wordpress-telemetry-bridge-providers";
@@ -96,15 +97,15 @@ function buildSnapshot(record?: CollectorMockRecord) {
       : "Collector bridge is active but no plugin inventory payload is available for this site yet.",
     guidance: inventoryConnected
       ? "Review plugin and update metrics below."
-      : "Add this site to WORDPRESS_TELEMETRY_COLLECTOR_MOCK_DATA to test live inventory rendering.",
+      : "Open Integrations and connect WordPress telemetry credentials for this app.",
     siteUrl: record?.siteUrl?.trim() || null,
     needsSetup: !inventoryConnected,
     setupSteps: inventoryConnected
       ? []
       : [
-          "Set WORDPRESS_TELEMETRY_COLLECTOR_MOCK_DATA with this site id or slug.",
-          "Include plugin metric counts for active, inactive, updates, and security issues.",
-          "Refresh Plugins and Integrations pages to verify live collector flow."
+          "Open App > Integrations > Connect Telemetry.",
+          "Save WordPress site URL, telemetry username, and application password.",
+          "Run Test Connection, then refresh Plugins and Integrations."
         ],
     signals: {
       coreVersion: record?.coreVersion ?? "collector_pending",
@@ -159,6 +160,11 @@ export async function POST(request: Request) {
   const platformSnapshot = await collectFromPlatformInspection(body);
   if (platformSnapshot) {
     return NextResponse.json(platformSnapshot);
+  }
+
+  const savedConfigSnapshot = await collectFromStoredRestConfig(body);
+  if (savedConfigSnapshot) {
+    return NextResponse.json(savedConfigSnapshot);
   }
 
   const restSnapshot = await collectFromRestSiteMap(body);

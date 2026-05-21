@@ -11,9 +11,10 @@ This document describes the default telemetry strategy for self-hosted Jongo use
 ## Preferred Provider Order
 
 1. Platform-level inspection
-2. Secure WordPress REST (application passwords)
-3. Optional mock/test provider
-4. Optional upstream collector/plugin-enhanced provider
+2. Saved app-level WordPress REST credentials (Connect Telemetry)
+3. Optional env-map REST fallback for dev/testing
+4. Optional mock/test provider
+5. Optional upstream collector/plugin-enhanced provider
 
 ## Provider Details
 
@@ -30,9 +31,23 @@ Status:
 - Provider hook exists in bridge pipeline.
 - Full WP-CLI/container implementation is planned incrementally.
 
-### 2) REST Application Password Provider (Default Fallback)
+### 2) App-Level REST Credentials (Default Product Path)
 
-When platform inspection is not available, configure per-site REST credentials:
+Use App -> Integrations -> Connect Telemetry to save per-app credentials:
+
+- WordPress site URL
+- telemetry username
+- WordPress application password
+
+Notes:
+
+- Passwords are encrypted server-side at rest.
+- Passwords are never returned to the browser after save.
+- Configuration and testing are admin-only actions.
+
+### 3) Env-Map REST Fallback (Dev/Testing)
+
+For temporary local/staging workflows, you can still use env mapping:
 
 ```dotenv
 WORDPRESS_TELEMETRY_REST_SITE_MAP={"waterfallkeepersofnc-org":{"siteUrl":"https://waterfallkeepersofnc.org","username":"telemetry-bot","appPassword":"xxxx xxxx xxxx xxxx xxxx xxxx"}}
@@ -45,7 +60,7 @@ Notes:
 - Use least-privilege WordPress user for telemetry.
 - REST provider populates plugin counts and tabular plugin rows when endpoint permissions allow.
 
-### 3) Mock Provider (Testing)
+### 4) Mock Provider (Testing)
 
 Optional for local or staging verification:
 
@@ -53,7 +68,7 @@ Optional for local or staging verification:
 WORDPRESS_TELEMETRY_COLLECTOR_MOCK_DATA={"waterfallkeepersofnc-org":{"activePlugins":28,"inactivePlugins":5,"updatesAvailable":2,"securityIssues":0,"coreVersion":"6.5.5"}}
 ```
 
-### 4) Optional Upstream Collector
+### 5) Optional Upstream Collector
 
 Advanced extension for custom telemetry systems or deep plugin-assisted metrics:
 
