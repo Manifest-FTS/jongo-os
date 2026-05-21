@@ -19,7 +19,8 @@
 - Follow-up fix shipped for resource-type mapping:
   - `fix(site-type): classify database and service resources in workspace` (`e593c77`)
   - This resolves Database/Service workspaces falling back to Web App copy due legacy `siteType` narrowing.
-  - Pending final smoke re-check on authenticated production session (scripted manifest-domain auth currently returns `401`).
+  - Authenticated production browser validation confirms Database mapping now resolves correctly (e.g. `/apps/pdb-jongo-saas-prod/deployments` shows Database workflow model copy).
+  - Authenticated `/api/coolify/overview` currently reports `siteType=database` for database resources and no `siteType=service` resources in live inventory (service matrix check pending when one is present).
 
 ---
 
