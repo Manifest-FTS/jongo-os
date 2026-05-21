@@ -402,12 +402,14 @@ export default async function SiteOverviewPage({ params }: Params) {
           ))}
         </div>
 
-        <details style={{ marginTop: "0.8rem" }}>
-          <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)" }}>Developer Details</summary>
-          <p style={{ margin: "0.45rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-            Source mode: {overview.mode} · Coolify fetch error: {overview.fetchError ? "yes" : "no"} · Backup source: {backupInventory?.source ?? "none"}
-          </p>
-        </details>
+        {canViewInternalMetadata ? (
+          <details style={{ marginTop: "0.8rem" }}>
+            <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)" }}>Technical details</summary>
+            <p style={{ margin: "0.45rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+              Source mode: {overview.mode} · Hosting fetch error: {overview.fetchError ? "yes" : "no"} · Backup source: {backupInventory?.source ?? "none"}
+            </p>
+          </details>
+        ) : null}
       </article>
 
       <div style={{ display: "grid", gap: "1rem", marginBottom: "1rem" }}>

@@ -17,6 +17,23 @@ export type WordPressTelemetryPolicy = {
   };
 };
 
+export function formatWordPressTelemetryValue(value: string): string {
+  if (value === "collector_pending" || value === "pending_mapping") {
+    return "Monitoring setup in progress";
+  }
+  if (value === "not_applicable") {
+    return "Not available for this app";
+  }
+  return value.replace(/_/g, " ");
+}
+
+export function formatWordPressCollectorStatus(status: WordPressTelemetryPolicy["collectorStatus"]): string {
+  if (status === "pipeline_pending") {
+    return "Setup in progress";
+  }
+  return "Connected for monitoring";
+}
+
 export type WordPressTelemetrySnapshot = {
   siteId: string;
   checkedAt: string;
@@ -52,7 +69,7 @@ export function getWordPressTelemetryPolicy(params: {
       needsSetup: false,
       tone: "unknown",
       label: "Not applicable",
-      summary: "WordPress telemetry policy only applies to WordPress resources.",
+      summary: "WordPress monitoring is available only for WordPress apps.",
       guidance: "",
       collectorStatus: "pipeline_pending",
       setupSteps: [],
@@ -73,8 +90,8 @@ export function getWordPressTelemetryPolicy(params: {
       needsSetup: true,
       tone: "degraded",
       label: "Needs mapping",
-      summary: "WordPress REST telemetry is enabled by default, but this app is not linked to a Coolify service UUID.",
-      guidance: "Link this app to its Coolify service in Settings so Jongo can attach telemetry endpoints and readiness checks.",
+      summary: "WordPress monitoring is on by default, but this app still needs hosting mapping before signals can load.",
+      guidance: "Open Settings and connect this app to the correct hosting service to finish monitoring setup.",
       collectorStatus: "pipeline_pending",
       setupSteps: [
         "Open Settings and confirm the app is mapped to the correct Coolify service UUID.",
@@ -97,8 +114,8 @@ export function getWordPressTelemetryPolicy(params: {
     needsSetup: false,
     tone: "healthy",
     label: "Auto-enabled",
-    summary: "WordPress REST telemetry is enabled by default for WordPress apps.",
-    guidance: "Detailed plugin/theme/update signals will populate as telemetry collectors are rolled out.",
+    summary: "WordPress monitoring is enabled by default for WordPress apps.",
+    guidance: "Detailed plugin, theme, and update insights will appear automatically as monitoring setup completes.",
     collectorStatus: "ready_for_pull",
     setupSteps: [],
     signals: {

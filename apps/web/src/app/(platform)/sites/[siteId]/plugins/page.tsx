@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth.config";
-import { getSiteWorkspace } from "@/lib/repositories";
+import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
+import { formatWordPressCollectorStatus, formatWordPressTelemetryValue } from "@/lib/wordpress-telemetry";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -18,6 +19,11 @@ export default async function SitePluginsPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+  const canViewInternalMetadata = Boolean(
+    session?.user?.id &&
+    workspace.organizationId &&
+    await isClientAdmin(workspace.organizationId, session.user.id)
+  );
 
   const isWordPress = workspace.siteType === "wordpress";
   if (!isWordPress) {
@@ -46,29 +52,34 @@ export default async function SitePluginsPage({ params }: Params) {
     <div className="page-stack">
       <article className="card">
         <h2 style={{ marginTop: 0 }}>Plugin Stats</h2>
-        <p className="card-muted">Read-only WordPress plugin telemetry snapshot for this app.</p>
+        <p className="card-muted">WordPress plugin monitoring summary for this app.</p>
       </article>
 
       <div className="grid">
         <article className="card">
           <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Plugin status</p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{policy.signals.pluginStatus}</p>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{formatWordPressTelemetryValue(policy.signals.pluginStatus)}</p>
         </article>
         <article className="card">
           <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Update availability</p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{policy.signals.updateAvailability}</p>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{formatWordPressTelemetryValue(policy.signals.updateAvailability)}</p>
         </article>
         <article className="card">
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Collector status</p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{policy.collectorStatus.replace(/_/g, " ")}</p>
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Monitoring status</p>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{formatWordPressCollectorStatus(policy.collectorStatus)}</p>
         </article>
       </div>
 
       <article className="card">
-        <h3 className="card-title">Telemetry Source</h3>
+        <h3 className="card-title">Monitoring Update</h3>
         <p className="card-muted" style={{ marginBottom: 0 }}>
-          Snapshot source: <code>{snapshot.source}</code> - checked {new Date(snapshot.checkedAt).toLocaleString()}
+          Last updated: {new Date(snapshot.checkedAt).toLocaleString()}
         </p>
+        {canViewInternalMetadata ? (
+          <p style={{ margin: "0.35rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
+            Data source: <code>{snapshot.source}</code>
+          </p>
+        ) : null}
       </article>
 
       <article className="card">

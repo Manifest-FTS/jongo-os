@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getCoolifyOverview } from "@/lib/coolify";
-import { getSiteActivityFeed, getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
+import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin, listSiteDeployments } from "@/lib/repositories";
 import PendingBadge from "@/components/PendingBadge";
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
+import { formatWordPressCollectorStatus, formatWordPressTelemetryValue } from "@/lib/wordpress-telemetry";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -26,6 +27,11 @@ export default async function IntegrationsPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+  const canViewInternalMetadata = Boolean(
+    session?.user?.id &&
+    workspace.organizationId &&
+    await isClientAdmin(workspace.organizationId, session.user.id)
+  );
 
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const coolifySite = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
@@ -47,16 +53,16 @@ export default async function IntegrationsPage({ params }: Params) {
       </article>
 
       <article className="card">
-        <h3 className="card-title">Provider Connectivity</h3>
+        <h3 className="card-title">Hosting Connection</h3>
         <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.55rem" }}>
           <p style={{ margin: 0 }}>
-            Deployment source: <span className="tag">{deploymentSource}</span>
+            Deployment provider: <span className="tag">{deploymentSource}</span>
           </p>
           <p style={{ margin: 0 }}>
-            Coolify service: <span className="tag">{workspace?.coolifyServiceUuid ?? coolifySite?.id ?? "not linked"}</span>
+            Hosting service: <span className="tag">{workspace?.coolifyServiceUuid ?? coolifySite?.id ?? "not linked"}</span>
           </p>
           <p style={{ margin: 0 }}>
-            Coolify project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>
+            Project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>
           </p>
           <p style={{ margin: 0 }}>
             Environment: <span className="tag">{workspace?.coolifyEnvironmentName ?? coolifySite?.coolifyEnvironmentName ?? "default"}</span>
@@ -72,14 +78,14 @@ export default async function IntegrationsPage({ params }: Params) {
           </h3>
           <p className="card-muted" style={{ marginTop: 0 }}>{wpTelemetry.summary}</p>
           <div style={{ display: "grid", gap: "0.55rem" }}>
-            <p style={{ margin: 0 }}>Core version: {wpTelemetry.signals.coreVersion}</p>
-            <p style={{ margin: 0 }}>Plugin status: {wpTelemetry.signals.pluginStatus}</p>
-            <p style={{ margin: 0 }}>Theme status: {wpTelemetry.signals.themeStatus}</p>
-            <p style={{ margin: 0 }}>Update availability: {wpTelemetry.signals.updateAvailability}</p>
-            <p style={{ margin: 0 }}>Maintenance mode: {wpTelemetry.signals.maintenanceMode}</p>
-            <p style={{ margin: 0 }}>Site health: {wpTelemetry.signals.siteHealth}</p>
+            <p style={{ margin: 0 }}>Core version: {formatWordPressTelemetryValue(wpTelemetry.signals.coreVersion)}</p>
+            <p style={{ margin: 0 }}>Plugin status: {formatWordPressTelemetryValue(wpTelemetry.signals.pluginStatus)}</p>
+            <p style={{ margin: 0 }}>Theme status: {formatWordPressTelemetryValue(wpTelemetry.signals.themeStatus)}</p>
+            <p style={{ margin: 0 }}>Update availability: {formatWordPressTelemetryValue(wpTelemetry.signals.updateAvailability)}</p>
+            <p style={{ margin: 0 }}>Maintenance mode: {formatWordPressTelemetryValue(wpTelemetry.signals.maintenanceMode)}</p>
+            <p style={{ margin: 0 }}>Site health: {formatWordPressTelemetryValue(wpTelemetry.signals.siteHealth)}</p>
             <p style={{ margin: 0 }}>
-              Collector status: <span className="tag">{wpTelemetry.collectorStatus.replace(/_/g, " ")}</span>
+              Monitoring status: <span className="tag">{formatWordPressCollectorStatus(wpTelemetry.collectorStatus)}</span>
             </p>
           </div>
           {wpTelemetry.needsSetup && wpTelemetry.setupSteps.length > 0 ? (
@@ -96,8 +102,13 @@ export default async function IntegrationsPage({ params }: Params) {
             {wpTelemetry.guidance}
           </p>
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-            Snapshot source: <code>{wpTelemetrySnapshot.source}</code> - checked {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
+            Last updated: {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
           </p>
+          {canViewInternalMetadata ? (
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
+              Data source: <code>{wpTelemetrySnapshot.source}</code>
+            </p>
+          ) : null}
           <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
             <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugin stats tab</Link>
           </p>
