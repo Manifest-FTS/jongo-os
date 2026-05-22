@@ -6,7 +6,6 @@ import WordPressTelemetryConnectionPanel from "@/components/WordPressTelemetryCo
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
 import {
   formatWordPressCollectorStatus,
-  formatWordPressTelemetrySource,
   formatWordPressTelemetryValue,
   getWordPressTelemetryFreshness
 } from "@/lib/wordpress-telemetry";
@@ -160,12 +159,6 @@ export default async function IntegrationsPage({ params }: Params) {
   });
   const wpTelemetry = wpTelemetrySnapshot.policy;
   const freshness = getWordPressTelemetryFreshness(wpTelemetrySnapshot.checkedAt);
-  const collectorConfigured = Boolean(process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim());
-  const collectorDiagnostic = !collectorConfigured
-    ? "Collector endpoint is not configured."
-    : wpTelemetrySnapshot.source === "collector"
-      ? "Collector response is active."
-      : "Collector is configured, but this snapshot is currently using fallback policy data.";
   const siteUrl = wpTelemetry.siteUrl?.trim() || "";
   const siteUrlLabel = siteUrl ? siteUrl.replace(/^https?:\/\//, "") : null;
 
@@ -245,28 +238,9 @@ export default async function IntegrationsPage({ params }: Params) {
             {freshness.isStale ? " - data may be out of date" : ""}
           </p>
           {canViewInternalMetadata ? (
-            <details style={{ marginTop: "0.4rem" }}>
-              <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "var(--muted)" }}>
-                Technical details
-              </summary>
-              <div style={{ marginTop: "0.4rem", display: "grid", gap: "0.25rem" }}>
-                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                  Data source: {formatWordPressTelemetrySource(wpTelemetrySnapshot.source)}
-                </p>
-                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                  Inventory feed: {wpTelemetry.pluginInsights.inventoryConnected ? "connected" : "not connected"}
-                </p>
-                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                  Freshness: {freshness.label}
-                </p>
-                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                  Collector mode: {collectorConfigured ? "configured" : "not configured"}
-                </p>
-                <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                  Diagnostic: {collectorDiagnostic}
-                </p>
-              </div>
-            </details>
+            <p style={{ margin: "0.55rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+              Need maintenance details? Open app settings for mapping and provider checks.
+            </p>
           ) : null}
           <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
             <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugin stats tab</Link>
