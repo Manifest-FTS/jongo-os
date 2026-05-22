@@ -467,7 +467,7 @@ async function readLegacySiteDirectory(prisma: any, viewer?: ViewerContext): Pro
     status: mapLegacyProjectStatus(row.status),
     ownershipState: row.clientId || row.orgId ? "mapped" : "orphaned",
     ownershipDiagnostic: row.clientName
-      ? `Mapped to Client: ${row.clientName}`
+      ? `Client: ${row.clientName}`
       : "No client mapping found",
     source: "db"
   }));
@@ -623,7 +623,7 @@ function resolveOwnershipForCoolifySite(
         clientDbId: undefined,
         clientName: mockClient.name,
         ownershipState: "mapped",
-        ownershipDiagnostic: `Mapped to Client: ${mockClient.name}`
+        ownershipDiagnostic: `Client: ${mockClient.name}`
       };
     }
   }
@@ -637,7 +637,7 @@ function resolveOwnershipForCoolifySite(
           clientDbId: org.id,
           clientName: org.name,
           ownershipState: "mapped",
-          ownershipDiagnostic: `Mapped to Client: ${org.name}`
+          ownershipDiagnostic: `Client: ${org.name}`
         };
       }
 
@@ -658,7 +658,7 @@ function resolveOwnershipForCoolifySite(
           clientDbId: org.id,
           clientName: org.name,
           ownershipState: "mapped",
-          ownershipDiagnostic: `Mapped to Client: ${org.name}`
+          ownershipDiagnostic: `Client: ${org.name}`
         };
       }
 
@@ -1463,7 +1463,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           clientName: s.organization.name,
           status: coolifyMatch?.status ?? "unknown",
           ownershipState: "mapped" as const,
-          ownershipDiagnostic: `Mapped to Client: ${s.organization.name}`,
+          ownershipDiagnostic: `Client: ${s.organization.name}`,
           source: "db" as const,
           coolifyServiceUuid: s.coolifyServiceUuid ?? undefined,
           coolifyProjectId: s.coolifyProjectId ?? coolifyMatch?.coolifyProjectId,
@@ -1786,7 +1786,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
           gitRepositoryUrl: dbSite.gitRepositoryUrl ?? undefined,
           organizationId: dbSite.organizationId,
           ownershipState: "mapped",
-          ownershipDiagnostic: `Mapped to Client: ${dbSite.organization.name}`,
+          ownershipDiagnostic: `Client: ${dbSite.organization.name}`,
           source: "db" as const
         };
       }
@@ -1846,7 +1846,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
             gitRepositoryUrl: undefined,
             organizationId: legacyProject.clientId ?? legacyProject.orgId ?? undefined,
             ownershipState: "mapped",
-            ownershipDiagnostic: `Mapped to Client: ${legacyProject.clientName ?? "Client"}`,
+            ownershipDiagnostic: `Client: ${legacyProject.clientName ?? "Client"}`,
             source: "db" as const
           };
         }

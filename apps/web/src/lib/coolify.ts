@@ -1050,6 +1050,109 @@ export type DeployTriggerResult = {
   message: string;
 };
 
+export type CoolifyActionResult = {
+  mode: "live" | "mock";
+  ok: boolean;
+  message: string;
+};
+
+async function coolifyMutate(path: string, method: "POST" | "DELETE", body?: Record<string, unknown>): Promise<boolean> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+  const timeoutMs = Number(process.env.COOLIFY_TIMEOUT_MS ?? 8000);
+
+  if (!baseUrl || !token) {
+    return false;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function provisionCoolifyStagingFromProduction(appUuid: string): Promise<CoolifyActionResult> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    return {
+      mode: "mock",
+      ok: false,
+      message: "Coolify credentials missing. Staging cannot be provisioned from this environment."
+    };
+  }
+
+  const candidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = [
+    { path: `/api/v1/applications/${encodeURIComponent(appUuid)}/staging` },
+    { path: `/api/v1/applications/${encodeURIComponent(appUuid)}/clone`, body: { environment: "staging" } },
+    { path: `/api/v1/applications/${encodeURIComponent(appUuid)}/duplicate`, body: { environment: "staging" } }
+  ];
+
+  for (const request of candidateRequests) {
+    const ok = await coolifyMutate(request.path, "POST", request.body);
+    if (ok) {
+      return {
+        mode: "live",
+        ok: true,
+        message: "Staging provisioning request sent to Coolify."
+      };
+    }
+  }
+
+  return {
+    mode: "live",
+    ok: false,
+    message: "Unable to provision staging automatically. Verify Coolify staging support for this app and provision manually if needed."
+  };
+}
+
+export async function destroyCoolifyApplication(appUuid: string): Promise<CoolifyActionResult> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    return {
+      mode: "mock",
+      ok: false,
+      message: "Coolify credentials missing. Staging cannot be destroyed from this environment."
+    };
+  }
+
+  const ok = await coolifyMutate(`/api/v1/applications/${encodeURIComponent(appUuid)}`, "DELETE");
+  if (ok) {
+    return {
+      mode: "live",
+      ok: true,
+      message: "Staging application removed in Coolify."
+    };
+  }
+
+  return {
+    mode: "live",
+    ok: false,
+    message: "Unable to destroy staging application automatically. Remove it manually in Coolify."
+  };
+}
+
 export async function triggerCoolifyDeploy(
   serviceUuid: string,
   environment: "production" | "staging" = "production"

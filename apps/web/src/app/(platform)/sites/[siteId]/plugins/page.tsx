@@ -144,9 +144,34 @@ export default async function SitePluginsPage({ params }: Params) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>Installed Plugins ({pluginCount})</h2>
           {adminPluginsUrl ? (
-            <Link href={adminPluginsUrl} target="_blank" rel="noreferrer" className="action-link">
-              Open WordPress Plugins
-            </Link>
+            <>
+              <style>{`
+                .wp-plugins-pill {
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 0.45rem 0.9rem;
+                  border-radius: 999px;
+                  border: 1px solid rgba(32, 123, 62, 0.32);
+                  color: #1f7a3b;
+                  background: transparent;
+                  font-size: 0.9rem;
+                  font-weight: 600;
+                  line-height: 1;
+                  text-decoration: none;
+                  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+                }
+
+                .wp-plugins-pill:hover {
+                  background: #1f7a3b;
+                  border-color: #1f7a3b;
+                  color: #ffffff;
+                }
+              `}</style>
+              <Link href={adminPluginsUrl} target="_blank" rel="noreferrer" className="wp-plugins-pill">
+                View Plugins
+              </Link>
+            </>
           ) : null}
         </div>
       </article>

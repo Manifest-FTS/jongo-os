@@ -11,7 +11,6 @@ type Props = {
     coolifyServiceUuid?: string;
     coolifyProjectId?: string;
     gitRepositoryUrl?: string;
-    stagingEnabled?: boolean;
   };
 };
 
@@ -22,7 +21,6 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
   const [coolifyUuid, setCoolifyUuid] = useState(initial.coolifyServiceUuid ?? "");
   const [coolifyProjectId, setCoolifyProjectId] = useState(initial.coolifyProjectId ?? "");
   const [gitUrl, setGitUrl] = useState(initial.gitRepositoryUrl ?? "");
-  const [stagingEnabled, setStagingEnabled] = useState(Boolean(initial.stagingEnabled));
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -42,8 +40,7 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
           description: description.trim() || undefined,
           coolifyServiceUuid: coolifyUuid.trim() || undefined,
           coolifyProjectId: coolifyProjectId.trim() || undefined,
-          gitRepositoryUrl: gitUrl.trim() || undefined,
-          stagingEnabled
+          gitRepositoryUrl: gitUrl.trim() || undefined
         })
       });
 
@@ -120,15 +117,6 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
           onChange={(e) => { setCoolifyProjectId(e.target.value); setSuccess(false); }}
           placeholder="Project UUID/ID from Coolify"
           className="form-input mono-input"
-        />
-      </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <label className="form-label" style={{ marginBottom: 0 }}>Enable Staging Workspace</label>
-        <input
-          type="checkbox"
-          checked={stagingEnabled}
-          onChange={(e) => { setStagingEnabled(e.target.checked); setSuccess(false); }}
-          style={{ width: "18px", height: "18px" }}
         />
       </div>
       {error && <p className="form-error">{error}</p>}

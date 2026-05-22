@@ -122,7 +122,7 @@ export async function POST(request: Request) {
           coolifyProjectId: site.coolifyProjectId,
           coolifyProjectName: site.coolifyProjectName,
           status: "mapped",
-          message: `Mapped to Client: ${org.name}`
+          message: `Client: ${org.name}`
         };
       }
 
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
           coolifyProjectId: site.coolifyProjectId,
           coolifyProjectName: site.coolifyProjectName,
           status: "mapped",
-          message: `Mapped to Client: ${org.name}`
+          message: `Client: ${org.name}`
         };
       }
 
