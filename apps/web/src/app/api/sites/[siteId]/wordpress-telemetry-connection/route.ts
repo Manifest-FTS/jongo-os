@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
 import { getSiteWorkspace } from "@/lib/repositories";
+import type { SiteWorkspaceRecord } from "@/lib/repositories";
 import { collectFromRestCredentials } from "@/lib/wordpress-telemetry-bridge-providers";
 import { decryptSecret, encryptSecret } from "@/lib/wordpress-telemetry-secrets";
 import { isAdminRole } from "@/lib/roles";
@@ -46,6 +47,72 @@ function hasBootstrapGlobalAccess(email?: string | null): boolean {
   const configured = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
   const viewer = normalizeEmail(email);
   return Boolean(configured && viewer && configured === viewer);
+}
+
+function toSiteSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+async function ensureSiteRecordForWorkspace(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  workspace: SiteWorkspaceRecord,
+  fallbackSiteId: string
+): Promise<string | null> {
+  const organization = await db.organization.findFirst({
+    where: {
+      deletedAt: null,
+      OR: [{ slug: workspace.clientId }, { name: workspace.clientName }]
+    },
+    select: { id: true }
+  });
+
+  if (!organization) {
+    return null;
+  }
+
+  const slug = toSiteSlug(workspace.slug ?? fallbackSiteId || workspace.name);
+
+  const existing = await db.site.findFirst({
+    where: {
+      deletedAt: null,
+      organizationId: organization.id,
+      OR: [
+        { slug },
+        { coolifyServiceId: workspace.id },
+        ...(workspace.coolifyServiceUuid ? [{ coolifyServiceUuid: workspace.coolifyServiceUuid }] : []),
+        ...(workspace.deployTargetId ? [{ coolifyServiceId: workspace.deployTargetId }] : []),
+        ...(workspace.coolifyProjectId ? [{ coolifyProjectId: workspace.coolifyProjectId }] : [])
+      ]
+    },
+    select: { id: true }
+  });
+
+  if (existing?.id) {
+    return existing.id;
+  }
+
+  const created = await db.site.create({
+    data: {
+      organizationId: organization.id,
+      slug,
+      name: workspace.name,
+      coolifyServiceId: workspace.id || workspace.deployTargetId || null,
+      coolifyServiceUuid:
+        workspace.coolifyServiceUuid ||
+        (isUuid(workspace.id) ? workspace.id : null) ||
+        (workspace.deployTargetId && isUuid(workspace.deployTargetId) ? workspace.deployTargetId : null),
+      coolifyProjectId: workspace.coolifyProjectId || null,
+      coolifyProjectName: workspace.coolifyProjectName || null
+    },
+    select: { id: true }
+  });
+
+  return created.id;
 }
 
 function normalizeUrl(value: string): string {
@@ -139,9 +206,16 @@ async function resolveAuthorizedSite(siteId: string) {
     }
   });
 
-  if (!site) {
+  const resolvedSiteId =
+    site?.id ??
+    (bootstrapGlobalAccess && workspace
+      ? await ensureSiteRecordForWorkspace(db, workspace, siteId)
+      : null);
+
+  if (!resolvedSiteId) {
     return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
   }
+  const canManage = Boolean(bootstrapGlobalAccess || orgAdmin || ownerAdmin || siteAdmin || orgCollaboratorAdmin);
 
   const orgAdmin = site.organization
     ? site.organization.ownerId === session.user.id || isAdminRole(site.organization.collaborators[0]?.role)
@@ -155,7 +229,7 @@ async function resolveAuthorizedSite(siteId: string) {
     return { error: NextResponse.json({ error: "Only admins can manage WordPress telemetry connections" }, { status: 403 }) };
   }
 
-  return { db, site };
+  return { db, siteId: resolvedSiteId };
 }
 
 async function parseBody(req: Request): Promise<WordPressConfigBody | NextResponse> {
@@ -192,7 +266,7 @@ export async function GET(_req: Request, { params }: Params) {
   }
 
   const config = await resolved.db.wordPressTelemetryConfig.findUnique({
-    where: { siteId: resolved.site.id },
+    where: { siteId: resolved.siteId },
     select: {
       siteUrl: true,
       username: true,
@@ -235,9 +309,9 @@ export async function PUT(req: Request, { params }: Params) {
   const passwordCiphertext = encryptSecret(appPassword);
 
   const saved = await resolved.db.wordPressTelemetryConfig.upsert({
-    where: { siteId: resolved.site.id },
+    where: { siteId: resolved.siteId },
     create: {
-      siteId: resolved.site.id,
+      siteId: resolved.siteId,
       siteUrl,
       username,
       passwordCiphertext,
@@ -283,7 +357,7 @@ export async function POST(req: Request, { params }: Params) {
 
   if (!siteUrl || !username || !appPassword) {
     const saved = await resolved.db.wordPressTelemetryConfig.findUnique({
-      where: { siteId: resolved.site.id },
+      where: { siteId: resolved.siteId },
       select: {
         siteUrl: true,
         username: true,
@@ -324,7 +398,7 @@ export async function POST(req: Request, { params }: Params) {
   const success = Boolean(snapshot);
 
   await resolved.db.wordPressTelemetryConfig.updateMany({
-    where: { siteId: resolved.site.id },
+    where: { siteId: resolved.siteId },
     data: {
       lastTestedAt,
       lastTestStatus: success ? "connected" : "failed",
@@ -360,7 +434,7 @@ export async function DELETE(_req: Request, { params }: Params) {
   }
 
   await resolved.db.wordPressTelemetryConfig.deleteMany({
-    where: { siteId: resolved.site.id }
+      where: { siteId: resolved.siteId }
   });
 
   return NextResponse.json({ ok: true });
