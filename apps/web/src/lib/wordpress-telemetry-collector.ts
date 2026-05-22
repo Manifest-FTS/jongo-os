@@ -1,5 +1,6 @@
 import type { SiteWorkspaceRecord } from "@/lib/repositories";
 import type { WordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
+import { collectFromStoredRestConfig } from "@/lib/wordpress-telemetry-bridge-providers";
 
 type CollectorPayload = {
   checkedAt?: string;
@@ -123,6 +124,15 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
   fallback: WordPressTelemetrySnapshot;
   workspace: SiteWorkspaceRecord;
 }): Promise<WordPressTelemetrySnapshot | null> {
+  const directStoredSnapshot = await collectFromStoredRestConfig({
+    workspaceId: input.workspace.id,
+    siteId: input.fallback.siteId,
+    slug: input.workspace.slug
+  });
+  if (directStoredSnapshot) {
+    return mergeCollectorSnapshot(input.fallback, directStoredSnapshot);
+  }
+
   const endpoint = process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim();
   if (!endpoint) {
     return null;
