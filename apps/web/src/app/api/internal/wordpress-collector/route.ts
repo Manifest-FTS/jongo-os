@@ -7,6 +7,7 @@ import {
 } from "@/lib/wordpress-telemetry-bridge-providers";
 
 type CollectorRequest = {
+  workspaceId?: string;
   siteId?: string;
   slug?: string;
 };

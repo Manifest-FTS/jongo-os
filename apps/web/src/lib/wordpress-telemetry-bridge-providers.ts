@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { decryptSecret } from "@/lib/wordpress-telemetry-secrets";
 
 type CollectorRequest = {
+  workspaceId?: string;
   siteId?: string;
   slug?: string;
 };
@@ -369,8 +370,11 @@ export async function collectFromRestCredentials(
 }
 
 export async function collectFromStoredRestConfig(input: CollectorRequest): Promise<CollectorSnapshotPayload | null> {
-  const siteKey = input.siteId?.trim() || input.slug?.trim() || "";
-  if (!siteKey) {
+  const keys = [input.workspaceId, input.siteId, input.slug]
+    .map((value) => value?.trim() || "")
+    .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
+
+  if (keys.length === 0) {
     return null;
   }
 
@@ -379,15 +383,16 @@ export async function collectFromStoredRestConfig(input: CollectorRequest): Prom
     return null;
   }
 
-  const identityWhere = isUuid(siteKey)
-    ? {
-        OR: [{ id: siteKey }, { slug: siteKey }, { coolifyServiceUuid: siteKey }, { coolifyServiceId: siteKey }],
-        deletedAt: null
-      }
-    : {
-        OR: [{ slug: siteKey }, { coolifyServiceUuid: siteKey }, { coolifyServiceId: siteKey }],
-        deletedAt: null
-      };
+  const identityMatches = keys.flatMap((key) =>
+    isUuid(key)
+      ? [{ id: key }, { slug: key }, { coolifyServiceUuid: key }, { coolifyServiceId: key }]
+      : [{ slug: key }, { coolifyServiceUuid: key }, { coolifyServiceId: key }]
+  );
+
+  const identityWhere = {
+    OR: identityMatches,
+    deletedAt: null
+  };
 
   const site = await db.site.findFirst({
     where: identityWhere,
