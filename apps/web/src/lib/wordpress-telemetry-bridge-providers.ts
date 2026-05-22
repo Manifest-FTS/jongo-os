@@ -21,6 +21,18 @@ type PluginInventoryRow = {
   securityIssues: string | null;
 };
 
+type ParsedPluginInventoryRow = PluginInventoryRow & {
+  pluginSlug: string | null;
+};
+
+const pluginVersionCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base"
+});
+
+const WORDPRESS_ORG_CACHE_TTL_MS = 15 * 60 * 1000;
+const wordPressOrgPluginVersionCache = new Map<string, { version: string | null; expiresAt: number }>();
+
 export type CollectorSnapshotPayload = {
   checkedAt?: string;
   source?: string;
@@ -177,7 +189,25 @@ function extractCoreVersion(rootJson: unknown): string {
   return match?.[1] ?? "collector_pending";
 }
 
-function parsePluginRows(value: unknown): PluginInventoryRow[] {
+function extractPluginSlug(item: Record<string, unknown>, pluginPath: string): string | null {
+  const directSlug = typeof item.slug === "string" ? item.slug.trim() : "";
+  if (directSlug) {
+    return directSlug.toLowerCase();
+  }
+
+  const candidate = pluginPath.split("/")[0]?.trim() || "";
+  if (!candidate || !/^[a-z0-9][a-z0-9._-]*$/i.test(candidate)) {
+    return null;
+  }
+
+  return candidate.toLowerCase();
+}
+
+function comparePluginVersions(installedVersion: string, latestVersion: string): number {
+  return pluginVersionCollator.compare(installedVersion.trim(), latestVersion.trim());
+}
+
+function parsePluginRows(value: unknown): ParsedPluginInventoryRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -252,7 +282,7 @@ function parsePluginRows(value: unknown): PluginInventoryRow[] {
     return "Unknown";
   }
 
-  const rows: PluginInventoryRow[] = [];
+  const rows: ParsedPluginInventoryRow[] = [];
   for (const item of value) {
     if (!isRecord(item)) {
       continue;
@@ -267,14 +297,15 @@ function parsePluginRows(value: unknown): PluginInventoryRow[] {
     const version = typeof item.version === "string" && item.version.trim() ? item.version.trim() : null;
     const updateRaw = isRecord(item.update) ? item.update : null;
     const updateStatus = getUpdateStatus(item, updateRaw);
-    const securityIssues = hasSecuritySignal(item, updateRaw) ? "Vulnerability detected" : "Unknown";
+    const securityIssues = hasSecuritySignal(item, updateRaw) ? "Vulnerability detected" : null;
 
     rows.push({
       name,
       status,
       version,
       updateStatus,
-      securityIssues
+      securityIssues,
+      pluginSlug: extractPluginSlug(item, pluginSlug)
     });
   }
 
@@ -303,6 +334,69 @@ async function fetchJson(url: string, headers: Record<string, string>, timeoutMs
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchWordPressOrgPluginVersion(slug: string, timeoutMs: number): Promise<string | null> {
+  const cached = wordPressOrgPluginVersionCache.get(slug);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.version;
+  }
+
+  const params = new URLSearchParams({
+    action: "plugin_information",
+    "request[slug]": slug
+  });
+
+  const payload = await fetchJson(
+    `https://api.wordpress.org/plugins/info/1.2/?${params.toString()}`,
+    { accept: "application/json" },
+    timeoutMs
+  );
+
+  const version = isRecord(payload) && typeof payload.version === "string" && payload.version.trim()
+    ? payload.version.trim()
+    : null;
+
+  wordPressOrgPluginVersionCache.set(slug, {
+    version,
+    expiresAt: Date.now() + WORDPRESS_ORG_CACHE_TTL_MS
+  });
+
+  return version;
+}
+
+async function enrichPluginRows(rows: ParsedPluginInventoryRow[], timeoutMs: number): Promise<PluginInventoryRow[]> {
+  const publicSlugs = [...new Set(rows.map((row) => row.pluginSlug).filter((slug): slug is string => Boolean(slug)))];
+  const versionBySlug = new Map<string, string | null>();
+
+  await Promise.all(
+    publicSlugs.map(async (slug) => {
+      versionBySlug.set(slug, await fetchWordPressOrgPluginVersion(slug, timeoutMs));
+    })
+  );
+
+  return rows.map((row) => {
+    let updateStatus = row.updateStatus;
+    const latestVersion = row.pluginSlug ? versionBySlug.get(row.pluginSlug) ?? null : null;
+
+    if (updateStatus === "Unknown") {
+      if (latestVersion && row.version) {
+        updateStatus = comparePluginVersions(row.version, latestVersion) < 0 ? "Update available" : "Up-to-date";
+      } else if (row.pluginSlug) {
+        updateStatus = "No public update data";
+      } else {
+        updateStatus = "Private/custom plugin";
+      }
+    }
+
+    return {
+      name: row.name,
+      status: row.status,
+      version: row.version,
+      updateStatus,
+      securityIssues: row.securityIssues ?? "No vulnerability feed"
+    };
+  });
 }
 
 async function fetchJsonWithStatus(
@@ -373,7 +467,7 @@ export async function collectFromRestCredentials(
 
   const root = await fetchJson(`${normalizedBase}/wp-json`, headers, timeout);
   const pluginList = await fetchJson(`${normalizedBase}/wp-json/wp/v2/plugins?per_page=100`, headers, timeout);
-  const pluginInventory = parsePluginRows(pluginList);
+  const pluginInventory = await enrichPluginRows(parsePluginRows(pluginList), Math.min(timeout, 2500));
 
   if (pluginInventory.length === 0) {
     return {
@@ -409,9 +503,11 @@ export async function collectFromRestCredentials(
   const activePlugins = pluginInventory.filter((row) => row.status === "Active").length;
   const inactivePlugins = pluginInventory.filter((row) => row.status === "Inactive").length;
   const updatesAvailable = pluginInventory.filter((row) => row.updateStatus === "Update available").length;
-  const updatesUnknown = pluginInventory.filter((row) => row.updateStatus === "Unknown").length;
+  const updatesUnavailable = pluginInventory.filter(
+    (row) => row.updateStatus === "No public update data" || row.updateStatus === "Private/custom plugin"
+  ).length;
   const securityIssueCount = pluginInventory.filter((row) => row.securityIssues === "Vulnerability detected").length;
-  const securityUnknown = pluginInventory.filter((row) => row.securityIssues === "Unknown").length;
+  const securityFeedUnavailable = pluginInventory.filter((row) => row.securityIssues === "No vulnerability feed").length;
 
   return {
     checkedAt: new Date().toISOString(),
@@ -431,8 +527,8 @@ export async function collectFromRestCredentials(
       updateAvailability:
         updatesAvailable > 0
           ? `${updatesAvailable} updates available`
-          : updatesUnknown > 0
-            ? "update metadata unavailable"
+          : updatesUnavailable > 0
+            ? "partial public update coverage"
             : "up-to-date",
       maintenanceMode: "collector_pending",
       siteHealth: "good"
@@ -441,8 +537,8 @@ export async function collectFromRestCredentials(
       inventoryConnected: true,
       activePlugins,
       inactivePlugins,
-      updatesAvailable: updatesUnknown > 0 ? null : updatesAvailable,
-      securityIssues: securityUnknown > 0 && securityIssueCount === 0 ? null : securityIssueCount
+      updatesAvailable: updatesUnavailable > 0 ? null : updatesAvailable,
+      securityIssues: securityFeedUnavailable > 0 && securityIssueCount === 0 ? null : securityIssueCount
     },
     pluginInventory
   };

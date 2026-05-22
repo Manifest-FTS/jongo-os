@@ -56,7 +56,7 @@ export default async function SitePluginsPage({ params }: Params) {
   const policy = snapshot.policy;
   const freshness = getWordPressTelemetryFreshness(snapshot.checkedAt);
   const hasInventory = policy.pluginInventory.length > 0;
-  const updateMetadataLimited = policy.signals.updateAvailability === "update metadata unavailable";
+  const updateMetadataLimited = policy.pluginInsights.updatesAvailable === null;
   const securityMetadataLimited = policy.pluginInsights.securityIssues === null;
   const collectorConfigured = Boolean(process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim());
   const collectorDiagnostic = !collectorConfigured
@@ -103,7 +103,7 @@ export default async function SitePluginsPage({ params }: Params) {
           <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Security signals</p>
           <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>
             {securityMetadataLimited
-              ? "metadata unavailable"
+              ? "no vulnerability feed"
               : (policy.pluginInsights.securityIssues ?? 0) > 0
                 ? `${policy.pluginInsights.securityIssues} flagged`
                 : "none flagged"}
@@ -152,10 +152,10 @@ export default async function SitePluginsPage({ params }: Params) {
           <p className="card-muted" style={{ marginBottom: 0 }}>
             Live plugin inventory is connected.
             {updateMetadataLimited
-              ? " WordPress REST is not exposing full update metadata for this app password, so update status may show Unknown for some plugins."
+              ? " Some plugins do not have public update data, so custom or private plugins may not show a definitive update state."
               : ""}
             {securityMetadataLimited
-              ? " Security vulnerability intel is also unavailable from this source, so security rows may show Unknown."
+              ? " No vulnerability feed is connected yet, so security rows cannot be confirmed from this source."
               : ""}
           </p>
         ) : (
