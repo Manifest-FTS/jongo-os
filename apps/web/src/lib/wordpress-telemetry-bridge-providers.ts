@@ -182,6 +182,64 @@ function parsePluginRows(value: unknown): PluginInventoryRow[] {
     return [];
   }
 
+  const securityKeyword = /vulnerab|security|critical|xss|sql\s*injection|rce/i;
+
+  function hasSecuritySignal(item: Record<string, unknown>, update: Record<string, unknown> | null): boolean {
+    const vulnerabilities = item.vulnerabilities;
+    if (Array.isArray(vulnerabilities) && vulnerabilities.length > 0) {
+      return true;
+    }
+
+    const vulnerability = isRecord(item.vulnerability) ? item.vulnerability : null;
+    const vulnerabilityCount = typeof vulnerability?.count === "number" ? vulnerability.count : 0;
+    if (vulnerabilityCount > 0) {
+      return true;
+    }
+
+    const directSignals = [
+      item.securityIssue,
+      item.security_issue,
+      item.security,
+      update?.security,
+      update?.security_issue,
+      update?.upgrade_notice,
+      update?.notice,
+      update?.message
+    ];
+
+    return directSignals.some((signal) => typeof signal === "string" && securityKeyword.test(signal));
+  }
+
+  function isUpdateAvailable(item: Record<string, unknown>, update: Record<string, unknown> | null): boolean {
+    if (typeof item.has_update === "boolean") {
+      return item.has_update;
+    }
+
+    if (typeof item.updateAvailable === "boolean") {
+      return item.updateAvailable;
+    }
+
+    if (update) {
+      const response = typeof update.response === "string" ? update.response.toLowerCase() : "";
+      if (response === "upgrade" || response === "update_available") {
+        return true;
+      }
+
+      const packageUrl = typeof update.package === "string" ? update.package.trim() : "";
+      const newVersion = typeof update.new_version === "string" ? update.new_version.trim() : "";
+      if (packageUrl.length > 0 || newVersion.length > 0) {
+        return true;
+      }
+    }
+
+    if (typeof item.update === "string") {
+      const updateValue = item.update.toLowerCase();
+      return updateValue.includes("available") || updateValue.includes("upgrade") || updateValue === "true";
+    }
+
+    return false;
+  }
+
   const rows: PluginInventoryRow[] = [];
   for (const item of value) {
     if (!isRecord(item)) {
@@ -196,14 +254,15 @@ function parsePluginRows(value: unknown): PluginInventoryRow[] {
     const status = statusRaw === "active" ? "Active" : statusRaw === "inactive" ? "Inactive" : "Unknown";
     const version = typeof item.version === "string" && item.version.trim() ? item.version.trim() : null;
     const updateRaw = isRecord(item.update) ? item.update : null;
-    const updateStatus = updateRaw ? "Update available" : "Up-to-date";
+    const updateStatus = isUpdateAvailable(item, updateRaw) ? "Update available" : "Up-to-date";
+    const securityIssues = hasSecuritySignal(item, updateRaw) ? "Vulnerability detected" : null;
 
     rows.push({
       name,
       status,
       version,
       updateStatus,
-      securityIssues: null
+      securityIssues
     });
   }
 
@@ -338,6 +397,7 @@ export async function collectFromRestCredentials(
   const activePlugins = pluginInventory.filter((row) => row.status === "Active").length;
   const inactivePlugins = pluginInventory.filter((row) => row.status === "Inactive").length;
   const updatesAvailable = pluginInventory.filter((row) => row.updateStatus === "Update available").length;
+  const securityIssues = pluginInventory.filter((row) => Boolean(row.securityIssues)).length;
 
   return {
     checkedAt: new Date().toISOString(),
@@ -363,7 +423,7 @@ export async function collectFromRestCredentials(
       activePlugins,
       inactivePlugins,
       updatesAvailable,
-      securityIssues: 0
+      securityIssues
     },
     pluginInventory
   };
