@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
+import { getSiteWorkspace } from "@/lib/repositories";
 import { collectFromRestCredentials } from "@/lib/wordpress-telemetry-bridge-providers";
 import { decryptSecret, encryptSecret } from "@/lib/wordpress-telemetry-secrets";
 import { isAdminRole } from "@/lib/roles";
@@ -17,18 +18,12 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function buildSiteIdentityWhere(siteId: string) {
-  if (isUuid(siteId)) {
-    return {
-      OR: [{ id: siteId }, { slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }],
-      deletedAt: null
-    };
-  }
-
-  return {
-    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }],
-    deletedAt: null
-  };
+function buildIdentityMatchers(values: string[]) {
+  return values.flatMap((value) =>
+    isUuid(value)
+      ? [{ id: value }, { slug: value }, { coolifyServiceUuid: value }, { coolifyServiceId: value }]
+      : [{ slug: value }, { coolifyServiceUuid: value }, { coolifyServiceId: value }]
+  );
 }
 
 function normalizeUrl(value: string): string {
@@ -53,15 +48,34 @@ async function resolveAuthorizedSite(siteId: string) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
+  const workspace = await getSiteWorkspace(siteId, {
+    userId: session.user.id,
+    email: session.user.email
+  });
+
   const db = await getDb();
   if (!db) {
     return { error: NextResponse.json({ error: "Database is not available" }, { status: 503 }) };
   }
 
+  const identifiers = [
+    siteId,
+    workspace?.id,
+    workspace?.slug,
+    workspace?.coolifyServiceUuid
+  ]
+    .map((value) => value?.trim() || "")
+    .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
+
+  const identityMatchers = buildIdentityMatchers(identifiers);
+
   const site = await db.site.findFirst({
     where: {
       AND: [
-        buildSiteIdentityWhere(siteId),
+        {
+          deletedAt: null,
+          OR: identityMatchers
+        },
         {
           OR: [
             {
