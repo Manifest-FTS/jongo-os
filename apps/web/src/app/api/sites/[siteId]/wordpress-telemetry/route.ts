@@ -15,8 +15,20 @@ function isUuid(value: string): boolean {
 function buildIdentityMatchers(values: string[]) {
   return values.flatMap((value) =>
     isUuid(value)
-      ? [{ id: value }, { slug: value }, { coolifyServiceUuid: value }, { coolifyServiceId: value }]
-      : [{ slug: value }, { coolifyServiceUuid: value }, { coolifyServiceId: value }]
+      ? [
+          { id: value },
+          { slug: value },
+          { coolifyServiceUuid: value },
+          { coolifyServiceId: value },
+          { coolifyProjectId: value }
+        ]
+      : [
+          { slug: value },
+          { coolifyServiceUuid: value },
+          { coolifyServiceId: value },
+          { coolifyProjectId: value },
+          { name: value }
+        ]
   );
 }
 
@@ -34,7 +46,9 @@ async function resolveAuthorizedSiteDbId(
     siteId,
     workspace.id,
     workspace.slug,
-    workspace.coolifyServiceUuid
+    workspace.coolifyServiceUuid,
+    workspace.coolifyProjectId,
+    workspace.name
   ]
     .map((value) => value?.trim() || "")
     .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
@@ -48,6 +62,7 @@ async function resolveAuthorizedSiteDbId(
           deletedAt: null,
           OR: identityMatchers
         },
+        ...(workspace.organizationId ? [{ organizationId: workspace.organizationId }] : []),
         {
           OR: [
             {

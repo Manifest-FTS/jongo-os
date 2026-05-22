@@ -26,8 +26,20 @@ function isUuid(value: string): boolean {
 function buildIdentityMatchers(values: string[]) {
   return values.flatMap((value) =>
     isUuid(value)
-      ? [{ id: value }, { slug: value }, { coolifyServiceUuid: value }, { coolifyServiceId: value }]
-      : [{ slug: value }, { coolifyServiceUuid: value }, { coolifyServiceId: value }]
+      ? [
+          { id: value },
+          { slug: value },
+          { coolifyServiceUuid: value },
+          { coolifyServiceId: value },
+          { coolifyProjectId: value }
+        ]
+      : [
+          { slug: value },
+          { coolifyServiceUuid: value },
+          { coolifyServiceId: value },
+          { coolifyProjectId: value },
+          { name: value }
+        ]
   );
 }
 
@@ -58,7 +70,14 @@ export default async function IntegrationsPage({ params }: Params) {
   if (session?.user?.id) {
     const db = await getDb();
     if (db) {
-      const identifiers = [siteId, workspace.id, workspace.slug, workspace.coolifyServiceUuid]
+      const identifiers = [
+        siteId,
+        workspace.id,
+        workspace.slug,
+        workspace.coolifyServiceUuid,
+        workspace.coolifyProjectId,
+        workspace.name
+      ]
         .map((value) => value?.trim() || "")
         .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
 
@@ -69,6 +88,7 @@ export default async function IntegrationsPage({ params }: Params) {
               deletedAt: null,
               OR: buildIdentityMatchers(identifiers)
             },
+            ...(workspace.organizationId ? [{ organizationId: workspace.organizationId }] : []),
             {
               OR: [
                 {
