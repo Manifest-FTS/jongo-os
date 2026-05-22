@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getActivityFeed, getInventorySnapshot, listClientWorkspaces } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 
@@ -156,24 +157,16 @@ export default async function DashboardPage() {
             <div className="panel-header">
               <div>
                 <p className="panel-kicker">WordPress</p>
-                <h2 className="card-title">Plugin status</h2>
+                <h2 className="card-title">WordPress footprint</h2>
               </div>
             </div>
-            <div className="health-summary-grid two-up">
-              <div className="health-stat-block">
-                <p className="metric-value small">{wordpressSites.length}</p>
-                <p className="metric-label">WordPress apps</p>
-              </div>
-              <div className="health-stat-block">
-                <p className="metric-value small">n/a</p>
-                <p className="metric-label">Updates pending</p>
-              </div>
-              <div className="health-stat-block">
-                <p className="metric-value small">n/a</p>
-                <p className="metric-label">Vulnerabilities</p>
-              </div>
-            </div>
-            <p className="card-muted">Plugin telemetry is not connected yet, so this panel is scoped to WordPress footprint only.</p>
+            <p className="card-muted">
+              {wordpressSites.length} WordPress app{wordpressSites.length === 1 ? "" : "s"} are in this workspace.
+              Plugin status details live on each app&apos;s Plugins page.
+            </p>
+            <p style={{ margin: "0.75rem 0 0", fontSize: "0.88rem" }}>
+              <Link href="/apps" className="action-link">Open apps list</Link>
+            </p>
           </article>
         </section>
       ) : null}
