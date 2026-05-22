@@ -25,6 +25,21 @@ export default async function SettingsPage() {
   const recentRepoCall = diagnostics?.repositoryCalls[diagnostics.repositoryCalls.length - 1];
   const recentInventory = diagnostics?.coolifyInventoryHistory[diagnostics.coolifyInventoryHistory.length - 1];
   const recentEndpointCalls = diagnostics?.coolifyEndpointCalls.slice(-8).reverse() ?? [];
+  const directoryCacheLookupTotal = diagnostics
+    ? diagnostics.directoryBackupPostureCache.hits +
+      diagnostics.directoryBackupPostureCache.misses +
+      diagnostics.directoryBackupPostureCache.inFlightJoins
+    : 0;
+  const directoryCacheHitRate =
+    directoryCacheLookupTotal > 0
+      ? ((diagnostics!.directoryBackupPostureCache.hits + diagnostics!.directoryBackupPostureCache.inFlightJoins) /
+          directoryCacheLookupTotal) *
+        100
+      : 0;
+  const directoryCacheMissRate =
+    directoryCacheLookupTotal > 0
+      ? (diagnostics!.directoryBackupPostureCache.misses / directoryCacheLookupTotal) * 100
+      : 0;
 
   return (
     <div>
@@ -199,6 +214,9 @@ export default async function SettingsPage() {
                 </p>
                 <p style={{ margin: 0 }}>
                   Directory backup cache: hits={diagnostics.directoryBackupPostureCache.hits}, misses={diagnostics.directoryBackupPostureCache.misses}, joins={diagnostics.directoryBackupPostureCache.inFlightJoins}, stores={diagnostics.directoryBackupPostureCache.stores}, errors={diagnostics.directoryBackupPostureCache.errors}
+                </p>
+                <p style={{ margin: 0 }}>
+                  Directory backup cache efficiency: lookups={directoryCacheLookupTotal}, hit-rate={directoryCacheHitRate.toFixed(1)}%, miss-rate={directoryCacheMissRate.toFixed(1)}%
                 </p>
                 <p style={{ margin: 0 }}>
                   Directory backup cache last event: {diagnostics.directoryBackupPostureCache.lastEventAt ?? "never"}
