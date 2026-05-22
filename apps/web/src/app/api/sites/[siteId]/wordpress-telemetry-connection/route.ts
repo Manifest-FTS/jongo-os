@@ -75,7 +75,7 @@ async function ensureSiteRecordForWorkspace(
     return null;
   }
 
-  const slug = toSiteSlug(workspace.slug ?? fallbackSiteId || workspace.name);
+  const slug = toSiteSlug(workspace.slug ?? fallbackSiteId ?? workspace.name);
 
   const existing = await db.site.findFirst({
     where: {
@@ -215,15 +215,14 @@ async function resolveAuthorizedSite(siteId: string) {
   if (!resolvedSiteId) {
     return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
   }
-  const canManage = Boolean(bootstrapGlobalAccess || orgAdmin || ownerAdmin || siteAdmin || orgCollaboratorAdmin);
 
-  const orgAdmin = site.organization
+  const orgAdmin = site?.organization
     ? site.organization.ownerId === session.user.id || isAdminRole(site.organization.collaborators[0]?.role)
     : false;
-  const ownerAdmin = site.organization?.ownerId === session.user.id;
-  const siteAdmin = isAdminRole(site.collaborators[0]?.role);
-  const orgCollaboratorAdmin = isAdminRole(site.organization?.collaborators[0]?.role);
-  const canManage = Boolean(orgAdmin || ownerAdmin || siteAdmin || orgCollaboratorAdmin);
+  const ownerAdmin = site?.organization?.ownerId === session.user.id;
+  const siteAdmin = isAdminRole(site?.collaborators?.[0]?.role);
+  const orgCollaboratorAdmin = isAdminRole(site?.organization?.collaborators?.[0]?.role);
+  const canManage = Boolean(bootstrapGlobalAccess || orgAdmin || ownerAdmin || siteAdmin || orgCollaboratorAdmin);
 
   if (!canManage) {
     return { error: NextResponse.json({ error: "Only admins can manage WordPress telemetry connections" }, { status: 403 }) };

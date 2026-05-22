@@ -68,7 +68,7 @@ async function ensureSiteRecordForWorkspace(
     return null;
   }
 
-  const slug = toSiteSlug(workspace.slug ?? fallbackSiteId || workspace.name);
+  const slug = toSiteSlug(workspace.slug ?? fallbackSiteId ?? workspace.name);
 
   const existing = await db.site.findFirst({
     where: {
