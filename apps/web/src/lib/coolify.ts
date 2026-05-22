@@ -1241,13 +1241,58 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
 
     let databases: Record<string, unknown>[] = [];
 
-    if (projectId && environmentId) {
+    // Some Coolify setups attach database metadata directly on the application payload.
+    if (appRaw) {
+      databases = ensureArray(
+        appRaw.databases ??
+          appRaw.standalone_postgresqls ??
+          appRaw.postgresqls ??
+          appRaw.database ??
+          appRaw.attached_databases ??
+          []
+      );
+    }
+
+    if (databases.length === 0 && projectId && environmentId) {
       try {
         const envPayload = await coolifyFetch(`/api/v1/projects/${projectId}/environments/${environmentId}`);
         const envObj = envPayload && typeof envPayload === "object" && !Array.isArray(envPayload)
           ? (envPayload as Record<string, unknown>)
           : {};
-        databases = ensureArray(envObj.databases ?? envObj.standalone_postgresqls ?? []);
+        databases = ensureArray(
+          envObj.databases ??
+            envObj.standalone_postgresqls ??
+            envObj.postgresqls ??
+            envObj.attached_databases ??
+            []
+        );
+      } catch {
+        // Best effort
+      }
+    }
+
+    // Fallback: some projects expose databases only via the global databases endpoint.
+    if (databases.length === 0 && projectId) {
+      try {
+        const allDatabasesPayload = await coolifyFetch(`/api/v1/databases`);
+        const allDatabases = ensureArray(allDatabasesPayload);
+
+        const projectDatabases = allDatabases.filter((db) => {
+          const record = (db && typeof db === "object" ? db : {}) as Record<string, unknown>;
+          const dbProject = stringValue(record, ["project_uuid", "project_id", "project"], "");
+          return dbProject === projectId;
+        });
+
+        if (projectDatabases.length > 0) {
+          databases = projectDatabases;
+        } else if (environmentId) {
+          const environmentDatabases = allDatabases.filter((db) => {
+            const record = (db && typeof db === "object" ? db : {}) as Record<string, unknown>;
+            const dbEnv = stringValue(record, ["environment_id", "environment_uuid", "environment"], "");
+            return dbEnv === environmentId;
+          });
+          databases = environmentDatabases;
+        }
       } catch {
         // Best effort
       }
