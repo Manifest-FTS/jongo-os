@@ -1227,11 +1227,15 @@ export type BackupScheduleRecord = {
 
 export type BackupExecutionRecord = {
   id: string;
+  resourceId?: string;
+  resourceName?: string;
   status: "success" | "failed" | "running" | "unknown";
   startedAt?: string;
   finishedAt?: string;
   sizeBytes?: number;
   filename?: string;
+  downloadUrl?: string;
+  restoreUrl?: string;
 };
 
 export type AppBackupInventory = {
@@ -1275,34 +1279,148 @@ export type StagingSyncPlan = {
 
 function normalizeBackupSchedule(raw: Record<string, unknown>, resourceId: string, resourceName: string): BackupScheduleRecord {
   const id = stringValue(raw, ["id", "uuid"], resourceId);
-  const enabled = raw.enabled === true || raw.is_enabled === true;
-  const frequency = stringValue(raw, ["frequency", "cron", "schedule"], "") || undefined;
+  const enabled = raw.enabled === true || raw.is_enabled === true || raw.backup_enabled === true || raw.database_backup_enabled === true;
+  const frequency = stringValue(raw, ["frequency", "cron", "schedule", "database_backup_cron", "database_backup_schedule"], "") || undefined;
   const retentionAmount = typeof raw.database_backup_retention_amount_locally === "number"
     ? raw.database_backup_retention_amount_locally
     : typeof raw.retention_amount === "number" ? raw.retention_amount : undefined;
   const retentionDays = typeof raw.database_backup_retention_days_locally === "number"
     ? raw.database_backup_retention_days_locally
     : typeof raw.retention_days === "number" ? raw.retention_days : undefined;
+  const lastBackupAt = stringValue(raw, ["last_backup_at", "latest_backup_at", "last_execution_at"], "") || undefined;
 
-  return { id, resourceId, resourceName, resourceType: "database", enabled, frequency, retentionAmount, retentionDays };
+  let lastBackupStatus: BackupScheduleRecord["lastBackupStatus"] | undefined;
+  const statusRaw = stringValue(raw, ["last_backup_status", "latest_backup_status", "status"], "").toLowerCase();
+  if (statusRaw.includes("success") || statusRaw.includes("complete") || statusRaw.includes("finish")) {
+    lastBackupStatus = "success";
+  } else if (statusRaw.includes("fail") || statusRaw.includes("error")) {
+    lastBackupStatus = "failed";
+  } else if (statusRaw.includes("run") || statusRaw.includes("pending") || statusRaw.includes("queue")) {
+    lastBackupStatus = "running";
+  }
+
+  return { id, resourceId, resourceName, resourceType: "database", enabled, frequency, retentionAmount, retentionDays, lastBackupAt, lastBackupStatus };
 }
 
-function normalizeBackupExecution(raw: Record<string, unknown>): BackupExecutionRecord {
+function toAbsoluteCoolifyUrl(raw: string): string {
+  const value = raw.trim();
+  if (!value) {
+    return "";
+  }
+
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return value;
+  }
+
+  const baseUrl = process.env.COOLIFY_API_BASE_URL?.trim() || "";
+  if (!baseUrl) {
+    return value;
+  }
+
+  return `${baseUrl.replace(/\/+$/, "")}/${value.replace(/^\/+/, "")}`;
+}
+
+function normalizeBackupExecution(raw: Record<string, unknown>, resourceId?: string, resourceName?: string): BackupExecutionRecord {
   const id = stringValue(raw, ["id", "uuid"], `exec-${Date.now()}`);
-  const statusRaw = stringValue(raw, ["status", "result", "state"], "").toLowerCase();
+  const statusRaw = stringValue(raw, ["status", "result", "state", "last_status"], "").toLowerCase();
+  const successRaw = raw.success === true || raw.is_successful === true;
+  const failureRaw = raw.success === false || raw.is_successful === false;
   let status: BackupExecutionRecord["status"] = "unknown";
-  if (statusRaw.includes("success") || statusRaw.includes("finish") || statusRaw.includes("complet")) {
+  if (successRaw || statusRaw.includes("success") || statusRaw.includes("finish") || statusRaw.includes("complet")) {
     status = "success";
-  } else if (statusRaw.includes("fail") || statusRaw.includes("error")) {
+  } else if (failureRaw || statusRaw.includes("fail") || statusRaw.includes("error")) {
     status = "failed";
   } else if (statusRaw.includes("run") || statusRaw.includes("pending") || statusRaw.includes("in_progress")) {
     status = "running";
   }
-  const startedAt = stringValue(raw, ["started_at", "created_at"], "") || undefined;
-  const finishedAt = stringValue(raw, ["finished_at", "updated_at"], "") || undefined;
+  const startedAt = stringValue(raw, ["started_at", "created_at", "createdAt"], "") || undefined;
+  const finishedAt = stringValue(raw, ["finished_at", "updated_at", "completed_at", "finishedAt"], "") || undefined;
   const sizeBytes = typeof raw.size === "number" ? raw.size : undefined;
-  const filename = stringValue(raw, ["filename", "file_name", "dump_file"], "") || undefined;
-  return { id, status, startedAt, finishedAt, sizeBytes, filename };
+  const filename = stringValue(raw, ["filename", "file_name", "dump_file", "backup_file", "path"], "") || undefined;
+  const downloadRaw = stringValue(raw, ["download_url", "downloadUrl", "url"], "");
+  const restoreRaw = stringValue(raw, ["restore_url", "restoreUrl"], "");
+  const downloadUrl = downloadRaw ? toAbsoluteCoolifyUrl(downloadRaw) : undefined;
+  const restoreUrl = restoreRaw ? toAbsoluteCoolifyUrl(restoreRaw) : undefined;
+  return { id, resourceId, resourceName, status, startedAt, finishedAt, sizeBytes, filename, downloadUrl, restoreUrl };
+}
+
+function extractBackupRows(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload)) {
+    return ensureArray(payload);
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const objectPayload = payload as Record<string, unknown>;
+  const candidateKeys = ["data", "items", "results", "backups", "schedules", "snapshots", "executions"];
+
+  for (const key of candidateKeys) {
+    const value = objectPayload[key];
+    if (Array.isArray(value)) {
+      return ensureArray(value);
+    }
+  }
+
+  return [];
+}
+
+function hasScheduleSignal(raw: Record<string, unknown>): boolean {
+  return Boolean(
+    raw.enabled === true ||
+      raw.is_enabled === true ||
+      raw.backup_enabled === true ||
+      raw.database_backup_enabled === true ||
+      stringValue(raw, ["frequency", "cron", "schedule", "database_backup_cron", "database_backup_schedule"], "")
+  );
+}
+
+function hasExecutionSignal(raw: Record<string, unknown>): boolean {
+  return Boolean(
+    stringValue(raw, ["status", "result", "state", "last_status"], "") ||
+      stringValue(raw, ["filename", "file_name", "dump_file", "backup_file", "path"], "") ||
+      stringValue(raw, ["finished_at", "completed_at", "started_at", "created_at"], "") ||
+      typeof raw.success === "boolean" ||
+      typeof raw.is_successful === "boolean"
+  );
+}
+
+async function collectDatabaseBackupTelemetry(
+  dbId: string,
+  dbName: string,
+  schedules: BackupScheduleRecord[],
+  recentExecutions: BackupExecutionRecord[]
+): Promise<void> {
+  if (!dbId) {
+    return;
+  }
+
+  const backupPayload = await coolifyFetch(`/api/v1/databases/${dbId}/backups`);
+  const backupRows = extractBackupRows(backupPayload);
+
+  for (const row of backupRows) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+
+    const record = row as Record<string, unknown>;
+    if (hasScheduleSignal(record)) {
+      schedules.push(normalizeBackupSchedule(record, dbId, dbName));
+    }
+
+    if (hasExecutionSignal(record)) {
+      recentExecutions.push(normalizeBackupExecution(record, dbId, dbName));
+    }
+
+    const nestedExecutions = ensureArray(record.executions ?? record.backup_executions ?? record.history ?? record.runs ?? []);
+    for (const execution of nestedExecutions.slice(0, 20)) {
+      if (!execution || typeof execution !== "object") {
+        continue;
+      }
+      recentExecutions.push(normalizeBackupExecution(execution as Record<string, unknown>, dbId, dbName));
+    }
+  }
 }
 
 /**
@@ -1322,13 +1440,14 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
   try {
     // Step 1: Fetch the application to find its environment_id
     let appRaw: Record<string, unknown> | null = null;
+    let applicationLookupFailed = false;
     try {
       const payload = await coolifyFetch(`/api/v1/applications/${appUuid}`);
       if (payload && typeof payload === "object" && !Array.isArray(payload)) {
         appRaw = payload as Record<string, unknown>;
       }
     } catch {
-      // Application details unavailable – continue to try other paths
+      applicationLookupFailed = true;
     }
 
     const schedules: BackupScheduleRecord[] = [];
@@ -1408,31 +1527,55 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
       if (!dbId) continue;
 
       try {
-        const backupPayload = await coolifyFetch(`/api/v1/databases/${dbId}/backups`);
-        const backupRaw = Array.isArray(backupPayload) ? backupPayload : [];
-
-        for (const bkp of backupRaw) {
-          if (typeof bkp !== "object" || !bkp) continue;
-          const bkpObj = bkp as Record<string, unknown>;
-          schedules.push(normalizeBackupSchedule(bkpObj, dbId, dbName));
-
-          const executions = ensureArray(bkpObj.executions ?? bkpObj.backup_executions ?? []);
-          for (const exec of executions.slice(0, 5)) {
-            recentExecutions.push(normalizeBackupExecution(exec as Record<string, unknown>));
-          }
-        }
+        await collectDatabaseBackupTelemetry(dbId, dbName, schedules, recentExecutions);
       } catch {
         // Backup endpoint unavailable for this database
       }
     }
 
-    const configured = schedules.some((s) => s.enabled);
+    // Step 4: If this resource is a database site, query it directly.
+    if (databases.length === 0 && applicationLookupFailed) {
+      try {
+        await collectDatabaseBackupTelemetry(appUuid, appUuid, schedules, recentExecutions);
+      } catch {
+        // Best effort
+      }
+    }
+
+    const dedupedSchedules = new Map<string, BackupScheduleRecord>();
+    for (const schedule of schedules) {
+      const key = `${schedule.resourceId}:${schedule.id}`;
+      if (!dedupedSchedules.has(key)) {
+        dedupedSchedules.set(key, schedule);
+      }
+    }
+
+    const dedupedExecutions = new Map<string, BackupExecutionRecord>();
+    for (const execution of recentExecutions) {
+      const key = `${execution.resourceId ?? "unknown"}:${execution.id}:${execution.filename ?? ""}`;
+      if (!dedupedExecutions.has(key)) {
+        dedupedExecutions.set(key, execution);
+      }
+    }
+
+    const normalizedExecutions = [...dedupedExecutions.values()].sort((left, right) => {
+      const rightTs = new Date(right.finishedAt ?? right.startedAt ?? 0).getTime();
+      const leftTs = new Date(left.finishedAt ?? left.startedAt ?? 0).getTime();
+      return rightTs - leftTs;
+    });
+
+    const normalizedSchedules = [...dedupedSchedules.values()];
+    const configured = normalizedSchedules.some((s) => s.enabled);
     return {
       configured,
-      schedules,
-      recentExecutions: recentExecutions.slice(0, 10),
+      schedules: normalizedSchedules,
+      recentExecutions: normalizedExecutions.slice(0, 40),
       source: "live",
-      note: databases.length === 0 ? "no_databases_in_environment" : undefined,
+      note: normalizedSchedules.length === 0 && normalizedExecutions.length === 0
+        ? databases.length === 0
+          ? "no_databases_in_environment"
+          : "backups_not_configured"
+        : undefined,
       checkedAt
     };
   } catch {

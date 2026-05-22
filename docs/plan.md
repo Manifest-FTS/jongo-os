@@ -30,6 +30,42 @@ It should explicitly avoid planning around:
 
 The first implementation step is only to establish the new `jongo-os` workspace and this planning document. Do not initialize git, scaffold an application, or move existing files until the plan is reviewed and approved.
 
+## Current Execution Focus (Operational Pass)
+
+This pass is focused on read-only operational correctness before any new automation.
+
+### Priority Order
+
+1. Backup telemetry discovery and surfacing
+2. Staging settings UX simplification
+
+### Hard Constraints
+
+- Do not create or modify backup schedules from Jongo.
+- Do not trigger backup creation, restore actions, or destructive backup operations from Jongo.
+- Do not change staging behavior semantics in this pass (only simplify settings UX).
+- Do not implement WordPress file/media backup logic in this pass.
+
+### Backup Telemetry Acceptance Targets
+
+- Detect existing Coolify database backup schedules.
+- Detect recent successful backup execution history.
+- Surface telemetry under database resource context first when app linkage is unclear.
+- Link telemetry to related app/client context when enough metadata exists.
+- Validate visibility for:
+  - `Jongo Database`
+  - `pdb_empowermaps_prod`
+  - `pdb-joyfeed-web-prod`
+  - `pdb-jongo-saas-prod`
+
+### UI Acceptance Targets
+
+- Settings > Staging section contains concise copy only:
+  - `Staging Environment`
+  - `Turn on a staging copy of your production site.`
+- Staging control is an explicit on/off toggle.
+- Redundant staging status chip/copy is removed from settings.
+
 ## Planned Repository Shape
 
 ```text

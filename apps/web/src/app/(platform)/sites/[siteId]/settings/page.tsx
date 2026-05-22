@@ -42,7 +42,6 @@ export default async function SiteSettingsPage({ params }: Params) {
   const stagingCapability = workspace?.coolifyServiceUuid
     ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined)
     : null;
-  const stagingConfigured = Boolean(workspace?.stagingEnabled && stagingCapability?.detected);
 
   return (
     <div>
@@ -86,16 +85,9 @@ export default async function SiteSettingsPage({ params }: Params) {
           <div>
             <h3 className="card-title" style={{ margin: 0 }}>Staging Environment</h3>
             <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-              {stagingConfigured
-                ? "Staging is enabled. Validate changes before promoting to production."
-                : "Staging is not configured for this app yet."}
+              Turn on a staging copy of your production site.
             </p>
           </div>
-          <span className={`status-chip ${stagingConfigured ? "healthy" : "unknown"}`}>
-            {stagingConfigured ? "Enabled" : "Not configured"}
-          </span>
-        </div>
-        <div style={{ marginTop: "0.85rem" }}>
           <SiteStagingToggle
             siteId={siteId}
             initialEnabled={Boolean(workspace.stagingEnabled)}

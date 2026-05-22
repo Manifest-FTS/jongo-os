@@ -62,28 +62,43 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   }
 
   return (
-    <div style={{ display: "grid", gap: "0.6rem" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
-        <div>
-          <p style={{ margin: 0, fontWeight: 600, fontSize: "0.95rem" }}>
-            Staging {enabled ? "Enabled" : "Disabled"}
-          </p>
-          <p style={{ margin: "0.25rem 0 0", color: "var(--muted)", fontSize: "0.84rem" }}>
-            {enabled
-              ? "Staging should be created from current production and used for validation before promotion."
-              : "Turn this on to create/detect staging from the current production application."}
-          </p>
-        </div>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => handleToggle(!enabled)}
-          disabled={loading}
-          style={{ minWidth: "146px" }}
-        >
-          {loading ? "Updating..." : enabled ? "Disable Staging" : "Enable Staging"}
-        </button>
-      </div>
+    <div style={{ display: "grid", gap: "0.55rem", justifyItems: "end" }}>
+      <button
+        type="button"
+        onClick={() => handleToggle(!enabled)}
+        aria-label={`Turn staging ${enabled ? "off" : "on"}`}
+        aria-pressed={enabled}
+        disabled={loading}
+        style={{
+          width: "58px",
+          height: "32px",
+          borderRadius: "999px",
+          border: `1px solid ${enabled ? "var(--accent)" : "var(--border)"}`,
+          background: enabled ? "var(--accent)" : "var(--surface-alt)",
+          position: "relative",
+          cursor: loading ? "not-allowed" : "pointer",
+          transition: "background 0.2s ease, border-color 0.2s ease"
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            top: "3px",
+            left: enabled ? "30px" : "3px",
+            width: "24px",
+            height: "24px",
+            borderRadius: "999px",
+            background: "#fff",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+            transition: "left 0.2s ease"
+          }}
+        />
+      </button>
+
+      <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+        {loading ? "Updating..." : enabled ? "On" : "Off"}
+      </p>
 
       {enabled && hasDetectedStaging ? (
         <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--warning, #d97706)" }}>

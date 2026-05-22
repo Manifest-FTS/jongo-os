@@ -79,7 +79,7 @@ export default async function BackupsPage({ params }: Params) {
     notFound();
   }
 
-  const appUuid = workspace?.coolifyServiceUuid;
+  const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
   const backupReadiness = getBackupReadiness(inventory, appUuid);
 
@@ -105,6 +105,16 @@ export default async function BackupsPage({ params }: Params) {
   );
 
   const databaseNames = Object.keys(schedulesByDatabase);
+  const latestExecutionByDatabase = new Map<string, (typeof recentExecutions)[number]>();
+  for (const execution of recentExecutions) {
+    const key = execution.resourceName?.trim();
+    if (!key) {
+      continue;
+    }
+    if (!latestExecutionByDatabase.has(key)) {
+      latestExecutionByDatabase.set(key, execution);
+    }
+  }
   const maxRetentionDays = Math.max(
     ...databaseNames.map((dbName) =>
       Math.max(...(schedulesByDatabase[dbName].map((s) => s.retentionDays ?? 7) ?? [7]))
@@ -289,7 +299,7 @@ export default async function BackupsPage({ params }: Params) {
           <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.5rem" }}>
             {databaseNames.map((dbName) => {
               const dbSchedules = schedulesByDatabase[dbName];
-              const lastExecForDb = recentExecutions.find((exec) => exec.filename?.includes(dbName) || true)?.finishedAt;
+              const latestExecution = latestExecutionByDatabase.get(dbName);
               return (
                 <div key={dbName} style={{ padding: "0.75rem", background: "var(--surface-alt)", borderRadius: "8px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "0.5rem" }}>
@@ -301,6 +311,11 @@ export default async function BackupsPage({ params }: Params) {
                     </div>
                     <span className="status-chip healthy">enabled</span>
                   </div>
+                  {latestExecution ? (
+                    <p style={{ margin: "0 0 0.4rem", fontSize: "0.8rem", color: "var(--muted)" }}>
+                      Latest execution: {formatRelativeTime(latestExecution.finishedAt ?? latestExecution.startedAt ?? inventory?.checkedAt ?? new Date().toISOString())}
+                    </p>
+                  ) : null}
                   <div style={{ display: "grid", gap: "0.3rem", fontSize: "0.82rem", color: "var(--muted)" }}>
                     {dbSchedules.map((s, idx) => (
                       <div key={idx}>
@@ -329,6 +344,9 @@ export default async function BackupsPage({ params }: Params) {
               {recentExecutions.map((exec) => (
                 <div key={exec.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.65rem" }}>
                   <div>
+                    {exec.resourceName ? (
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>{exec.resourceName}</p>
+                    ) : null}
                     <p style={{ margin: 0, fontSize: "0.88rem" }}>
                       {exec.finishedAt
                         ? formatRelativeTime(exec.finishedAt)
@@ -344,6 +362,21 @@ export default async function BackupsPage({ params }: Params) {
                         Size: {(exec.sizeBytes / (1024 * 1024)).toFixed(2)} MB
                       </p>
                     ) : null}
+                    {exec.downloadUrl || exec.restoreUrl ? (
+                      <p style={{ margin: "0.18rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                        {exec.downloadUrl ? (
+                          <a href={exec.downloadUrl} target="_blank" rel="noreferrer" className="action-link">Download</a>
+                        ) : null}
+                        {exec.downloadUrl && exec.restoreUrl ? " · " : null}
+                        {exec.restoreUrl ? (
+                          <a href={exec.restoreUrl} target="_blank" rel="noreferrer" className="action-link">Restore</a>
+                        ) : null}
+                      </p>
+                    ) : (
+                      <p style={{ margin: "0.18rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                        Download/restore available in Coolify dashboard.
+                      </p>
+                    )}
                   </div>
                   <span className={`status-chip ${exec.status === "success" ? "healthy" : exec.status === "failed" ? "error" : exec.status === "running" ? "unknown" : "unknown"}`}>
                     {exec.status}
