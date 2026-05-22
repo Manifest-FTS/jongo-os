@@ -24,7 +24,7 @@ function isUuid(value: string): boolean {
 }
 
 function buildIdentityMatchers(values: string[]) {
-  return values.flatMap((value) =>
+  return values.flatMap((value): Array<Record<string, string>> =>
     isUuid(value)
       ? [
           { id: value },
@@ -86,7 +86,7 @@ export default async function IntegrationsPage({ params }: Params) {
           AND: [
             {
               deletedAt: null,
-              OR: buildIdentityMatchers(identifiers)
+              OR: buildIdentityMatchers(identifiers) as any
             },
             ...(workspace.organizationId ? [{ organizationId: workspace.organizationId }] : []),
             {

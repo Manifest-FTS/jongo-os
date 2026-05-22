@@ -19,7 +19,7 @@ function isUuid(value: string): boolean {
 }
 
 function buildIdentityMatchers(values: string[]) {
-  return values.flatMap((value) =>
+  return values.flatMap((value): Array<Record<string, string>> =>
     isUuid(value)
       ? [
           { id: value },
@@ -88,7 +88,7 @@ async function resolveAuthorizedSite(siteId: string) {
       AND: [
         {
           deletedAt: null,
-          OR: identityMatchers
+          OR: identityMatchers as any
         },
         ...(workspace?.organizationId ? [{ organizationId: workspace.organizationId }] : []),
         {
