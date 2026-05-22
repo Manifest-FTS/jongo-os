@@ -135,6 +135,37 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
   let directStoredSnapshot: CollectorPayload | null = null;
 
   if (db) {
+    if (isUuid(input.workspace.id)) {
+      try {
+        const exactConfig = await db.wordPressTelemetryConfig.findUnique({
+          where: { siteId: input.workspace.id },
+          select: {
+            siteUrl: true,
+            username: true,
+            passwordCiphertext: true
+          }
+        });
+
+        if (exactConfig) {
+          const appPassword = decryptSecret(exactConfig.passwordCiphertext);
+          directStoredSnapshot = await collectFromRestCredentials(
+            {
+              siteUrl: exactConfig.siteUrl,
+              username: exactConfig.username,
+              appPassword
+            },
+            "collector_rest_saved"
+          );
+        }
+      } catch {
+        directStoredSnapshot = null;
+      }
+    }
+
+    if (directStoredSnapshot) {
+      return mergeCollectorSnapshot(input.fallback, directStoredSnapshot);
+    }
+
     const identifiers = [
       input.requestedSiteId,
       input.workspace.id,
