@@ -387,12 +387,9 @@ export default async function SiteOverviewPage({ params }: Params) {
         </div>
 
         {canViewInternalMetadata ? (
-          <details style={{ marginTop: "0.8rem" }}>
-            <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)" }}>Technical details</summary>
-            <p style={{ margin: "0.45rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-              Source mode: {overview.mode} · Hosting fetch error: {overview.fetchError ? "yes" : "no"} · Backup source: {backupInventory?.source ?? "none"}
-            </p>
-          </details>
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>
+            Need deeper troubleshooting? Open app settings for maintenance details or platform diagnostics.
+          </p>
         ) : null}
       </article>
 
@@ -512,9 +509,14 @@ export default async function SiteOverviewPage({ params }: Params) {
 
       {canViewInternalMetadata ? (
         <article className="card" style={{ marginTop: "1rem" }}>
-          <h3 className="card-title">Need Infrastructure Details?</h3>
-          <p className="card-muted" style={{ marginBottom: 0 }}>
-            Use the Advanced tab for diagnostics and provider-level metadata.
+          <h3 className="card-title">Need Maintenance Details?</h3>
+          <p className="card-muted" style={{ marginBottom: "0.6rem" }}>
+            Use settings for mapping and provider linkage checks.
+          </p>
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>
+            <Link href={`/apps/${siteId}/settings`} className="action-link">
+              Open app settings <ArrowRightIcon className="btn-icon" />
+            </Link>
           </p>
         </article>
       ) : null}
