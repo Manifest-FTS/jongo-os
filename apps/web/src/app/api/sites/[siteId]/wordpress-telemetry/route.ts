@@ -132,6 +132,66 @@ async function ensureSiteRecordForWorkspace(
   return created.id;
 }
 
+async function recoverTelemetryConfigForResolvedSite(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  resolvedSiteId: string,
+  identityMatchers: Array<Record<string, string>>,
+  organizationId?: string
+): Promise<void> {
+  const existing = await db.wordPressTelemetryConfig.findUnique({
+    where: { siteId: resolvedSiteId },
+    select: { id: true }
+  });
+
+  if (existing) {
+    return;
+  }
+
+  const legacy = await db.wordPressTelemetryConfig.findFirst({
+    where: {
+      site: {
+        deletedAt: null,
+        ...(organizationId ? { organizationId } : {}),
+        OR: identityMatchers as any,
+        id: { not: resolvedSiteId }
+      }
+    },
+    select: {
+      siteUrl: true,
+      username: true,
+      passwordCiphertext: true,
+      lastTestedAt: true,
+      lastTestStatus: true,
+      lastError: true
+    }
+  });
+
+  if (!legacy) {
+    return;
+  }
+
+  await db.wordPressTelemetryConfig.upsert({
+    where: { siteId: resolvedSiteId },
+    create: {
+      siteId: resolvedSiteId,
+      siteUrl: legacy.siteUrl,
+      username: legacy.username,
+      passwordCiphertext: legacy.passwordCiphertext,
+      lastTestedAt: legacy.lastTestedAt,
+      lastTestStatus: legacy.lastTestStatus,
+      lastError: legacy.lastError
+    },
+    update: {
+      siteUrl: legacy.siteUrl,
+      username: legacy.username,
+      passwordCiphertext: legacy.passwordCiphertext,
+      lastTestedAt: legacy.lastTestedAt,
+      lastTestStatus: legacy.lastTestStatus,
+      lastError: legacy.lastError
+    }
+  });
+}
+
 async function resolveAuthorizedSiteDbId(
   siteId: string,
   userId: string,
@@ -189,11 +249,16 @@ async function resolveAuthorizedSiteDbId(
   });
 
   if (site?.id) {
+    await recoverTelemetryConfigForResolvedSite(db, site.id, identityMatchers, workspace.organizationId);
     return site.id;
   }
 
   if (bootstrapGlobalAccess) {
-    return ensureSiteRecordForWorkspace(db, workspace, siteId, userId);
+    const createdSiteId = await ensureSiteRecordForWorkspace(db, workspace, siteId, userId);
+    if (createdSiteId) {
+      await recoverTelemetryConfigForResolvedSite(db, createdSiteId, identityMatchers, workspace.organizationId);
+    }
+    return createdSiteId;
   }
 
   return null;
