@@ -40,7 +40,7 @@ export default async function ClientSettingsPage({ params }: Params) {
           </p>
           {linkedProjects.length === 0 ? (
             <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
-              <strong>No linked Coolify project.</strong> Unmapped apps may appear orphaned in diagnostics.
+              <strong>No linked Coolify project.</strong> Link at least one project so this client's apps map cleanly in Jongo.
             </div>
           ) : null}
           {client.dbId ? (

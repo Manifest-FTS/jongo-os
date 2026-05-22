@@ -66,7 +66,7 @@ export default async function ClientAppsPage({ params }: Params) {
                 <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
                   <span className={`status-chip ${app.status}`}>{app.status}</span>
                   {canViewInternalMetadata && app.ownershipState !== "mapped" ? (
-                    <span className="tag tag-warning" style={{ fontSize: "0.75rem" }}>{app.ownershipDiagnostic}</span>
+                    <span className="tag tag-warning" style={{ fontSize: "0.75rem" }}>mapping needs review</span>
                   ) : null}
                 </div>
               </div>

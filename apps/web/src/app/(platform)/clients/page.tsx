@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth.config";
 import { listClientWorkspaces, listSiteDirectory } from "@/lib/repositories";
+import Link from "next/link";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import ClientDirectoryView from "@/components/ClientDirectoryView";
 
@@ -33,8 +34,10 @@ export default async function ClientsPage() {
 
       {isMock && (
         <div className="diagnostic-banner">
-          <strong>Mock data active.</strong> A database query failed, so hardcoded sample clients are shown.
-          Check server logs for the exact cause (for example network/tunnel issues, UUID mismatch in query inputs, or a migration-required schema mismatch such as missing columns).
+          <strong>Demo client list active.</strong> Live client data is currently unavailable, so sample clients are shown.
+          <span> Verify database and provider connectivity in </span>
+          <Link href="/settings#runtime-diagnostics" className="action-link">Platform Settings</Link>
+          <span>.</span>
         </div>
       )}
 
