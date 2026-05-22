@@ -215,7 +215,7 @@ function normalizeUrl(value: string): string {
   return `${parsed.origin}${normalizedPath}`;
 }
 
-async function resolveAuthorizedSite(siteId: string) {
+async function resolveAuthorizedSite(siteId: string, options?: { requireManage?: boolean }) {
   const session = await auth();
   if (!session?.user?.id) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -315,11 +315,11 @@ async function resolveAuthorizedSite(siteId: string) {
   const orgCollaboratorAdmin = isAdminRole(site?.organization?.collaborators?.[0]?.role);
   const canManage = Boolean(bootstrapGlobalAccess || orgAdmin || ownerAdmin || siteAdmin || orgCollaboratorAdmin);
 
-  if (!canManage) {
+  if (options?.requireManage !== false && !canManage) {
     return { error: NextResponse.json({ error: "Only admins can manage WordPress telemetry connections" }, { status: 403 }) };
   }
 
-  return { db, siteId: resolvedSiteId };
+  return { db, siteId: resolvedSiteId, canManage };
 }
 
 async function parseBody(req: Request): Promise<WordPressConfigBody | NextResponse> {
@@ -350,7 +350,7 @@ function toSummary(config: {
 
 export async function GET(_req: Request, { params }: Params) {
   const { siteId } = await params;
-  const resolved = await resolveAuthorizedSite(siteId);
+  const resolved = await resolveAuthorizedSite(siteId, { requireManage: false });
   if (resolved.error) {
     return resolved.error;
   }

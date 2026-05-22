@@ -146,8 +146,7 @@ export default async function IntegrationsPage({ params }: Params) {
 
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const coolifySite = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
-  const isWordPress = workspace?.siteType === "wordpress";
-  const supportsWordPressAccess = workspace?.siteType !== "database" && workspace?.siteType !== "service";
+  const isWordPress = workspace?.siteType === "wordpress" || workspace?.resourceType === "WordPress";
   const deploymentSource = deployments[0]?.source ?? overview.mode;
   const resolvedSiteId = workspace?.slug ?? workspace?.id ?? siteId;
   const wpTelemetrySnapshot = await getWordPressTelemetrySnapshotForRequest({
@@ -279,18 +278,13 @@ export default async function IntegrationsPage({ params }: Params) {
         </article>
       )}
 
-      {supportsWordPressAccess && canManageTelemetry ? (
+      {isWordPress ? (
         <article className="card">
           <h3 className="card-title">WordPress Access</h3>
           <p className="card-muted" style={{ marginTop: 0 }}>
             Add this app's WordPress login details to show plugin monitoring here. Each app keeps its own saved details.
           </p>
-          {!isWordPress ? (
-            <p className="card-muted" style={{ marginTop: 0 }}>
-              This app is not currently auto-labeled as WordPress, but you can still add WordPress access if this app runs on WordPress.
-            </p>
-          ) : null}
-          <WordPressTelemetryConnectionPanel siteId={siteId} />
+          <WordPressTelemetryConnectionPanel siteId={siteId} canManage={canManageTelemetry} />
         </article>
       ) : null}
 

@@ -14,6 +14,7 @@ type ConnectionSummary = {
 
 type Props = {
   siteId: string;
+  canManage: boolean;
 };
 
 const EMPTY_SUMMARY: ConnectionSummary = {
@@ -26,7 +27,7 @@ const EMPTY_SUMMARY: ConnectionSummary = {
   lastError: null
 };
 
-export default function WordPressTelemetryConnectionPanel({ siteId }: Props) {
+export default function WordPressTelemetryConnectionPanel({ siteId, canManage }: Props) {
   const [summary, setSummary] = useState<ConnectionSummary>(EMPTY_SUMMARY);
   const [siteUrl, setSiteUrl] = useState("");
   const [username, setUsername] = useState("");
@@ -174,6 +175,11 @@ export default function WordPressTelemetryConnectionPanel({ siteId }: Props) {
       <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
         These details belong only to this app. They are not shared with any other app.
       </p>
+      {!canManage ? (
+        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+          You can view this app's WordPress connection status, but only admins can change these details.
+        </p>
+      ) : null}
       <form onSubmit={saveConnection} className="form-stack" style={{ marginTop: 0 }}>
         <div>
           <label className="form-label">Website Address</label>
@@ -187,6 +193,8 @@ export default function WordPressTelemetryConnectionPanel({ siteId }: Props) {
               setSuccess(null);
             }}
             required
+            disabled={!canManage}
+            readOnly={!canManage}
           />
         </div>
 
@@ -202,6 +210,8 @@ export default function WordPressTelemetryConnectionPanel({ siteId }: Props) {
               setSuccess(null);
             }}
             required
+            disabled={!canManage}
+            readOnly={!canManage}
           />
         </div>
 
@@ -240,28 +250,32 @@ export default function WordPressTelemetryConnectionPanel({ siteId }: Props) {
               setSuccess(null);
             }}
             required={!summary.hasPassword}
+            disabled={!canManage}
+            readOnly={!canManage}
           />
         </div>
 
         {error ? <p className="form-error">{error}</p> : null}
         {success ? <p className="form-success">{success}</p> : null}
 
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <button type="submit" className="btn" disabled={saving || testing || disconnecting}>
-            {saving ? "Saving…" : "Save Access"}
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={saving || testing || disconnecting}>
-            {testing ? "Checking…" : "Check Details"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={disconnect}
-            disabled={!summary.connected || saving || testing || disconnecting}
-          >
-            {disconnecting ? "Removing…" : "Remove Access"}
-          </button>
-        </div>
+        {canManage ? (
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button type="submit" className="btn" disabled={saving || testing || disconnecting}>
+              {saving ? "Saving…" : "Save Access"}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={saving || testing || disconnecting}>
+              {testing ? "Checking…" : "Check Details"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={disconnect}
+              disabled={!summary.connected || saving || testing || disconnecting}
+            >
+              {disconnecting ? "Removing…" : "Remove Access"}
+            </button>
+          </div>
+        ) : null}
       </form>
 
       <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
