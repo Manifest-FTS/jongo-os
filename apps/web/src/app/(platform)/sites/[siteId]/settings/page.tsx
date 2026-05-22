@@ -114,37 +114,34 @@ export default async function SiteSettingsPage({ params }: Params) {
             userSelect: "none"
           }}
         >
-          Developer Details
+          Maintenance Details
         </summary>
         <article className="card" style={{ marginTop: "0.5rem" }}>
           <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-            Infrastructure identifiers and diagnostic values. For admin use.
+            Operational reference for ownership mapping and provider linkage.
           </p>
           <div style={{ display: "grid", gap: "0.4rem", fontSize: "0.88rem" }}>
-            <p style={{ margin: 0 }}>App data source: <code>{workspace?.source ?? "unknown"}</code></p>
             <p style={{ margin: 0 }}>
-              Coolify data: <code>{overview.mode}</code>{" "}
-              <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>· fetched {formatAgo(overview.generatedAt)}</span>
+              Provider data mode: <strong>{overview.mode}</strong>{" "}
+              <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>· checked {formatAgo(overview.generatedAt)}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Ownership mapping: <strong>{workspace?.ownershipState === "mapped" ? "mapped" : "needs review"}</strong>
+            </p>
+            <p style={{ margin: 0 }}>
+              App link to provider: <strong>{workspace?.coolifyServiceUuid ? "connected" : "missing"}</strong>
+            </p>
+            <p style={{ margin: 0 }}>
+              Project mapping: <strong>{workspace?.coolifyProjectId ? "set" : "missing"}</strong>
             </p>
             {overview.fetchError ? (
               <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
-                Coolify last error: <code>{overview.fetchError}</code>
+                Provider connection needs attention. Verify runtime credentials in Platform Settings.
               </p>
             ) : null}
-            <p style={{ margin: 0 }}>Source: <code>{workspace?.source ?? "unknown"}</code></p>
-            <p style={{ margin: 0 }}>Ownership: <code>{workspace?.ownershipState ?? "unavailable"}</code></p>
-            {workspace?.coolifyServiceUuid ? (
-              <p style={{ margin: 0 }}>Coolify UUID: <code>{workspace.coolifyServiceUuid}</code></p>
-            ) : null}
-            {workspace?.coolifyProjectId ? (
-              <p style={{ margin: 0 }}>Coolify Project ID: <code>{workspace.coolifyProjectId}</code></p>
-            ) : null}
-            {workspace?.coolifyEnvironmentName ? (
-              <p style={{ margin: 0 }}>Coolify Environment: <code>{workspace.coolifyEnvironmentName}</code></p>
-            ) : null}
-            {workspace?.gitRepositoryUrl ? (
-              <p style={{ margin: 0 }}>Repository: <code>{workspace.gitRepositoryUrl}</code></p>
-            ) : null}
+            <p style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
+              <Link href="/settings#runtime-diagnostics" className="action-link">Open platform diagnostics</Link>
+            </p>
           </div>
         </article>
       </details>
