@@ -130,11 +130,42 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
   fallback: WordPressTelemetrySnapshot;
   workspace: SiteWorkspaceRecord;
   requestedSiteId?: string;
+  preferredSiteDbId?: string | null;
 }): Promise<WordPressTelemetrySnapshot | null> {
   const db = await getDb();
   let directStoredSnapshot: CollectorPayload | null = null;
 
   if (db) {
+    if (input.preferredSiteDbId && isUuid(input.preferredSiteDbId)) {
+      try {
+        const preferredConfig = await db.wordPressTelemetryConfig.findUnique({
+          where: { siteId: input.preferredSiteDbId },
+          select: {
+            siteUrl: true,
+            username: true,
+            passwordCiphertext: true
+          }
+        });
+
+        if (preferredConfig) {
+          directStoredSnapshot = await collectFromRestCredentials(
+            {
+              siteUrl: preferredConfig.siteUrl,
+              username: preferredConfig.username,
+              appPassword: decryptSecret(preferredConfig.passwordCiphertext)
+            },
+            "collector_rest_saved"
+          );
+        }
+      } catch {
+        directStoredSnapshot = null;
+      }
+    }
+
+    if (directStoredSnapshot) {
+      return mergeCollectorSnapshot(input.fallback, directStoredSnapshot);
+    }
+
     if (isUuid(input.workspace.id)) {
       try {
         const exactConfig = await db.wordPressTelemetryConfig.findUnique({
