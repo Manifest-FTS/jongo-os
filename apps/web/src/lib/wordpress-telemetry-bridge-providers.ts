@@ -267,7 +267,7 @@ function parsePluginRows(value: unknown): PluginInventoryRow[] {
     const version = typeof item.version === "string" && item.version.trim() ? item.version.trim() : null;
     const updateRaw = isRecord(item.update) ? item.update : null;
     const updateStatus = getUpdateStatus(item, updateRaw);
-    const securityIssues = hasSecuritySignal(item, updateRaw) ? "Vulnerability detected" : null;
+    const securityIssues = hasSecuritySignal(item, updateRaw) ? "Vulnerability detected" : "Unknown";
 
     rows.push({
       name,
@@ -410,7 +410,8 @@ export async function collectFromRestCredentials(
   const inactivePlugins = pluginInventory.filter((row) => row.status === "Inactive").length;
   const updatesAvailable = pluginInventory.filter((row) => row.updateStatus === "Update available").length;
   const updatesUnknown = pluginInventory.filter((row) => row.updateStatus === "Unknown").length;
-  const securityIssues = pluginInventory.filter((row) => Boolean(row.securityIssues)).length;
+  const securityIssueCount = pluginInventory.filter((row) => row.securityIssues === "Vulnerability detected").length;
+  const securityUnknown = pluginInventory.filter((row) => row.securityIssues === "Unknown").length;
 
   return {
     checkedAt: new Date().toISOString(),
@@ -441,7 +442,7 @@ export async function collectFromRestCredentials(
       activePlugins,
       inactivePlugins,
       updatesAvailable: updatesUnknown > 0 ? null : updatesAvailable,
-      securityIssues
+      securityIssues: securityUnknown > 0 && securityIssueCount === 0 ? null : securityIssueCount
     },
     pluginInventory
   };

@@ -57,6 +57,7 @@ export default async function SitePluginsPage({ params }: Params) {
   const freshness = getWordPressTelemetryFreshness(snapshot.checkedAt);
   const hasInventory = policy.pluginInventory.length > 0;
   const updateMetadataLimited = policy.signals.updateAvailability === "update metadata unavailable";
+  const securityMetadataLimited = policy.pluginInsights.securityIssues === null;
   const collectorConfigured = Boolean(process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim());
   const collectorDiagnostic = !collectorConfigured
     ? "Collector endpoint is not configured."
@@ -97,6 +98,16 @@ export default async function SitePluginsPage({ params }: Params) {
         <article className="card">
           <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Monitoring status</p>
           <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{formatWordPressCollectorStatus(policy.collectorStatus)}</p>
+        </article>
+        <article className="card">
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Security signals</p>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>
+            {securityMetadataLimited
+              ? "metadata unavailable"
+              : (policy.pluginInsights.securityIssues ?? 0) > 0
+                ? `${policy.pluginInsights.securityIssues} flagged`
+                : "none flagged"}
+          </p>
         </article>
       </div>
 
@@ -143,6 +154,9 @@ export default async function SitePluginsPage({ params }: Params) {
             {updateMetadataLimited
               ? " WordPress REST is not exposing full update metadata for this app password, so update status may show Unknown for some plugins."
               : ""}
+            {securityMetadataLimited
+              ? " Security vulnerability intel is also unavailable from this source, so security rows may show Unknown."
+              : ""}
           </p>
         ) : (
           <>
@@ -182,7 +196,7 @@ export default async function SitePluginsPage({ params }: Params) {
                     <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.status}</td>
                     <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.version ?? "-"}</td>
                     <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.updateStatus}</td>
-                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.securityIssues ?? "-"}</td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.securityIssues ?? "Unknown"}</td>
                   </tr>
                 ))}
               </tbody>
