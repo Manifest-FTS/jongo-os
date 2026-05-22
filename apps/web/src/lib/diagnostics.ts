@@ -39,6 +39,15 @@ type RepositoryCall = {
   note?: string;
 };
 
+type DirectoryBackupPostureCacheKeyCounters = {
+  hits: number;
+  misses: number;
+  inFlightJoins: number;
+  stores: number;
+  errors: number;
+  lastEventAt?: string;
+};
+
 type RuntimeDiagnosticsState = {
   updatedAt: string;
   lastSuccessfulCoolifyInventoryFetchAt?: string;
@@ -53,12 +62,14 @@ type RuntimeDiagnosticsState = {
     stores: number;
     errors: number;
     lastEventAt?: string;
+    byKey: Record<string, DirectoryBackupPostureCacheKeyCounters>;
   };
 };
 
 const MAX_COOLIFY_ENDPOINT_CALLS = 80;
 const MAX_INVENTORY_HISTORY = 40;
 const MAX_REPOSITORY_CALLS = 80;
+const MAX_DIRECTORY_CACHE_KEYS = 30;
 
 const state: RuntimeDiagnosticsState = {
   updatedAt: new Date(0).toISOString(),
@@ -70,7 +81,8 @@ const state: RuntimeDiagnosticsState = {
     misses: 0,
     inFlightJoins: 0,
     stores: 0,
-    errors: 0
+    errors: 0,
+    byKey: {}
   }
 };
 
@@ -99,6 +111,47 @@ function safeErrorMessage(error: unknown): string | undefined {
 
 function touch() {
   state.updatedAt = new Date().toISOString();
+}
+
+function normalizeDiagnosticsKey(key?: string): string | undefined {
+  const normalized = key?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.slice(0, 120);
+}
+
+function trimDirectoryCacheKeysIfNeeded() {
+  const keys = Object.keys(state.directoryBackupPostureCache.byKey);
+  if (keys.length <= MAX_DIRECTORY_CACHE_KEYS) {
+    return;
+  }
+
+  const sorted = keys
+    .map((key) => {
+      const counters = state.directoryBackupPostureCache.byKey[key];
+      const lookups = counters.hits + counters.misses + counters.inFlightJoins;
+      return {
+        key,
+        lookups,
+        lastEventAt: counters.lastEventAt ?? ""
+      };
+    })
+    .sort((a, b) => {
+      if (b.lookups !== a.lookups) {
+        return b.lookups - a.lookups;
+      }
+
+      return b.lastEventAt.localeCompare(a.lastEventAt);
+    });
+
+  const keep = new Set(sorted.slice(0, MAX_DIRECTORY_CACHE_KEYS).map((item) => item.key));
+  for (const key of keys) {
+    if (!keep.has(key)) {
+      delete state.directoryBackupPostureCache.byKey[key];
+    }
+  }
 }
 
 export function recordCoolifyEndpointCall(input: {
@@ -171,19 +224,62 @@ export function recordRepositoryCall(input: Omit<RepositoryCall, "at">) {
 }
 
 export function recordDirectoryBackupPostureCacheEvent(
-  event: "hit" | "miss" | "in_flight_join" | "store" | "error"
+  event: "hit" | "miss" | "in_flight_join" | "store" | "error",
+  key?: string
 ) {
+  const now = new Date().toISOString();
   const counters = state.directoryBackupPostureCache;
   if (event === "hit") counters.hits += 1;
   if (event === "miss") counters.misses += 1;
   if (event === "in_flight_join") counters.inFlightJoins += 1;
   if (event === "store") counters.stores += 1;
   if (event === "error") counters.errors += 1;
-  counters.lastEventAt = new Date().toISOString();
+  counters.lastEventAt = now;
+
+  const normalizedKey = normalizeDiagnosticsKey(key);
+  if (normalizedKey) {
+    const perKey = (counters.byKey[normalizedKey] ??= {
+      hits: 0,
+      misses: 0,
+      inFlightJoins: 0,
+      stores: 0,
+      errors: 0
+    });
+    if (event === "hit") perKey.hits += 1;
+    if (event === "miss") perKey.misses += 1;
+    if (event === "in_flight_join") perKey.inFlightJoins += 1;
+    if (event === "store") perKey.stores += 1;
+    if (event === "error") perKey.errors += 1;
+    perKey.lastEventAt = now;
+    trimDirectoryCacheKeysIfNeeded();
+  }
+
   touch();
 }
 
 export function getRuntimeDiagnosticsSnapshot() {
+  const directoryCacheByKeyTop = Object.entries(state.directoryBackupPostureCache.byKey)
+    .map(([key, counters]) => ({
+      key,
+      hits: counters.hits,
+      misses: counters.misses,
+      inFlightJoins: counters.inFlightJoins,
+      stores: counters.stores,
+      errors: counters.errors,
+      lastEventAt: counters.lastEventAt,
+      lookups: counters.hits + counters.misses + counters.inFlightJoins
+    }))
+    .sort((a, b) => {
+      if (b.lookups !== a.lookups) {
+        return b.lookups - a.lookups;
+      }
+      if (b.errors !== a.errors) {
+        return b.errors - a.errors;
+      }
+      return (b.lastEventAt ?? "").localeCompare(a.lastEventAt ?? "");
+    })
+    .slice(0, 10);
+
   return {
     updatedAt: state.updatedAt,
     envPresence: {
@@ -199,6 +295,10 @@ export function getRuntimeDiagnosticsSnapshot() {
     coolifyEndpointCalls: [...state.coolifyEndpointCalls],
     coolifyInventoryHistory: [...state.coolifyInventoryHistory],
     repositoryCalls: [...state.repositoryCalls],
-    directoryBackupPostureCache: { ...state.directoryBackupPostureCache }
+    directoryBackupPostureCache: {
+      ...state.directoryBackupPostureCache,
+      byKey: { ...state.directoryBackupPostureCache.byKey },
+      byKeyTop: directoryCacheByKeyTop
+    }
   };
 }

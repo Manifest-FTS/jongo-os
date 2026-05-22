@@ -24,16 +24,16 @@ export async function getCachedDirectoryBackupPosture(
   const cached = cache.get(key);
 
   if (cached?.value && nowMs - cached.cachedAtMs < ttlMs) {
-    recordDirectoryBackupPostureCacheEvent("hit");
+    recordDirectoryBackupPostureCacheEvent("hit", key);
     return cached.value;
   }
 
   if (cached?.inFlight) {
-    recordDirectoryBackupPostureCacheEvent("in_flight_join");
+    recordDirectoryBackupPostureCacheEvent("in_flight_join", key);
     return cached.inFlight;
   }
 
-  recordDirectoryBackupPostureCacheEvent("miss");
+  recordDirectoryBackupPostureCacheEvent("miss", key);
 
   const inFlight = (async (): Promise<DirectoryBackupPosture> => {
     try {
@@ -42,10 +42,10 @@ export async function getCachedDirectoryBackupPosture(
         value,
         cachedAtMs: Date.now()
       });
-      recordDirectoryBackupPostureCacheEvent("store");
+      recordDirectoryBackupPostureCacheEvent("store", key);
       return value;
     } catch (error) {
-      recordDirectoryBackupPostureCacheEvent("error");
+      recordDirectoryBackupPostureCacheEvent("error", key);
       throw error;
     }
   })();

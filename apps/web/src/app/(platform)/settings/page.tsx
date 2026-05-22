@@ -25,6 +25,7 @@ export default async function SettingsPage() {
   const recentRepoCall = diagnostics?.repositoryCalls[diagnostics.repositoryCalls.length - 1];
   const recentInventory = diagnostics?.coolifyInventoryHistory[diagnostics.coolifyInventoryHistory.length - 1];
   const recentEndpointCalls = diagnostics?.coolifyEndpointCalls.slice(-8).reverse() ?? [];
+  const topDirectoryCacheKeys = diagnostics?.directoryBackupPostureCache.byKeyTop.slice(0, 3) ?? [];
   const directoryCacheLookupTotal = diagnostics
     ? diagnostics.directoryBackupPostureCache.hits +
       diagnostics.directoryBackupPostureCache.misses +
@@ -217,6 +218,13 @@ export default async function SettingsPage() {
                 </p>
                 <p style={{ margin: 0 }}>
                   Directory backup cache efficiency: lookups={directoryCacheLookupTotal}, hit-rate={directoryCacheHitRate.toFixed(1)}%, miss-rate={directoryCacheMissRate.toFixed(1)}%
+                </p>
+                <p style={{ margin: 0 }}>
+                  Directory cache top keys: {topDirectoryCacheKeys.length > 0
+                    ? topDirectoryCacheKeys
+                        .map((entry) => `${entry.key} (lookups=${entry.lookups}, miss=${entry.misses}, err=${entry.errors})`)
+                        .join("; ")
+                    : "n/a"}
                 </p>
                 <p style={{ margin: 0 }}>
                   Directory backup cache last event: {diagnostics.directoryBackupPostureCache.lastEventAt ?? "never"}
