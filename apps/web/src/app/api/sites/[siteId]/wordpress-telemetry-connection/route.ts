@@ -61,15 +61,39 @@ function toSiteSlug(value: string): string {
 async function ensureSiteRecordForWorkspace(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   workspace: SiteWorkspaceRecord,
-  fallbackSiteId: string
+  fallbackSiteId: string,
+  ownerUserId?: string
 ): Promise<string | null> {
-  const organization = await db.organization.findFirst({
+  let organization = await db.organization.findFirst({
     where: {
       deletedAt: null,
-      OR: [{ slug: workspace.clientId }, { name: workspace.clientName }]
+      OR: [
+        { slug: workspace.clientId },
+        { name: workspace.clientName },
+        ...(workspace.coolifyProjectId ? [{ coolifyProjectId: workspace.coolifyProjectId }] : []),
+        ...(workspace.coolifyProjectName ? [{ coolifyProjectName: workspace.coolifyProjectName }] : []),
+        ...(workspace.coolifyProjectId
+          ? [{ coolifyProjectLinks: { some: { coolifyProjectId: workspace.coolifyProjectId, deletedAt: null } } }]
+          : []),
+        ...(workspace.coolifyProjectName
+          ? [{ coolifyProjectLinks: { some: { coolifyProjectName: workspace.coolifyProjectName, deletedAt: null } } }]
+          : [])
+      ]
     },
     select: { id: true }
   });
+
+  if (!organization && ownerUserId) {
+    const ownedOrgs = await db.organization.findMany({
+      where: { deletedAt: null, ownerId: ownerUserId },
+      select: { id: true },
+      take: 2
+    });
+
+    if (ownedOrgs.length === 1) {
+      organization = ownedOrgs[0];
+    }
+  }
 
   if (!organization) {
     return null;
@@ -209,7 +233,7 @@ async function resolveAuthorizedSite(siteId: string) {
   const resolvedSiteId =
     site?.id ??
     (bootstrapGlobalAccess && workspace
-      ? await ensureSiteRecordForWorkspace(db, workspace, siteId)
+      ? await ensureSiteRecordForWorkspace(db, workspace, siteId, session.user.id)
       : null);
 
   if (!resolvedSiteId) {
