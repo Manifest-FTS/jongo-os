@@ -51,10 +51,26 @@ function toSiteSlug(value: string): string {
     .slice(0, 60);
 }
 
-async function ensureSiteRecordForWorkspace(
+function preferredOrganizationName(workspace: SiteWorkspaceRecord): string {
+  const candidates = [
+    workspace.coolifyProjectName,
+    workspace.clientName && workspace.clientName !== "Unmapped Client" ? workspace.clientName : null,
+    workspace.name
+  ];
+
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  return "WordPress Client";
+}
+
+async function ensureOrganizationForWorkspace(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   workspace: SiteWorkspaceRecord,
-  fallbackSiteId: string,
   ownerUserId?: string
 ): Promise<string | null> {
   let organization = await db.organization.findFirst({
@@ -76,19 +92,78 @@ async function ensureSiteRecordForWorkspace(
     select: { id: true }
   });
 
-  if (!organization && ownerUserId) {
-    const ownedOrgs = await db.organization.findMany({
-      where: { deletedAt: null, ownerId: ownerUserId },
-      select: { id: true },
-      take: 2
-    });
+  if (organization?.id) {
+    return organization.id;
+  }
 
-    if (ownedOrgs.length === 1) {
-      organization = ownedOrgs[0];
+  if (!ownerUserId) {
+    return null;
+  }
+
+  const name = preferredOrganizationName(workspace);
+  const slug = toSiteSlug(name);
+
+  organization = await db.organization.findFirst({
+    where: {
+      deletedAt: null,
+      ownerId: ownerUserId,
+      OR: [
+        { slug },
+        { name },
+        ...(workspace.coolifyProjectId ? [{ coolifyProjectId: workspace.coolifyProjectId }] : []),
+        ...(workspace.coolifyProjectName ? [{ coolifyProjectName: workspace.coolifyProjectName }] : [])
+      ]
+    },
+    select: { id: true }
+  });
+
+  if (organization?.id) {
+    return organization.id;
+  }
+
+  const created = await db.organization.create({
+    data: {
+      slug,
+      name,
+      ownerId: ownerUserId,
+      coolifyProjectId: workspace.coolifyProjectId || null,
+      coolifyProjectName: workspace.coolifyProjectName || null,
+      collaborators: {
+        create: {
+          userId: ownerUserId,
+          role: "admin"
+        }
+      }
+    },
+    select: { id: true, coolifyProjectId: true, coolifyProjectName: true }
+  });
+
+  if (created.coolifyProjectId) {
+    try {
+      await db.organizationCoolifyProjectLink.create({
+        data: {
+          organizationId: created.id,
+          coolifyProjectId: created.coolifyProjectId,
+          coolifyProjectName: created.coolifyProjectName || null,
+          isPrimary: true
+        }
+      });
+    } catch {
+      // Legacy compatibility: keep org-level fields even if link row already exists.
     }
   }
 
-  if (!organization) {
+  return created.id;
+}
+
+async function ensureSiteRecordForWorkspace(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  workspace: SiteWorkspaceRecord,
+  fallbackSiteId: string,
+  ownerUserId?: string
+): Promise<string | null> {
+  const organizationId = await ensureOrganizationForWorkspace(db, workspace, ownerUserId);
+  if (!organizationId) {
     return null;
   }
 
@@ -97,7 +172,7 @@ async function ensureSiteRecordForWorkspace(
   const existing = await db.site.findFirst({
     where: {
       deletedAt: null,
-      organizationId: organization.id,
+      organizationId,
       OR: [
         { slug },
         { coolifyServiceId: workspace.id },
@@ -115,7 +190,7 @@ async function ensureSiteRecordForWorkspace(
 
   const created = await db.site.create({
     data: {
-      organizationId: organization.id,
+      organizationId,
       slug,
       name: workspace.name,
       coolifyServiceId: workspace.id || workspace.deployTargetId || null,
