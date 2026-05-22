@@ -53,16 +53,22 @@ async function getCallerAccess(siteId: string, userId: string): Promise<CallerAc
 
   const site = await db.site.findFirst({
     where: {
-      ...buildSiteIdentityWhere(siteId),
-      deletedAt: null,
-      OR: [
+      AND: [
         {
-          organization: {
-            deletedAt: null,
-            OR: [{ ownerId: userId }, { collaborators: { some: { userId, deletedAt: null } } }]
-          }
+          ...buildSiteIdentityWhere(siteId),
+          deletedAt: null
         },
-        { collaborators: { some: { userId, deletedAt: null } } }
+        {
+          OR: [
+            {
+              organization: {
+                deletedAt: null,
+                OR: [{ ownerId: userId }, { collaborators: { some: { userId, deletedAt: null } } }]
+              }
+            },
+            { collaborators: { some: { userId, deletedAt: null } } }
+          ]
+        }
       ]
     },
     include: {

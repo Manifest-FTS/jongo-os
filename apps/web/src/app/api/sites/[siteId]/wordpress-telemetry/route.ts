@@ -33,18 +33,22 @@ async function resolveAuthorizedSiteDbId(siteId: string, userId: string): Promis
 
   const site = await db.site.findFirst({
     where: {
-      ...buildSiteIdentityWhere(siteId),
-      OR: [
+      AND: [
+        buildSiteIdentityWhere(siteId),
         {
-          organization: {
-            deletedAt: null,
-            OR: [
-              { ownerId: userId },
-              { collaborators: { some: { userId, deletedAt: null } } }
-            ]
-          }
-        },
-        { collaborators: { some: { userId, deletedAt: null } } }
+          OR: [
+            {
+              organization: {
+                deletedAt: null,
+                OR: [
+                  { ownerId: userId },
+                  { collaborators: { some: { userId, deletedAt: null } } }
+                ]
+              }
+            },
+            { collaborators: { some: { userId, deletedAt: null } } }
+          ]
+        }
       ]
     },
     select: { id: true }

@@ -60,18 +60,22 @@ async function resolveAuthorizedSite(siteId: string) {
 
   const site = await db.site.findFirst({
     where: {
-      ...buildSiteIdentityWhere(siteId),
-      OR: [
+      AND: [
+        buildSiteIdentityWhere(siteId),
         {
-          organization: {
-            deletedAt: null,
-            OR: [
-              { ownerId: session.user.id },
-              { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-            ]
-          }
-        },
-        { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+          OR: [
+            {
+              organization: {
+                deletedAt: null,
+                OR: [
+                  { ownerId: session.user.id },
+                  { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+                ]
+              }
+            },
+            { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+          ]
+        }
       ]
     },
     include: {
