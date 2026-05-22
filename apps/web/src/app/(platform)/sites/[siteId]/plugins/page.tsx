@@ -55,6 +55,8 @@ export default async function SitePluginsPage({ params }: Params) {
   });
   const policy = snapshot.policy;
   const freshness = getWordPressTelemetryFreshness(snapshot.checkedAt);
+  const hasInventory = policy.pluginInventory.length > 0;
+  const updateMetadataLimited = policy.signals.updateAvailability === "update metadata unavailable";
   const collectorConfigured = Boolean(process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim());
   const collectorDiagnostic = !collectorConfigured
     ? "Collector endpoint is not configured."
@@ -135,18 +137,31 @@ export default async function SitePluginsPage({ params }: Params) {
 
       <article className="card">
         <h3 className="card-title">Next Step</h3>
-        <p className="card-muted" style={{ marginBottom: 0 }}>
-          Plugin inventory and version update insights will appear here as setup completes.
-        </p>
-        <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
-          <Link href={`/apps/${siteId}/integrations`} className="action-link">Open integrations overview</Link>
-        </p>
+        {hasInventory ? (
+          <p className="card-muted" style={{ marginBottom: 0 }}>
+            Live plugin inventory is connected.
+            {updateMetadataLimited
+              ? " WordPress REST is not exposing full update metadata for this app password, so update status may show Unknown for some plugins."
+              : ""}
+          </p>
+        ) : (
+          <>
+            <p className="card-muted" style={{ marginBottom: 0 }}>
+              Plugin inventory and version update insights will appear here as setup completes.
+            </p>
+            <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
+              <Link href={`/apps/${siteId}/integrations`} className="action-link">Open integrations overview</Link>
+            </p>
+          </>
+        )}
       </article>
 
       <article className="card">
         <h3 className="card-title">Installed Plugins</h3>
         <p className="card-muted" style={{ marginTop: 0 }}>
-          Specific plugin rows appear here when the collector returns tabular plugin inventory for this site.
+          {hasInventory
+            ? "Plugin inventory from the live telemetry collector."
+            : "Specific plugin rows appear here when the collector returns tabular plugin inventory for this site."}
         </p>
         {policy.pluginInventory.length > 0 ? (
           <div style={{ overflowX: "auto" }}>

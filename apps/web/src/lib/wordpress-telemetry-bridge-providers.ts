@@ -210,34 +210,46 @@ function parsePluginRows(value: unknown): PluginInventoryRow[] {
     return directSignals.some((signal) => typeof signal === "string" && securityKeyword.test(signal));
   }
 
-  function isUpdateAvailable(item: Record<string, unknown>, update: Record<string, unknown> | null): boolean {
+  function getUpdateStatus(item: Record<string, unknown>, update: Record<string, unknown> | null): "Update available" | "Up-to-date" | "Unknown" {
     if (typeof item.has_update === "boolean") {
-      return item.has_update;
+      return item.has_update ? "Update available" : "Up-to-date";
     }
 
     if (typeof item.updateAvailable === "boolean") {
-      return item.updateAvailable;
+      return item.updateAvailable ? "Update available" : "Up-to-date";
     }
 
     if (update) {
       const response = typeof update.response === "string" ? update.response.toLowerCase() : "";
       if (response === "upgrade" || response === "update_available") {
-        return true;
+        return "Update available";
+      }
+      if (response === "latest" || response === "none" || response === "up_to_date" || response === "no_update") {
+        return "Up-to-date";
       }
 
       const packageUrl = typeof update.package === "string" ? update.package.trim() : "";
       const newVersion = typeof update.new_version === "string" ? update.new_version.trim() : "";
       if (packageUrl.length > 0 || newVersion.length > 0) {
-        return true;
+        return "Update available";
       }
+
+      return "Unknown";
     }
 
     if (typeof item.update === "string") {
       const updateValue = item.update.toLowerCase();
-      return updateValue.includes("available") || updateValue.includes("upgrade") || updateValue === "true";
+      if (updateValue.includes("available") || updateValue.includes("upgrade") || updateValue === "true") {
+        return "Update available";
+      }
+      if (updateValue.includes("up-to-date") || updateValue.includes("latest") || updateValue === "false" || updateValue === "none") {
+        return "Up-to-date";
+      }
+
+      return "Unknown";
     }
 
-    return false;
+    return "Unknown";
   }
 
   const rows: PluginInventoryRow[] = [];
@@ -254,7 +266,7 @@ function parsePluginRows(value: unknown): PluginInventoryRow[] {
     const status = statusRaw === "active" ? "Active" : statusRaw === "inactive" ? "Inactive" : "Unknown";
     const version = typeof item.version === "string" && item.version.trim() ? item.version.trim() : null;
     const updateRaw = isRecord(item.update) ? item.update : null;
-    const updateStatus = isUpdateAvailable(item, updateRaw) ? "Update available" : "Up-to-date";
+    const updateStatus = getUpdateStatus(item, updateRaw);
     const securityIssues = hasSecuritySignal(item, updateRaw) ? "Vulnerability detected" : null;
 
     rows.push({
@@ -397,6 +409,7 @@ export async function collectFromRestCredentials(
   const activePlugins = pluginInventory.filter((row) => row.status === "Active").length;
   const inactivePlugins = pluginInventory.filter((row) => row.status === "Inactive").length;
   const updatesAvailable = pluginInventory.filter((row) => row.updateStatus === "Update available").length;
+  const updatesUnknown = pluginInventory.filter((row) => row.updateStatus === "Unknown").length;
   const securityIssues = pluginInventory.filter((row) => Boolean(row.securityIssues)).length;
 
   return {
@@ -414,7 +427,12 @@ export async function collectFromRestCredentials(
       coreVersion: extractCoreVersion(root),
       pluginStatus: "healthy",
       themeStatus: "collector_pending",
-      updateAvailability: updatesAvailable > 0 ? `${updatesAvailable} updates available` : "up-to-date",
+      updateAvailability:
+        updatesAvailable > 0
+          ? `${updatesAvailable} updates available`
+          : updatesUnknown > 0
+            ? "update metadata unavailable"
+            : "up-to-date",
       maintenanceMode: "collector_pending",
       siteHealth: "good"
     },
@@ -422,7 +440,7 @@ export async function collectFromRestCredentials(
       inventoryConnected: true,
       activePlugins,
       inactivePlugins,
-      updatesAvailable,
+      updatesAvailable: updatesUnknown > 0 ? null : updatesAvailable,
       securityIssues
     },
     pluginInventory
