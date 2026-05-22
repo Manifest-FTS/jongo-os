@@ -10,7 +10,7 @@ type CollectorPayload = {
   label?: string;
   summary?: string;
   guidance?: string;
-  siteUrl?: string;
+  siteUrl?: string | null;
   needsSetup?: boolean;
   setupSteps?: string[];
   signals?: Partial<WordPressTelemetrySnapshot["policy"]["signals"]>;
