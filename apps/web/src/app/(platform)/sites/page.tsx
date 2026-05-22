@@ -68,25 +68,25 @@ async function buildDirectoryBackupPosture(
           appUuid,
           DIRECTORY_BACKUP_POSTURE_TTL_MS,
           async (): Promise<DirectoryBackupPosture> => {
-          const inventory = await getCoolifyAppBackupInventory(appUuid);
-          const successfulBackupAt = getLatestSuccessfulBackupTime(inventory);
-          const localStatus = inventory.source !== "live"
-            ? "Status unknown"
-            : inventory.configured
-              ? (successfulBackupAt && hasRecentSuccessfulBackup(successfulBackupAt) ? "Protected (recent)" : "Protected (stale)")
-              : "Not protected";
-          const readModel = buildBackupReadModelSnapshot({
-            ownership: `${site.clientName} / ${site.name}`,
-            localStatus,
-            schedules: inventory.schedules.filter((schedule) => schedule.enabled)
-          });
+            const inventory = await getCoolifyAppBackupInventory(appUuid);
+            const successfulBackupAt = getLatestSuccessfulBackupTime(inventory);
+            const localStatus = inventory.source !== "live"
+              ? "Status unknown"
+              : inventory.configured
+                ? (successfulBackupAt && hasRecentSuccessfulBackup(successfulBackupAt) ? "Protected (recent)" : "Protected (stale)")
+                : "Not protected";
+            const readModel = buildBackupReadModelSnapshot({
+              ownership: `${site.clientName} / ${site.name}`,
+              localStatus,
+              schedules: inventory.schedules.filter((schedule) => schedule.enabled)
+            });
 
-          const posture: DirectoryBackupPosture = {
-            localStatus: readModel.localStatus,
-            offsiteLabel: readModel.offsite.label,
-            offsiteTone: readModel.offsite.tone,
-            checkedAt: inventory.checkedAt
-          };
+            return {
+              localStatus: readModel.localStatus,
+              offsiteLabel: readModel.offsite.label,
+              offsiteTone: readModel.offsite.tone,
+              checkedAt: inventory.checkedAt
+            };
           }
         );
 
