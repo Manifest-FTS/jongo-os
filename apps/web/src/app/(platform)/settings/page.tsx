@@ -194,7 +194,7 @@ export default async function SettingsPage() {
           </details>
 
           {canViewDiagnostics && diagnostics ? (
-            <details style={{ marginTop: "0.8rem" }}>
+            <details id="runtime-diagnostics" style={{ marginTop: "0.8rem" }}>
               <summary style={{ cursor: "pointer", fontSize: "0.9rem", color: "var(--muted)" }}>
                 Runtime diagnostics (admin/dev)
               </summary>
