@@ -4,6 +4,10 @@
 
 Define the intended baseline for database backup coverage across Coolify resources and document current coverage gaps discovered in production.
 
+This policy is the database-specific slice of the broader backup domain model in [backup-domain-model.md](backup-domain-model.md).
+
+The operator-facing database backup presentation contract lives in [backup-read-model.md](backup-read-model.md).
+
 ## Baseline Policy
 
 All production databases must have automatic scheduled backups enabled by default.
@@ -20,6 +24,16 @@ Jongo behavior for this phase is read-only telemetry and discovery:
 - Surface coverage honestly in the Backups page
 - Do not create/modify schedules automatically
 - Do not trigger backup execution, restore, or download actions
+
+This pass covers database backups only.
+- WordPress files and media are not included yet
+- Production/staging sync is a separate future workflow
+- Restore/download UX remains deferred until the database-only path is stable
+
+Offsite replication policy still applies to the database layer:
+- local backup storage is necessary but not sufficient
+- production database backups should ultimately replicate to Backblaze B2 or compatible S3 storage
+- Jongo should eventually surface local and offsite backup status separately
 
 ## Provisioning Audit (Current State)
 
@@ -75,6 +89,8 @@ Backups page now reports:
 - Engine/source context (`standalone` vs `embedded service`)
 - Honest missing-schedule visibility for WordPress embedded MariaDB services
 
+This telemetry should be rendered through the shared backup read model in [backup-read-model.md](backup-read-model.md).
+
 No schedule mutation or restore/download execution is performed by Jongo in this pass.
 
 ## Remediation Applied May 22, 2026
@@ -93,6 +109,8 @@ Applied baseline:
 - local retention amount: `7`
 - database selection: `wordpress`
 - local backup only (`save_s3=false`)
+
+Offsite replication for these backups remains a future operational requirement.
 
 ## Coolify Hotfix Notes
 

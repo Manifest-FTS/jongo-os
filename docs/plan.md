@@ -36,15 +36,28 @@ This pass is focused on read-only operational correctness before any new automat
 
 ### Priority Order
 
-1. Backup telemetry discovery and surfacing
-2. Staging settings UX simplification
+1. Operational correctness
+2. Upgrade safety
+3. Telemetry consistency
+4. Staging-readiness UX
+5. Preserve infrastructure assumptions during the upcoming Coolify 4.1 upgrade
 
 ### Hard Constraints
 
 - Do not create or modify backup schedules from Jongo.
 - Do not trigger backup creation, restore actions, or destructive backup operations from Jongo.
+- Do not add hidden infrastructure assumptions into the UI or docs.
+- Do not introduce execution paths that would require destructive restore behavior.
 - Do not change staging behavior semantics in this pass (only simplify settings UX).
 - Do not implement WordPress file/media backup logic in this pass.
+- Do not mutate established backup policies automatically.
+
+### Upgrade Safety Guardrails
+
+- Treat Coolify 4.1 as an upgrade-risk boundary until inventory, schedule lookup, and backup telemetry continue to work unchanged.
+- Preserve the current resource mapping assumptions unless a verified upstream change requires a documented adjustment.
+- Keep server-side hotfixes and local docs explicit so they can be re-applied or upstreamed before a Coolify image replacement.
+- Prefer additive documentation over behavior changes when clarifying backup or staging semantics.
 
 ### Backup Telemetry Acceptance Targets
 
@@ -52,19 +65,39 @@ This pass is focused on read-only operational correctness before any new automat
 - Detect recent successful backup execution history.
 - Surface telemetry under database resource context first when app linkage is unclear.
 - Link telemetry to related app/client context when enough metadata exists.
+- Keep local/offsite status conceptually separate even when offsite data is not yet available.
 - Validate visibility for:
   - `Jongo Database`
   - `pdb_empowermaps_prod`
   - `pdb-joyfeed-web-prod`
   - `pdb-jongo-saas-prod`
 
-### UI Acceptance Targets
+### Telemetry Consistency Rules
 
+#### Backup UI Read-Model Contract
+
+- What is backed up? Show the layer type first (database, files/media, source, snapshot, offsite replica).
+- Is it local only or offsite replicated? Show local and offsite as separate badges or states.
+- What app/client does this backup belong to? Show the stable client/app label next to the backup row.
+- Can it restore app-level data, files, or whole-server state? Show restore scope explicitly.
+- Is it safe to create staging from this backup? Only answer yes when the covered restore scope matches the staging workflow.
+
+### UI Acceptance Targets
 - Settings > Staging section contains concise copy only:
   - `Staging Environment`
   - `Turn on a staging copy of your production site.`
 - Staging control is an explicit on/off toggle.
 - Redundant staging status chip/copy is removed from settings.
+
+### Current Scope Boundary
+
+The current operational pass covers database backup telemetry only.
+
+- Database schedules and executions are in scope.
+- WordPress file/media backup execution is out of scope.
+- Restore/download execution is out of scope.
+- Offsite replication is documented as a required future layer, not a runtime action in this pass.
+- Staging readiness should not assume files/media restore is already available.
 
 ## Planned Repository Shape
 
@@ -522,6 +555,23 @@ Only after this checklist is satisfied should implementation move to telemetry p
 
 For Git-based apps, source code is already backed up in GitHub. Jongo backup readiness should focus on stateful data and operational recoverability, not code repository duplication.
 
+Architecture decisions stabilized so far:
+
+- [backup-domain-model.md](backup-domain-model.md) is the canonical layer model for backup scope.
+- [database-backup-baseline-policy.md](database-backup-baseline-policy.md) is the database-only operational baseline.
+- Jongo telemetry currently covers database backup schedules and executions, not WordPress files/media restore flows.
+- WordPress full-site restore readiness requires database + files/media + offsite replication.
+- Offsite replication is a durability requirement, not an optional enhancement.
+- Coolify 4.1 is treated as an upgrade boundary until inventory and backup lookup behavior remain stable.
+
+Backup domain model:
+
+- Database backup: dump, schedule, execution history
+- WordPress files/media backup: `wp-content/uploads` and site-specific files
+- Code/source backup: Git provider is the source of truth for Git-based apps
+- Server snapshot / disaster recovery: whole-server controls such as Hetzner snapshots or restic
+- Offsite replication: local backups are not sufficient until copied to Backblaze B2 or compatible S3 storage
+
 Jongo backup readiness scope for app-level operations:
 
 - databases
@@ -534,11 +584,35 @@ Infrastructure snapshot policy:
 - Hetzner/server snapshots are disaster-recovery controls only.
 - Snapshots are not the primary app-level restore UX in Jongo.
 
+Offsite policy:
+
+- production database backups should ultimately replicate offsite
+- future WordPress file/media backups should also replicate offsite
+- Jongo should eventually surface both local backup state and offsite replication state
+
 WordPress completeness rule:
 
 - Backup readiness is incomplete unless both data planes are covered:
   - WordPress database
   - `wp-content/uploads` and media assets
+
+Restore scope matrix:
+
+- Database backup can restore content, settings, users, and plugin data stored in the DB.
+- WordPress files/media backup can restore uploads and site-specific `wp-content` files.
+- Code/source backup is already externalized through Git and is not duplicated by Jongo.
+- Server snapshots support infrastructure recovery, not app-level restore UX.
+- Offsite replication is a durability requirement, not a separate restore layer.
+
+Staging safety rule:
+
+- A backup is not staging-safe for full WordPress clone workflows unless both database and files/media coverage exist and offsite replication is known.
+- Jongo should eventually surface that distinction instead of treating all backups as equivalent.
+
+Upgrade safety rule:
+
+- Backup and staging assumptions should remain valid across Coolify upgrades unless the change is explicitly documented and verified.
+- If upstream changes resource shapes or backup lookup behavior, capture that in docs before changing runtime logic.
 
 Execution boundary for this phase:
 

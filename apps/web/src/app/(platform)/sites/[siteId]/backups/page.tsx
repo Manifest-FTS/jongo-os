@@ -2,6 +2,7 @@ import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify"
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
+import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -149,6 +150,13 @@ export default async function BackupsPage({ params }: Params) {
           ? "Not protected"
           : "Status unknown";
 
+  const ownershipLabel = `${workspace.clientName} / ${workspace.name}`;
+  const readModel = buildBackupReadModelSnapshot({
+    ownership: ownershipLabel,
+    localStatus: statusLabel,
+    schedules: enabledSchedules
+  });
+
       const diagnosisItems = [
         {
           label: "Backups configured",
@@ -187,7 +195,7 @@ export default async function BackupsPage({ params }: Params) {
           <div>
             <h2 style={{ marginTop: 0, marginBottom: "0.35rem" }}>Backups</h2>
             <p className="card-muted" style={{ margin: 0 }}>
-              Automated backup schedules and execution history for this app&apos;s databases.
+              Automated database backup schedules and execution history for this app&apos;s databases only.
             </p>
             {inventory && (
               <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
@@ -238,6 +246,45 @@ export default async function BackupsPage({ params }: Params) {
           </p>
         </article>
       ) : null}
+
+      <article className="card">
+        <h3 className="card-title">Backup Read Model Snapshot</h3>
+        <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+          Read-only backup interpretation for this app workspace.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.65rem" }}>
+          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Layer type</p>
+            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.layerType}</p>
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Ownership</p>
+            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.ownership}</p>
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Local status</p>
+            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.localStatus}</p>
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Offsite status</p>
+              <span className={`status-chip ${readModel.offsite.tone}`}>{readModel.offsite.label}</span>
+            </div>
+            <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>{readModel.offsite.detail}</p>
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore scope</p>
+            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.restoreScope}</p>
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Staging safety</p>
+            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.stagingSafety}</p>
+            <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+              {readModel.stagingSafetyDetail}
+            </p>
+          </div>
+        </div>
+      </article>
 
       {databaseCoverage.length > 0 ? (
         <article className="card">
@@ -414,7 +461,7 @@ export default async function BackupsPage({ params }: Params) {
       <article className="card">
         <h3 className="card-title">Backup Policy</h3>
         <p className="card-muted" style={{ marginBottom: 0 }}>
-          Backup configuration and restoration are managed through Coolify. Contact your platform administrator to change schedules, retention policies, or to initiate a recovery.
+          Backup configuration and restoration are managed through Coolify for database backups only. WordPress files, media, and staging sync workflows are not covered by this pass. Contact your platform administrator to change schedules, retention policies, or to initiate a recovery.
         </p>
       </article>
 

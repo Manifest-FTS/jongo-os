@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { getCoolifyAppBackupInventory } from "@/lib/coolify";
+import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import { getAppsEmptyStateMessage } from "@/lib/reason-messages";
 import { getInventorySnapshot, isClientAdmin } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
@@ -7,6 +9,24 @@ import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import SiteDirectoryView from "@/components/SiteDirectoryView";
 
 export const dynamic = "force-dynamic";
+
+const DIRECTORY_BACKUP_FETCH_BATCH_SIZE = 4;
+const DIRECTORY_BACKUP_POSTURE_TTL_MS = 60_000;
+
+type DirectoryBackupPosture = {
+  localStatus: string;
+  offsiteLabel: string;
+  offsiteTone: "healthy" | "degraded" | "unknown";
+  checkedAt?: string;
+};
+
+type DirectoryBackupPostureCacheEntry = {
+  value?: DirectoryBackupPosture;
+  cachedAtMs: number;
+  inFlight?: Promise<DirectoryBackupPosture>;
+};
+
+const directoryBackupPostureCache = new Map<string, DirectoryBackupPostureCacheEntry>();
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -18,6 +38,135 @@ function formatAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function hasRecentSuccessfulBackup(iso: string, maxAgeDays = 7): boolean {
+  const ageMs = Date.now() - new Date(iso).getTime();
+  return ageMs <= maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
+function getLatestSuccessfulBackupTime(inventory: Awaited<ReturnType<typeof getCoolifyAppBackupInventory>>): string | null {
+  if (inventory.source !== "live") {
+    return null;
+  }
+
+  const successful = inventory.recentExecutions.find((entry) => entry.status === "success" && entry.finishedAt);
+  return successful?.finishedAt ?? null;
+}
+
+async function buildDirectoryBackupPosture(
+  siteDirectory: Awaited<ReturnType<typeof getInventorySnapshot>>["siteDirectory"],
+  overviewMode: "live" | "mock"
+): Promise<
+  Map<
+    string,
+    DirectoryBackupPosture
+  >
+> {
+  const backupPosture = new Map<string, DirectoryBackupPosture>();
+
+  if (overviewMode !== "live") {
+    return backupPosture;
+  }
+
+  const records: Array<{ siteId: string; posture: DirectoryBackupPosture } | null> = [];
+
+  for (let index = 0; index < siteDirectory.length; index += DIRECTORY_BACKUP_FETCH_BATCH_SIZE) {
+    const batch = siteDirectory.slice(index, index + DIRECTORY_BACKUP_FETCH_BATCH_SIZE);
+    const batchRecords = await Promise.all(
+      batch.map(async (site) => {
+        const appUuid = site.coolifyServiceUuid ?? (site.source === "coolify" ? site.id : undefined);
+        if (!appUuid) {
+          return null;
+        }
+
+        const nowMs = Date.now();
+        const cached = directoryBackupPostureCache.get(appUuid);
+        if (cached?.value && nowMs - cached.cachedAtMs < DIRECTORY_BACKUP_POSTURE_TTL_MS) {
+          return {
+            siteId: site.id,
+            posture: cached.value
+          };
+        }
+
+        if (cached?.inFlight) {
+          return {
+            siteId: site.id,
+            posture: await cached.inFlight
+          };
+        }
+
+        const inFlight = (async (): Promise<DirectoryBackupPosture> => {
+          const inventory = await getCoolifyAppBackupInventory(appUuid);
+          const successfulBackupAt = getLatestSuccessfulBackupTime(inventory);
+          const localStatus = inventory.source !== "live"
+            ? "Status unknown"
+            : inventory.configured
+              ? (successfulBackupAt && hasRecentSuccessfulBackup(successfulBackupAt) ? "Protected (recent)" : "Protected (stale)")
+              : "Not protected";
+          const readModel = buildBackupReadModelSnapshot({
+            ownership: `${site.clientName} / ${site.name}`,
+            localStatus,
+            schedules: inventory.schedules.filter((schedule) => schedule.enabled)
+          });
+
+          const posture: DirectoryBackupPosture = {
+            localStatus: readModel.localStatus,
+            offsiteLabel: readModel.offsite.label,
+            offsiteTone: readModel.offsite.tone,
+            checkedAt: inventory.checkedAt
+          };
+
+          directoryBackupPostureCache.set(appUuid, {
+            value: posture,
+            cachedAtMs: Date.now()
+          });
+
+          return posture;
+        })();
+
+        directoryBackupPostureCache.set(appUuid, {
+          ...cached,
+          cachedAtMs: cached?.cachedAtMs ?? 0,
+          inFlight
+        });
+
+        try {
+          const posture = await inFlight;
+          return {
+            siteId: site.id,
+            posture
+          };
+        } finally {
+          const latest = directoryBackupPostureCache.get(appUuid);
+          if (latest?.inFlight) {
+            directoryBackupPostureCache.set(appUuid, {
+              value: latest.value,
+              cachedAtMs: latest.cachedAtMs
+            });
+          }
+        }
+
+      })
+    );
+
+    records.push(...batchRecords);
+  }
+
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+
+    backupPosture.set(record.siteId, {
+      localStatus: record.posture.localStatus,
+      offsiteLabel: record.posture.offsiteLabel,
+      offsiteTone: record.posture.offsiteTone,
+      checkedAt: record.posture.checkedAt
+    });
+  }
+
+  return backupPosture;
+}
+
 export default async function SitesPage() {
   const session = await auth();
   const viewerUserId = session?.user?.id;
@@ -27,6 +176,7 @@ export default async function SitesPage() {
   });
   const overview = inventory.overview;
   const siteDirectory = inventory.siteDirectory;
+  const backupPostureBySiteId = await buildDirectoryBackupPosture(siteDirectory, overview.mode);
 
   const uniqueClientDbIds = [...new Set(siteDirectory.map((site) => site.clientDbId).filter((id): id is string => Boolean(id)))];
   const adminStateEntries = viewerUserId
@@ -101,7 +251,11 @@ export default async function SitesPage() {
               href: `/apps/${site.slug ?? site.id}`,
               clientHref: site.ownershipState === "mapped" ? `/clients/${site.clientId}` : undefined,
               resourceType: site.resourceType,
-              showInternalMetadata
+              showInternalMetadata,
+              backupLocalStatus: backupPostureBySiteId.get(site.id)?.localStatus,
+              backupOffsiteLabel: backupPostureBySiteId.get(site.id)?.offsiteLabel,
+              backupOffsiteTone: backupPostureBySiteId.get(site.id)?.offsiteTone,
+              backupCheckedAt: backupPostureBySiteId.get(site.id)?.checkedAt
             };
           })}
         />

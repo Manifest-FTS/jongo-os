@@ -2,6 +2,7 @@
 import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import { getBackupReadiness } from "@/lib/deploy-guards";
+import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import Link from "next/link";
@@ -165,6 +166,16 @@ export default async function SiteOverviewPage({ params }: Params) {
     : "Dry-run mode: execution remains disabled in this interface.";
   const lastSuccessfulBackup = getLastSuccessfulBackupTime(backupInventory);
   const recentBackupHealthy = lastSuccessfulBackup ? isRecentBackup(lastSuccessfulBackup, 7) : false;
+  const backupLocalStatus = backupInventory?.source !== "live"
+    ? "Status unknown"
+    : backupInventory.configured
+      ? (recentBackupHealthy ? "Protected (recent)" : "Protected (stale)")
+      : "Not protected";
+  const backupReadModel = buildBackupReadModelSnapshot({
+    ownership: `${workspace.clientName} / ${workspace.name}`,
+    localStatus: backupLocalStatus,
+    schedules: backupInventory?.schedules.filter((schedule) => schedule.enabled)
+  });
   const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
   const workflowModel = getResourceWorkflowModel(workspace?.siteType);
 
@@ -206,6 +217,17 @@ export default async function SiteOverviewPage({ params }: Params) {
             ? `Last successful backup was ${formatAgo(lastSuccessfulBackup)}.`
             : `Last successful backup was ${formatAgo(lastSuccessfulBackup)}, which exceeds 7 days.`,
       nextStep: "Investigate backup failures and run a fresh successful backup."
+    },
+    {
+      key: "offsite-replication",
+      label: "Offsite replication",
+      state: backupReadModel.offsite.tone === "healthy"
+        ? "ready"
+        : backupReadModel.offsite.tone === "degraded"
+          ? "attention"
+          : "unknown",
+      detail: backupReadModel.offsite.detail,
+      nextStep: "Enable and verify offsite replication policy for protected backups."
     },
     {
       key: "staging",
@@ -459,9 +481,30 @@ export default async function SiteOverviewPage({ params }: Params) {
         {/* Backups */}
         <article className="card">
           <h3 className="card-title">Backups</h3>
-          <p className="card-muted">Protect site data with routine backups.</p>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            Configure schedule and retention in site settings.
+          <p className="card-muted">Read-model summary for backup posture in this app workspace.</p>
+          <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.55rem" }}>
+            <p style={{ margin: 0, fontSize: "0.86rem" }}>
+              Layer: <strong>{backupReadModel.layerType}</strong>
+            </p>
+            <p style={{ margin: 0, fontSize: "0.86rem" }}>
+              Local status: <strong>{backupReadModel.localStatus}</strong>
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+              <p style={{ margin: 0, fontSize: "0.86rem" }}>Offsite:</p>
+              <span className={`status-chip ${backupReadModel.offsite.tone}`}>{backupReadModel.offsite.label}</span>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>{backupReadModel.offsite.detail}</p>
+            <p style={{ margin: 0, fontSize: "0.86rem" }}>
+              Restore scope: <strong>{backupReadModel.restoreScope}</strong>
+            </p>
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+              Staging safety: {backupReadModel.stagingSafety}. {backupReadModel.stagingSafetyDetail}
+            </p>
+          </div>
+          <p style={{ margin: "0.7rem 0 0", fontSize: "0.9rem" }}>
+            <Link href={`/apps/${siteId}/backups`} className="action-link">
+              Open backup details <ArrowRightIcon className="btn-icon" />
+            </Link>
           </p>
         </article>
 

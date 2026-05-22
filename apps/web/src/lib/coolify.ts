@@ -1219,6 +1219,7 @@ export type BackupScheduleRecord = {
   resourceType: "database" | "application";
   enabled: boolean;
   frequency?: string;       // cron e.g. "0 2 * * *"
+  offsiteEnabled?: boolean;
   retentionAmount?: number;
   retentionDays?: number;
   lastBackupAt?: string;
@@ -1292,6 +1293,14 @@ function normalizeBackupSchedule(raw: Record<string, unknown>, resourceId: strin
   const id = stringValue(raw, ["id", "uuid"], resourceId);
   const enabled = raw.enabled === true || raw.is_enabled === true || raw.backup_enabled === true || raw.database_backup_enabled === true;
   const frequency = stringValue(raw, ["frequency", "cron", "schedule", "database_backup_cron", "database_backup_schedule"], "") || undefined;
+  const offsiteEnabledRaw = raw.save_s3 ?? raw.save_to_s3 ?? raw.database_backup_save_s3 ?? raw.database_backup_save_to_s3;
+  const offsiteEnabled = typeof offsiteEnabledRaw === "boolean"
+    ? offsiteEnabledRaw
+    : typeof offsiteEnabledRaw === "number"
+      ? offsiteEnabledRaw !== 0
+      : typeof offsiteEnabledRaw === "string"
+        ? ["1", "true", "yes", "on"].includes(offsiteEnabledRaw.trim().toLowerCase())
+        : undefined;
   const retentionAmount = typeof raw.database_backup_retention_amount_locally === "number"
     ? raw.database_backup_retention_amount_locally
     : typeof raw.retention_amount === "number" ? raw.retention_amount : undefined;
@@ -1310,7 +1319,19 @@ function normalizeBackupSchedule(raw: Record<string, unknown>, resourceId: strin
     lastBackupStatus = "running";
   }
 
-  return { id, resourceId, resourceName, resourceType: "database", enabled, frequency, retentionAmount, retentionDays, lastBackupAt, lastBackupStatus };
+  return {
+    id,
+    resourceId,
+    resourceName,
+    resourceType: "database",
+    enabled,
+    frequency,
+    offsiteEnabled,
+    retentionAmount,
+    retentionDays,
+    lastBackupAt,
+    lastBackupStatus
+  };
 }
 
 function toAbsoluteCoolifyUrl(raw: string): string {

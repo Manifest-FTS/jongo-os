@@ -21,6 +21,10 @@ type SiteItem = {
   clientHref?: string;
   resourceType?: string;
   showInternalMetadata?: boolean;
+  backupLocalStatus?: string;
+  backupOffsiteLabel?: string;
+  backupOffsiteTone?: "healthy" | "degraded" | "unknown";
+  backupCheckedAt?: string;
 };
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType | "all", string> = {
@@ -40,6 +44,16 @@ function isKnownResourceType(value: string | undefined): value is ResourceType {
 
 function hasSomeType(sites: SiteItem[], type: ResourceType): boolean {
   return sites.some((s) => s.resourceType === type);
+}
+
+function formatAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 export default function SiteDirectoryView({
@@ -154,6 +168,17 @@ export default function SiteDirectoryView({
                   </div>
                   {site.description ? <p className="directory-summary">{site.description}</p> : null}
                   <p className="directory-meta">Client: {site.clientName}</p>
+                  {(site.backupLocalStatus || site.backupOffsiteLabel) ? (
+                    <div className="directory-badges">
+                      {site.backupLocalStatus ? <span className="tag">Backup: {site.backupLocalStatus}</span> : null}
+                      {site.backupOffsiteLabel ? <span className={`status-chip ${site.backupOffsiteTone ?? "unknown"}`}>Offsite: {site.backupOffsiteLabel}</span> : null}
+                    </div>
+                  ) : null}
+                  {site.backupCheckedAt ? (
+                    <p style={{ margin: "0.2rem 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
+                      Backup telemetry checked {formatAgo(site.backupCheckedAt)}
+                    </p>
+                  ) : null}
                   {site.showInternalMetadata ? (
                     <div className="directory-badges">
                       <span className="tag">Ownership: {site.ownershipDiagnostic}</span>
