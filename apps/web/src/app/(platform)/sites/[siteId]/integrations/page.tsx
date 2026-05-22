@@ -78,9 +78,9 @@ export default async function IntegrationsPage({ params }: Params) {
     await isClientAdmin(workspace.organizationId, session.user.id)
   );
   if (session?.user?.id) {
+    const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session.user.email);
     const db = await getDb();
     if (db) {
-      const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session.user.email);
       const identifiers = [
         siteId,
         workspace.id,
@@ -140,7 +140,11 @@ export default async function IntegrationsPage({ params }: Params) {
       const ownerAdmin = site?.organization?.ownerId === session.user.id;
       const orgCollaboratorAdmin = isAdminRole(site?.organization?.collaborators?.[0]?.role);
       const siteAdmin = isAdminRole(site?.collaborators?.[0]?.role);
-      canManageTelemetry = Boolean(canViewInternalMetadata || ownerAdmin || orgCollaboratorAdmin || siteAdmin);
+      canManageTelemetry = Boolean(
+        bootstrapGlobalAccess || canViewInternalMetadata || ownerAdmin || orgCollaboratorAdmin || siteAdmin
+      );
+    } else {
+      canManageTelemetry = bootstrapGlobalAccess || canViewInternalMetadata;
     }
   }
 
