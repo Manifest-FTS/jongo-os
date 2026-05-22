@@ -188,9 +188,6 @@ export default async function StagingPage({ params }: Params) {
                 {stagingCapability.applicationName && (
                   <p style={{ margin: 0 }}>Application: <code>{stagingCapability.applicationName}</code></p>
                 )}
-                {stagingCapability.applicationUuid && (
-                  <p style={{ margin: 0 }}>UUID: <code>{stagingCapability.applicationUuid}</code></p>
-                )}
                 {stagingCapability.fqdn && (
                   <p style={{ margin: 0 }}>
                     Domain:{" "}
@@ -212,13 +209,6 @@ export default async function StagingPage({ params }: Params) {
                 <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
                   Checked {formatAgo(stagingCapability.checkedAt)}
                 </p>
-                <details style={{ marginTop: "0.25rem" }}>
-                  <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)", userSelect: "none" }}>Diagnostic detail</summary>
-                  <div style={{ marginTop: "0.4rem", fontSize: "0.8rem", color: "var(--muted)", display: "grid", gap: "0.25rem" }}>
-                    {stagingCapability.note ? <p style={{ margin: 0 }}>Note: <code>{stagingCapability.note}</code></p> : null}
-                    {appUuid ? <p style={{ margin: 0 }}>App UUID: <code>{appUuid}</code></p> : null}
-                  </div>
-                </details>
               </div>
             ) : (
               <div>
@@ -228,13 +218,9 @@ export default async function StagingPage({ params }: Params) {
                 <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
                   Checked {formatAgo(stagingCapability.checkedAt)}
                 </p>
-                <details style={{ marginTop: "0.25rem" }}>
-                  <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)", userSelect: "none" }}>Diagnostic detail</summary>
-                  <div style={{ marginTop: "0.4rem", fontSize: "0.8rem", color: "var(--muted)", display: "grid", gap: "0.25rem" }}>
-                    {stagingCapability.note ? <p style={{ margin: 0 }}>Note: <code>{stagingCapability.note}</code></p> : null}
-                    {appUuid ? <p style={{ margin: 0 }}>App UUID: <code>{appUuid}</code></p> : null}
-                  </div>
-                </details>
+                <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
+                  <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings to verify staging/resource mapping</Link>
+                </p>
               </div>
             )}
           </article>
