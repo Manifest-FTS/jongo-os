@@ -36,7 +36,8 @@ export async function GET(_req: Request, { params }: Params) {
 
     const collectorSnapshot = await getWordPressTelemetrySnapshotFromCollector({
       fallback: fallbackSnapshot,
-      workspace
+      workspace,
+      requestedSiteId: siteId
     });
 
     const snapshot = collectorSnapshot ?? fallbackSnapshot;

@@ -391,9 +391,6 @@ export async function collectFromStoredRestConfig(input: CollectorRequest): Prom
 
   const identityWhere = {
     OR: identityMatches,
-    wordpressTelemetryConfig: {
-      isNot: null
-    },
     deletedAt: null
   };
 

@@ -129,17 +129,21 @@ function mergeCollectorSnapshot(
 export async function getWordPressTelemetrySnapshotFromCollector(input: {
   fallback: WordPressTelemetrySnapshot;
   workspace: SiteWorkspaceRecord;
+  requestedSiteId?: string;
 }): Promise<WordPressTelemetrySnapshot | null> {
   const db = await getDb();
   let directStoredSnapshot: CollectorPayload | null = null;
 
   if (db) {
     const identifiers = [
+      input.requestedSiteId,
       input.workspace.id,
       input.workspace.slug,
       input.fallback.siteId,
       input.workspace.coolifyServiceUuid
-    ].filter((value): value is string => Boolean(value && value.trim()));
+    ]
+      .map((value) => value?.trim() || "")
+      .filter((value, index, arr): value is string => Boolean(value && arr.indexOf(value) === index));
 
     let site:
       | {
@@ -151,32 +155,38 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
         }
       | null = null;
 
-    try {
-      site = await db.site.findFirst({
-        where: {
-          deletedAt: null,
-          wordpressTelemetryConfig: {
-            isNot: null
+    const identityCandidates = identifiers.flatMap((value) => [
+      ...(isUuid(value) ? [{ id: value }] : []),
+      { slug: value },
+      { coolifyServiceUuid: value },
+      { coolifyServiceId: value }
+    ]);
+
+    for (const candidate of identityCandidates) {
+      try {
+        const match = await db.site.findFirst({
+          where: {
+            ...candidate,
+            deletedAt: null
           },
-          OR: identifiers.flatMap((value) => [
-            ...(isUuid(value) ? [{ id: value }] : []),
-            { slug: value },
-            { coolifyServiceUuid: value },
-            { coolifyServiceId: value }
-          ])
-        },
-        select: {
-          wordpressTelemetryConfig: {
-            select: {
-              siteUrl: true,
-              username: true,
-              passwordCiphertext: true
+          select: {
+            wordpressTelemetryConfig: {
+              select: {
+                siteUrl: true,
+                username: true,
+                passwordCiphertext: true
+              }
             }
           }
+        });
+
+        if (match?.wordpressTelemetryConfig) {
+          site = match;
+          break;
         }
-      });
-    } catch {
-      site = null;
+      } catch {
+        // Continue trying the next identity candidate.
+      }
     }
 
     const config = site?.wordpressTelemetryConfig;
