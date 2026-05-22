@@ -176,16 +176,6 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
       .map((value) => value?.trim() || "")
       .filter((value, index, arr): value is string => Boolean(value && arr.indexOf(value) === index));
 
-    let site:
-      | {
-          wordpressTelemetryConfig: {
-            siteUrl: string;
-            username: string;
-            passwordCiphertext: string;
-          } | null;
-        }
-      | null = null;
-
     const identityCandidates = identifiers.flatMap((value) => [
       ...(isUuid(value) ? [{ id: value }] : []),
       { slug: value },
@@ -200,40 +190,35 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
             ...candidate,
             deletedAt: null
           },
-          select: {
-            wordpressTelemetryConfig: {
-              select: {
-                siteUrl: true,
-                username: true,
-                passwordCiphertext: true
-              }
-            }
-          }
+          select: { id: true }
         });
 
-        if (match?.wordpressTelemetryConfig) {
-          site = match;
-          break;
+        if (match?.id) {
+          const config = await db.wordPressTelemetryConfig.findUnique({
+            where: { siteId: match.id },
+            select: {
+              siteUrl: true,
+              username: true,
+              passwordCiphertext: true
+            }
+          });
+
+          if (config) {
+            directStoredSnapshot = await collectFromRestCredentials(
+              {
+                siteUrl: config.siteUrl,
+                username: config.username,
+                appPassword: decryptSecret(config.passwordCiphertext)
+              },
+              "collector_rest_saved"
+            );
+            if (directStoredSnapshot) {
+              break;
+            }
+          }
         }
       } catch {
         // Continue trying the next identity candidate.
-      }
-    }
-
-    const config = site?.wordpressTelemetryConfig;
-    if (config) {
-      try {
-        const appPassword = decryptSecret(config.passwordCiphertext);
-        directStoredSnapshot = await collectFromRestCredentials(
-          {
-            siteUrl: config.siteUrl,
-            username: config.username,
-            appPassword
-          },
-          "collector_rest_saved"
-        );
-      } catch {
-        directStoredSnapshot = null;
       }
     }
   }

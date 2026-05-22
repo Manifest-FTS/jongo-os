@@ -397,17 +397,21 @@ export async function collectFromStoredRestConfig(input: CollectorRequest): Prom
   const site = await db.site.findFirst({
     where: identityWhere,
     select: {
-      wordpressTelemetryConfig: {
+      id: true
+    }
+  });
+
+  const config = site?.id
+    ? await db.wordPressTelemetryConfig.findUnique({
+        where: { siteId: site.id },
         select: {
           siteUrl: true,
           username: true,
           passwordCiphertext: true
         }
-      }
-    }
-  });
+      })
+    : null;
 
-  const config = site?.wordpressTelemetryConfig;
   if (!config) {
     return null;
   }
