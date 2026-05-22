@@ -380,8 +380,14 @@ export async function collectFromStoredRestConfig(input: CollectorRequest): Prom
   }
 
   const identityWhere = isUuid(siteKey)
-    ? { OR: [{ id: siteKey }, { slug: siteKey }], deletedAt: null }
-    : { slug: siteKey, deletedAt: null };
+    ? {
+        OR: [{ id: siteKey }, { slug: siteKey }, { coolifyServiceUuid: siteKey }, { coolifyServiceId: siteKey }],
+        deletedAt: null
+      }
+    : {
+        OR: [{ slug: siteKey }, { coolifyServiceUuid: siteKey }, { coolifyServiceId: siteKey }],
+        deletedAt: null
+      };
 
   const site = await db.site.findFirst({
     where: identityWhere,
