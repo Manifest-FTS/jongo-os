@@ -126,6 +126,7 @@ export default async function SitesPage() {
   });
   const overview = inventory.overview;
   const siteDirectory = inventory.siteDirectory;
+  const emptyReason = inventory.emptyReason;
   const backupPostureBySiteId = await buildDirectoryBackupPosture(siteDirectory, overview.mode);
 
   const uniqueClientDbIds = [...new Set(siteDirectory.map((site) => site.clientDbId).filter((id): id is string => Boolean(id)))];
@@ -164,7 +165,7 @@ export default async function SitesPage() {
       {siteDirectory.length === 0 ? (
         <div className="card">
           {(() => {
-            const emptyMsg = getAppsEmptyStateMessage(inventory.emptyReason);
+            const emptyMsg = getAppsEmptyStateMessage(emptyReason);
             return (
               <>
                 <p className="card-muted">{emptyMsg.heading}</p>
@@ -174,6 +175,19 @@ export default async function SitesPage() {
               </>
             );
           })()}
+
+          {(emptyReason === "coolify_api_unavailable" || emptyReason === "mock_fallback_active") ? (
+            <p style={{ margin: "0 0 0.75rem", fontSize: "0.88rem" }}>
+              <Link href="/settings" className="action-link">Open platform settings to verify Coolify configuration <ArrowRightIcon className="btn-icon" /></Link>
+            </p>
+          ) : null}
+
+          {emptyReason === "no_db_mappings_yet" ? (
+            <p style={{ margin: "0 0 0.75rem", fontSize: "0.88rem" }}>
+              <Link href="/clients" className="action-link">Open clients to map app ownership <ArrowRightIcon className="btn-icon" /></Link>
+            </p>
+          ) : null}
+
           <div style={{ marginBottom: "0.75rem" }}>
             <CreateOrganizationForm />
           </div>
