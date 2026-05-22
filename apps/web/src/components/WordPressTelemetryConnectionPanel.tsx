@@ -165,6 +165,9 @@ export default function WordPressTelemetryConnectionPanel({ siteId }: Props) {
       <p style={{ margin: 0 }}>
         Status: <span className="tag">{summary.connected ? "connected" : "disconnected"}</span>
       </p>
+      <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+        Scope: this telemetry connection applies only to this app ({siteId}). It is not shared with other apps.
+      </p>
       <form onSubmit={saveConnection} className="form-stack" style={{ marginTop: 0 }}>
         <div>
           <label className="form-label">WordPress Site URL</label>
