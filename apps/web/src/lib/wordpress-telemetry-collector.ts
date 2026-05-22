@@ -41,6 +41,10 @@ type CollectorRequestPayload = {
   coolifyServiceUuid?: string;
 };
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function toFiniteOrNull(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -137,26 +141,40 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
       input.workspace.coolifyServiceUuid
     ].filter((value): value is string => Boolean(value && value.trim()));
 
-    const site = await db.site.findFirst({
-      where: {
-        deletedAt: null,
-        OR: identifiers.flatMap((value) => [
-          { id: value },
-          { slug: value },
-          { coolifyServiceUuid: value },
-          { coolifyServiceId: value }
-        ])
-      },
-      select: {
-        wordpressTelemetryConfig: {
-          select: {
-            siteUrl: true,
-            username: true,
-            passwordCiphertext: true
+    let site:
+      | {
+          wordpressTelemetryConfig: {
+            siteUrl: string;
+            username: string;
+            passwordCiphertext: string;
+          } | null;
+        }
+      | null = null;
+
+    try {
+      site = await db.site.findFirst({
+        where: {
+          deletedAt: null,
+          OR: identifiers.flatMap((value) => [
+            ...(isUuid(value) ? [{ id: value }] : []),
+            { slug: value },
+            { coolifyServiceUuid: value },
+            { coolifyServiceId: value }
+          ])
+        },
+        select: {
+          wordpressTelemetryConfig: {
+            select: {
+              siteUrl: true,
+              username: true,
+              passwordCiphertext: true
+            }
           }
         }
-      }
-    });
+      });
+    } catch {
+      site = null;
+    }
 
     const config = site?.wordpressTelemetryConfig;
     if (config) {
