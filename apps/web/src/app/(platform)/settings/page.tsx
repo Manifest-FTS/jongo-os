@@ -198,6 +198,12 @@ export default async function SettingsPage() {
                   Latest repo source decision: {recentRepoCall ? `${recentRepoCall.operation} -> ${recentRepoCall.source}` : "n/a"}
                 </p>
                 <p style={{ margin: 0 }}>
+                  Directory backup cache: hits={diagnostics.directoryBackupPostureCache.hits}, misses={diagnostics.directoryBackupPostureCache.misses}, joins={diagnostics.directoryBackupPostureCache.inFlightJoins}, stores={diagnostics.directoryBackupPostureCache.stores}, errors={diagnostics.directoryBackupPostureCache.errors}
+                </p>
+                <p style={{ margin: 0 }}>
+                  Directory backup cache last event: {diagnostics.directoryBackupPostureCache.lastEventAt ?? "never"}
+                </p>
+                <p style={{ margin: 0 }}>
                   Scope applied: {recentRepoCall?.scopeApplied ? "yes" : "no"}
                 </p>
                 <p style={{ margin: 0 }}>

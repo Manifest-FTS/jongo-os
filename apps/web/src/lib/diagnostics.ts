@@ -46,6 +46,14 @@ type RuntimeDiagnosticsState = {
   coolifyEndpointCalls: CoolifyEndpointCall[];
   coolifyInventoryHistory: CoolifyInventoryResult[];
   repositoryCalls: RepositoryCall[];
+  directoryBackupPostureCache: {
+    hits: number;
+    misses: number;
+    inFlightJoins: number;
+    stores: number;
+    errors: number;
+    lastEventAt?: string;
+  };
 };
 
 const MAX_COOLIFY_ENDPOINT_CALLS = 80;
@@ -56,7 +64,14 @@ const state: RuntimeDiagnosticsState = {
   updatedAt: new Date(0).toISOString(),
   coolifyEndpointCalls: [],
   coolifyInventoryHistory: [],
-  repositoryCalls: []
+  repositoryCalls: [],
+  directoryBackupPostureCache: {
+    hits: 0,
+    misses: 0,
+    inFlightJoins: 0,
+    stores: 0,
+    errors: 0
+  }
 };
 
 function trim<T>(input: T[], max: number): T[] {
@@ -155,6 +170,19 @@ export function recordRepositoryCall(input: Omit<RepositoryCall, "at">) {
   touch();
 }
 
+export function recordDirectoryBackupPostureCacheEvent(
+  event: "hit" | "miss" | "in_flight_join" | "store" | "error"
+) {
+  const counters = state.directoryBackupPostureCache;
+  if (event === "hit") counters.hits += 1;
+  if (event === "miss") counters.misses += 1;
+  if (event === "in_flight_join") counters.inFlightJoins += 1;
+  if (event === "store") counters.stores += 1;
+  if (event === "error") counters.errors += 1;
+  counters.lastEventAt = new Date().toISOString();
+  touch();
+}
+
 export function getRuntimeDiagnosticsSnapshot() {
   return {
     updatedAt: state.updatedAt,
@@ -170,6 +198,7 @@ export function getRuntimeDiagnosticsSnapshot() {
     lastNonEmptyCoolifyInventoryFetchAt: state.lastNonEmptyCoolifyInventoryFetchAt,
     coolifyEndpointCalls: [...state.coolifyEndpointCalls],
     coolifyInventoryHistory: [...state.coolifyInventoryHistory],
-    repositoryCalls: [...state.repositoryCalls]
+    repositoryCalls: [...state.repositoryCalls],
+    directoryBackupPostureCache: { ...state.directoryBackupPostureCache }
   };
 }

@@ -1,3 +1,5 @@
+import { recordDirectoryBackupPostureCacheEvent } from "./diagnostics";
+
 export type DirectoryBackupPosture = {
   localStatus: string;
   offsiteLabel: string;
@@ -22,20 +24,30 @@ export async function getCachedDirectoryBackupPosture(
   const cached = cache.get(key);
 
   if (cached?.value && nowMs - cached.cachedAtMs < ttlMs) {
+    recordDirectoryBackupPostureCacheEvent("hit");
     return cached.value;
   }
 
   if (cached?.inFlight) {
+    recordDirectoryBackupPostureCacheEvent("in_flight_join");
     return cached.inFlight;
   }
 
+  recordDirectoryBackupPostureCacheEvent("miss");
+
   const inFlight = (async (): Promise<DirectoryBackupPosture> => {
-    const value = await loader();
-    cache.set(key, {
-      value,
-      cachedAtMs: Date.now()
-    });
-    return value;
+    try {
+      const value = await loader();
+      cache.set(key, {
+        value,
+        cachedAtMs: Date.now()
+      });
+      recordDirectoryBackupPostureCacheEvent("store");
+      return value;
+    } catch (error) {
+      recordDirectoryBackupPostureCacheEvent("error");
+      throw error;
+    }
   })();
 
   cache.set(key, {
