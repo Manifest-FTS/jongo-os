@@ -68,19 +68,19 @@ function labelForReadiness(state: ReadinessState): string {
 
 function summarizeReadiness(checks: ReadinessCheck[]): { state: ReadinessState; detail: string } {
   if (checks.some((check) => check.state === "not_configured")) {
-    return { state: "not_configured", detail: "Critical configuration is missing." };
+    return { state: "not_configured", detail: "Core Jongo configuration still needs setup." };
   }
   if (checks.some((check) => check.state === "attention")) {
-    return { state: "attention", detail: "Some operational signals need follow-up." };
+    return { state: "attention", detail: "A maintenance checkpoint needs follow-up." };
   }
   if (checks.every((check) => check.state === "unknown")) {
-    return { state: "unknown", detail: "Telemetry is unavailable, so readiness cannot be confirmed." };
+    return { state: "unknown", detail: "Maintenance telemetry is unavailable, so readiness cannot be confirmed." };
   }
   if (checks.every((check) => check.state === "ready" || check.state === "unknown")) {
-    return { state: "ready", detail: "Core operational checks are in a healthy state." };
+    return { state: "ready", detail: "Core Jongo-managed checkpoints are in a healthy state." };
   }
 
-  return { state: "unknown", detail: "Readiness status is mixed and inconclusive." };
+  return { state: "unknown", detail: "Checkpoint status is mixed and inconclusive." };
 }
 
 function getResourceWorkflowModel(siteType?: string): { title: string; body: string; bullets: string[] } {
@@ -241,33 +241,6 @@ export default async function SiteOverviewPage({ params }: Params) {
       nextStep: "Configure staging environment mapping in app settings."
     },
     {
-      key: "domain-resolving",
-      label: "Domain resolving",
-      state: "unknown",
-      detail: "Domain DNS resolution checks are not yet wired to provider DNS telemetry.",
-      nextStep: "Verify DNS A/CNAME records in your domain provider and Coolify."
-    },
-    {
-      key: "ssl",
-      label: "SSL healthy",
-      state: "unknown",
-      detail: "SSL certificate status checks are not yet available in this view.",
-      nextStep: "Confirm TLS certificate validity in Coolify domain settings."
-    },
-    {
-      key: "deploy-health",
-      label: "Deploy health",
-      state: site?.productionStatus === "healthy"
-        ? "ready"
-        : site?.productionStatus === "unknown"
-          ? "unknown"
-          : "attention",
-      detail: site?.productionStatus
-        ? `Production deployment status is ${site.productionStatus}.`
-        : "No deployment status was found for this app.",
-      nextStep: "Review recent deployment logs and resolve failed deploys."
-    },
-    {
       key: "coolify-api",
       label: "Coolify API reachable",
       state: overview.mode === "live" ? (overview.fetchError ? "attention" : "ready") : "unknown",
@@ -278,19 +251,6 @@ export default async function SiteOverviewPage({ params }: Params) {
             : "Coolify API is configured and telemetry is updating."
           : "Coolify API is not configured (mock mode).",
       nextStep: "Verify COOLIFY_API_BASE_URL and COOLIFY_API_TOKEN runtime env values."
-    },
-    {
-      key: "app-status",
-      label: "App runtime status",
-      state: site?.status === "healthy"
-        ? "ready"
-        : site?.status === "unknown" || !site
-          ? "unknown"
-          : "attention",
-      detail: site?.status
-        ? `Current app status is ${site.status}.`
-        : "App status is unavailable in current inventory.",
-      nextStep: "Open deploy and runtime diagnostics to inspect app health signals."
     }
   ];
   const readinessSummary = summarizeReadiness(readinessChecks);
@@ -397,7 +357,7 @@ export default async function SiteOverviewPage({ params }: Params) {
           <div>
             <h3 className="card-title" style={{ marginTop: 0 }}>Operational Readiness</h3>
             <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-              Read-only operational signals for production readiness. No actions here trigger deployments.
+              Read-only Jongo checkpoints for backup, staging, and provider readiness. No actions here trigger deployments.
             </p>
           </div>
           <span className={`status-chip ${chipClassForReadiness(readinessSummary.state)}`}>
