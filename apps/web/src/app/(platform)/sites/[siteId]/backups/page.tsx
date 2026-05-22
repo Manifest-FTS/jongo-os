@@ -87,6 +87,8 @@ export default async function BackupsPage({ params }: Params) {
   const hasLiveData = inventory?.source === "live";
   const enabledSchedules = inventory?.schedules.filter((s) => s.enabled) ?? [];
   const recentExecutions = inventory?.recentExecutions ?? [];
+  const databaseCoverage = inventory?.databaseCoverage ?? [];
+  const uncoveredDatabases = databaseCoverage.filter((entry) => !entry.hasSchedule);
   const lastSuccessfulBackup = getLastSuccessfulBackup(inventory);
   const failureChain = hasFailureChain(inventory);
   const backupRunning = isRunningBackup(inventory);
@@ -223,12 +225,42 @@ export default async function BackupsPage({ params }: Params) {
       ) : !isConfigured ? (
         <article className="card">
           <h3 className="card-title" style={{ color: "var(--warning, #d97706)" }}>Backups not configured</h3>
-          <p className="card-muted">No active backup schedules were found for databases attached to this application.</p>
+          <p className="card-muted">No active backup schedules were found for at least one database in this workspace.</p>
+          {uncoveredDatabases.length > 0 ? (
+            <p className="card-muted" style={{ marginTop: "0.35rem" }}>
+              Missing schedules: {uncoveredDatabases.map((entry) => entry.resourceName).join(", ")}
+            </p>
+          ) : null}
           <p className="card-muted" style={{ marginBottom: 0 }}>
             {inventory?.note === "no_databases_in_environment"
               ? "No databases were detected in this application's Coolify environment."
               : "Contact your platform administrator to configure automated database backups via Coolify."}
           </p>
+        </article>
+      ) : null}
+
+      {databaseCoverage.length > 0 ? (
+        <article className="card">
+          <h3 className="card-title">Database Coverage</h3>
+          <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+            Read-only visibility of which databases currently have scheduled backups.
+          </p>
+          <div style={{ display: "grid", gap: "0.55rem" }}>
+            {databaseCoverage.map((entry) => (
+              <div key={entry.resourceId} style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: "0.88rem" }}>{entry.resourceName}</p>
+                  <p style={{ margin: "0.16rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                    {entry.engine} · {entry.source === "standalone_database" ? "standalone" : "embedded service"}
+                    {entry.note ? ` · ${entry.note}` : ""}
+                  </p>
+                </div>
+                <span className={`status-chip ${entry.hasSchedule ? "healthy" : "error"}`}>
+                  {entry.hasSchedule ? "scheduled" : "missing schedule"}
+                </span>
+              </div>
+            ))}
+          </div>
         </article>
       ) : null}
 
@@ -362,21 +394,9 @@ export default async function BackupsPage({ params }: Params) {
                         Size: {(exec.sizeBytes / (1024 * 1024)).toFixed(2)} MB
                       </p>
                     ) : null}
-                    {exec.downloadUrl || exec.restoreUrl ? (
-                      <p style={{ margin: "0.18rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-                        {exec.downloadUrl ? (
-                          <a href={exec.downloadUrl} target="_blank" rel="noreferrer" className="action-link">Download</a>
-                        ) : null}
-                        {exec.downloadUrl && exec.restoreUrl ? " · " : null}
-                        {exec.restoreUrl ? (
-                          <a href={exec.restoreUrl} target="_blank" rel="noreferrer" className="action-link">Restore</a>
-                        ) : null}
-                      </p>
-                    ) : (
-                      <p style={{ margin: "0.18rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-                        Download/restore available in Coolify dashboard.
-                      </p>
-                    )}
+                    <p style={{ margin: "0.18rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                      Download and restore actions are not exposed in Jongo in this pass.
+                    </p>
                   </div>
                   <span className={`status-chip ${exec.status === "success" ? "healthy" : exec.status === "failed" ? "error" : exec.status === "running" ? "unknown" : "unknown"}`}>
                     {exec.status}

@@ -1238,10 +1238,21 @@ export type BackupExecutionRecord = {
   restoreUrl?: string;
 };
 
+export type DatabaseBackupCoverageRecord = {
+  resourceId: string;
+  resourceName: string;
+  engine: "postgresql" | "mariadb" | "mysql" | "unknown";
+  source: "standalone_database" | "embedded_service";
+  hasSchedule: boolean;
+  hasSuccessfulExecution: boolean;
+  note?: string;
+};
+
 export type AppBackupInventory = {
   configured: boolean;
   schedules: BackupScheduleRecord[];
   recentExecutions: BackupExecutionRecord[];
+  databaseCoverage: DatabaseBackupCoverageRecord[];
   source: "live" | "unavailable";
   note?: string;
   checkedAt: string;
@@ -1423,6 +1434,45 @@ async function collectDatabaseBackupTelemetry(
   }
 }
 
+function normalizeDatabaseEngine(raw: Record<string, unknown>): DatabaseBackupCoverageRecord["engine"] {
+  const engineRaw = stringValue(raw, ["database_type", "engine", "type", "resource_type", "service_type"], "").toLowerCase();
+  if (engineRaw.includes("postgres")) return "postgresql";
+  if (engineRaw.includes("mariadb")) return "mariadb";
+  if (engineRaw.includes("mysql")) return "mysql";
+  return "unknown";
+}
+
+function detectEmbeddedDatabaseFromService(service: Record<string, unknown>): {
+  engine: DatabaseBackupCoverageRecord["engine"];
+  note?: string;
+} | null {
+  const serviceType = stringValue(service, ["service_type", "type"], "").toLowerCase();
+  const composeRaw = `${stringValue(service, ["docker_compose", "docker_compose_raw"], "")}`.toLowerCase();
+
+  if (serviceType.includes("wordpress-with-mariadb")) {
+    return {
+      engine: "mariadb",
+      note: "WordPress with embedded MariaDB service. No standalone database schedule detected."
+    };
+  }
+
+  if (composeRaw.includes("image: mariadb") || composeRaw.includes(" mariadb:")) {
+    return {
+      engine: "mariadb",
+      note: "Embedded MariaDB detected in service compose. No standalone database schedule detected."
+    };
+  }
+
+  if (composeRaw.includes("image: mysql") || composeRaw.includes(" mysql:")) {
+    return {
+      engine: "mysql",
+      note: "Embedded MySQL detected in service compose. No standalone database schedule detected."
+    };
+  }
+
+  return null;
+}
+
 /**
  * Fetch read-only backup inventory for a Coolify application UUID.
  * Tries to resolve the application's project/environment, then finds associated
@@ -1434,12 +1484,21 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
   const checkedAt = new Date().toISOString();
 
   if (!baseUrl || !token) {
-    return { configured: false, schedules: [], recentExecutions: [], source: "unavailable", note: "missing_credentials", checkedAt };
+    return {
+      configured: false,
+      schedules: [],
+      recentExecutions: [],
+      databaseCoverage: [],
+      source: "unavailable",
+      note: "missing_credentials",
+      checkedAt
+    };
   }
 
   try {
     // Step 1: Fetch the application to find its environment_id
     let appRaw: Record<string, unknown> | null = null;
+    let serviceRaw: Record<string, unknown> | null = null;
     let applicationLookupFailed = false;
     try {
       const payload = await coolifyFetch(`/api/v1/applications/${appUuid}`);
@@ -1450,15 +1509,28 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
       applicationLookupFailed = true;
     }
 
+    if (!appRaw) {
+      try {
+        const payload = await coolifyFetch(`/api/v1/services/${appUuid}`);
+        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+          serviceRaw = payload as Record<string, unknown>;
+        }
+      } catch {
+        // Best effort
+      }
+    }
+
     const schedules: BackupScheduleRecord[] = [];
     const recentExecutions: BackupExecutionRecord[] = [];
+    const databaseCoverageByResourceId = new Map<string, DatabaseBackupCoverageRecord>();
 
     // Step 2: Try to get databases in the same project/environment
-    const projectId = appRaw
-      ? stringValue(appRaw, ["project_uuid", "project_id", "project"], "")
+    const rootResource = appRaw ?? serviceRaw;
+    const projectId = rootResource
+      ? stringValue(rootResource, ["project_uuid", "project_id", "project"], "")
       : "";
-    const environmentId = appRaw
-      ? stringValue(appRaw, ["environment_id", "environment_uuid"], "")
+    const environmentId = rootResource
+      ? stringValue(rootResource, ["environment_id", "environment_uuid", "environment"], "")
       : "";
 
     let databases: Record<string, unknown>[] = [];
@@ -1468,6 +1540,8 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
       databases = ensureArray(
         appRaw.databases ??
           appRaw.standalone_postgresqls ??
+          appRaw.standalone_mariadbs ??
+          appRaw.standalone_mysqls ??
           appRaw.postgresqls ??
           appRaw.database ??
           appRaw.attached_databases ??
@@ -1484,7 +1558,11 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
         databases = ensureArray(
           envObj.databases ??
             envObj.standalone_postgresqls ??
+            envObj.standalone_mariadbs ??
+            envObj.standalone_mysqls ??
             envObj.postgresqls ??
+            envObj.mariadbs ??
+            envObj.mysqls ??
             envObj.attached_databases ??
             []
         );
@@ -1494,7 +1572,7 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
     }
 
     // Fallback: some projects expose databases only via the global databases endpoint.
-    if (databases.length === 0 && projectId) {
+    if (databases.length === 0 && (projectId || environmentId)) {
       try {
         const allDatabasesPayload = await coolifyFetch(`/api/v1/databases`);
         const allDatabases = ensureArray(allDatabasesPayload);
@@ -1502,7 +1580,7 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
         const projectDatabases = allDatabases.filter((db) => {
           const record = (db && typeof db === "object" ? db : {}) as Record<string, unknown>;
           const dbProject = stringValue(record, ["project_uuid", "project_id", "project"], "");
-          return dbProject === projectId;
+          return projectId ? dbProject === projectId : false;
         });
 
         if (projectDatabases.length > 0) {
@@ -1517,6 +1595,41 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
         }
       } catch {
         // Best effort
+      }
+    }
+
+    for (const db of databases) {
+      const dbId = stringValue(db, ["uuid", "id"], "");
+      if (!dbId) {
+        continue;
+      }
+
+      const dbName = stringValue(db, ["name", "database_name"], dbId);
+      databaseCoverageByResourceId.set(dbId, {
+        resourceId: dbId,
+        resourceName: dbName,
+        engine: normalizeDatabaseEngine(db),
+        source: "standalone_database",
+        hasSchedule: false,
+        hasSuccessfulExecution: false
+      });
+    }
+
+    if (serviceRaw) {
+      const embeddedDatabase = detectEmbeddedDatabaseFromService(serviceRaw);
+      if (embeddedDatabase) {
+        const serviceName = stringValue(serviceRaw, ["name"], appUuid);
+        const serviceId = stringValue(serviceRaw, ["uuid", "id"], appUuid);
+        const coverageId = `service:${serviceId}:${embeddedDatabase.engine}`;
+        databaseCoverageByResourceId.set(coverageId, {
+          resourceId: coverageId,
+          resourceName: `${serviceName} (${embeddedDatabase.engine})`,
+          engine: embeddedDatabase.engine,
+          source: "embedded_service",
+          hasSchedule: false,
+          hasSuccessfulExecution: false,
+          note: embeddedDatabase.note
+        });
       }
     }
 
@@ -1565,21 +1678,56 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
     });
 
     const normalizedSchedules = [...dedupedSchedules.values()];
+    for (const schedule of normalizedSchedules) {
+      const coverage = databaseCoverageByResourceId.get(schedule.resourceId);
+      if (coverage && schedule.enabled) {
+        coverage.hasSchedule = true;
+      }
+    }
+
+    for (const execution of normalizedExecutions) {
+      if (!execution.resourceId) {
+        continue;
+      }
+      const coverage = databaseCoverageByResourceId.get(execution.resourceId);
+      if (coverage && execution.status === "success") {
+        coverage.hasSuccessfulExecution = true;
+      }
+    }
+
+    const databaseCoverage = [...databaseCoverageByResourceId.values()];
     const configured = normalizedSchedules.some((s) => s.enabled);
+    const missingSchedules = databaseCoverage.filter((item) => !item.hasSchedule);
+    const hasAnyCoverage = databaseCoverage.length > 0;
+
+    let note: string | undefined;
+    if (normalizedSchedules.length === 0 && normalizedExecutions.length === 0) {
+      note = databases.length === 0 ? "no_databases_in_environment" : "backups_not_configured";
+    } else if (hasAnyCoverage && missingSchedules.length === databaseCoverage.length) {
+      note = "backups_not_configured";
+    } else if (hasAnyCoverage && missingSchedules.length > 0) {
+      note = "partial_backup_coverage";
+    }
+
     return {
       configured,
       schedules: normalizedSchedules,
       recentExecutions: normalizedExecutions.slice(0, 40),
+      databaseCoverage,
       source: "live",
-      note: normalizedSchedules.length === 0 && normalizedExecutions.length === 0
-        ? databases.length === 0
-          ? "no_databases_in_environment"
-          : "backups_not_configured"
-        : undefined,
+      note,
       checkedAt
     };
   } catch {
-    return { configured: false, schedules: [], recentExecutions: [], source: "unavailable", note: "fetch_error", checkedAt };
+    return {
+      configured: false,
+      schedules: [],
+      recentExecutions: [],
+      databaseCoverage: [],
+      source: "unavailable",
+      note: "fetch_error",
+      checkedAt
+    };
   }
 }
 
