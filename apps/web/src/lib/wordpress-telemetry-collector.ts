@@ -155,6 +155,9 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
       site = await db.site.findFirst({
         where: {
           deletedAt: null,
+          wordpressTelemetryConfig: {
+            isNot: null
+          },
           OR: identifiers.flatMap((value) => [
             ...(isUuid(value) ? [{ id: value }] : []),
             { slug: value },
