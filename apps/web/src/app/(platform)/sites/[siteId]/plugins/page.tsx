@@ -8,6 +8,98 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ siteId: string }> };
 
+function normalizeWordPressAdminUrl(siteUrl: string): string | null {
+  const trimmed = siteUrl.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return `${trimmed.replace(/\/+$/, "")}/wp-admin/plugins.php`;
+}
+
+function StatusBadge({
+  tone,
+  label,
+  icon
+}: {
+  tone: "neutral" | "warning" | "danger";
+  label: string;
+  icon: "warning" | "shield";
+}) {
+  const colors =
+    tone === "warning"
+      ? {
+          background: "rgba(214, 146, 44, 0.14)",
+          border: "rgba(214, 146, 44, 0.28)",
+          text: "#b86a00",
+          icon: "#b86a00"
+        }
+      : tone === "danger"
+        ? {
+            background: "rgba(198, 53, 53, 0.14)",
+            border: "rgba(198, 53, 53, 0.28)",
+            text: "#b71c1c",
+            icon: "#b71c1c"
+          }
+        : {
+            background: "rgba(127, 127, 127, 0.12)",
+            border: "rgba(127, 127, 127, 0.22)",
+            text: "inherit",
+            icon: "#666"
+          };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "0.4rem",
+        padding: "0.2rem 0.55rem",
+        borderRadius: 999,
+        background: colors.background,
+        border: `1px solid ${colors.border}`,
+        color: colors.text,
+        lineHeight: 1.2,
+        fontWeight: 600,
+        whiteSpace: "nowrap"
+      }}
+    >
+      <span aria-hidden="true" style={{ display: "inline-flex", width: 12, height: 12, color: colors.icon }}>
+        {icon === "warning" ? (
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+            <path d="M8 1.25 15.25 14.75H.75L8 1.25Zm0 3.08-4.52 8.42h9.04L8 4.33Zm-.75 2.92h1.5v3.65h-1.5V7.25Zm0 4.4h1.5v1.4h-1.5v-1.4Z" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+            <path d="M8 1.25 3.1 3.1v3.74c0 3.1 1.97 5.93 4.9 7.91 2.93-1.98 4.9-4.81 4.9-7.91V3.1L8 1.25Zm0 2.03 3.4 1.29v2.13c0 2.14-1.2 4.18-3.4 5.74-2.2-1.56-3.4-3.6-3.4-5.74V4.57L8 3.28Zm-.74 2.54.96 1.12 1.98-2.08.82.78-2.8 2.95-1.8-2.1.84-.67Z" />
+          </svg>
+        )}
+      </span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function formatUpdateBadge(updateStatus: string) {
+  if (updateStatus === "Update available") {
+    return <StatusBadge tone="warning" label={updateStatus} icon="warning" />;
+  }
+
+  return <span style={{ color: "inherit", fontWeight: 500 }}>{updateStatus}</span>;
+}
+
+function formatSecurityBadge(securityIssues: string | null) {
+  if (securityIssues === "Vulnerability detected") {
+    return <StatusBadge tone="danger" label={securityIssues} icon="shield" />;
+  }
+
+  if (securityIssues) {
+    return <span style={{ color: "inherit", fontWeight: 500 }}>{securityIssues}</span>;
+  }
+
+  return <span style={{ color: "inherit", fontWeight: 500 }}>No vulnerability feed</span>;
+}
+
 export default async function SitePluginsPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -43,39 +135,46 @@ export default async function SitePluginsPage({ params }: Params) {
   });
   const policy = snapshot.policy;
   const hasInventory = policy.pluginInventory.length > 0;
+  const pluginCount = policy.pluginInventory.length;
+  const adminPluginsUrl = policy.siteUrl ? normalizeWordPressAdminUrl(policy.siteUrl) : null;
 
   return (
     <div className="page-stack">
       <article className="card">
-        <h2 style={{ marginTop: 0 }}>Installed Plugins</h2>
-        <p className="card-muted" style={{ marginBottom: 0 }}>
-          {hasInventory
-            ? "Live plugin inventory from the telemetry collector."
-            : "Installed plugin rows appear here when the collector returns inventory for this app."}
-        </p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>Installed Plugins ({pluginCount})</h2>
+          {adminPluginsUrl ? (
+            <Link href={adminPluginsUrl} target="_blank" rel="noreferrer" className="action-link">
+              Open WordPress Plugins
+            </Link>
+          ) : null}
+        </div>
       </article>
 
       <article className="card">
         {policy.pluginInventory.length > 0 ? (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "0.86rem" }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Plugin</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Active/Inactive</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Version</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Updates</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>Security Issues</th>
+                  <th style={{ textAlign: "left", padding: "0.6rem 0.75rem" }}>Plugin</th>
+                  <th style={{ textAlign: "left", padding: "0.6rem 0.75rem" }}>Active/Inactive</th>
+                  <th style={{ textAlign: "left", padding: "0.6rem 0.75rem" }}>Version</th>
+                  <th style={{ textAlign: "left", padding: "0.6rem 0.75rem" }}>Updates</th>
+                  <th style={{ textAlign: "left", padding: "0.6rem 0.75rem" }}>Security Issues</th>
                 </tr>
               </thead>
               <tbody>
-                {policy.pluginInventory.map((plugin) => (
-                  <tr key={`${plugin.name}-${plugin.version ?? "n/a"}`}>
-                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.name}</td>
-                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.status}</td>
-                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.version ?? "-"}</td>
-                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.updateStatus}</td>
-                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.securityIssues ?? "No vulnerability feed"}</td>
+                {policy.pluginInventory.map((plugin, index) => (
+                  <tr
+                    key={`${plugin.name}-${plugin.version ?? "n/a"}`}
+                    style={{ backgroundColor: index % 2 === 0 ? "rgba(127, 127, 127, 0.06)" : "transparent" }}
+                  >
+                    <td style={{ padding: "0.75rem 0.75rem" }}>{plugin.name}</td>
+                    <td style={{ padding: "0.75rem 0.75rem" }}>{plugin.status}</td>
+                    <td style={{ padding: "0.75rem 0.75rem" }}>{plugin.version ?? "-"}</td>
+                    <td style={{ padding: "0.75rem 0.75rem" }}>{formatUpdateBadge(plugin.updateStatus)}</td>
+                    <td style={{ padding: "0.75rem 0.75rem" }}>{formatSecurityBadge(plugin.securityIssues)}</td>
                   </tr>
                 ))}
               </tbody>
