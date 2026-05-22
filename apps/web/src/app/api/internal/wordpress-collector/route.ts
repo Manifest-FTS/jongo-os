@@ -3,14 +3,58 @@ import {
   collectFromPlatformInspection,
   collectFromStoredRestConfig,
   collectFromRestSiteMap,
+  collectFromRestCredentials,
   normalizeCollectorSnapshot
 } from "@/lib/wordpress-telemetry-bridge-providers";
+import { getDb } from "@/lib/db";
+import { decryptSecret } from "@/lib/wordpress-telemetry-secrets";
 
 type CollectorRequest = {
   workspaceId?: string;
   siteId?: string;
   slug?: string;
 };
+
+async function collectSavedConfigByWorkspaceId(workspaceId?: string): Promise<ReturnType<typeof buildSnapshot> | null> {
+  const key = workspaceId?.trim();
+  if (!key) {
+    return null;
+  }
+
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  const config = await db.wordPressTelemetryConfig.findUnique({
+    where: { siteId: key },
+    select: {
+      siteUrl: true,
+      username: true,
+      passwordCiphertext: true
+    }
+  });
+
+  if (!config) {
+    return null;
+  }
+
+  let appPassword = "";
+  try {
+    appPassword = decryptSecret(config.passwordCiphertext);
+  } catch {
+    return null;
+  }
+
+  return collectFromRestCredentials(
+    {
+      siteUrl: config.siteUrl,
+      username: config.username,
+      appPassword
+    },
+    "collector_rest_saved"
+  );
+}
 
 type CollectorMockRecord = {
   activePlugins?: number | null;
@@ -161,6 +205,11 @@ export async function POST(request: Request) {
   const platformSnapshot = await collectFromPlatformInspection(body);
   if (platformSnapshot) {
     return NextResponse.json(platformSnapshot);
+  }
+
+  const workspaceSavedSnapshot = await collectSavedConfigByWorkspaceId(body.workspaceId);
+  if (workspaceSavedSnapshot) {
+    return NextResponse.json(workspaceSavedSnapshot);
   }
 
   const savedConfigSnapshot = await collectFromStoredRestConfig(body);
