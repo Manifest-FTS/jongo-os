@@ -4,6 +4,7 @@ import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import { auth } from "@/lib/auth.config";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
@@ -223,12 +224,9 @@ export default async function BackupsPage({ params }: Params) {
           <p className="card-muted">
             {getBackupUnavailableMessage(inventory?.note)}
           </p>
-          <details style={{ marginTop: "0.5rem" }}>
-            <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--muted)", userSelect: "none" }}>Diagnostic detail</summary>
-            <p style={{ margin: "0.4rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-              Reason code: <code>{inventory?.note ?? "unknown"}</code>
-            </p>
-          </details>
+          <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
+            <Link href="/settings" className="action-link">Open platform settings to verify Coolify configuration</Link>
+          </p>
         </article>
       ) : !isConfigured ? (
         <article className="card">
@@ -243,6 +241,9 @@ export default async function BackupsPage({ params }: Params) {
             {inventory?.note === "no_databases_in_environment"
               ? "No databases were detected in this application's Coolify environment."
               : "Contact your platform administrator to configure automated database backups via Coolify."}
+          </p>
+          <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
+            <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings to verify resource mapping</Link>
           </p>
         </article>
       ) : null}
@@ -464,39 +465,6 @@ export default async function BackupsPage({ params }: Params) {
           Backup configuration and restoration are managed through Coolify for database backups only. WordPress files, media, and staging sync workflows are not covered by this pass. Contact your platform administrator to change schedules, retention policies, or to initiate a recovery.
         </p>
       </article>
-
-      {/* Collapsed diagnostic panel — operator use only */}
-      {inventory && (
-        <details>
-          <summary
-            style={{
-              cursor: "pointer",
-              padding: "0.6rem 0.85rem",
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              fontSize: "0.8rem",
-              color: "var(--muted)",
-              userSelect: "none"
-            }}
-          >
-            Backup diagnostics
-          </summary>
-          <article className="card" style={{ marginTop: "0.5rem", fontSize: "0.82rem" }}>
-            <div style={{ display: "grid", gap: "0.35rem" }}>
-              <p style={{ margin: 0 }}>Data source: <code>{inventory.source}</code></p>
-              <p style={{ margin: 0 }}>Checked: <code>{formatRelativeTime(inventory.checkedAt)}</code></p>
-              {inventory.note ? <p style={{ margin: 0 }}>Note: <code>{inventory.note}</code></p> : null}
-              <p style={{ margin: 0 }}>Protection status: <code>{protectionStatus}</code></p>
-              <p style={{ margin: 0 }}>Schedules found: <code>{inventory.schedules.length}</code></p>
-              <p style={{ margin: 0 }}>Enabled schedules: <code>{enabledSchedules.length}</code></p>
-              <p style={{ margin: 0 }}>Executions found: <code>{inventory.recentExecutions.length}</code></p>
-              {lastSuccessfulBackup ? <p style={{ margin: 0 }}>Last successful: <code>{lastSuccessfulBackup.timestamp}</code></p> : null}
-              {appUuid ? <p style={{ margin: 0 }}>App UUID: <code>{appUuid}</code></p> : null}
-            </div>
-          </article>
-        </details>
-      )}
     </div>
   );
 }
