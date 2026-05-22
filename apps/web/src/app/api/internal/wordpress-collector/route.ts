@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  type CollectorSnapshotPayload,
   collectFromPlatformInspection,
   collectFromStoredRestConfig,
   collectFromRestSiteMap,
@@ -15,7 +16,7 @@ type CollectorRequest = {
   slug?: string;
 };
 
-async function collectSavedConfigByWorkspaceId(workspaceId?: string): Promise<ReturnType<typeof buildSnapshot> | null> {
+async function collectSavedConfigByWorkspaceId(workspaceId?: string): Promise<CollectorSnapshotPayload | null> {
   const key = workspaceId?.trim();
   if (!key) {
     return null;
