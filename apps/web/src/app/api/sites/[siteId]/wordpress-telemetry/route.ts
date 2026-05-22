@@ -32,10 +32,21 @@ function buildIdentityMatchers(values: string[]) {
   );
 }
 
+function normalizeEmail(value?: string | null): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function hasBootstrapGlobalAccess(email?: string | null): boolean {
+  const configured = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
+  const viewer = normalizeEmail(email);
+  return Boolean(configured && viewer && configured === viewer);
+}
+
 async function resolveAuthorizedSiteDbId(
   siteId: string,
   userId: string,
-  workspace: SiteWorkspaceRecord
+  workspace: SiteWorkspaceRecord,
+  viewerEmail?: string | null
 ): Promise<string | null> {
   const db = await getDb();
   if (!db) {
@@ -54,6 +65,7 @@ async function resolveAuthorizedSiteDbId(
     .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
 
   const identityMatchers = buildIdentityMatchers(identifiers);
+  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewerEmail);
 
   const site = await db.site.findFirst({
     where: {
@@ -63,20 +75,24 @@ async function resolveAuthorizedSiteDbId(
           OR: identityMatchers as any
         },
         ...(workspace.organizationId ? [{ organizationId: workspace.organizationId }] : []),
-        {
-          OR: [
-            {
-              organization: {
-                deletedAt: null,
+        ...(bootstrapGlobalAccess
+          ? []
+          : [
+              {
                 OR: [
-                  { ownerId: userId },
+                  {
+                    organization: {
+                      deletedAt: null,
+                      OR: [
+                        { ownerId: userId },
+                        { collaborators: { some: { userId, deletedAt: null } } }
+                      ]
+                    }
+                  },
                   { collaborators: { some: { userId, deletedAt: null } } }
                 ]
               }
-            },
-            { collaborators: { some: { userId, deletedAt: null } } }
-          ]
-        }
+            ])
       ]
     },
     select: { id: true }
@@ -117,7 +133,7 @@ export async function GET(_req: Request, { params }: Params) {
       fallback: fallbackSnapshot,
       workspace,
       requestedSiteId: siteId,
-      preferredSiteDbId: await resolveAuthorizedSiteDbId(siteId, session.user.id, workspace)
+      preferredSiteDbId: await resolveAuthorizedSiteDbId(siteId, session.user.id, workspace, session.user.email)
     });
 
     const snapshot = collectorSnapshot ?? fallbackSnapshot;

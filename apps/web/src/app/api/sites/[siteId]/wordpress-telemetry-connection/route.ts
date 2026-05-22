@@ -38,6 +38,16 @@ function buildIdentityMatchers(values: string[]) {
   );
 }
 
+function normalizeEmail(value?: string | null): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function hasBootstrapGlobalAccess(email?: string | null): boolean {
+  const configured = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
+  const viewer = normalizeEmail(email);
+  return Boolean(configured && viewer && configured === viewer);
+}
+
 function normalizeUrl(value: string): string {
   const normalized = value.trim();
   const parsed = new URL(normalized);
@@ -64,6 +74,7 @@ async function resolveAuthorizedSite(siteId: string) {
     userId: session.user.id,
     email: session.user.email
   });
+  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session.user.email);
 
   const db = await getDb();
   if (!db) {
@@ -91,20 +102,24 @@ async function resolveAuthorizedSite(siteId: string) {
           OR: identityMatchers as any
         },
         ...(workspace?.organizationId ? [{ organizationId: workspace.organizationId }] : []),
-        {
-          OR: [
-            {
-              organization: {
-                deletedAt: null,
+        ...(bootstrapGlobalAccess
+          ? []
+          : [
+              {
                 OR: [
-                  { ownerId: session.user.id },
+                  {
+                    organization: {
+                      deletedAt: null,
+                      OR: [
+                        { ownerId: session.user.id },
+                        { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+                      ]
+                    }
+                  },
                   { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
                 ]
               }
-            },
-            { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-          ]
-        }
+            ])
       ]
     },
     include: {

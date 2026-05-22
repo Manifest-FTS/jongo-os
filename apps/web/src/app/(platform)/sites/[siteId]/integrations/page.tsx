@@ -43,6 +43,16 @@ function buildIdentityMatchers(values: string[]) {
   );
 }
 
+function normalizeEmail(value?: string | null): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function hasBootstrapGlobalAccess(email?: string | null): boolean {
+  const configured = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
+  const viewer = normalizeEmail(email);
+  return Boolean(configured && viewer && configured === viewer);
+}
+
 export default async function IntegrationsPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -70,6 +80,7 @@ export default async function IntegrationsPage({ params }: Params) {
   if (session?.user?.id) {
     const db = await getDb();
     if (db) {
+      const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session.user.email);
       const identifiers = [
         siteId,
         workspace.id,
@@ -89,20 +100,24 @@ export default async function IntegrationsPage({ params }: Params) {
               OR: buildIdentityMatchers(identifiers) as any
             },
             ...(workspace.organizationId ? [{ organizationId: workspace.organizationId }] : []),
-            {
-              OR: [
-                {
-                  organization: {
-                    deletedAt: null,
+            ...(bootstrapGlobalAccess
+              ? []
+              : [
+                  {
                     OR: [
-                      { ownerId: session.user.id },
+                      {
+                        organization: {
+                          deletedAt: null,
+                          OR: [
+                            { ownerId: session.user.id },
+                            { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+                          ]
+                        }
+                      },
                       { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
                     ]
                   }
-                },
-                { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-              ]
-            }
+                ])
           ]
         },
         include: {
