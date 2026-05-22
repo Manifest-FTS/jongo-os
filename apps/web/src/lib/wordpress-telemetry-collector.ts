@@ -1,6 +1,8 @@
 import type { SiteWorkspaceRecord } from "@/lib/repositories";
 import type { WordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
-import { collectFromStoredRestConfig } from "@/lib/wordpress-telemetry-bridge-providers";
+import { collectFromRestCredentials } from "@/lib/wordpress-telemetry-bridge-providers";
+import { getDb } from "@/lib/db";
+import { decryptSecret } from "@/lib/wordpress-telemetry-secrets";
 
 type CollectorPayload = {
   checkedAt?: string;
@@ -124,11 +126,56 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
   fallback: WordPressTelemetrySnapshot;
   workspace: SiteWorkspaceRecord;
 }): Promise<WordPressTelemetrySnapshot | null> {
-  const directStoredSnapshot = await collectFromStoredRestConfig({
-    workspaceId: input.workspace.id,
-    siteId: input.fallback.siteId,
-    slug: input.workspace.slug
-  });
+  const db = await getDb();
+  let directStoredSnapshot: CollectorPayload | null = null;
+
+  if (db) {
+    const identifiers = [
+      input.workspace.id,
+      input.workspace.slug,
+      input.fallback.siteId,
+      input.workspace.coolifyServiceUuid
+    ].filter((value): value is string => Boolean(value && value.trim()));
+
+    const site = await db.site.findFirst({
+      where: {
+        deletedAt: null,
+        OR: identifiers.flatMap((value) => [
+          { id: value },
+          { slug: value },
+          { coolifyServiceUuid: value },
+          { coolifyServiceId: value }
+        ])
+      },
+      select: {
+        wordpressTelemetryConfig: {
+          select: {
+            siteUrl: true,
+            username: true,
+            passwordCiphertext: true
+          }
+        }
+      }
+    });
+
+    const config = site?.wordpressTelemetryConfig;
+    if (config) {
+      try {
+        const appPassword = decryptSecret(config.passwordCiphertext);
+        directStoredSnapshot = await collectFromRestCredentials(
+          {
+            siteUrl: config.siteUrl,
+            username: config.username,
+            appPassword
+          },
+          "collector_rest_saved"
+        );
+      } catch {
+        directStoredSnapshot = null;
+      }
+    }
+  }
+
   if (directStoredSnapshot) {
     return mergeCollectorSnapshot(input.fallback, directStoredSnapshot);
   }
