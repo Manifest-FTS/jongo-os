@@ -1,14 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth.config";
-import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { getSiteWorkspace } from "@/lib/repositories";
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
-import {
-  formatWordPressCollectorStatus,
-  formatWordPressTelemetrySource,
-  formatWordPressTelemetryValue,
-  getWordPressTelemetryFreshness
-} from "@/lib/wordpress-telemetry";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +20,6 @@ export default async function SitePluginsPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
-  const canViewInternalMetadata = Boolean(
-    session?.user?.id &&
-    workspace.organizationId &&
-    await isClientAdmin(workspace.organizationId, session.user.id)
-  );
-
   const isWordPress = workspace.siteType === "wordpress";
   if (!isWordPress) {
     return (
@@ -54,129 +42,20 @@ export default async function SitePluginsPage({ params }: Params) {
     hasCoolifyServiceUuid: Boolean(workspace.coolifyServiceUuid)
   });
   const policy = snapshot.policy;
-  const freshness = getWordPressTelemetryFreshness(snapshot.checkedAt);
   const hasInventory = policy.pluginInventory.length > 0;
-  const updateMetadataLimited = policy.pluginInsights.updatesAvailable === null;
-  const securityMetadataLimited = policy.pluginInsights.securityIssues === null;
-  const collectorConfigured = Boolean(process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim());
-  const collectorDiagnostic = !collectorConfigured
-    ? "Collector endpoint is not configured."
-    : snapshot.source === "collector"
-      ? "Collector response is active."
-      : "Collector is configured, but this snapshot is currently using fallback policy data.";
-  const siteUrl = policy.siteUrl?.trim() || "";
-  const siteUrlLabel = siteUrl ? siteUrl.replace(/^https?:\/\//, "") : null;
 
   return (
     <div className="page-stack">
       <article className="card">
-        <h2 style={{ marginTop: 0 }}>Plugin Stats</h2>
-        <p className="card-muted">WordPress plugin monitoring summary for this app.</p>
-        <p style={{ margin: "0.5rem 0 0", fontSize: "0.86rem", color: "var(--muted)" }}>
-          Project: {workspace.name}
-          {siteUrlLabel ? (
-            <>
-              {" | "}
-              URL:{" "}
-              <a href={siteUrl} target="_blank" rel="noreferrer" className="action-link">
-                {siteUrlLabel}
-              </a>
-            </>
-          ) : null}
-        </p>
-      </article>
-
-      <div className="grid">
-        <article className="card">
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Plugin status</p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{formatWordPressTelemetryValue(policy.signals.pluginStatus)}</p>
-        </article>
-        <article className="card">
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Update availability</p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{formatWordPressTelemetryValue(policy.signals.updateAvailability)}</p>
-        </article>
-        <article className="card">
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Monitoring status</p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>{formatWordPressCollectorStatus(policy.collectorStatus)}</p>
-        </article>
-        <article className="card">
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>Security signals</p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "1.05rem", fontWeight: 600 }}>
-            {securityMetadataLimited
-              ? "no vulnerability feed"
-              : (policy.pluginInsights.securityIssues ?? 0) > 0
-                ? `${policy.pluginInsights.securityIssues} flagged`
-                : "none flagged"}
-          </p>
-        </article>
-      </div>
-
-      <article className="card">
-        <h3 className="card-title">Monitoring Update</h3>
+        <h2 style={{ marginTop: 0 }}>Installed Plugins</h2>
         <p className="card-muted" style={{ marginBottom: 0 }}>
-          Last updated: {new Date(snapshot.checkedAt).toLocaleString()}
-        </p>
-        <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-          {freshness.label}
-          {freshness.isStale ? " - data may be out of date" : ""}
-        </p>
-        {canViewInternalMetadata ? (
-          <details style={{ marginTop: "0.4rem" }}>
-            <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "var(--muted)" }}>
-              Technical details
-            </summary>
-            <div style={{ marginTop: "0.4rem", display: "grid", gap: "0.25rem" }}>
-              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                Data source: {formatWordPressTelemetrySource(snapshot.source)}
-              </p>
-              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                Inventory feed: {policy.pluginInsights.inventoryConnected ? "connected" : "not connected"}
-              </p>
-              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                Freshness: {freshness.label}
-              </p>
-              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                Collector mode: {collectorConfigured ? "configured" : "not configured"}
-              </p>
-              <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)" }}>
-                Diagnostic: {collectorDiagnostic}
-              </p>
-            </div>
-          </details>
-        ) : null}
-      </article>
-
-      <article className="card">
-        <h3 className="card-title">Next Step</h3>
-        {hasInventory ? (
-          <p className="card-muted" style={{ marginBottom: 0 }}>
-            Live plugin inventory is connected.
-            {updateMetadataLimited
-              ? " Some plugins do not have public update data, so custom or private plugins may not show a definitive update state."
-              : ""}
-            {securityMetadataLimited
-              ? " No vulnerability feed is connected yet, so security rows cannot be confirmed from this source."
-              : ""}
-          </p>
-        ) : (
-          <>
-            <p className="card-muted" style={{ marginBottom: 0 }}>
-              Plugin inventory and version update insights will appear here as setup completes.
-            </p>
-            <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
-              <Link href={`/apps/${siteId}/integrations`} className="action-link">Open integrations overview</Link>
-            </p>
-          </>
-        )}
-      </article>
-
-      <article className="card">
-        <h3 className="card-title">Installed Plugins</h3>
-        <p className="card-muted" style={{ marginTop: 0 }}>
           {hasInventory
-            ? "Plugin inventory from the live telemetry collector."
-            : "Specific plugin rows appear here when the collector returns tabular plugin inventory for this site."}
+            ? "Live plugin inventory from the telemetry collector."
+            : "Installed plugin rows appear here when the collector returns inventory for this app."}
         </p>
+      </article>
+
+      <article className="card">
         {policy.pluginInventory.length > 0 ? (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
@@ -196,16 +75,14 @@ export default async function SitePluginsPage({ params }: Params) {
                     <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.status}</td>
                     <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.version ?? "-"}</td>
                     <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.updateStatus}</td>
-                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.securityIssues ?? "Unknown"}</td>
+                    <td style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem" }}>{plugin.securityIssues ?? "No vulnerability feed"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--muted)" }}>
-            No specific plugin rows are available yet for this site.
-          </p>
+          <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--muted)" }}>No plugin rows are available yet for this site.</p>
         )}
       </article>
     </div>
