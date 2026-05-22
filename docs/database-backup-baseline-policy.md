@@ -77,6 +77,38 @@ Backups page now reports:
 
 No schedule mutation or restore/download execution is performed by Jongo in this pass.
 
+## Remediation Applied May 22, 2026
+
+WordPress MariaDB service databases now have nightly backup schedules configured in Coolify for:
+
+- `wptest.manifest-fts.com` database `d2943omhh8gifkyzkkgiob72`
+- `GimmePower.com` database `gjfq7vaits5nftb6e62pgp33`
+- `aptennis.org` database `kelari7f3wo2v9pgsosdomky`
+- `waterfallkeepersofnc-org` database `wk9x29gknkj27wpebvo1y2yo`
+
+Applied baseline:
+
+- frequency: `0 2 * * *`
+- local retention days: `7`
+- local retention amount: `7`
+- database selection: `wordpress`
+- local backup only (`save_s3=false`)
+
+## Coolify Hotfix Notes
+
+The running Coolify instance required two server-side hotfixes before service-database backups could be managed and read correctly:
+
+1. `queryDatabaseByUuidWithinTeam()` did not resolve `ServiceDatabase` UUIDs for API routes.
+2. backup lookup queries in `DatabasesController` filtered only by `database_id`, which caused collisions between `ServiceDatabase` IDs and standalone database IDs.
+
+These hotfixes were applied directly on the Coolify server so that:
+
+- `GET /api/v1/databases/{uuid}/backups` works for service databases
+- Jongo can inspect service-database backup telemetry through the normal Coolify API path
+- backup lookups are scoped by both `database_id` and `database_type`
+
+Because these are server-side hotfixes outside the repository, they must be preserved or upstreamed before the next Coolify image replacement or upgrade.
+
 ## Follow-Up (Out of Scope For This Pass)
 
 - Decide operational standard for WordPress MariaDB backup coverage:

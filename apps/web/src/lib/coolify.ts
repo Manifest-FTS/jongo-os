@@ -1435,7 +1435,7 @@ async function collectDatabaseBackupTelemetry(
 }
 
 function normalizeDatabaseEngine(raw: Record<string, unknown>): DatabaseBackupCoverageRecord["engine"] {
-  const engineRaw = stringValue(raw, ["database_type", "engine", "type", "resource_type", "service_type"], "").toLowerCase();
+  const engineRaw = stringValue(raw, ["database_type", "engine", "type", "resource_type", "service_type", "custom_type", "image", "name"], "").toLowerCase();
   if (engineRaw.includes("postgres")) return "postgresql";
   if (engineRaw.includes("mariadb")) return "mariadb";
   if (engineRaw.includes("mysql")) return "mysql";
@@ -1549,6 +1549,10 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
       );
     }
 
+    if (databases.length === 0 && serviceRaw) {
+      databases = ensureArray(serviceRaw.databases ?? serviceRaw.service_databases ?? []);
+    }
+
     if (databases.length === 0 && projectId && environmentId) {
       try {
         const envPayload = await coolifyFetch(`/api/v1/projects/${projectId}/environments/${environmentId}`);
@@ -1605,17 +1609,18 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
       }
 
       const dbName = stringValue(db, ["name", "database_name"], dbId);
+      const isServiceDatabase = typeof db.service_id === "number" || typeof db.service_id === "string";
       databaseCoverageByResourceId.set(dbId, {
         resourceId: dbId,
         resourceName: dbName,
         engine: normalizeDatabaseEngine(db),
-        source: "standalone_database",
+        source: isServiceDatabase ? "embedded_service" : "standalone_database",
         hasSchedule: false,
         hasSuccessfulExecution: false
       });
     }
 
-    if (serviceRaw) {
+    if (serviceRaw && databases.length === 0) {
       const embeddedDatabase = detectEmbeddedDatabaseFromService(serviceRaw);
       if (embeddedDatabase) {
         const serviceName = stringValue(serviceRaw, ["name"], appUuid);
