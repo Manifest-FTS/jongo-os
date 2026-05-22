@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
+import { getCachedDirectoryBackupPosture, type DirectoryBackupPosture } from "@/lib/directory-backup-posture-cache";
 import { getAppsEmptyStateMessage } from "@/lib/reason-messages";
 import { getInventorySnapshot, isClientAdmin } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
@@ -12,21 +13,6 @@ export const dynamic = "force-dynamic";
 
 const DIRECTORY_BACKUP_FETCH_BATCH_SIZE = 4;
 const DIRECTORY_BACKUP_POSTURE_TTL_MS = 60_000;
-
-type DirectoryBackupPosture = {
-  localStatus: string;
-  offsiteLabel: string;
-  offsiteTone: "healthy" | "degraded" | "unknown";
-  checkedAt?: string;
-};
-
-type DirectoryBackupPostureCacheEntry = {
-  value?: DirectoryBackupPosture;
-  cachedAtMs: number;
-  inFlight?: Promise<DirectoryBackupPosture>;
-};
-
-const directoryBackupPostureCache = new Map<string, DirectoryBackupPostureCacheEntry>();
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -78,23 +64,10 @@ async function buildDirectoryBackupPosture(
           return null;
         }
 
-        const nowMs = Date.now();
-        const cached = directoryBackupPostureCache.get(appUuid);
-        if (cached?.value && nowMs - cached.cachedAtMs < DIRECTORY_BACKUP_POSTURE_TTL_MS) {
-          return {
-            siteId: site.id,
-            posture: cached.value
-          };
-        }
-
-        if (cached?.inFlight) {
-          return {
-            siteId: site.id,
-            posture: await cached.inFlight
-          };
-        }
-
-        const inFlight = (async (): Promise<DirectoryBackupPosture> => {
+        const posture = await getCachedDirectoryBackupPosture(
+          appUuid,
+          DIRECTORY_BACKUP_POSTURE_TTL_MS,
+          async (): Promise<DirectoryBackupPosture> => {
           const inventory = await getCoolifyAppBackupInventory(appUuid);
           const successfulBackupAt = getLatestSuccessfulBackupTime(inventory);
           const localStatus = inventory.source !== "live"
@@ -114,36 +87,13 @@ async function buildDirectoryBackupPosture(
             offsiteTone: readModel.offsite.tone,
             checkedAt: inventory.checkedAt
           };
-
-          directoryBackupPostureCache.set(appUuid, {
-            value: posture,
-            cachedAtMs: Date.now()
-          });
-
-          return posture;
-        })();
-
-        directoryBackupPostureCache.set(appUuid, {
-          ...cached,
-          cachedAtMs: cached?.cachedAtMs ?? 0,
-          inFlight
-        });
-
-        try {
-          const posture = await inFlight;
-          return {
-            siteId: site.id,
-            posture
-          };
-        } finally {
-          const latest = directoryBackupPostureCache.get(appUuid);
-          if (latest?.inFlight) {
-            directoryBackupPostureCache.set(appUuid, {
-              value: latest.value,
-              cachedAtMs: latest.cachedAtMs
-            });
           }
-        }
+        );
+
+        return {
+          siteId: site.id,
+          posture
+        };
 
       })
     );

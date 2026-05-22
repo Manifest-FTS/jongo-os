@@ -1,4 +1,4 @@
-import type { BackupScheduleRecord } from "@/lib/coolify";
+import type { BackupScheduleRecord } from "./coolify";
 
 export type BackupOffsiteStatus = {
   label: string;
