@@ -43,7 +43,7 @@ export default async function SiteWorkspaceLayout({
     { name: "Settings", href: `/apps/${siteId}/settings` }
   ];
 
-  const ownershipDiagnostic = canViewInternalMetadata ? site?.ownershipDiagnostic : undefined;
+  const showOwnershipState = canViewInternalMetadata && site?.ownershipState !== "unavailable";
   const isMapped = site?.ownershipState === "mapped";
 
   return (
@@ -83,9 +83,9 @@ export default async function SiteWorkspaceLayout({
             ) : (
               <span className="tag">No staging</span>
             )}
-            {ownershipDiagnostic ? (
+            {showOwnershipState ? (
               <span className={`tag ${isMapped ? "tag-mapped" : "tag-warning"}`}>
-                {ownershipDiagnostic}
+                {isMapped ? "mapped" : "mapping needs review"}
               </span>
             ) : null}
           </div>

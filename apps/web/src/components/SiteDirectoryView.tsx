@@ -176,12 +176,14 @@ export default function SiteDirectoryView({
                   ) : null}
                   {site.backupCheckedAt ? (
                     <p style={{ margin: "0.2rem 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
-                      Backup telemetry checked {formatAgo(site.backupCheckedAt)}
+                      Backup status checked {formatAgo(site.backupCheckedAt)}
                     </p>
                   ) : null}
                   {site.showInternalMetadata ? (
                     <div className="directory-badges">
-                      <span className="tag">Ownership: {site.ownershipDiagnostic}</span>
+                      <span className={`tag ${site.ownershipState === "mapped" ? "tag-mapped" : "tag-warning"}`}>
+                        Ownership: {site.ownershipState === "mapped" ? "mapped" : "mapping needs review"}
+                      </span>
                     </div>
                   ) : null}
                 </div>
