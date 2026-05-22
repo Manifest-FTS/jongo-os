@@ -25,7 +25,8 @@ export default async function SettingsPage() {
   const recentRepoCall = diagnostics?.repositoryCalls[diagnostics.repositoryCalls.length - 1];
   const recentInventory = diagnostics?.coolifyInventoryHistory[diagnostics.coolifyInventoryHistory.length - 1];
   const recentEndpointCalls = diagnostics?.coolifyEndpointCalls.slice(-8).reverse() ?? [];
-  const topDirectoryCacheKeys = diagnostics?.directoryBackupPostureCache.byKeyTop.slice(0, 3) ?? [];
+  const recentEndpointFailureCount = recentEndpointCalls.filter((call) => !call.success).length;
+  const latestEndpointCall = recentEndpointCalls[0];
   const directoryCacheLookupTotal = diagnostics
     ? diagnostics.directoryBackupPostureCache.hits +
       diagnostics.directoryBackupPostureCache.misses +
@@ -41,6 +42,18 @@ export default async function SettingsPage() {
     directoryCacheLookupTotal > 0
       ? (diagnostics!.directoryBackupPostureCache.misses / directoryCacheLookupTotal) * 100
       : 0;
+  const directoryCacheStatusTone = diagnostics
+    ? diagnostics.directoryBackupPostureCache.errors > 0 || directoryCacheMissRate >= 50
+      ? "degraded"
+      : "healthy"
+    : "unknown";
+  const directoryCacheStatusLabel = diagnostics
+    ? diagnostics.directoryBackupPostureCache.errors > 0
+      ? "attention"
+      : directoryCacheMissRate >= 50
+        ? "watch"
+        : "healthy"
+    : "unknown";
 
   return (
     <div>
@@ -214,50 +227,20 @@ export default async function SettingsPage() {
                   Latest repo source decision: {recentRepoCall ? `${recentRepoCall.operation} -> ${recentRepoCall.source}` : "n/a"}
                 </p>
                 <p style={{ margin: 0 }}>
-                  Directory backup cache: hits={diagnostics.directoryBackupPostureCache.hits}, misses={diagnostics.directoryBackupPostureCache.misses}, joins={diagnostics.directoryBackupPostureCache.inFlightJoins}, stores={diagnostics.directoryBackupPostureCache.stores}, errors={diagnostics.directoryBackupPostureCache.errors}
+                  Directory backup cache health: <span className={`status-chip ${directoryCacheStatusTone}`}>{directoryCacheStatusLabel}</span>
                 </p>
                 <p style={{ margin: 0 }}>
-                  Directory backup cache efficiency: lookups={directoryCacheLookupTotal}, hit-rate={directoryCacheHitRate.toFixed(1)}%, miss-rate={directoryCacheMissRate.toFixed(1)}%
-                </p>
-                <p style={{ margin: 0 }}>
-                  Directory cache top keys: {topDirectoryCacheKeys.length > 0
-                    ? topDirectoryCacheKeys
-                        .map((entry) => `${entry.key} (lookups=${entry.lookups}, miss=${entry.misses}, err=${entry.errors})`)
-                        .join("; ")
-                    : "n/a"}
-                </p>
-                <p style={{ margin: 0 }}>
-                  Directory backup cache last event: {diagnostics.directoryBackupPostureCache.lastEventAt ?? "never"}
+                  Directory backup cache summary: lookups={directoryCacheLookupTotal}, hit-rate={directoryCacheHitRate.toFixed(1)}%, errors={diagnostics.directoryBackupPostureCache.errors}, last-event={diagnostics.directoryBackupPostureCache.lastEventAt ?? "never"}
                 </p>
                 <p style={{ margin: 0 }}>
                   Scope applied: {recentRepoCall?.scopeApplied ? "yes" : "no"}
                 </p>
                 <p style={{ margin: 0 }}>
+                  Recent endpoint health: failures in last 8 calls={recentEndpointFailureCount}, latest={latestEndpointCall ? `${latestEndpointCall.path} (${latestEndpointCall.statusCode ?? "n/a"})` : "n/a"}
+                </p>
+                <p style={{ margin: 0 }}>
                   Env presence: DATABASE_URL={diagnostics.envPresence.databaseUrl ? "yes" : "no"}, COOLIFY_API_BASE_URL={diagnostics.envPresence.coolifyApiBaseUrl ? "yes" : "no"}, COOLIFY_API_TOKEN={diagnostics.envPresence.coolifyApiToken ? "yes" : "no"}, NEXTAUTH_SECRET={diagnostics.envPresence.nextauthSecret ? "yes" : "no"}
                 </p>
-              </div>
-
-              <div style={{ marginTop: "0.65rem", overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: "left", padding: "0.35rem" }}>Endpoint</th>
-                      <th style={{ textAlign: "left", padding: "0.35rem" }}>Status</th>
-                      <th style={{ textAlign: "left", padding: "0.35rem" }}>Success</th>
-                      <th style={{ textAlign: "left", padding: "0.35rem" }}>Count</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentEndpointCalls.map((call, idx) => (
-                      <tr key={`${call.at}-${call.path}-${idx}`}>
-                        <td style={{ padding: "0.35rem" }}>{call.path}</td>
-                        <td style={{ padding: "0.35rem" }}>{call.statusCode ?? "n/a"}</td>
-                        <td style={{ padding: "0.35rem" }}>{call.success ? "yes" : "no"}</td>
-                        <td style={{ padding: "0.35rem" }}>{call.responseCount ?? "n/a"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
 
               <p style={{ marginTop: "0.65rem", marginBottom: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
