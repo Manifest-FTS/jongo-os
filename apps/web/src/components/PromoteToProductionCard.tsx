@@ -39,6 +39,8 @@ type PromoteResponse = {
   message?: string;
   deploymentId?: string;
   promoteAttemptId?: string;
+  retryAfterSeconds?: number;
+  blockingReason?: string;
 };
 
 function formatAgo(iso: string): string {
@@ -73,6 +75,8 @@ export default function PromoteToProductionCard({
   const [latestProductionDeployment, setLatestProductionDeployment] = useState<DeploymentStatus | null>(null);
   const [inProgressProductionDeployment, setInProgressProductionDeployment] = useState<DeploymentStatus | null>(null);
   const [latestPromoteAttemptId, setLatestPromoteAttemptId] = useState<string | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [cooldownTick, setCooldownTick] = useState(() => Date.now());
 
   const pollDeployments = useCallback(async () => {
     try {
@@ -140,11 +144,47 @@ export default function PromoteToProductionCard({
     return `/sites/${siteId}/staging?attemptId=${encodeURIComponent(latestPromoteAttemptId)}`;
   }, [latestPromoteAttemptId, siteId]);
 
+  useEffect(() => {
+    if (!cooldownUntil) {
+      return;
+    }
+
+    const id = setInterval(() => {
+      setCooldownTick(Date.now());
+    }, 1_000);
+
+    return () => clearInterval(id);
+  }, [cooldownUntil]);
+
+  const cooldownSecondsRemaining = useMemo(() => {
+    if (!cooldownUntil) {
+      return 0;
+    }
+
+    const diff = cooldownUntil - cooldownTick;
+    if (diff <= 0) {
+      return 0;
+    }
+
+    return Math.ceil(diff / 1_000);
+  }, [cooldownUntil, cooldownTick]);
+
+  useEffect(() => {
+    if (!cooldownUntil || cooldownSecondsRemaining > 0) {
+      return;
+    }
+
+    setCooldownUntil(null);
+  }, [cooldownUntil, cooldownSecondsRemaining]);
+
   const isPromoteLockedByInProgress = Boolean(inProgressProductionDeployment);
-  const isPromoteLocked = disabled || status === "pending" || isPromoteLockedByInProgress;
+  const isPromoteLockedByCooldown = cooldownSecondsRemaining > 0;
+  const isPromoteLocked = disabled || status === "pending" || isPromoteLockedByInProgress || isPromoteLockedByCooldown;
   const promoteLockReason = isPromoteLockedByInProgress
     ? "Promotion is locked while production deployment is in progress."
-    : disabledReason;
+    : isPromoteLockedByCooldown
+      ? `Promotion temporarily rate-limited. Retry in ${cooldownSecondsRemaining}s.`
+      : disabledReason;
 
   useEffect(() => {
     if (!showConfirm || !isPromoteLockedByInProgress) {
@@ -158,7 +198,7 @@ export default function PromoteToProductionCard({
   }, [showConfirm, isPromoteLockedByInProgress]);
 
   async function submitPromote() {
-    if (status === "pending") {
+    if (status === "pending" || isPromoteLocked) {
       return;
     }
 
@@ -174,12 +214,18 @@ export default function PromoteToProductionCard({
 
       const payload = (await response.json()) as PromoteResponse;
       if (!response.ok) {
+        if ((payload?.retryAfterSeconds ?? 0) > 0 || payload?.blockingReason === "promote_cooldown") {
+          const retrySeconds = Math.max(1, payload?.retryAfterSeconds ?? 0);
+          setCooldownUntil(Date.now() + retrySeconds * 1_000);
+        }
+
         setStatus("error");
         setMessage(payload?.error ?? "Unable to trigger production deployment.");
         return;
       }
 
       setStatus("success");
+      setCooldownUntil(null);
       setShowConfirm(false);
       setConfirmationPhrase("");
       const defaultMessage = payload?.deploymentId
@@ -236,6 +282,12 @@ export default function PromoteToProductionCard({
       {isPromoteLocked && promoteLockReason ? (
         <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
           Why locked: {promoteLockReason}
+        </p>
+      ) : null}
+
+      {isPromoteLockedByCooldown ? (
+        <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+          Cooldown active: retry available in {cooldownSecondsRemaining}s.
         </p>
       ) : null}
 

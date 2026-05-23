@@ -23,6 +23,7 @@
 - trigger production deployment in Coolify
 - block duplicate promote execution while a production deployment is already in progress
 - apply a short cooldown after repeated blocked promote attempts and return retry timing guidance
+- surface live cooldown countdown in promote UI and keep controls disabled until retry window expires
 - record deployment event and actor metadata
 - enforce confirmation phrase in UI/API before trigger executes
 - block execution when staging-to-production preflight is locked
