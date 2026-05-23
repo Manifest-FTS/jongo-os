@@ -45,6 +45,7 @@
 - environment health cards for production/staging
 - staging domain editor with Coolify sync feedback
 - staging action audit trail with latest enable/disable/domain updates
+- promote-related audit rows include attempt state badges for at-a-glance triage
 - staging audit filter controls (all events vs domain sync)
 - staging audit attempt-id filter controls (manual entry and latest-attempt shortcut)
 - latest-attempt shortcut acts as a toggle for fast scope entry/exit

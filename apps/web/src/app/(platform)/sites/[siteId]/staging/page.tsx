@@ -588,7 +588,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
                 </p>
               </article>
 
-              <StagingAuditHistory items={stagingAuditItems} initialAttemptId={initialAttemptId} />
+              <StagingAuditHistory siteId={siteId} items={stagingAuditItems} initialAttemptId={initialAttemptId} />
             </>
           )}
 

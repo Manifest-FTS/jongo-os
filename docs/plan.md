@@ -96,6 +96,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Promote trigger supports idempotency keys so retried submissions replay prior trigger results instead of creating duplicate deployments.
 - Promote blocked responses use a normalized payload (blockingReason/actionHint/retryAfterSeconds/blockingDeployment) for deterministic UI messaging.
 - Staging exposes a focused promote-attempt status view (by attempt id) for direct operator triage without timeline scanning.
+- Staging audit rows display attempt state badges (triggered/in progress/succeeded/failed/blocked) for promote events.
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
 - Promote UI disables trigger/confirm while production deployment is in progress and explains lock reason.
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.

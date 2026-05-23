@@ -13,11 +13,21 @@ type StagingAuditHistoryItem = {
 };
 
 type Props = {
+  siteId: string;
   items: StagingAuditHistoryItem[];
   initialAttemptId?: string;
 };
 
 type FilterMode = "all" | "domain-sync" | "attempt";
+type AttemptStatusTone = "healthy" | "degraded" | "error" | "unknown";
+
+type AttemptStatusResponse = {
+  ok?: boolean;
+  attemptId?: string;
+  statusLabel?: string;
+  statusTone?: AttemptStatusTone;
+  error?: string;
+};
 
 const INITIAL_VISIBLE_COUNT = 5;
 const SHOW_MORE_STEP = 5;
@@ -67,6 +77,38 @@ function isDomainSyncAction(actionType?: string): boolean {
   return actionType === "staging_domains_updated" || actionType === "staging_domains_update_failed";
 }
 
+function isPromoteAction(actionType?: string): boolean {
+  return actionType === "staging_promote_blocked"
+    || actionType === "staging_promote_triggered"
+    || actionType === "staging_promote_in_progress"
+    || actionType === "staging_promote_succeeded"
+    || actionType === "staging_promote_failed";
+}
+
+function fallbackAttemptStatus(actionType?: string): { label: string; tone: AttemptStatusTone } | null {
+  if (actionType === "staging_promote_blocked") {
+    return { label: "Blocked", tone: "error" };
+  }
+
+  if (actionType === "staging_promote_failed") {
+    return { label: "Failed", tone: "error" };
+  }
+
+  if (actionType === "staging_promote_succeeded") {
+    return { label: "Succeeded", tone: "healthy" };
+  }
+
+  if (actionType === "staging_promote_in_progress") {
+    return { label: "In progress", tone: "degraded" };
+  }
+
+  if (actionType === "staging_promote_triggered") {
+    return { label: "Triggered", tone: "degraded" };
+  }
+
+  return null;
+}
+
 function formatAuditExportText(items: StagingAuditHistoryItem[], activeFilterLabel: string): string {
   const content = items
     .map((item) => {
@@ -94,12 +136,13 @@ function formatAuditExportText(items: StagingAuditHistoryItem[], activeFilterLab
   return [`Active filter: ${activeFilterLabel}`, `Exported events: ${items.length}`, "", content].join("\n").trim();
 }
 
-export default function StagingAuditHistory({ items, initialAttemptId }: Props) {
+export default function StagingAuditHistory({ siteId, items, initialAttemptId }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [attemptFilter, setAttemptFilter] = useState("");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
   const [copyMessage, setCopyMessage] = useState("");
+  const [attemptStatusById, setAttemptStatusById] = useState<Record<string, { label: string; tone: AttemptStatusTone }>>({});
 
   const latestAttemptId = useMemo(() => {
     const entry = items.find((item) => typeof item.promoteAttemptId === "string" && item.promoteAttemptId.length > 0);
@@ -155,6 +198,59 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
     setAttemptFilter(normalized);
     setFilterMode("attempt");
   }, [initialAttemptId]);
+
+  useEffect(() => {
+    const attemptIds = Array.from(new Set(items
+      .map((item) => item.promoteAttemptId?.trim() ?? "")
+      .filter((value) => value.length > 0)));
+
+    const missingAttemptIds = attemptIds.filter((attemptId) => !attemptStatusById[attemptId]);
+    if (missingAttemptIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadAttemptStatuses() {
+      const updates: Record<string, { label: string; tone: AttemptStatusTone }> = {};
+
+      await Promise.all(missingAttemptIds.map(async (attemptId) => {
+        try {
+          const response = await fetch(
+            `/api/sites/${siteId}/staging/promote-attempt?attemptId=${encodeURIComponent(attemptId)}`,
+            { cache: "no-store" }
+          );
+          const payload = (await response.json()) as AttemptStatusResponse;
+
+          if (!response.ok || !payload.ok) {
+            return;
+          }
+
+          const label = payload.statusLabel?.trim();
+          const tone = payload.statusTone;
+          if (!label || !tone) {
+            return;
+          }
+
+          updates[attemptId] = { label, tone };
+        } catch {
+          // Ignore transient fetch errors; fallback badge mapping still applies.
+        }
+      }));
+
+      if (cancelled || Object.keys(updates).length === 0) {
+        return;
+      }
+
+      setAttemptStatusById((current) => ({ ...current, ...updates }));
+    }
+
+    loadAttemptStatuses();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items, siteId, attemptStatusById]);
 
   function clearAttemptFilter() {
     setAttemptFilter("");
@@ -397,13 +493,26 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
           <div style={{ display: "grid", gap: "0.6rem" }}>
             {visibleItems.map((item) => (
               <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.75rem" }}>
+                {(() => {
+                  const endpointStatus = item.promoteAttemptId ? attemptStatusById[item.promoteAttemptId] : undefined;
+                  const fallbackStatusInfo = fallbackAttemptStatus(item.actionType);
+                  const attemptStatus = endpointStatus ?? fallbackStatusInfo;
+
+                  return (
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
                   <div>
-                    <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(item.actionType)}</strong>
+                    <div style={{ display: "flex", gap: "0.45rem", alignItems: "center", flexWrap: "wrap" }}>
+                      <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(item.actionType)}</strong>
+                      {attemptStatus && isPromoteAction(item.actionType) ? (
+                        <span className={`status-chip ${attemptStatus.tone}`}>{attemptStatus.label}</span>
+                      ) : null}
+                    </div>
                     <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>{item.message}</p>
                   </div>
                   <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{formatAuditAgo(item.createdAt)}</span>
                 </div>
+                  );
+                })()}
                 {item.domains.length > 0 ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem" }}>
                     Domains: {item.domains.join(", ")}
