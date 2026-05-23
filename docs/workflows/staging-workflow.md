@@ -10,7 +10,9 @@
 
 - select site
 - validate operator permissions
+- confirm the action before any provisioning or destroy step runs
 - trigger Coolify action for staging sync
+- if Coolify supports domain updates, sync staging domains from Jongo as comma-separated values
 - track progress and status updates
 - mark result with timestamp, actor, and outcome
 
@@ -25,6 +27,7 @@
 
 - deployment timeline view
 - environment health cards for production/staging
+- staging domain editor with Coolify sync feedback
 - simple action audit trail for collaboration context
 
 ## MVP Guardrails

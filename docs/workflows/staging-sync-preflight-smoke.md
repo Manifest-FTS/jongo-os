@@ -13,6 +13,8 @@ The smoke script calls `GET /api/sites/{siteId}/staging` and reports:
 
 This endpoint is read-only and does not execute sync actions.
 
+The staging workspace itself now includes a confirmation step before enable/disable actions and supports comma-separated staging-domain sync to Coolify for admins.
+
 ## Prerequisites
 
 - Deployment includes `feat: add staging sync preflight testing endpoint` or newer.
@@ -74,3 +76,4 @@ Set `FAIL_ON_BLOCKED=false` to run informational checks without failing on block
 - Coolify service UUID is not linked.
 - Staging environment/application is not detected in Coolify.
 - Backup readiness is locked (telemetry unavailable, no successful backup, stale backup).
+- Coolify staging domain update routes are unavailable or rejected by the current API version.
