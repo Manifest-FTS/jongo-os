@@ -48,6 +48,7 @@
 - promote-related audit rows include attempt state badges for at-a-glance triage
 - promote-related audit section includes compact state counts for the currently active filter scope
 - promote-related audit controls include a failed/blocked quick toggle that jumps to latest incident attempt scope
+- promote-related audit controls include one-click incident handoff copy for the currently scoped attempt
 - staging audit filter controls (all events vs domain sync)
 - staging audit attempt-id filter controls (manual entry and latest-attempt shortcut)
 - latest-attempt shortcut acts as a toggle for fast scope entry/exit

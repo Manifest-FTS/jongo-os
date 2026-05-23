@@ -166,6 +166,37 @@ function formatAuditExportText(items: StagingAuditHistoryItem[], activeFilterLab
   return [`Active filter: ${activeFilterLabel}`, `Exported events: ${items.length}`, "", content].join("\n").trim();
 }
 
+function formatIncidentHandoffText(params: {
+  attemptId: string;
+  statusLabel: string;
+  items: StagingAuditHistoryItem[];
+  latestMessage: string;
+  deploymentId?: string;
+  blockingReason?: string;
+}): string {
+  const latest = params.items[0];
+  const oldest = params.items[params.items.length - 1];
+
+  const lines = [
+    `Attempt id: ${params.attemptId}`,
+    `Status: ${params.statusLabel}`,
+    `Timeline events: ${params.items.length}`,
+    `Latest event: ${latest ? formatAuditAgo(latest.createdAt) : "unknown"}`,
+    `First event: ${oldest ? formatAuditAgo(oldest.createdAt) : "unknown"}`,
+    `Latest message: ${params.latestMessage}`
+  ];
+
+  if (params.deploymentId) {
+    lines.push(`Deployment id: ${params.deploymentId}`);
+  }
+
+  if (params.blockingReason) {
+    lines.push(`Blocking reason: ${params.blockingReason}`);
+  }
+
+  return lines.join("\n");
+}
+
 export default function StagingAuditHistory({ siteId, items, initialAttemptId }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [attemptFilter, setAttemptFilter] = useState("");
@@ -376,6 +407,46 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     return summary;
   }, [filteredItems, attemptStatusById]);
 
+  const scopedAttemptItems = useMemo(
+    () => (filterMode === "attempt" && normalizedAttemptFilter
+      ? filteredItems.filter((item) => item.promoteAttemptId === normalizedAttemptFilter)
+      : []),
+    [filterMode, normalizedAttemptFilter, filteredItems]
+  );
+
+  const incidentHandoff = useMemo(() => {
+    if (filterMode !== "attempt" || !normalizedAttemptFilter || scopedAttemptItems.length === 0) {
+      return null;
+    }
+
+    const latestPromoteEvent = scopedAttemptItems.find((item) => isPromoteAction(item.actionType));
+    const endpointStatus = attemptStatusById[normalizedAttemptFilter];
+    const fallbackStatus = fallbackAttemptStatus(latestPromoteEvent?.actionType);
+    const statusLabel = endpointStatus?.label ?? fallbackStatus?.label ?? "Unknown";
+
+    let deploymentId: string | undefined;
+    let blockingReason: string | undefined;
+    for (const item of scopedAttemptItems) {
+      const deploymentMatch = item.message.match(/deployment\s+([A-Za-z0-9-]+)/i);
+      if (!deploymentId && deploymentMatch?.[1]) {
+        deploymentId = deploymentMatch[1];
+      }
+
+      if (!blockingReason && item.actionType === "staging_promote_blocked") {
+        blockingReason = "blocked";
+      }
+    }
+
+    return formatIncidentHandoffText({
+      attemptId: normalizedAttemptFilter,
+      statusLabel,
+      items: scopedAttemptItems,
+      latestMessage: latestPromoteEvent?.message ?? scopedAttemptItems[0].message,
+      deploymentId,
+      blockingReason
+    });
+  }, [filterMode, normalizedAttemptFilter, scopedAttemptItems, attemptStatusById]);
+
   async function copyToClipboard(content: string, successMessage: string) {
     try {
       await navigator.clipboard.writeText(content);
@@ -560,6 +631,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
 
       {filteredItems.length > 0 ? (
         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+          {incidentHandoff ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => copyToClipboard(incidentHandoff, `Copied incident handoff for attempt ${normalizedAttemptFilter}.`)}
+            >
+              Copy incident handoff
+            </button>
+          ) : null}
           <button
             type="button"
             className="button button-secondary"
