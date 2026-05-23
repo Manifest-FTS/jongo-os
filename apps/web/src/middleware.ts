@@ -56,6 +56,15 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  if (/^\/api\/sites\/[^/]+\/staging$/i.test(pathname)) {
+    const operationsToken = process.env.OWNERSHIP_SYNC_TOKEN;
+    const authHeader = req.headers.get("authorization") ?? "";
+    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (operationsToken && providedToken && providedToken === operationsToken) {
+      return NextResponse.next();
+    }
+  }
+
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 
   if (!token) {

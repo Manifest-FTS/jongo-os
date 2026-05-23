@@ -12,6 +12,13 @@ import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 
 type Params = { params: Promise<{ siteId: string }> };
 
+function hasOpsToken(req: Request): boolean {
+  const configured = process.env.OWNERSHIP_SYNC_TOKEN?.trim() || "";
+  const authHeader = req.headers.get("authorization") ?? "";
+  const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
+  return Boolean(configured && provided && configured === provided);
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -31,8 +38,9 @@ function buildSiteIdentityWhere(siteId: string) {
 }
 
 export async function GET(_req: Request, { params }: Params) {
+  const authorizedByToken = hasOpsToken(_req);
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -40,13 +48,17 @@ export async function GET(_req: Request, { params }: Params) {
   const { db } = await import("@/lib/db");
 
   const site = await db.site.findFirst({
-    where: {
-      ...buildSiteIdentityWhere(siteId),
-      organization: {
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      }
-    },
+    where: authorizedByToken
+      ? {
+          ...buildSiteIdentityWhere(siteId)
+        }
+      : {
+          ...buildSiteIdentityWhere(siteId),
+          organization: {
+            deletedAt: null,
+            OR: [{ ownerId: session!.user!.id }, { collaborators: { some: { userId: session!.user!.id } } }]
+          }
+        },
     select: {
       id: true,
       slug: true,
