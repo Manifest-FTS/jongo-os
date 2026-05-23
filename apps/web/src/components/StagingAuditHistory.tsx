@@ -58,6 +58,8 @@ function isDomainSyncAction(actionType?: string): boolean {
 export default function StagingAuditHistory({ items }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
+  const [copyMessage, setCopyMessage] = useState("");
 
   const filteredItems = useMemo(() => {
     if (filterMode === "all") {
@@ -74,6 +76,50 @@ export default function StagingAuditHistory({ items }: Props) {
   const visibleItems = filteredItems.slice(0, visibleCount);
   const canShowMore = visibleItems.length < filteredItems.length;
   const canShowLess = filteredItems.length > INITIAL_VISIBLE_COUNT && visibleCount > INITIAL_VISIBLE_COUNT;
+
+  async function copyToClipboard(content: string, successMessage: string) {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopyStatus("success");
+      setCopyMessage(successMessage);
+    } catch {
+      setCopyStatus("error");
+      setCopyMessage("Unable to copy from this browser context.");
+    }
+  }
+
+  async function copyAsJson() {
+    await copyToClipboard(
+      JSON.stringify(filteredItems, null, 2),
+      `Copied ${filteredItems.length} filtered staging audit events as JSON.`
+    );
+  }
+
+  async function copyAsText() {
+    const text = filteredItems
+      .map((item) => {
+        const lines = [
+          `${formatActionLabel(item.actionType)} (${formatAuditAgo(item.createdAt)})`,
+          `Message: ${item.message}`
+        ];
+
+        if (item.domains.length > 0) {
+          lines.push(`Domains: ${item.domains.join(", ")}`);
+        }
+
+        if (item.preferredStagingDomain) {
+          lines.push(`Preferred staging domain: ${item.preferredStagingDomain}`);
+        }
+
+        return lines.join("\n");
+      })
+      .join("\n\n");
+
+    await copyToClipboard(
+      text,
+      `Copied ${filteredItems.length} filtered staging audit events as text.`
+    );
+  }
 
   return (
     <article className="card">
@@ -99,6 +145,37 @@ export default function StagingAuditHistory({ items }: Props) {
       <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
         Recent staging enable, disable, and domain update actions recorded by Jongo.
       </p>
+
+      {filteredItems.length > 0 ? (
+        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={copyAsText}
+          >
+            Copy text
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={copyAsJson}
+          >
+            Copy JSON
+          </button>
+        </div>
+      ) : null}
+
+      {copyStatus !== "idle" ? (
+        <p
+          style={{
+            margin: "0 0 0.75rem",
+            fontSize: "0.8rem",
+            color: copyStatus === "error" ? "var(--error, #c0392b)" : "var(--muted)"
+          }}
+        >
+          {copyMessage}
+        </p>
+      ) : null}
 
       {filteredItems.length === 0 ? (
         <p className="card-muted" style={{ marginBottom: 0 }}>

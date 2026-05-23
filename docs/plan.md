@@ -233,6 +233,7 @@ Focused on staging-specific workflows:
 - Staging audit history for enable, disable, and domain updates
 - Staging audit history filters (all events vs domain sync events)
 - Staging audit history expand/collapse controls for deeper event review
+- Staging audit export controls (copy filtered history as text or JSON)
 - Staging-specific configurations
 
 #### Settings Tab
