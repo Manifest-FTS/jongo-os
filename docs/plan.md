@@ -91,6 +91,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging domain values can be edited in Jongo and synced back to Coolify, including comma-separated multi-domain input.
 - Staging to production promotion is executed through a guarded action (admin-only, preflight gated, explicit confirmation).
 - Promotion trigger is blocked when a production deployment is already in progress (duplicate-trigger guard).
+- Repeated blocked promote attempts are rate-limited with a short server-side cooldown and retry guidance.
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.
 - Staging workspace shows a terminal-state banner for the latest promotion outcome.

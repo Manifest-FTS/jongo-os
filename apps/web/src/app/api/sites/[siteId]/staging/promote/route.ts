@@ -15,6 +15,8 @@ type PromoteBody = {
   confirmationPhrase?: string;
 };
 
+const PROMOTE_BLOCK_COOLDOWN_MS = 30_000;
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -57,6 +59,56 @@ async function recordStagingAuditLog(params: {
       userAgent: params.req.headers.get("user-agent") ?? undefined
     }
   });
+}
+
+type RecentBlockedPromoteContext = {
+  createdAt: Date;
+  blockingReason?: string;
+  blockingDeploymentId?: string;
+  blockingTriggeredAt?: string;
+};
+
+async function readRecentBlockedPromoteContext(params: {
+  organizationId: string;
+  actorId: string;
+  resourceId: string;
+}): Promise<RecentBlockedPromoteContext | null> {
+  const { db } = await import("@/lib/db");
+  const logs = await db.auditLog.findMany({
+    where: {
+      organizationId: params.organizationId,
+      actorId: params.actorId,
+      action: "site_updated",
+      resourceType: "site_staging",
+      resourceId: params.resourceId
+    },
+    orderBy: { createdAt: "desc" },
+    take: 15,
+    select: {
+      createdAt: true,
+      details: true
+    }
+  });
+
+  for (const log of logs) {
+    const details = (typeof log.details === "object" && log.details !== null
+      ? log.details
+      : null) as Record<string, unknown> | null;
+
+    const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
+    if (actionType !== "staging_promote_blocked") {
+      continue;
+    }
+
+    return {
+      createdAt: log.createdAt,
+      blockingReason: typeof details?.blockingReason === "string" ? details.blockingReason : undefined,
+      blockingDeploymentId: typeof details?.blockingDeploymentId === "string" ? details.blockingDeploymentId : undefined,
+      blockingTriggeredAt: typeof details?.blockingTriggeredAt === "string" ? details.blockingTriggeredAt : undefined
+    };
+  }
+
+  return null;
 }
 
 export async function POST(req: Request, { params }: Params) {
@@ -114,6 +166,44 @@ export async function POST(req: Request, { params }: Params) {
   const projectId = site.coolifyProjectId?.trim() || undefined;
   if (!appUuid) {
     return NextResponse.json({ error: "Coolify service UUID is not linked." }, { status: 409 });
+  }
+
+  const recentBlocked = await readRecentBlockedPromoteContext({
+    organizationId: site.organizationId,
+    actorId: session.user.id,
+    resourceId: site.id
+  });
+  if (recentBlocked?.blockingReason === "production_deployment_in_progress") {
+    const elapsed = Date.now() - recentBlocked.createdAt.getTime();
+    if (elapsed < PROMOTE_BLOCK_COOLDOWN_MS) {
+      const retryAfterSeconds = Math.ceil((PROMOTE_BLOCK_COOLDOWN_MS - elapsed) / 1000);
+
+      await recordStagingAuditLog({
+        organizationId: site.organizationId,
+        actorId: session.user.id,
+        actionType: "staging_promote_blocked",
+        resourceId: site.id,
+        details: {
+          promoteAttemptId,
+          appUuid,
+          blockingReason: "promote_cooldown",
+          retryAfterSeconds,
+          previousBlockedAt: recentBlocked.createdAt.toISOString(),
+          blockingDeploymentId: recentBlocked.blockingDeploymentId,
+          blockingTriggeredAt: recentBlocked.blockingTriggeredAt,
+          message: `Promotion temporarily rate-limited after repeated blocked attempts. Retry in ${retryAfterSeconds}s.`
+        },
+        req
+      });
+
+      return NextResponse.json({
+        error: `Promotion temporarily rate-limited after repeated blocked attempts. Retry in ${retryAfterSeconds}s.`,
+        promoteAttemptId,
+        retryAfterSeconds,
+        blockingReason: "promote_cooldown",
+        previousBlockedAt: recentBlocked.createdAt.toISOString()
+      }, { status: 429 });
+    }
   }
 
   const viewer = {
