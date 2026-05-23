@@ -175,7 +175,7 @@ export default async function StagingPage({ params }: Params) {
           action: "site_updated"
         },
         orderBy: { createdAt: "desc" },
-        take: 5
+        take: 25
       })
     : [];
   const stagingAuditItems: StagingAuditHistoryItem[] = stagingAuditLogs.map((entry) => {

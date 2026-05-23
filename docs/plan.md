@@ -232,6 +232,7 @@ Focused on staging-specific workflows:
 - Staging domain management synced to Coolify
 - Staging audit history for enable, disable, and domain updates
 - Staging audit history filters (all events vs domain sync events)
+- Staging audit history expand/collapse controls for deeper event review
 - Staging-specific configurations
 
 #### Settings Tab

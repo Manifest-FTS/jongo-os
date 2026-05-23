@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type StagingAuditHistoryItem = {
   id: string;
@@ -16,6 +16,9 @@ type Props = {
 };
 
 type FilterMode = "all" | "domain-sync";
+
+const INITIAL_VISIBLE_COUNT = 5;
+const SHOW_MORE_STEP = 5;
 
 function formatAuditAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -54,6 +57,7 @@ function isDomainSyncAction(actionType?: string): boolean {
 
 export default function StagingAuditHistory({ items }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
   const filteredItems = useMemo(() => {
     if (filterMode === "all") {
@@ -62,6 +66,14 @@ export default function StagingAuditHistory({ items }: Props) {
 
     return items.filter((item) => isDomainSyncAction(item.actionType));
   }, [items, filterMode]);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+  }, [filterMode]);
+
+  const visibleItems = filteredItems.slice(0, visibleCount);
+  const canShowMore = visibleItems.length < filteredItems.length;
+  const canShowLess = filteredItems.length > INITIAL_VISIBLE_COUNT && visibleCount > INITIAL_VISIBLE_COUNT;
 
   return (
     <article className="card">
@@ -95,8 +107,9 @@ export default function StagingAuditHistory({ items }: Props) {
             : "No staging audit events recorded yet."}
         </p>
       ) : (
-        <div style={{ display: "grid", gap: "0.6rem" }}>
-          {filteredItems.map((item) => (
+        <>
+          <div style={{ display: "grid", gap: "0.6rem" }}>
+          {visibleItems.map((item) => (
             <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.75rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
                 <div>
@@ -117,7 +130,30 @@ export default function StagingAuditHistory({ items }: Props) {
               ) : null}
             </div>
           ))}
-        </div>
+          </div>
+          {(canShowMore || canShowLess) ? (
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
+              {canShowLess ? (
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => setVisibleCount(INITIAL_VISIBLE_COUNT)}
+                >
+                  Show less
+                </button>
+              ) : null}
+              {canShowMore ? (
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => setVisibleCount((current) => Math.min(current + SHOW_MORE_STEP, filteredItems.length))}
+                >
+                  Show more
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </>
       )}
     </article>
   );
