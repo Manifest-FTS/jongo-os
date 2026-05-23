@@ -109,6 +109,27 @@ function fallbackAttemptStatus(actionType?: string): { label: string; tone: Atte
   return null;
 }
 
+function normalizeAttemptStatusKey(label: string): "triggered" | "in_progress" | "succeeded" | "failed" | "blocked" {
+  const normalized = label.trim().toLowerCase();
+  if (normalized.includes("blocked")) {
+    return "blocked";
+  }
+
+  if (normalized.includes("failed")) {
+    return "failed";
+  }
+
+  if (normalized.includes("succeed")) {
+    return "succeeded";
+  }
+
+  if (normalized.includes("progress")) {
+    return "in_progress";
+  }
+
+  return "triggered";
+}
+
 function formatAuditExportText(items: StagingAuditHistoryItem[], activeFilterLabel: string): string {
   const content = items
     .map((item) => {
@@ -274,6 +295,36 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
   const visibleItems = filteredItems.slice(0, visibleCount);
   const canShowMore = visibleItems.length < filteredItems.length;
   const canShowLess = filteredItems.length > INITIAL_VISIBLE_COUNT && visibleCount > INITIAL_VISIBLE_COUNT;
+
+  const promoteStatusSummary = useMemo(() => {
+    const summary = {
+      total: 0,
+      triggered: 0,
+      in_progress: 0,
+      succeeded: 0,
+      failed: 0,
+      blocked: 0
+    };
+
+    for (const item of filteredItems) {
+      if (!isPromoteAction(item.actionType)) {
+        continue;
+      }
+
+      const endpointStatus = item.promoteAttemptId ? attemptStatusById[item.promoteAttemptId] : undefined;
+      const fallbackStatusInfo = fallbackAttemptStatus(item.actionType);
+      const attemptStatus = endpointStatus ?? fallbackStatusInfo;
+      if (!attemptStatus) {
+        continue;
+      }
+
+      const key = normalizeAttemptStatusKey(attemptStatus.label);
+      summary.total += 1;
+      summary[key] += 1;
+    }
+
+    return summary;
+  }, [filteredItems, attemptStatusById]);
 
   async function copyToClipboard(content: string, successMessage: string) {
     try {
@@ -480,6 +531,39 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
         >
           {copyMessage}
         </p>
+      ) : null}
+
+      {promoteStatusSummary.total > 0 ? (
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "8px",
+            background: "var(--surface-alt)",
+            padding: "0.6rem",
+            marginBottom: "0.75rem",
+            display: "flex",
+            gap: "0.45rem",
+            flexWrap: "wrap",
+            alignItems: "center"
+          }}
+        >
+          <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>Attempt states:</span>
+          {promoteStatusSummary.triggered > 0 ? (
+            <span className="status-chip degraded">Triggered {promoteStatusSummary.triggered}</span>
+          ) : null}
+          {promoteStatusSummary.in_progress > 0 ? (
+            <span className="status-chip degraded">In progress {promoteStatusSummary.in_progress}</span>
+          ) : null}
+          {promoteStatusSummary.succeeded > 0 ? (
+            <span className="status-chip healthy">Succeeded {promoteStatusSummary.succeeded}</span>
+          ) : null}
+          {promoteStatusSummary.failed > 0 ? (
+            <span className="status-chip error">Failed {promoteStatusSummary.failed}</span>
+          ) : null}
+          {promoteStatusSummary.blocked > 0 ? (
+            <span className="status-chip error">Blocked {promoteStatusSummary.blocked}</span>
+          ) : null}
+        </div>
       ) : null}
 
       {filteredItems.length === 0 ? (
