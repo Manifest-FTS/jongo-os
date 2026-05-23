@@ -1,0 +1,124 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+type StagingAuditHistoryItem = {
+  id: string;
+  createdAt: string;
+  actionType?: string;
+  message: string;
+  domains: string[];
+  preferredStagingDomain?: string;
+};
+
+type Props = {
+  items: StagingAuditHistoryItem[];
+};
+
+type FilterMode = "all" | "domain-sync";
+
+function formatAuditAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function formatActionLabel(actionType?: string): string {
+  switch (actionType) {
+    case "staging_enable_requested":
+      return "Staging enable requested";
+    case "staging_enable_existing":
+      return "Staging already present";
+    case "staging_enable_provision":
+      return "Staging provisioned";
+    case "staging_disable_requested":
+      return "Staging disable requested";
+    case "staging_disable_destroy":
+      return "Staging disabled and destroyed";
+    case "staging_domains_updated":
+      return "Staging domains updated";
+    case "staging_domains_update_failed":
+      return "Staging domains update failed";
+    default:
+      return actionType ?? "Staging action";
+  }
+}
+
+function isDomainSyncAction(actionType?: string): boolean {
+  return actionType === "staging_domains_updated" || actionType === "staging_domains_update_failed";
+}
+
+export default function StagingAuditHistory({ items }: Props) {
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
+
+  const filteredItems = useMemo(() => {
+    if (filterMode === "all") {
+      return items;
+    }
+
+    return items.filter((item) => isDomainSyncAction(item.actionType));
+  }, [items, filterMode]);
+
+  return (
+    <article className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "0.4rem" }}>
+        <h3 className="card-title" style={{ margin: 0 }}>Staging Audit History</h3>
+        <div style={{ display: "flex", gap: "0.4rem" }}>
+          <button
+            type="button"
+            className={filterMode === "all" ? "button" : "button button-secondary"}
+            onClick={() => setFilterMode("all")}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className={filterMode === "domain-sync" ? "button" : "button button-secondary"}
+            onClick={() => setFilterMode("domain-sync")}
+          >
+            Domain sync
+          </button>
+        </div>
+      </div>
+      <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+        Recent staging enable, disable, and domain update actions recorded by Jongo.
+      </p>
+
+      {filteredItems.length === 0 ? (
+        <p className="card-muted" style={{ marginBottom: 0 }}>
+          {filterMode === "domain-sync"
+            ? "No domain sync events recorded yet."
+            : "No staging audit events recorded yet."}
+        </p>
+      ) : (
+        <div style={{ display: "grid", gap: "0.6rem" }}>
+          {filteredItems.map((item) => (
+            <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
+                <div>
+                  <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(item.actionType)}</strong>
+                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>{item.message}</p>
+                </div>
+                <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{formatAuditAgo(item.createdAt)}</span>
+              </div>
+              {item.domains.length > 0 ? (
+                <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem" }}>
+                  Domains: {item.domains.join(", ")}
+                </p>
+              ) : null}
+              {item.preferredStagingDomain ? (
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
+                  Preferred staging domain: {item.preferredStagingDomain}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}

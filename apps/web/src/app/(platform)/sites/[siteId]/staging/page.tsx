@@ -4,6 +4,7 @@ import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import DeployButton from "@/components/DeployButton";
 import StagingDomainForm from "@/components/StagingDomainForm";
+import StagingAuditHistory from "@/components/StagingAuditHistory";
 import Link from "next/link";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { db } from "@/lib/db";
@@ -16,6 +17,15 @@ type StagingAuditEntry = {
   id: string;
   createdAt: Date;
   details: unknown;
+};
+
+type StagingAuditHistoryItem = {
+  id: string;
+  createdAt: string;
+  actionType?: string;
+  message: string;
+  domains: string[];
+  preferredStagingDomain?: string;
 };
 
 function formatAgo(iso: string): string {
@@ -94,27 +104,6 @@ function parseDomainValues(raw?: string): string[] {
   return [...new Set(values)];
 }
 
-function formatActionLabel(actionType?: string): string {
-  switch (actionType) {
-    case "staging_enable_requested":
-      return "Staging enable requested";
-    case "staging_enable_existing":
-      return "Staging already present";
-    case "staging_enable_provision":
-      return "Staging provisioned";
-    case "staging_disable_requested":
-      return "Staging disable requested";
-    case "staging_disable_destroy":
-      return "Staging disabled and destroyed";
-    case "staging_domains_updated":
-      return "Staging domains updated";
-    case "staging_domains_update_failed":
-      return "Staging domains update failed";
-    default:
-      return actionType ?? "Staging action";
-  }
-}
-
 function formatAuditAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -189,6 +178,30 @@ export default async function StagingPage({ params }: Params) {
         take: 5
       })
     : [];
+  const stagingAuditItems: StagingAuditHistoryItem[] = stagingAuditLogs.map((entry) => {
+    const details = entry.details as Record<string, unknown> | null | undefined;
+    const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
+    const message = typeof details?.message === "string"
+      ? details.message
+      : typeof details?.provisioningMessage === "string"
+        ? details.provisioningMessage
+        : "Staging action recorded.";
+    const domains = Array.isArray(details?.domains)
+      ? details.domains.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      : [];
+    const preferredStagingDomain = typeof details?.preferredStagingDomain === "string" && details.preferredStagingDomain
+      ? details.preferredStagingDomain
+      : undefined;
+
+    return {
+      id: entry.id,
+      createdAt: entry.createdAt.toISOString(),
+      actionType,
+      message,
+      domains,
+      preferredStagingDomain
+    };
+  });
   const latestDomainSyncEntry = getLatestDomainSyncEntry(stagingAuditLogs);
 
   const dryRunPlan =
@@ -410,51 +423,7 @@ export default async function StagingPage({ params }: Params) {
                 </p>
               </article>
 
-              <article className="card">
-                <h3 className="card-title">Staging Audit History</h3>
-                <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-                  Recent staging enable, disable, and domain update actions recorded by Jongo.
-                </p>
-                {stagingAuditLogs.length === 0 ? (
-                  <p className="card-muted" style={{ marginBottom: 0 }}>
-                    No staging audit events recorded yet.
-                  </p>
-                ) : (
-                  <div style={{ display: "grid", gap: "0.6rem" }}>
-                    {stagingAuditLogs.map((entry) => {
-                      const details = entry.details as Record<string, unknown> | null | undefined;
-                      const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
-                      const message = typeof details?.message === "string"
-                        ? details.message
-                        : typeof details?.provisioningMessage === "string"
-                          ? details.provisioningMessage
-                          : "Staging action recorded.";
-
-                      return (
-                        <div key={entry.id} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.75rem" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
-                            <div>
-                              <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(actionType)}</strong>
-                              <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>{message}</p>
-                            </div>
-                            <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{formatAuditAgo(entry.createdAt.toISOString())}</span>
-                          </div>
-                          {Array.isArray(details?.domains) && details.domains.length > 0 ? (
-                            <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem" }}>
-                              Domains: {details.domains.join(", ")}
-                            </p>
-                          ) : null}
-                          {typeof details?.preferredStagingDomain === "string" && details.preferredStagingDomain ? (
-                            <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
-                              Preferred staging domain: {details.preferredStagingDomain}
-                            </p>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </article>
+              <StagingAuditHistory items={stagingAuditItems} />
             </>
           )}
 
