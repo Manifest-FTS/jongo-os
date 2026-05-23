@@ -51,6 +51,7 @@
 - promote-related audit controls include one-click incident handoff copy for the currently scoped attempt
 - promote-related audit controls include one-click incident handoff JSON copy for structured incident workflows
 - promote-related audit controls include incident handoff JSON download for direct ticket attachments
+- incident handoff text/JSON fields are composed from per-attempt endpoint data (deployment id/status, blocking reason, triggered/finished/updated timestamps) instead of parsing free-form log messages
 - staging audit filter controls (all events vs domain sync)
 - staging audit attempt-id filter controls (manual entry and latest-attempt shortcut)
 - latest-attempt shortcut acts as a toggle for fast scope entry/exit

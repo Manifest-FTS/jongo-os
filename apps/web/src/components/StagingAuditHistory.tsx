@@ -24,9 +24,46 @@ type AttemptStatusTone = "healthy" | "degraded" | "error" | "unknown";
 type AttemptStatusResponse = {
   ok?: boolean;
   attemptId?: string;
+  status?: "blocked" | "triggered" | "in_progress" | "succeeded" | "failed";
   statusLabel?: string;
   statusTone?: AttemptStatusTone;
+  message?: string;
+  deploymentId?: string;
+  deploymentStatus?: string;
+  blockingReason?: string;
+  triggeredAt?: string;
+  finishedAt?: string;
+  updatedAt?: string;
+  events?: Array<{
+    createdAt: string;
+    actionType: string;
+    message: string;
+    deploymentId?: string;
+    deploymentStatus?: string;
+    blockingReason?: string;
+  }>;
   error?: string;
+};
+
+type AttemptStatusDetails = {
+  statusLabel: string;
+  tone: AttemptStatusTone;
+  status?: "blocked" | "triggered" | "in_progress" | "succeeded" | "failed";
+  message?: string;
+  deploymentId?: string;
+  deploymentStatus?: string;
+  blockingReason?: string;
+  triggeredAt?: string;
+  finishedAt?: string;
+  updatedAt?: string;
+  events: Array<{
+    createdAt: string;
+    actionType: string;
+    message: string;
+    deploymentId?: string;
+    deploymentStatus?: string;
+    blockingReason?: string;
+  }>;
 };
 
 const INITIAL_VISIBLE_COUNT = 5;
@@ -172,17 +209,23 @@ function formatIncidentHandoffText(params: {
   items: StagingAuditHistoryItem[];
   latestMessage: string;
   deploymentId?: string;
+  deploymentStatus?: string;
   blockingReason?: string;
+  triggeredAt?: string;
+  finishedAt?: string;
+  updatedAt?: string;
+  latestEventAt?: string;
+  firstEventAt?: string;
 }): string {
-  const latest = params.items[0];
-  const oldest = params.items[params.items.length - 1];
+  const latestEventAt = params.latestEventAt ?? params.items[0]?.createdAt;
+  const firstEventAt = params.firstEventAt ?? params.items[params.items.length - 1]?.createdAt;
 
   const lines = [
     `Attempt id: ${params.attemptId}`,
     `Status: ${params.statusLabel}`,
     `Timeline events: ${params.items.length}`,
-    `Latest event: ${latest ? formatAuditAgo(latest.createdAt) : "unknown"}`,
-    `First event: ${oldest ? formatAuditAgo(oldest.createdAt) : "unknown"}`,
+    `Latest event at: ${latestEventAt ?? "unknown"}`,
+    `First event at: ${firstEventAt ?? "unknown"}`,
     `Latest message: ${params.latestMessage}`
   ];
 
@@ -190,8 +233,24 @@ function formatIncidentHandoffText(params: {
     lines.push(`Deployment id: ${params.deploymentId}`);
   }
 
+  if (params.deploymentStatus) {
+    lines.push(`Deployment status: ${params.deploymentStatus}`);
+  }
+
   if (params.blockingReason) {
     lines.push(`Blocking reason: ${params.blockingReason}`);
+  }
+
+  if (params.triggeredAt) {
+    lines.push(`Triggered at: ${params.triggeredAt}`);
+  }
+
+  if (params.finishedAt) {
+    lines.push(`Finished at: ${params.finishedAt}`);
+  }
+
+  if (params.updatedAt) {
+    lines.push(`Updated at: ${params.updatedAt}`);
   }
 
   return lines.join("\n");
@@ -204,6 +263,7 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
   const [copyMessage, setCopyMessage] = useState("");
   const [attemptStatusById, setAttemptStatusById] = useState<Record<string, { label: string; tone: AttemptStatusTone }>>({});
+  const [attemptDetailsById, setAttemptDetailsById] = useState<Record<string, AttemptStatusDetails>>({});
 
   const latestAttemptId = useMemo(() => {
     const entry = items.find((item) => typeof item.promoteAttemptId === "string" && item.promoteAttemptId.length > 0);
@@ -292,7 +352,7 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
       .map((item) => item.promoteAttemptId?.trim() ?? "")
       .filter((value) => value.length > 0)));
 
-    const missingAttemptIds = attemptIds.filter((attemptId) => !attemptStatusById[attemptId]);
+    const missingAttemptIds = attemptIds.filter((attemptId) => !attemptDetailsById[attemptId]);
     if (missingAttemptIds.length === 0) {
       return;
     }
@@ -300,7 +360,7 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     let cancelled = false;
 
     async function loadAttemptStatuses() {
-      const updates: Record<string, { label: string; tone: AttemptStatusTone }> = {};
+      const updates: Record<string, AttemptStatusDetails> = {};
 
       await Promise.all(missingAttemptIds.map(async (attemptId) => {
         try {
@@ -320,7 +380,28 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
             return;
           }
 
-          updates[attemptId] = { label, tone };
+          updates[attemptId] = {
+            statusLabel: label,
+            tone,
+            status: payload.status,
+            message: typeof payload.message === "string" ? payload.message : undefined,
+            deploymentId: typeof payload.deploymentId === "string" ? payload.deploymentId : undefined,
+            deploymentStatus: typeof payload.deploymentStatus === "string" ? payload.deploymentStatus : undefined,
+            blockingReason: typeof payload.blockingReason === "string" ? payload.blockingReason : undefined,
+            triggeredAt: typeof payload.triggeredAt === "string" ? payload.triggeredAt : undefined,
+            finishedAt: typeof payload.finishedAt === "string" ? payload.finishedAt : undefined,
+            updatedAt: typeof payload.updatedAt === "string" ? payload.updatedAt : undefined,
+            events: Array.isArray(payload.events)
+              ? payload.events.map((event) => ({
+                createdAt: event.createdAt,
+                actionType: event.actionType,
+                message: event.message,
+                deploymentId: event.deploymentId,
+                deploymentStatus: event.deploymentStatus,
+                blockingReason: event.blockingReason
+              }))
+              : []
+          };
         } catch {
           // Ignore transient fetch errors; fallback badge mapping still applies.
         }
@@ -330,7 +411,14 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
         return;
       }
 
-      setAttemptStatusById((current) => ({ ...current, ...updates }));
+      setAttemptDetailsById((current) => ({ ...current, ...updates }));
+      setAttemptStatusById((current) => {
+        const statusUpdates = Object.fromEntries(
+          Object.entries(updates).map(([attemptId, details]) => [attemptId, { label: details.statusLabel, tone: details.tone }])
+        );
+
+        return { ...current, ...statusUpdates };
+      });
     }
 
     loadAttemptStatuses();
@@ -338,7 +426,7 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     return () => {
       cancelled = true;
     };
-  }, [items, siteId, attemptStatusById]);
+  }, [items, siteId, attemptDetailsById]);
 
   function clearAttemptFilter() {
     setAttemptFilter("");
@@ -420,32 +508,41 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     }
 
     const latestPromoteEvent = scopedAttemptItems.find((item) => isPromoteAction(item.actionType));
+    const attemptDetails = attemptDetailsById[normalizedAttemptFilter];
     const endpointStatus = attemptStatusById[normalizedAttemptFilter];
     const fallbackStatus = fallbackAttemptStatus(latestPromoteEvent?.actionType);
-    const statusLabel = endpointStatus?.label ?? fallbackStatus?.label ?? "Unknown";
+    const statusLabel = attemptDetails?.statusLabel ?? endpointStatus?.label ?? fallbackStatus?.label ?? "Unknown";
 
-    let deploymentId: string | undefined;
-    let blockingReason: string | undefined;
-    for (const item of scopedAttemptItems) {
-      const deploymentMatch = item.message.match(/deployment\s+([A-Za-z0-9-]+)/i);
-      if (!deploymentId && deploymentMatch?.[1]) {
-        deploymentId = deploymentMatch[1];
-      }
+    const deploymentId =
+      attemptDetails?.deploymentId
+      ?? attemptDetails?.events.find((event) => typeof event.deploymentId === "string")?.deploymentId;
+    const deploymentStatus =
+      attemptDetails?.deploymentStatus
+      ?? attemptDetails?.events.find((event) => typeof event.deploymentStatus === "string")?.deploymentStatus;
+    const blockingReason =
+      attemptDetails?.blockingReason
+      ?? attemptDetails?.events.find((event) => typeof event.blockingReason === "string")?.blockingReason;
 
-      if (!blockingReason && item.actionType === "staging_promote_blocked") {
-        blockingReason = "blocked";
-      }
-    }
+    const latestEventAt = attemptDetails?.events[0]?.createdAt ?? scopedAttemptItems[0]?.createdAt;
+    const firstEventAt =
+      attemptDetails?.events[attemptDetails.events.length - 1]?.createdAt
+      ?? scopedAttemptItems[scopedAttemptItems.length - 1]?.createdAt;
 
     return formatIncidentHandoffText({
       attemptId: normalizedAttemptFilter,
       statusLabel,
       items: scopedAttemptItems,
-      latestMessage: latestPromoteEvent?.message ?? scopedAttemptItems[0].message,
+      latestMessage: attemptDetails?.message ?? latestPromoteEvent?.message ?? scopedAttemptItems[0].message,
       deploymentId,
-      blockingReason
+      deploymentStatus,
+      blockingReason,
+      triggeredAt: attemptDetails?.triggeredAt,
+      finishedAt: attemptDetails?.finishedAt,
+      updatedAt: attemptDetails?.updatedAt,
+      latestEventAt,
+      firstEventAt
     });
-  }, [filterMode, normalizedAttemptFilter, scopedAttemptItems, attemptStatusById]);
+  }, [filterMode, normalizedAttemptFilter, scopedAttemptItems, attemptStatusById, attemptDetailsById]);
 
   const incidentHandoffJson = useMemo(() => {
     if (filterMode !== "attempt" || !normalizedAttemptFilter || scopedAttemptItems.length === 0) {
@@ -453,42 +550,48 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     }
 
     const latestPromoteEvent = scopedAttemptItems.find((item) => isPromoteAction(item.actionType));
+    const attemptDetails = attemptDetailsById[normalizedAttemptFilter];
     const endpointStatus = attemptStatusById[normalizedAttemptFilter];
     const fallbackStatus = fallbackAttemptStatus(latestPromoteEvent?.actionType);
-    const statusLabel = endpointStatus?.label ?? fallbackStatus?.label ?? "Unknown";
+    const statusLabel = attemptDetails?.statusLabel ?? endpointStatus?.label ?? fallbackStatus?.label ?? "Unknown";
 
-    let deploymentId: string | undefined;
-    let blockingReason: string | undefined;
-    for (const item of scopedAttemptItems) {
-      const deploymentMatch = item.message.match(/deployment\s+([A-Za-z0-9-]+)/i);
-      if (!deploymentId && deploymentMatch?.[1]) {
-        deploymentId = deploymentMatch[1];
-      }
-
-      if (!blockingReason && item.actionType === "staging_promote_blocked") {
-        blockingReason = "blocked";
-      }
-    }
+    const deploymentId =
+      attemptDetails?.deploymentId
+      ?? attemptDetails?.events.find((event) => typeof event.deploymentId === "string")?.deploymentId;
+    const deploymentStatus =
+      attemptDetails?.deploymentStatus
+      ?? attemptDetails?.events.find((event) => typeof event.deploymentStatus === "string")?.deploymentStatus;
+    const blockingReason =
+      attemptDetails?.blockingReason
+      ?? attemptDetails?.events.find((event) => typeof event.blockingReason === "string")?.blockingReason;
 
     const latest = scopedAttemptItems[0];
     const oldest = scopedAttemptItems[scopedAttemptItems.length - 1];
+    const endpointEvents = attemptDetails?.events ?? [];
 
     return JSON.stringify({
       attemptId: normalizedAttemptFilter,
-      status: statusLabel,
+      status: attemptDetails?.status ?? normalizeAttemptStatusKey(statusLabel),
+      statusLabel,
       timelineEventCount: scopedAttemptItems.length,
-      latestEventAt: latest?.createdAt,
-      firstEventAt: oldest?.createdAt,
-      latestMessage: latestPromoteEvent?.message ?? latest?.message,
+      latestEventAt: endpointEvents[0]?.createdAt ?? latest?.createdAt,
+      firstEventAt: endpointEvents[endpointEvents.length - 1]?.createdAt ?? oldest?.createdAt,
+      latestMessage: attemptDetails?.message ?? latestPromoteEvent?.message ?? latest?.message,
       deploymentId,
+      deploymentStatus,
       blockingReason,
-      events: scopedAttemptItems.map((item) => ({
-        createdAt: item.createdAt,
-        actionType: item.actionType,
-        message: item.message
-      }))
+      triggeredAt: attemptDetails?.triggeredAt,
+      finishedAt: attemptDetails?.finishedAt,
+      updatedAt: attemptDetails?.updatedAt,
+      events: endpointEvents.length > 0
+        ? endpointEvents
+        : scopedAttemptItems.map((item) => ({
+          createdAt: item.createdAt,
+          actionType: item.actionType ?? "staging_promote_triggered",
+          message: item.message
+        }))
     }, null, 2);
-  }, [filterMode, normalizedAttemptFilter, scopedAttemptItems, attemptStatusById]);
+  }, [filterMode, normalizedAttemptFilter, scopedAttemptItems, attemptStatusById, attemptDetailsById]);
 
   async function copyToClipboard(content: string, successMessage: string) {
     try {
