@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Props = {
@@ -12,6 +12,34 @@ type Props = {
 };
 
 type PromoteStatus = "idle" | "pending" | "success" | "error";
+
+type DeploymentStatus = {
+  id: string;
+  environment: string;
+  status: string;
+  triggeredAt: string;
+  finishedAt?: string;
+  coolifyDeploymentId?: string;
+  source: "db" | "coolify";
+};
+
+type DeploymentsPollResponse = {
+  ok: boolean;
+  generatedAt?: string;
+  latestProduction?: DeploymentStatus | null;
+  inProgressProduction?: DeploymentStatus | null;
+  error?: string;
+};
+
+function formatAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
 export default function PromoteToProductionCard({
   siteId,
@@ -25,6 +53,57 @@ export default function PromoteToProductionCard({
   const [confirmationPhrase, setConfirmationPhrase] = useState("");
   const [status, setStatus] = useState<PromoteStatus>("idle");
   const [message, setMessage] = useState("");
+  const [pollError, setPollError] = useState("");
+  const [lastPolledAt, setLastPolledAt] = useState<string | null>(null);
+  const [latestProductionDeployment, setLatestProductionDeployment] = useState<DeploymentStatus | null>(null);
+  const [inProgressProductionDeployment, setInProgressProductionDeployment] = useState<DeploymentStatus | null>(null);
+
+  const pollDeployments = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/sites/${siteId}/deployments?limit=10`, {
+        cache: "no-store"
+      });
+      const payload = (await response.json()) as DeploymentsPollResponse;
+
+      if (!response.ok || !payload.ok) {
+        setPollError(payload?.error ?? "Unable to read deployment status.");
+        return;
+      }
+
+      setLatestProductionDeployment(payload.latestProduction ?? null);
+      setInProgressProductionDeployment(payload.inProgressProduction ?? null);
+      setLastPolledAt(payload.generatedAt ?? new Date().toISOString());
+      setPollError("");
+    } catch {
+      setPollError("Network error while reading deployment status.");
+    }
+  }, [siteId]);
+
+  useEffect(() => {
+    pollDeployments();
+    const id = setInterval(pollDeployments, 8_000);
+    return () => clearInterval(id);
+  }, [pollDeployments]);
+
+  const productionStatusTone = useMemo(() => {
+    if (!latestProductionDeployment) {
+      return "unknown";
+    }
+
+    if (latestProductionDeployment.status === "success" || latestProductionDeployment.status === "healthy") {
+      return "healthy";
+    }
+
+    if (latestProductionDeployment.status === "failed" || latestProductionDeployment.status === "error") {
+      return "error";
+    }
+
+    if (latestProductionDeployment.status === "in_progress" || latestProductionDeployment.status === "degraded") {
+      return "degraded";
+    }
+
+    return "unknown";
+  }, [latestProductionDeployment]);
 
   async function submitPromote() {
     if (status === "pending") {
@@ -52,6 +131,7 @@ export default function PromoteToProductionCard({
       setShowConfirm(false);
       setConfirmationPhrase("");
       setMessage(payload?.message ?? `Production deploy triggered (${payload?.deploymentId ?? "unknown"}).`);
+      await pollDeployments();
       router.refresh();
     } catch {
       setStatus("error");
@@ -163,6 +243,43 @@ export default function PromoteToProductionCard({
           {message}
         </p>
       ) : null}
+
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.6rem", display: "grid", gap: "0.35rem" }}>
+        <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 600 }}>Production deployment status</p>
+
+        {inProgressProductionDeployment ? (
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+            <span className="status-chip degraded">in progress</span>{" "}
+            started {formatAgo(inProgressProductionDeployment.triggeredAt)}
+          </p>
+        ) : null}
+
+        {latestProductionDeployment ? (
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+            Latest: <span className={`status-chip ${productionStatusTone}`}>{latestProductionDeployment.status.replace("_", " ")}</span>{" "}
+            {formatAgo(latestProductionDeployment.triggeredAt)}
+            {latestProductionDeployment.coolifyDeploymentId
+              ? ` (deployment ${latestProductionDeployment.coolifyDeploymentId})`
+              : ""}
+          </p>
+        ) : (
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+            No production deployment activity recorded yet.
+          </p>
+        )}
+
+        {lastPolledAt ? (
+          <p style={{ margin: 0, fontSize: "0.76rem", color: "var(--muted)" }}>
+            Last checked {formatAgo(lastPolledAt)}
+          </p>
+        ) : null}
+
+        {pollError ? (
+          <p style={{ margin: 0, fontSize: "0.76rem", color: "var(--error, #c0392b)" }}>
+            {pollError}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

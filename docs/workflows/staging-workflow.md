@@ -24,6 +24,7 @@
 - record deployment event and actor metadata
 - enforce confirmation phrase in UI/API before trigger executes
 - block execution when staging-to-production preflight is locked
+- poll latest production deployment status in staging workspace after trigger
 
 ## Visibility Model
 
