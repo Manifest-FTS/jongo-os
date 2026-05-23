@@ -414,6 +414,9 @@ export default async function StagingPage({ params, searchParams }: Params) {
             <p style={{ margin: "0 0 0.75rem", fontSize: "0.88rem" }}>
               Programmatic testing: <code>GET /api/sites/{siteId}/staging</code> returns sync-readiness and dry-run plan details.
             </p>
+            <p style={{ margin: "0 0 0.75rem", fontSize: "0.88rem" }}>
+              Promote-attempt lookup: <code>GET /api/sites/{siteId}/staging/promote-attempt?attemptId=&lt;id&gt;</code> returns focused attempt status.
+            </p>
             <div style={{ display: "grid", gap: "0.65rem" }}>
               <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.65rem 0.75rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>

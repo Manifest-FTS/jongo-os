@@ -37,6 +37,7 @@
 - show started/completed timing for the latest production deployment result
 - include a promote attempt correlation id in trigger response and audit timeline
 - provide one-click copy for attempt id in staging promote surfaces
+- expose per-attempt status lookup by promote attempt id for focused incident triage
 
 ## Visibility Model
 

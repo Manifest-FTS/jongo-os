@@ -33,6 +33,22 @@ type DeploymentsPollResponse = {
   error?: string;
 };
 
+type PromoteAttemptResponse = {
+  ok?: boolean;
+  error?: string;
+  attemptId?: string;
+  status?: "blocked" | "triggered" | "in_progress" | "succeeded" | "failed";
+  statusLabel?: string;
+  statusTone?: "healthy" | "degraded" | "error" | "unknown";
+  message?: string;
+  deploymentId?: string;
+  deploymentStatus?: string;
+  blockingReason?: string;
+  triggeredAt?: string;
+  finishedAt?: string;
+  updatedAt?: string;
+};
+
 type PromoteResponse = {
   ok?: boolean;
   error?: string;
@@ -113,9 +129,38 @@ export default function PromoteToProductionCard({
   const [latestProductionDeployment, setLatestProductionDeployment] = useState<DeploymentStatus | null>(null);
   const [inProgressProductionDeployment, setInProgressProductionDeployment] = useState<DeploymentStatus | null>(null);
   const [latestPromoteAttemptId, setLatestPromoteAttemptId] = useState<string | null>(null);
+  const [focusedAttempt, setFocusedAttempt] = useState<PromoteAttemptResponse | null>(null);
+  const [focusedAttemptError, setFocusedAttemptError] = useState("");
   const [promoteIdempotencyKey, setPromoteIdempotencyKey] = useState("");
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownTick, setCooldownTick] = useState(() => Date.now());
+
+  const fetchAttemptStatus = useCallback(async (attemptId: string | null) => {
+    if (!attemptId) {
+      setFocusedAttempt(null);
+      setFocusedAttemptError("");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/sites/${siteId}/staging/promote-attempt?attemptId=${encodeURIComponent(attemptId)}`,
+        { cache: "no-store" }
+      );
+
+      const payload = (await response.json()) as PromoteAttemptResponse;
+      if (!response.ok || !payload.ok) {
+        setFocusedAttempt(null);
+        setFocusedAttemptError(payload.error ?? "Unable to read promote attempt status.");
+        return;
+      }
+
+      setFocusedAttempt(payload);
+      setFocusedAttemptError("");
+    } catch {
+      setFocusedAttemptError("Network error while reading promote attempt status.");
+    }
+  }, [siteId]);
 
   const pollDeployments = useCallback(async () => {
     try {
@@ -131,13 +176,15 @@ export default function PromoteToProductionCard({
 
       setLatestProductionDeployment(payload.latestProduction ?? null);
       setInProgressProductionDeployment(payload.inProgressProduction ?? null);
-      setLatestPromoteAttemptId(payload.latestPromoteAttemptId ?? null);
+      const attemptId = payload.latestPromoteAttemptId ?? null;
+      setLatestPromoteAttemptId(attemptId);
+      await fetchAttemptStatus(attemptId);
       setLastPolledAt(payload.generatedAt ?? new Date().toISOString());
       setPollError("");
     } catch {
       setPollError("Network error while reading deployment status.");
     }
-  }, [siteId]);
+  }, [siteId, fetchAttemptStatus]);
 
   async function refreshDeployments() {
     if (isRefreshing) {
@@ -285,6 +332,7 @@ export default function PromoteToProductionCard({
       setMessage(`${payload?.message ?? defaultMessage}${attemptSuffix}${replaySuffix}`.trim());
       if (payload?.promoteAttemptId) {
         setLatestPromoteAttemptId(payload.promoteAttemptId);
+        await fetchAttemptStatus(payload.promoteAttemptId);
       }
       await pollDeployments();
       router.refresh();
@@ -408,6 +456,51 @@ export default function PromoteToProductionCard({
       ) : null}
 
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.6rem", display: "grid", gap: "0.35rem" }}>
+        {focusedAttempt ? (
+          <div
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "8px",
+              background: "var(--surface-alt)",
+              padding: "0.6rem",
+              marginBottom: "0.5rem",
+              display: "grid",
+              gap: "0.25rem"
+            }}
+          >
+            <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600 }}>
+              Focused attempt: {focusedAttempt.attemptId}
+            </p>
+            <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+              <span className={`status-chip ${focusedAttempt.statusTone ?? "unknown"}`}>
+                {focusedAttempt.statusLabel ?? "unknown"}
+              </span>{" "}
+              {focusedAttempt.message}
+            </p>
+            {focusedAttempt.deploymentId ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+                Deployment: {focusedAttempt.deploymentId}
+                {focusedAttempt.deploymentStatus ? ` (${focusedAttempt.deploymentStatus.replace("_", " ")})` : ""}
+              </p>
+            ) : null}
+            {focusedAttempt.finishedAt ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+                Completed {formatAgo(focusedAttempt.finishedAt)}
+              </p>
+            ) : focusedAttempt.triggeredAt ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+                Started {formatAgo(focusedAttempt.triggeredAt)}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {focusedAttemptError ? (
+          <p style={{ margin: 0, fontSize: "0.76rem", color: "var(--error, #c0392b)" }}>
+            {focusedAttemptError}
+          </p>
+        ) : null}
+
         <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
           <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 600 }}>Production deployment status</p>
           <button
