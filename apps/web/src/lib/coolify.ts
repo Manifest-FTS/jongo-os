@@ -1056,7 +1056,11 @@ export type CoolifyActionResult = {
   message: string;
 };
 
-async function coolifyMutate(path: string, method: "POST" | "DELETE", body?: Record<string, unknown>): Promise<boolean> {
+async function coolifyMutate(
+  path: string,
+  method: "POST" | "DELETE" | "PATCH" | "PUT",
+  body?: Record<string, unknown>
+): Promise<boolean> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
   const timeoutMs = Number(process.env.COOLIFY_TIMEOUT_MS ?? 8000);
@@ -1089,7 +1093,120 @@ async function coolifyMutate(path: string, method: "POST" | "DELETE", body?: Rec
   }
 }
 
-export async function provisionCoolifyStagingFromProduction(appUuid: string): Promise<CoolifyActionResult> {
+function extractFirstHostLikeValue(raw: string): string | undefined {
+  const tokens = raw
+    .split(/[\s,;]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  return tokens[0];
+}
+
+function toHttpsUrl(input: string): string | undefined {
+  const candidate = input.trim();
+  if (!candidate) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (!parsed.hostname) {
+      return undefined;
+    }
+    return `https://${parsed.hostname}`;
+  } catch {
+    try {
+      const parsed = new URL(`https://${candidate.replace(/^https?:\/\//i, "")}`);
+      if (!parsed.hostname) {
+        return undefined;
+      }
+      return `https://${parsed.hostname}`;
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function buildStagingDomainFromProductionUrl(productionRaw: string): string | undefined {
+  const first = extractFirstHostLikeValue(productionRaw);
+  if (!first) {
+    return undefined;
+  }
+
+  const productionUrl = toHttpsUrl(first);
+  if (!productionUrl) {
+    return undefined;
+  }
+
+  const hostname = new URL(productionUrl).hostname;
+  if (!hostname || hostname.startsWith("staging.")) {
+    return undefined;
+  }
+
+  return `https://staging.${hostname}`;
+}
+
+export async function deriveCoolifyStagingDomainFromProduction(appUuid: string): Promise<string | undefined> {
+  try {
+    const payload = await coolifyFetch(`/api/v1/applications/${encodeURIComponent(appUuid)}`);
+    const app = (typeof payload === "object" && payload !== null ? payload : {}) as Record<string, unknown>;
+
+    const candidates = [
+      stringValue(app, ["fqdn", "url", "urls", "domain", "domains"], ""),
+      stringValue(app, ["preview_url", "production_url"], "")
+    ].filter((value) => value.length > 0);
+
+    for (const candidate of candidates) {
+      const derived = buildStagingDomainFromProductionUrl(candidate);
+      if (derived) {
+        return derived;
+      }
+    }
+
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function applyCoolifyApplicationDomain(appUuid: string, fqdn: string): Promise<boolean> {
+  const normalized = toHttpsUrl(fqdn);
+  if (!normalized) {
+    return false;
+  }
+
+  const requestBodies: Record<string, unknown>[] = [
+    { fqdn: normalized },
+    { domain: normalized },
+    { domains: [normalized] },
+    { urls: [normalized] }
+  ];
+  const paths = [
+    `/api/v1/applications/${encodeURIComponent(appUuid)}`,
+    `/api/v1/applications/${encodeURIComponent(appUuid)}/settings`,
+    `/api/v1/applications/${encodeURIComponent(appUuid)}/domains`
+  ];
+
+  for (const path of paths) {
+    for (const body of requestBodies) {
+      const patchOk = await coolifyMutate(path, "PATCH", body);
+      if (patchOk) {
+        return true;
+      }
+      const postOk = await coolifyMutate(path, "POST", body);
+      if (postOk) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+export async function provisionCoolifyStagingFromProduction(
+  appUuid: string,
+  preferredStagingDomain?: string
+): Promise<CoolifyActionResult> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
 
@@ -1101,10 +1218,27 @@ export async function provisionCoolifyStagingFromProduction(appUuid: string): Pr
     };
   }
 
+  const normalizedPreferredDomain = preferredStagingDomain ? toHttpsUrl(preferredStagingDomain) : undefined;
+
   const candidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = [
-    { path: `/api/v1/applications/${encodeURIComponent(appUuid)}/staging` },
-    { path: `/api/v1/applications/${encodeURIComponent(appUuid)}/clone`, body: { environment: "staging" } },
-    { path: `/api/v1/applications/${encodeURIComponent(appUuid)}/duplicate`, body: { environment: "staging" } }
+    {
+      path: `/api/v1/applications/${encodeURIComponent(appUuid)}/staging`,
+      body: normalizedPreferredDomain
+        ? { fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : undefined
+    },
+    {
+      path: `/api/v1/applications/${encodeURIComponent(appUuid)}/clone`,
+      body: normalizedPreferredDomain
+        ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : { environment: "staging" }
+    },
+    {
+      path: `/api/v1/applications/${encodeURIComponent(appUuid)}/duplicate`,
+      body: normalizedPreferredDomain
+        ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : { environment: "staging" }
+    }
   ];
 
   for (const request of candidateRequests) {

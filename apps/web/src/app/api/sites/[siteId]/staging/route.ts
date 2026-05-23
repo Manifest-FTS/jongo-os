@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isAdminRole } from "@/lib/roles";
 import {
+  applyCoolifyApplicationDomain,
   buildStagingSyncDryRunPlan,
+  deriveCoolifyStagingDomainFromProduction,
   getCoolifyAppBackupInventory,
   destroyCoolifyApplication,
   getCoolifyAppStagingCapability,
@@ -231,13 +233,24 @@ export async function POST(req: Request, { params }: Params) {
       });
     }
 
-    const provisionResult = await provisionCoolifyStagingFromProduction(appUuid);
+    const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
+    const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain);
     const capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId);
+
+    let stagingDomainApplied = false;
+    if (preferredStagingDomain && capabilityAfterProvision.applicationUuid) {
+      stagingDomainApplied = await applyCoolifyApplicationDomain(
+        capabilityAfterProvision.applicationUuid,
+        preferredStagingDomain
+      );
+    }
 
     return NextResponse.json({
       enabled: true,
       stagedDetected: capabilityAfterProvision.detected,
       provisioned: provisionResult.ok,
+      preferredStagingDomain,
+      stagingDomainApplied,
       message: provisionResult.message,
       capability: capabilityAfterProvision
     });
