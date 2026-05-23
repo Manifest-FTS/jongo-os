@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import CopyTextButton from "@/components/CopyTextButton";
 
 type Props = {
   siteId: string;
@@ -28,6 +29,7 @@ type DeploymentsPollResponse = {
   generatedAt?: string;
   latestProduction?: DeploymentStatus | null;
   inProgressProduction?: DeploymentStatus | null;
+  latestPromoteAttemptId?: string;
   error?: string;
 };
 
@@ -70,6 +72,7 @@ export default function PromoteToProductionCard({
   const [lastPolledAt, setLastPolledAt] = useState<string | null>(null);
   const [latestProductionDeployment, setLatestProductionDeployment] = useState<DeploymentStatus | null>(null);
   const [inProgressProductionDeployment, setInProgressProductionDeployment] = useState<DeploymentStatus | null>(null);
+  const [latestPromoteAttemptId, setLatestPromoteAttemptId] = useState<string | null>(null);
 
   const pollDeployments = useCallback(async () => {
     try {
@@ -85,6 +88,7 @@ export default function PromoteToProductionCard({
 
       setLatestProductionDeployment(payload.latestProduction ?? null);
       setInProgressProductionDeployment(payload.inProgressProduction ?? null);
+      setLatestPromoteAttemptId(payload.latestPromoteAttemptId ?? null);
       setLastPolledAt(payload.generatedAt ?? new Date().toISOString());
       setPollError("");
     } catch {
@@ -158,6 +162,9 @@ export default function PromoteToProductionCard({
         : "Production deploy triggered.";
       const attemptSuffix = payload?.promoteAttemptId ? ` Attempt ${payload.promoteAttemptId}.` : "";
       setMessage(`${payload?.message ?? defaultMessage}${attemptSuffix}`.trim());
+      if (payload?.promoteAttemptId) {
+        setLatestPromoteAttemptId(payload.promoteAttemptId);
+      }
       await pollDeployments();
       router.refresh();
     } catch {
@@ -305,6 +312,14 @@ export default function PromoteToProductionCard({
               <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
                 Completed {formatAgo(latestProductionDeployment.finishedAt)}
               </p>
+            ) : null}
+            {latestPromoteAttemptId ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+                <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+                  Attempt id: <code>{latestPromoteAttemptId}</code>
+                </p>
+                <CopyTextButton value={latestPromoteAttemptId} label="Copy attempt id" />
+              </div>
             ) : null}
           </div>
         ) : (

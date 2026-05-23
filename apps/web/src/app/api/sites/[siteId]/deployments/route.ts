@@ -25,6 +25,10 @@ type AuditActionEntry = {
   entryPromoteAttemptId?: string;
 };
 
+type LatestPromoteContext = {
+  promoteAttemptId?: string;
+};
+
 function mapDeployStatusToPromoteLifecycleAction(status: string): PromoteLifecycleAction | null {
   if (status === "in_progress") {
     return "staging_promote_in_progress";
@@ -141,6 +145,33 @@ async function recordPromoteLifecycleAudit(params: {
   });
 }
 
+function readLatestPromoteContextFromLogs(logs: Array<{ details: unknown }>): LatestPromoteContext {
+  for (const log of logs) {
+    const details = (typeof log.details === "object" && log.details !== null
+      ? log.details
+      : null) as Record<string, unknown> | null;
+
+    const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
+    const promoteAttemptId = typeof details?.promoteAttemptId === "string" ? details.promoteAttemptId : undefined;
+
+    if (!promoteAttemptId || !actionType) {
+      continue;
+    }
+
+    if (
+      actionType === "staging_promote_triggered" ||
+      actionType === "staging_promote_in_progress" ||
+      actionType === "staging_promote_succeeded" ||
+      actionType === "staging_promote_failed" ||
+      actionType === "staging_promote_blocked"
+    ) {
+      return { promoteAttemptId };
+    }
+  }
+
+  return {};
+}
+
 export async function GET(req: Request, { params }: Params) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -167,6 +198,7 @@ export async function GET(req: Request, { params }: Params) {
     (item) => item.environment === "production" && item.status === "in_progress"
   ) ?? null;
   const generatedAt = new Date().toISOString();
+  let latestPromoteAttemptId: string | undefined;
 
   if (latestProduction && workspace.organizationId) {
     const deploymentId = latestProduction.coolifyDeploymentId ?? latestProduction.id;
@@ -184,11 +216,29 @@ export async function GET(req: Request, { params }: Params) {
     }
   }
 
+  if (workspace.organizationId) {
+    const { db } = await import("@/lib/db");
+    const recentPromoteLogs = await db.auditLog.findMany({
+      where: {
+        organizationId: workspace.organizationId,
+        resourceType: "site_staging",
+        resourceId: workspace.id,
+        action: "site_updated"
+      },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+      select: { details: true }
+    });
+
+    latestPromoteAttemptId = readLatestPromoteContextFromLogs(recentPromoteLogs).promoteAttemptId;
+  }
+
   return NextResponse.json({
     ok: true,
     generatedAt,
     deployments,
     latestProduction,
-    inProgressProduction
+    inProgressProduction,
+    latestPromoteAttemptId
   });
 }

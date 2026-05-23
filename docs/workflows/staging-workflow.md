@@ -30,6 +30,7 @@
 - provide a manual refresh control for the live deployment status panel
 - show started/completed timing for the latest production deployment result
 - include a promote attempt correlation id in trigger response and audit timeline
+- provide one-click copy for attempt id in staging promote surfaces
 
 ## Visibility Model
 

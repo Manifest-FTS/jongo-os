@@ -5,6 +5,7 @@ import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import PromoteToProductionCard from "@/components/PromoteToProductionCard";
 import StagingDomainForm from "@/components/StagingDomainForm";
 import StagingAuditHistory from "@/components/StagingAuditHistory";
+import CopyTextButton from "@/components/CopyTextButton";
 import Link from "next/link";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { db } from "@/lib/db";
@@ -339,9 +340,12 @@ export default async function StagingPage({ params }: Params) {
           </div>
           <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.75rem", fontSize: "0.85rem" }}>
             {latestPromoteOutcome.promoteAttemptId ? (
-              <p style={{ margin: 0, color: "var(--muted)" }}>
-                Attempt id: <code>{latestPromoteOutcome.promoteAttemptId}</code>
-              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <p style={{ margin: 0, color: "var(--muted)" }}>
+                  Attempt id: <code>{latestPromoteOutcome.promoteAttemptId}</code>
+                </p>
+                <CopyTextButton value={latestPromoteOutcome.promoteAttemptId} label="Copy attempt id" />
+              </div>
             ) : null}
             {latestPromoteOutcome.deploymentId ? (
               <p style={{ margin: 0, color: "var(--muted)" }}>
