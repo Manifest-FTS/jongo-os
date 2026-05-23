@@ -125,6 +125,20 @@ function formatAuditAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function getAuditActionType(entry: StagingAuditEntry): string | undefined {
+  const details = entry.details as Record<string, unknown> | null | undefined;
+  return typeof details?.actionType === "string" ? details.actionType : undefined;
+}
+
+function getLatestDomainSyncEntry(entries: StagingAuditEntry[]): StagingAuditEntry | null {
+  const match = entries.find((entry) => {
+    const actionType = getAuditActionType(entry);
+    return actionType === "staging_domains_updated" || actionType === "staging_domains_update_failed";
+  });
+
+  return match ?? null;
+}
+
 export default async function StagingPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -175,6 +189,7 @@ export default async function StagingPage({ params }: Params) {
         take: 5
       })
     : [];
+  const latestDomainSyncEntry = getLatestDomainSyncEntry(stagingAuditLogs);
 
   const dryRunPlan =
     stagingConfigured && appUuid && stagingCapability
@@ -289,10 +304,24 @@ export default async function StagingPage({ params }: Params) {
                   </p>
                 )}
                 {canManageDomains ? (
-                  <StagingDomainForm
-                    siteId={siteId}
-                    initialDomains={stagingDomainsInput}
-                  />
+                  <>
+                    <StagingDomainForm
+                      siteId={siteId}
+                      initialDomains={stagingDomainsInput}
+                    />
+                    {latestDomainSyncEntry ? (
+                      <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                        <span className={`status-chip ${getAuditActionType(latestDomainSyncEntry) === "staging_domains_updated" ? "healthy" : "error"}`}>
+                          {getAuditActionType(latestDomainSyncEntry) === "staging_domains_updated" ? "Last domain sync: success" : "Last domain sync: failed"}
+                        </span>{" "}
+                        {formatAuditAgo(latestDomainSyncEntry.createdAt.toISOString())}
+                      </p>
+                    ) : (
+                      <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                        Last domain sync: no attempts recorded yet.
+                      </p>
+                    )}
+                  </>
                 ) : null}
                 <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
                   Checked {formatAgo(stagingCapability.checkedAt)}
