@@ -40,11 +40,12 @@
 - staging action audit trail with latest enable/disable/domain updates
 - staging audit filter controls (all events vs domain sync)
 - staging audit attempt-id filter controls (manual entry and latest-attempt shortcut)
+- latest-attempt shortcut acts as a toggle for fast scope entry/exit
 - staging page deep-link support (?attemptId=...) to open audit view pre-filtered by promotion attempt
 - one-click copy action for attempt deep links in promote status surfaces
 - active-filter indicator chip showing current audit filter scope (including attempt id)
 - staging audit expand/collapse controls for deeper operator review
-- staging audit export controls (copy or download filtered history as text or JSON)
+- staging audit export controls (copy or download filtered history as text or JSON with filter context labels)
 - simple action audit trail for collaboration context
 
 ## MVP Guardrails

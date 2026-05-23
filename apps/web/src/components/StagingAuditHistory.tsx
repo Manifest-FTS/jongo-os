@@ -67,8 +67,8 @@ function isDomainSyncAction(actionType?: string): boolean {
   return actionType === "staging_domains_updated" || actionType === "staging_domains_update_failed";
 }
 
-function formatAuditExportText(items: StagingAuditHistoryItem[]): string {
-  return items
+function formatAuditExportText(items: StagingAuditHistoryItem[], activeFilterLabel: string): string {
+  const content = items
     .map((item) => {
       const lines = [
         `${formatActionLabel(item.actionType)} (${formatAuditAgo(item.createdAt)})`,
@@ -90,6 +90,8 @@ function formatAuditExportText(items: StagingAuditHistoryItem[]): string {
       return lines.join("\n");
     })
     .join("\n\n");
+
+  return [`Active filter: ${activeFilterLabel}`, `Exported events: ${items.length}`, "", content].join("\n").trim();
 }
 
 export default function StagingAuditHistory({ items, initialAttemptId }: Props) {
@@ -98,10 +100,12 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
   const [copyMessage, setCopyMessage] = useState("");
+
   const latestAttemptId = useMemo(() => {
     const entry = items.find((item) => typeof item.promoteAttemptId === "string" && item.promoteAttemptId.length > 0);
     return entry?.promoteAttemptId ?? "";
   }, [items]);
+
   const normalizedAttemptFilter = attemptFilter.trim();
   const activeFilterLabel = useMemo(() => {
     if (filterMode === "all") {
@@ -116,6 +120,11 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
       ? `Attempt: ${normalizedAttemptFilter}`
       : "Attempt filter (no id set)";
   }, [filterMode, normalizedAttemptFilter]);
+
+  const isLatestAttemptActive =
+    filterMode === "attempt" &&
+    normalizedAttemptFilter.length > 0 &&
+    normalizedAttemptFilter === latestAttemptId;
 
   const filteredItems = useMemo(() => {
     if (filterMode === "all") {
@@ -147,18 +156,23 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
     setFilterMode("attempt");
   }, [initialAttemptId]);
 
+  function clearAttemptFilter() {
+    setAttemptFilter("");
+    setFilterMode("all");
+  }
+
   function activateLatestAttemptFilter() {
     if (!latestAttemptId) {
       return;
     }
 
+    if (isLatestAttemptActive) {
+      clearAttemptFilter();
+      return;
+    }
+
     setAttemptFilter(latestAttemptId);
     setFilterMode("attempt");
-  }
-
-  function clearAttemptFilter() {
-    setAttemptFilter("");
-    setFilterMode("all");
   }
 
   const visibleItems = filteredItems.slice(0, visibleCount);
@@ -179,14 +193,14 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
   async function copyAsJson() {
     await copyToClipboard(
       JSON.stringify(filteredItems, null, 2),
-      `Copied ${filteredItems.length} filtered staging audit events as JSON.`
+      `Copied ${filteredItems.length} ${activeFilterLabel.toLowerCase()} as JSON.`
     );
   }
 
   async function copyAsText() {
     await copyToClipboard(
-      formatAuditExportText(filteredItems),
-      `Copied ${filteredItems.length} filtered staging audit events as text.`
+      formatAuditExportText(filteredItems, activeFilterLabel),
+      `Copied ${filteredItems.length} ${activeFilterLabel.toLowerCase()} as text.`
     );
   }
 
@@ -208,13 +222,21 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
 
   function buildExportFilename(extension: "txt" | "json") {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const scope = filterMode === "domain-sync" ? "domain-sync" : "all";
+    const scope =
+      filterMode === "domain-sync"
+        ? "domain-sync"
+        : filterMode === "attempt"
+          ? `attempt-${(normalizedAttemptFilter || "unspecified")
+              .replace(/[^a-zA-Z0-9-]+/g, "-")
+              .replace(/-+/g, "-")
+              .replace(/^-|-$/g, "") || "unspecified"}`
+          : "all";
     return `staging-audit-${scope}-${stamp}.${extension}`;
   }
 
   function downloadAsText() {
     downloadContent(
-      formatAuditExportText(filteredItems),
+      formatAuditExportText(filteredItems, activeFilterLabel),
       buildExportFilename("txt"),
       "text/plain;charset=utf-8"
     );
@@ -256,6 +278,7 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
           </button>
         </div>
       </div>
+
       <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
         Recent staging enable, disable, and domain update actions recorded by Jongo.
       </p>
@@ -296,14 +319,15 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
             Clear
           </button>
         </div>
+
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           <button
             type="button"
-            className="button button-secondary"
+            className={isLatestAttemptActive ? "button" : "button button-secondary"}
             onClick={activateLatestAttemptFilter}
             disabled={!latestAttemptId}
           >
-            Latest attempt
+            {isLatestAttemptActive ? "Latest attempt active" : "Latest attempt"}
           </button>
           {latestAttemptId ? (
             <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
@@ -371,34 +395,35 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
       ) : (
         <>
           <div style={{ display: "grid", gap: "0.6rem" }}>
-          {visibleItems.map((item) => (
-            <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
-                <div>
-                  <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(item.actionType)}</strong>
-                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>{item.message}</p>
+            {visibleItems.map((item) => (
+              <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
+                  <div>
+                    <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(item.actionType)}</strong>
+                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>{item.message}</p>
+                  </div>
+                  <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{formatAuditAgo(item.createdAt)}</span>
                 </div>
-                <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{formatAuditAgo(item.createdAt)}</span>
+                {item.domains.length > 0 ? (
+                  <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem" }}>
+                    Domains: {item.domains.join(", ")}
+                  </p>
+                ) : null}
+                {item.promoteAttemptId ? (
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
+                    Attempt id: {item.promoteAttemptId}
+                  </p>
+                ) : null}
+                {item.preferredStagingDomain ? (
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
+                    Preferred staging domain: {item.preferredStagingDomain}
+                  </p>
+                ) : null}
               </div>
-              {item.domains.length > 0 ? (
-                <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem" }}>
-                  Domains: {item.domains.join(", ")}
-                </p>
-              ) : null}
-              {item.promoteAttemptId ? (
-                <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
-                  Attempt id: {item.promoteAttemptId}
-                </p>
-              ) : null}
-              {item.preferredStagingDomain ? (
-                <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
-                  Preferred staging domain: {item.preferredStagingDomain}
-                </p>
-              ) : null}
-            </div>
-          ))}
+            ))}
           </div>
-          {(canShowMore || canShowLess) ? (
+
+          {canShowMore || canShowLess ? (
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
               {canShowLess ? (
                 <button

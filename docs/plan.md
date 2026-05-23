@@ -98,9 +98,11 @@ This pass is focused on read-only operational correctness before any new automat
 - Promotion events include a correlation attempt id for retry-safe incident tracing.
 - Promote status and terminal banner include one-click copy for attempt id.
 - Staging audit history includes attempt-id filtering with a latest-attempt shortcut.
+- Latest-attempt shortcut acts as a toggle so operators can enter/exit latest-attempt scope quickly.
 - Staging page supports attemptId deep links that open audit history pre-filtered to a promotion attempt.
 - Promote attempt surfaces include one-click copy for deep links to pre-filtered staging audit views.
 - Staging audit history displays an active-filter indicator (including attempt id when scoped).
+- Staging audit exports include active filter context in text output, copy feedback, and filenames.
 - Redundant staging status chip/copy is removed from settings.
 
 ### Current Scope Boundary
