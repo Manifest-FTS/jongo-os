@@ -29,6 +29,7 @@
 - display a terminal-state banner on the staging page for the latest promotion outcome
 - provide a manual refresh control for the live deployment status panel
 - show started/completed timing for the latest production deployment result
+- include a promote attempt correlation id in trigger response and audit timeline
 
 ## Visibility Model
 

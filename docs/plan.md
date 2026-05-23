@@ -95,6 +95,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging workspace shows a terminal-state banner for the latest promotion outcome.
 - Staging workspace includes a manual refresh control for deployment status.
 - Promote status surfaces explicit completion timing (started/completed age) for the latest deployment.
+- Promotion events include a correlation attempt id for retry-safe incident tracing.
 - Redundant staging status chip/copy is removed from settings.
 
 ### Current Scope Boundary

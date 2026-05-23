@@ -31,6 +31,14 @@ type DeploymentsPollResponse = {
   error?: string;
 };
 
+type PromoteResponse = {
+  ok?: boolean;
+  error?: string;
+  message?: string;
+  deploymentId?: string;
+  promoteAttemptId?: string;
+};
+
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -135,7 +143,7 @@ export default function PromoteToProductionCard({
         body: JSON.stringify({ confirmationPhrase })
       });
 
-      const payload = await response.json();
+      const payload = (await response.json()) as PromoteResponse;
       if (!response.ok) {
         setStatus("error");
         setMessage(payload?.error ?? "Unable to trigger production deployment.");
@@ -145,7 +153,11 @@ export default function PromoteToProductionCard({
       setStatus("success");
       setShowConfirm(false);
       setConfirmationPhrase("");
-      setMessage(payload?.message ?? `Production deploy triggered (${payload?.deploymentId ?? "unknown"}).`);
+      const defaultMessage = payload?.deploymentId
+        ? `Production deploy triggered (${payload.deploymentId}).`
+        : "Production deploy triggered.";
+      const attemptSuffix = payload?.promoteAttemptId ? ` Attempt ${payload.promoteAttemptId}.` : "";
+      setMessage(`${payload?.message ?? defaultMessage}${attemptSuffix}`.trim());
       await pollDeployments();
       router.refresh();
     } catch {

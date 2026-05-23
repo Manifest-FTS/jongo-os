@@ -77,6 +77,8 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Confirmation phrase must be PROMOTE" }, { status: 400 });
   }
 
+  const promoteAttemptId = crypto.randomUUID();
+
   const { db } = await import("@/lib/db");
   const site = await db.site.findFirst({
     where: {
@@ -129,6 +131,7 @@ export async function POST(req: Request, { params }: Params) {
       actionType: "staging_promote_blocked",
       resourceId: site.id,
       details: {
+        promoteAttemptId,
         appUuid,
         preflight,
         message: "Staging-to-production promote blocked by preflight checks."
@@ -138,6 +141,7 @@ export async function POST(req: Request, { params }: Params) {
 
     return NextResponse.json({
       error: "Staging-to-production preflight is blocked.",
+      promoteAttemptId,
       preflight
     }, { status: 409 });
   }
@@ -151,6 +155,7 @@ export async function POST(req: Request, { params }: Params) {
       actionType: "staging_promote_triggered",
       resourceId: site.id,
       details: {
+        promoteAttemptId,
         appUuid,
         deploymentId: result.deploymentId,
         mode: result.mode,
@@ -162,6 +167,7 @@ export async function POST(req: Request, { params }: Params) {
 
     return NextResponse.json({
       ok: true,
+      promoteAttemptId,
       deploymentId: result.deploymentId,
       mode: result.mode,
       message: result.message,
@@ -176,6 +182,7 @@ export async function POST(req: Request, { params }: Params) {
       actionType: "staging_promote_failed",
       resourceId: site.id,
       details: {
+        promoteAttemptId,
         appUuid,
         preflight,
         message
@@ -185,6 +192,7 @@ export async function POST(req: Request, { params }: Params) {
 
     return NextResponse.json({
       error: message,
+      promoteAttemptId,
       preflight
     }, { status: 502 });
   }

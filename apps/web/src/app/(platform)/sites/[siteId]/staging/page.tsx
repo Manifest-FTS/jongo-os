@@ -21,6 +21,7 @@ type StagingAuditEntry = {
 
 type StagingPromoteOutcome = {
   actionType: "staging_promote_blocked" | "staging_promote_triggered" | "staging_promote_in_progress" | "staging_promote_succeeded" | "staging_promote_failed";
+  promoteAttemptId?: string;
   deploymentId?: string;
   deploymentStatus?: string;
   triggeredAt?: string;
@@ -169,6 +170,7 @@ function getLatestPromoteOutcome(entries: StagingAuditEntry[]): StagingPromoteOu
 
   return {
     actionType,
+    promoteAttemptId: typeof details?.promoteAttemptId === "string" ? details.promoteAttemptId : undefined,
     deploymentId: typeof details?.deploymentId === "string" ? details.deploymentId : undefined,
     deploymentStatus: typeof details?.deploymentStatus === "string" ? details.deploymentStatus : undefined,
     triggeredAt: typeof details?.triggeredAt === "string" ? details.triggeredAt : undefined,
@@ -336,6 +338,11 @@ export default async function StagingPage({ params }: Params) {
             </span>
           </div>
           <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.75rem", fontSize: "0.85rem" }}>
+            {latestPromoteOutcome.promoteAttemptId ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Attempt id: <code>{latestPromoteOutcome.promoteAttemptId}</code>
+              </p>
+            ) : null}
             {latestPromoteOutcome.deploymentId ? (
               <p style={{ margin: 0, color: "var(--muted)" }}>
                 Deployment id: <code>{latestPromoteOutcome.deploymentId}</code>

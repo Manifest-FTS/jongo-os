@@ -22,6 +22,7 @@ type AuditActionEntry = {
   actorId: string;
   entryActionType?: string;
   entryDeploymentId?: string;
+  entryPromoteAttemptId?: string;
 };
 
 function mapDeployStatusToPromoteLifecycleAction(status: string): PromoteLifecycleAction | null {
@@ -85,11 +86,13 @@ async function recordPromoteLifecycleAudit(params: {
       : null) as Record<string, unknown> | null;
     const entryActionType = typeof details?.actionType === "string" ? details.actionType : undefined;
     const entryDeploymentId = typeof details?.deploymentId === "string" ? details.deploymentId : undefined;
+    const entryPromoteAttemptId = typeof details?.promoteAttemptId === "string" ? details.promoteAttemptId : undefined;
 
     return {
       actorId: entry.actorId,
       entryActionType,
-      entryDeploymentId
+      entryDeploymentId,
+      entryPromoteAttemptId
     };
   });
 
@@ -102,9 +105,14 @@ async function recordPromoteLifecycleAudit(params: {
     return;
   }
 
+  const promoteAttemptId = triggerForDeployment.entryPromoteAttemptId ?? params.deploymentId;
+
   const alreadyRecorded = withActionType.some(
     (entry: AuditActionEntry) =>
-      entry.entryActionType === actionType && entry.entryDeploymentId === params.deploymentId
+      entry.entryActionType === actionType && (
+        entry.entryPromoteAttemptId === promoteAttemptId ||
+        entry.entryDeploymentId === params.deploymentId
+      )
   );
   if (alreadyRecorded) {
     return;
@@ -119,6 +127,7 @@ async function recordPromoteLifecycleAudit(params: {
       resourceId: params.siteDbId,
       details: {
         actionType,
+        promoteAttemptId,
         deploymentId: params.deploymentId,
         deploymentStatus: params.status,
         triggeredAt: params.triggeredAt,
