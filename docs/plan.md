@@ -89,6 +89,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging control is an explicit on/off toggle.
 - Toggling staging on or off requires a confirmation panel before the action executes.
 - Staging domain values can be edited in Jongo and synced back to Coolify, including comma-separated multi-domain input.
+- Staging to production promotion is executed through a guarded action (admin-only, preflight gated, explicit confirmation).
 - Redundant staging status chip/copy is removed from settings.
 
 ### Current Scope Boundary

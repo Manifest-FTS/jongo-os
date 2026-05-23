@@ -46,6 +46,12 @@ function formatActionLabel(actionType?: string): string {
       return "Staging domains updated";
     case "staging_domains_update_failed":
       return "Staging domains update failed";
+    case "staging_promote_blocked":
+      return "Promotion blocked by preflight";
+    case "staging_promote_triggered":
+      return "Production promotion triggered";
+    case "staging_promote_failed":
+      return "Production promotion failed";
     default:
       return actionType ?? "Staging action";
   }

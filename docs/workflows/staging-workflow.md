@@ -22,6 +22,8 @@
 - validate latest staging health checks
 - trigger production deployment in Coolify
 - record deployment event and actor metadata
+- enforce confirmation phrase in UI/API before trigger executes
+- block execution when staging-to-production preflight is locked
 
 ## Visibility Model
 

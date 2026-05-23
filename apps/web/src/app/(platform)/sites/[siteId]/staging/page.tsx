@@ -2,7 +2,7 @@ import { getCoolifyAppStagingCapability, buildStagingSyncDryRunPlan } from "@/li
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
-import DeployButton from "@/components/DeployButton";
+import PromoteToProductionCard from "@/components/PromoteToProductionCard";
 import StagingDomainForm from "@/components/StagingDomainForm";
 import StagingAuditHistory from "@/components/StagingAuditHistory";
 import Link from "next/link";
@@ -158,11 +158,13 @@ export default async function StagingPage({ params }: Params) {
     : [null, null];
   const stagingConfigured = Boolean(stagingEnabled && stagingCapability?.detected);
   const backupReadiness = getBackupReadiness(backupInventory, appUuid);
-  const deployLockReason = backupReadiness.locked
-    ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
-    : "Dry-run mode: execution remains disabled in this interface.";
   const prodToStagingPreflight = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
   const stagingToProdPreflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
+  const promoteLockedReason = !canManageDomains
+    ? "Only admins can promote staging to production."
+    : stagingToProdPreflight.tone === "error"
+      ? stagingToProdPreflight.detail
+      : undefined;
   const stagingModelCopy = getStagingModelCopy(workspace?.siteType);
   const stagingDomains = parseDomainValues(stagingCapability?.fqdn);
   const stagingDomainsInput = stagingDomains.join(", ");
@@ -247,7 +249,7 @@ export default async function StagingPage({ params }: Params) {
           <article className="card">
             <h3 className="card-title">Pre-flight Status</h3>
             <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-              Execution remains disabled in this interface. Use these checks to confirm readiness.
+              Use these checks to confirm readiness. Production promotion is enabled only when staging-to-production preflight is ready.
             </p>
             <p style={{ margin: "0 0 0.75rem", fontSize: "0.88rem" }}>
               Programmatic testing: <code>GET /api/sites/{siteId}/staging</code> returns sync-readiness and dry-run plan details.
@@ -433,13 +435,12 @@ export default async function StagingPage({ params }: Params) {
             <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
               After validating in staging, promote to production once backup readiness is healthy.
             </p>
-            <DeployButton
+            <PromoteToProductionCard
               siteId={siteId}
-              deployTargetId={workspace?.deployTargetId}
-              environment="production"
-              label="Deploy to Production"
-              disabled
-              disabledReason={deployLockReason ?? undefined}
+              disabled={Boolean(promoteLockedReason)}
+              disabledReason={promoteLockedReason}
+              preflightLabel={stagingToProdPreflight.label}
+              preflightTone={stagingToProdPreflight.tone}
             />
           </article>
 
