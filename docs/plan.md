@@ -98,6 +98,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging exposes a focused promote-attempt status view (by attempt id) for direct operator triage without timeline scanning.
 - Staging audit rows display attempt state badges (triggered/in progress/succeeded/failed/blocked) for promote events.
 - Staging audit includes a compact attempt-state summary strip (counts by state) for the active filter scope.
+- Staging audit provides a one-click failed/blocked-attempt toggle that auto-focuses the latest incident attempt id.
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
 - Promote UI disables trigger/confirm while production deployment is in progress and explains lock reason.
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.

@@ -130,6 +130,15 @@ function normalizeAttemptStatusKey(label: string): "triggered" | "in_progress" |
   return "triggered";
 }
 
+function isIncidentStatusLabel(label?: string): boolean {
+  if (!label) {
+    return false;
+  }
+
+  const normalized = label.trim().toLowerCase();
+  return normalized.includes("failed") || normalized.includes("blocked");
+}
+
 function formatAuditExportText(items: StagingAuditHistoryItem[], activeFilterLabel: string): string {
   const content = items
     .map((item) => {
@@ -170,6 +179,29 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     return entry?.promoteAttemptId ?? "";
   }, [items]);
 
+  const latestIncidentAttemptId = useMemo(() => {
+    const attempted = new Set<string>();
+
+    for (const item of items) {
+      const attemptId = item.promoteAttemptId?.trim();
+      if (!attemptId || attempted.has(attemptId)) {
+        continue;
+      }
+
+      attempted.add(attemptId);
+      const statusLabel = attemptStatusById[attemptId]?.label;
+      if (isIncidentStatusLabel(statusLabel)) {
+        return attemptId;
+      }
+
+      if (item.actionType === "staging_promote_failed" || item.actionType === "staging_promote_blocked") {
+        return attemptId;
+      }
+    }
+
+    return "";
+  }, [items, attemptStatusById]);
+
   const normalizedAttemptFilter = attemptFilter.trim();
   const activeFilterLabel = useMemo(() => {
     if (filterMode === "all") {
@@ -189,6 +221,10 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     filterMode === "attempt" &&
     normalizedAttemptFilter.length > 0 &&
     normalizedAttemptFilter === latestAttemptId;
+  const isIncidentAttemptActive =
+    filterMode === "attempt" &&
+    normalizedAttemptFilter.length > 0 &&
+    normalizedAttemptFilter === latestIncidentAttemptId;
 
   const filteredItems = useMemo(() => {
     if (filterMode === "all") {
@@ -289,6 +325,20 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     }
 
     setAttemptFilter(latestAttemptId);
+    setFilterMode("attempt");
+  }
+
+  function activateLatestIncidentAttemptFilter() {
+    if (!latestIncidentAttemptId) {
+      return;
+    }
+
+    if (isIncidentAttemptActive) {
+      clearAttemptFilter();
+      return;
+    }
+
+    setAttemptFilter(latestIncidentAttemptId);
     setFilterMode("attempt");
   }
 
@@ -483,6 +533,26 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
           ) : (
             <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
               No promote attempt id recorded yet.
+            </p>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className={isIncidentAttemptActive ? "button" : "button button-secondary"}
+            onClick={activateLatestIncidentAttemptFilter}
+            disabled={!latestIncidentAttemptId}
+          >
+            {isIncidentAttemptActive ? "Incident attempt active" : "Show failed/blocked attempt"}
+          </button>
+          {latestIncidentAttemptId ? (
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+              Latest incident attempt id: {latestIncidentAttemptId}
+            </p>
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+              No failed or blocked promote attempt detected yet.
             </p>
           )}
         </div>
