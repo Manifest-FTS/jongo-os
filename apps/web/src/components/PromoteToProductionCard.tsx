@@ -53,6 +53,7 @@ export default function PromoteToProductionCard({
   const [confirmationPhrase, setConfirmationPhrase] = useState("");
   const [status, setStatus] = useState<PromoteStatus>("idle");
   const [message, setMessage] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [pollError, setPollError] = useState("");
   const [lastPolledAt, setLastPolledAt] = useState<string | null>(null);
   const [latestProductionDeployment, setLatestProductionDeployment] = useState<DeploymentStatus | null>(null);
@@ -78,6 +79,16 @@ export default function PromoteToProductionCard({
       setPollError("Network error while reading deployment status.");
     }
   }, [siteId]);
+
+  async function refreshDeployments() {
+    if (isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    await pollDeployments();
+    setIsRefreshing(false);
+  }
 
   useEffect(() => {
     pollDeployments();
@@ -245,7 +256,18 @@ export default function PromoteToProductionCard({
       ) : null}
 
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.6rem", display: "grid", gap: "0.35rem" }}>
-        <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 600 }}>Production deployment status</p>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
+          <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 600 }}>Production deployment status</p>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={refreshDeployments}
+            disabled={isRefreshing}
+            style={{ padding: "0.35rem 0.6rem", fontSize: "0.78rem" }}
+          >
+            {isRefreshing ? "Refreshing…" : "Refresh status"}
+          </button>
+        </div>
 
         {inProgressProductionDeployment ? (
           <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
