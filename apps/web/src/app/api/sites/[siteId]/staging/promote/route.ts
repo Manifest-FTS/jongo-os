@@ -7,6 +7,7 @@ import {
   triggerCoolifyDeploy
 } from "@/lib/coolify";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
+import { listSiteDeployments } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -113,6 +114,46 @@ export async function POST(req: Request, { params }: Params) {
   const projectId = site.coolifyProjectId?.trim() || undefined;
   if (!appUuid) {
     return NextResponse.json({ error: "Coolify service UUID is not linked." }, { status: 409 });
+  }
+
+  const viewer = {
+    userId: session.user.id,
+    email: session.user.email ?? undefined
+  };
+
+  const deployments = await listSiteDeployments(siteId, viewer);
+  const inProgressProduction = deployments.find(
+    (item) => item.environment === "production" && item.status === "in_progress"
+  );
+  if (inProgressProduction) {
+    const blockingDeploymentId = inProgressProduction.coolifyDeploymentId ?? inProgressProduction.id;
+
+    await recordStagingAuditLog({
+      organizationId: site.organizationId,
+      actorId: session.user.id,
+      actionType: "staging_promote_blocked",
+      resourceId: site.id,
+      details: {
+        promoteAttemptId,
+        appUuid,
+        blockingReason: "production_deployment_in_progress",
+        blockingDeploymentId,
+        blockingDeploymentStatus: inProgressProduction.status,
+        blockingTriggeredAt: inProgressProduction.triggeredAt,
+        message: `Promotion blocked because production deployment ${blockingDeploymentId} is already in progress.`
+      },
+      req
+    });
+
+    return NextResponse.json({
+      error: "A production deployment is already in progress. Wait for completion before retrying promote.",
+      promoteAttemptId,
+      blockingDeployment: {
+        id: blockingDeploymentId,
+        status: inProgressProduction.status,
+        triggeredAt: inProgressProduction.triggeredAt
+      }
+    }, { status: 409 });
   }
 
   const [stagingCapability, backupInventory] = await Promise.all([

@@ -21,6 +21,7 @@
 - require explicit promotion action
 - validate latest staging health checks
 - trigger production deployment in Coolify
+- block duplicate promote execution while a production deployment is already in progress
 - record deployment event and actor metadata
 - enforce confirmation phrase in UI/API before trigger executes
 - block execution when staging-to-production preflight is locked
