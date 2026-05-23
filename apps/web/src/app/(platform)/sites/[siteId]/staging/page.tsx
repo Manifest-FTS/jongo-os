@@ -23,6 +23,8 @@ type StagingPromoteOutcome = {
   actionType: "staging_promote_blocked" | "staging_promote_triggered" | "staging_promote_in_progress" | "staging_promote_succeeded" | "staging_promote_failed";
   deploymentId?: string;
   deploymentStatus?: string;
+  triggeredAt?: string;
+  finishedAt?: string;
   message: string;
   createdAt: string;
 };
@@ -169,6 +171,8 @@ function getLatestPromoteOutcome(entries: StagingAuditEntry[]): StagingPromoteOu
     actionType,
     deploymentId: typeof details?.deploymentId === "string" ? details.deploymentId : undefined,
     deploymentStatus: typeof details?.deploymentStatus === "string" ? details.deploymentStatus : undefined,
+    triggeredAt: typeof details?.triggeredAt === "string" ? details.triggeredAt : undefined,
+    finishedAt: typeof details?.finishedAt === "string" ? details.finishedAt : undefined,
     message: typeof details?.message === "string" ? details.message : "Production promotion recorded.",
     createdAt: promoteEntry.createdAt.toISOString()
   };
@@ -340,6 +344,15 @@ export default async function StagingPage({ params }: Params) {
             {latestPromoteOutcome.deploymentStatus ? (
               <p style={{ margin: 0, color: "var(--muted)" }}>
                 Deployment status: <span className={`status-chip ${promoteOutcomeTone(latestPromoteOutcome.actionType)}`}>{latestPromoteOutcome.deploymentStatus.replace("_", " ")}</span>
+              </p>
+            ) : null}
+            {latestPromoteOutcome.finishedAt ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Completed {formatAgo(latestPromoteOutcome.finishedAt)}
+              </p>
+            ) : latestPromoteOutcome.triggeredAt ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Started {formatAgo(latestPromoteOutcome.triggeredAt)}
               </p>
             ) : null}
             <p style={{ margin: 0, color: "var(--muted)" }}>

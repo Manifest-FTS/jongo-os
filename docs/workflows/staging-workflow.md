@@ -28,6 +28,7 @@
 - persist promote lifecycle outcomes (in progress/succeeded/failed) into staging audit history
 - display a terminal-state banner on the staging page for the latest promotion outcome
 - provide a manual refresh control for the live deployment status panel
+- show started/completed timing for the latest production deployment result
 
 ## Visibility Model
 

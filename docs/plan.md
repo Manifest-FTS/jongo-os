@@ -94,6 +94,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.
 - Staging workspace shows a terminal-state banner for the latest promotion outcome.
 - Staging workspace includes a manual refresh control for deployment status.
+- Promote status surfaces explicit completion timing (started/completed age) for the latest deployment.
 - Redundant staging status chip/copy is removed from settings.
 
 ### Current Scope Boundary

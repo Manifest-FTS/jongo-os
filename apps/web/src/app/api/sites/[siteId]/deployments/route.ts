@@ -58,6 +58,8 @@ async function recordPromoteLifecycleAudit(params: {
   fallbackActorId: string;
   deploymentId: string;
   status: string;
+  triggeredAt?: string;
+  finishedAt?: string;
   generatedAt: string;
 }) {
   const actionType = mapDeployStatusToPromoteLifecycleAction(params.status);
@@ -119,6 +121,8 @@ async function recordPromoteLifecycleAudit(params: {
         actionType,
         deploymentId: params.deploymentId,
         deploymentStatus: params.status,
+        triggeredAt: params.triggeredAt,
+        finishedAt: params.finishedAt,
         message: actionMessage(actionType, params.deploymentId),
         generatedAt: params.generatedAt
       },
@@ -164,6 +168,8 @@ export async function GET(req: Request, { params }: Params) {
         fallbackActorId: session.user.id,
         deploymentId,
         status: latestProduction.status,
+        triggeredAt: latestProduction.triggeredAt,
+        finishedAt: latestProduction.finishedAt,
         generatedAt
       });
     }

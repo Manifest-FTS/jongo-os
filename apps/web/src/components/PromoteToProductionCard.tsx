@@ -41,6 +41,10 @@ function formatAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function isTerminalDeployStatus(status: string): boolean {
+  return status === "success" || status === "healthy" || status === "failed" || status === "error";
+}
+
 export default function PromoteToProductionCard({
   siteId,
   disabled,
@@ -277,13 +281,20 @@ export default function PromoteToProductionCard({
         ) : null}
 
         {latestProductionDeployment ? (
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-            Latest: <span className={`status-chip ${productionStatusTone}`}>{latestProductionDeployment.status.replace("_", " ")}</span>{" "}
-            {formatAgo(latestProductionDeployment.triggeredAt)}
-            {latestProductionDeployment.coolifyDeploymentId
-              ? ` (deployment ${latestProductionDeployment.coolifyDeploymentId})`
-              : ""}
-          </p>
+          <div style={{ display: "grid", gap: "0.25rem" }}>
+            <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+              Latest: <span className={`status-chip ${productionStatusTone}`}>{latestProductionDeployment.status.replace("_", " ")}</span>{" "}
+              {formatAgo(latestProductionDeployment.triggeredAt)}
+              {latestProductionDeployment.coolifyDeploymentId
+                ? ` (deployment ${latestProductionDeployment.coolifyDeploymentId})`
+                : ""}
+            </p>
+            {isTerminalDeployStatus(latestProductionDeployment.status) && latestProductionDeployment.finishedAt ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+                Completed {formatAgo(latestProductionDeployment.finishedAt)}
+              </p>
+            ) : null}
+          </div>
         ) : (
           <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
             No production deployment activity recorded yet.
