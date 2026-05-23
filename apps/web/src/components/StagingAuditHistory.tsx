@@ -50,6 +50,10 @@ function formatActionLabel(actionType?: string): string {
       return "Promotion blocked by preflight";
     case "staging_promote_triggered":
       return "Production promotion triggered";
+    case "staging_promote_in_progress":
+      return "Production promotion in progress";
+    case "staging_promote_succeeded":
+      return "Production promotion succeeded";
     case "staging_promote_failed":
       return "Production promotion failed";
     default:

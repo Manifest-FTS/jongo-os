@@ -13,6 +13,121 @@ function normalizeLimit(raw: string | null): number {
   return Math.min(Math.floor(parsed), 50);
 }
 
+type PromoteLifecycleAction =
+  | "staging_promote_in_progress"
+  | "staging_promote_succeeded"
+  | "staging_promote_failed";
+
+type AuditActionEntry = {
+  actorId: string;
+  entryActionType?: string;
+  entryDeploymentId?: string;
+};
+
+function mapDeployStatusToPromoteLifecycleAction(status: string): PromoteLifecycleAction | null {
+  if (status === "in_progress") {
+    return "staging_promote_in_progress";
+  }
+
+  if (status === "success" || status === "healthy") {
+    return "staging_promote_succeeded";
+  }
+
+  if (status === "failed" || status === "error") {
+    return "staging_promote_failed";
+  }
+
+  return null;
+}
+
+function actionMessage(actionType: PromoteLifecycleAction, deploymentId: string): string {
+  if (actionType === "staging_promote_in_progress") {
+    return `Production deployment ${deploymentId} is in progress.`;
+  }
+
+  if (actionType === "staging_promote_succeeded") {
+    return `Production deployment ${deploymentId} completed successfully.`;
+  }
+
+  return `Production deployment ${deploymentId} failed.`;
+}
+
+async function recordPromoteLifecycleAudit(params: {
+  siteDbId: string;
+  organizationId: string;
+  fallbackActorId: string;
+  deploymentId: string;
+  status: string;
+  generatedAt: string;
+}) {
+  const actionType = mapDeployStatusToPromoteLifecycleAction(params.status);
+  if (!actionType) {
+    return;
+  }
+
+  const { db } = await import("@/lib/db");
+  const recentLogs = await db.auditLog.findMany({
+    where: {
+      organizationId: params.organizationId,
+      resourceType: "site_staging",
+      resourceId: params.siteDbId,
+      action: "site_updated"
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100
+  });
+
+  const withActionType: AuditActionEntry[] = recentLogs.map((entry: { details: unknown; actorId: string }) => {
+    const details = (typeof entry.details === "object" && entry.details !== null
+      ? entry.details
+      : null) as Record<string, unknown> | null;
+    const entryActionType = typeof details?.actionType === "string" ? details.actionType : undefined;
+    const entryDeploymentId = typeof details?.deploymentId === "string" ? details.deploymentId : undefined;
+
+    return {
+      actorId: entry.actorId,
+      entryActionType,
+      entryDeploymentId
+    };
+  });
+
+  const triggerForDeployment = withActionType.find(
+    (entry: AuditActionEntry) =>
+      entry.entryActionType === "staging_promote_triggered" && entry.entryDeploymentId === params.deploymentId
+  );
+
+  if (!triggerForDeployment) {
+    return;
+  }
+
+  const alreadyRecorded = withActionType.some(
+    (entry: AuditActionEntry) =>
+      entry.entryActionType === actionType && entry.entryDeploymentId === params.deploymentId
+  );
+  if (alreadyRecorded) {
+    return;
+  }
+
+  await db.auditLog.create({
+    data: {
+      organizationId: params.organizationId,
+      actorId: triggerForDeployment.actorId ?? params.fallbackActorId,
+      action: "site_updated",
+      resourceType: "site_staging",
+      resourceId: params.siteDbId,
+      details: {
+        actionType,
+        deploymentId: params.deploymentId,
+        deploymentStatus: params.status,
+        message: actionMessage(actionType, params.deploymentId),
+        generatedAt: params.generatedAt
+      },
+      ipAddress: "system",
+      userAgent: "deployments-poll-reconcile"
+    }
+  });
+}
+
 export async function GET(req: Request, { params }: Params) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -38,10 +153,25 @@ export async function GET(req: Request, { params }: Params) {
   const inProgressProduction = deployments.find(
     (item) => item.environment === "production" && item.status === "in_progress"
   ) ?? null;
+  const generatedAt = new Date().toISOString();
+
+  if (latestProduction && workspace.organizationId) {
+    const deploymentId = latestProduction.coolifyDeploymentId ?? latestProduction.id;
+    if (deploymentId) {
+      await recordPromoteLifecycleAudit({
+        siteDbId: workspace.id,
+        organizationId: workspace.organizationId,
+        fallbackActorId: session.user.id,
+        deploymentId,
+        status: latestProduction.status,
+        generatedAt
+      });
+    }
+  }
 
   return NextResponse.json({
     ok: true,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     deployments,
     latestProduction,
     inProgressProduction

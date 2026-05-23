@@ -25,6 +25,7 @@
 - enforce confirmation phrase in UI/API before trigger executes
 - block execution when staging-to-production preflight is locked
 - poll latest production deployment status in staging workspace after trigger
+- persist promote lifecycle outcomes (in progress/succeeded/failed) into staging audit history
 
 ## Visibility Model
 
