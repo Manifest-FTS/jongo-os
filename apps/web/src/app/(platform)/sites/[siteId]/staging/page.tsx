@@ -356,6 +356,10 @@ export default async function StagingPage({ params, searchParams }: Params) {
                   Attempt id: <code>{latestPromoteOutcome.promoteAttemptId}</code>
                 </p>
                 <CopyTextButton value={latestPromoteOutcome.promoteAttemptId} label="Copy attempt id" />
+                <CopyTextButton
+                  value={`/sites/${siteId}/staging?attemptId=${encodeURIComponent(latestPromoteOutcome.promoteAttemptId)}`}
+                  label="Copy deep link"
+                />
                 <Link
                   href={`/sites/${siteId}/staging?attemptId=${encodeURIComponent(latestPromoteOutcome.promoteAttemptId)}`}
                   className="action-link"

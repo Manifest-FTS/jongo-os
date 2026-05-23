@@ -41,6 +41,7 @@
 - staging audit filter controls (all events vs domain sync)
 - staging audit attempt-id filter controls (manual entry and latest-attempt shortcut)
 - staging page deep-link support (?attemptId=...) to open audit view pre-filtered by promotion attempt
+- one-click copy action for attempt deep links in promote status surfaces
 - staging audit expand/collapse controls for deeper operator review
 - staging audit export controls (copy or download filtered history as text or JSON)
 - simple action audit trail for collaboration context

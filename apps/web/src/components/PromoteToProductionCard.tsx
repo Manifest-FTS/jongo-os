@@ -132,6 +132,14 @@ export default function PromoteToProductionCard({
     return "unknown";
   }, [latestProductionDeployment]);
 
+  const latestAttemptDeepLink = useMemo(() => {
+    if (!latestPromoteAttemptId) {
+      return "";
+    }
+
+    return `/sites/${siteId}/staging?attemptId=${encodeURIComponent(latestPromoteAttemptId)}`;
+  }, [latestPromoteAttemptId, siteId]);
+
   async function submitPromote() {
     if (status === "pending") {
       return;
@@ -319,6 +327,7 @@ export default function PromoteToProductionCard({
                   Attempt id: <code>{latestPromoteAttemptId}</code>
                 </p>
                 <CopyTextButton value={latestPromoteAttemptId} label="Copy attempt id" />
+                <CopyTextButton value={latestAttemptDeepLink} label="Copy deep link" />
               </div>
             ) : null}
           </div>
