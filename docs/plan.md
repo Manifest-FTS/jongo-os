@@ -92,6 +92,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging to production promotion is executed through a guarded action (admin-only, preflight gated, explicit confirmation).
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.
+- Staging workspace shows a terminal-state banner for the latest promotion outcome.
 - Redundant staging status chip/copy is removed from settings.
 
 ### Current Scope Boundary

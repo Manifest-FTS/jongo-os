@@ -19,6 +19,14 @@ type StagingAuditEntry = {
   details: unknown;
 };
 
+type StagingPromoteOutcome = {
+  actionType: "staging_promote_blocked" | "staging_promote_triggered" | "staging_promote_in_progress" | "staging_promote_succeeded" | "staging_promote_failed";
+  deploymentId?: string;
+  deploymentStatus?: string;
+  message: string;
+  createdAt: string;
+};
+
 type StagingAuditHistoryItem = {
   id: string;
   createdAt: string;
@@ -128,6 +136,80 @@ function getLatestDomainSyncEntry(entries: StagingAuditEntry[]): StagingAuditEnt
   return match ?? null;
 }
 
+function getPromoteActionType(entry: StagingAuditEntry): StagingPromoteOutcome["actionType"] | undefined {
+  const details = entry.details as Record<string, unknown> | null | undefined;
+  const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
+
+  if (
+    actionType === "staging_promote_blocked" ||
+    actionType === "staging_promote_triggered" ||
+    actionType === "staging_promote_in_progress" ||
+    actionType === "staging_promote_succeeded" ||
+    actionType === "staging_promote_failed"
+  ) {
+    return actionType;
+  }
+
+  return undefined;
+}
+
+function getLatestPromoteOutcome(entries: StagingAuditEntry[]): StagingPromoteOutcome | null {
+  const promoteEntry = entries.find((entry) => Boolean(getPromoteActionType(entry)));
+  if (!promoteEntry) {
+    return null;
+  }
+
+  const details = promoteEntry.details as Record<string, unknown> | null | undefined;
+  const actionType = getPromoteActionType(promoteEntry);
+  if (!actionType) {
+    return null;
+  }
+
+  return {
+    actionType,
+    deploymentId: typeof details?.deploymentId === "string" ? details.deploymentId : undefined,
+    deploymentStatus: typeof details?.deploymentStatus === "string" ? details.deploymentStatus : undefined,
+    message: typeof details?.message === "string" ? details.message : "Production promotion recorded.",
+    createdAt: promoteEntry.createdAt.toISOString()
+  };
+}
+
+function promoteOutcomeTone(actionType: StagingPromoteOutcome["actionType"]): "healthy" | "degraded" | "error" | "unknown" {
+  if (actionType === "staging_promote_succeeded") {
+    return "healthy";
+  }
+
+  if (actionType === "staging_promote_failed" || actionType === "staging_promote_blocked") {
+    return "error";
+  }
+
+  if (actionType === "staging_promote_in_progress" || actionType === "staging_promote_triggered") {
+    return "degraded";
+  }
+
+  return "unknown";
+}
+
+function promoteOutcomeLabel(actionType: StagingPromoteOutcome["actionType"]): string {
+  if (actionType === "staging_promote_succeeded") {
+    return "Promotion succeeded";
+  }
+
+  if (actionType === "staging_promote_failed") {
+    return "Promotion failed";
+  }
+
+  if (actionType === "staging_promote_blocked") {
+    return "Promotion blocked";
+  }
+
+  if (actionType === "staging_promote_in_progress") {
+    return "Promotion in progress";
+  }
+
+  return "Promotion triggered";
+}
+
 export default async function StagingPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -205,6 +287,7 @@ export default async function StagingPage({ params }: Params) {
     };
   });
   const latestDomainSyncEntry = getLatestDomainSyncEntry(stagingAuditLogs);
+  const latestPromoteOutcome = getLatestPromoteOutcome(stagingAuditLogs);
 
   const dryRunPlan =
     stagingConfigured && appUuid && stagingCapability
@@ -234,6 +317,37 @@ export default async function StagingPage({ params }: Params) {
           </p>
         )}
       </article>
+
+      {latestPromoteOutcome && latestPromoteOutcome.actionType !== "staging_promote_triggered" && latestPromoteOutcome.actionType !== "staging_promote_in_progress" ? (
+        <article className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div>
+              <h3 className="card-title" style={{ marginBottom: "0.25rem" }}>Latest production promotion</h3>
+              <p className="card-muted" style={{ margin: 0 }}>
+                {latestPromoteOutcome.message}
+              </p>
+            </div>
+            <span className={`status-chip ${promoteOutcomeTone(latestPromoteOutcome.actionType)}`}>
+              {promoteOutcomeLabel(latestPromoteOutcome.actionType)}
+            </span>
+          </div>
+          <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.75rem", fontSize: "0.85rem" }}>
+            {latestPromoteOutcome.deploymentId ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Deployment id: <code>{latestPromoteOutcome.deploymentId}</code>
+              </p>
+            ) : null}
+            {latestPromoteOutcome.deploymentStatus ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Deployment status: <span className={`status-chip ${promoteOutcomeTone(latestPromoteOutcome.actionType)}`}>{latestPromoteOutcome.deploymentStatus.replace("_", " ")}</span>
+              </p>
+            ) : null}
+            <p style={{ margin: 0, color: "var(--muted)" }}>
+              Updated {formatAgo(latestPromoteOutcome.createdAt)}
+            </p>
+          </div>
+        </article>
+      ) : null}
 
       <>
           <article className="card">

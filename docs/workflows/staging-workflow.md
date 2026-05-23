@@ -26,6 +26,7 @@
 - block execution when staging-to-production preflight is locked
 - poll latest production deployment status in staging workspace after trigger
 - persist promote lifecycle outcomes (in progress/succeeded/failed) into staging audit history
+- display a terminal-state banner on the staging page for the latest promotion outcome
 
 ## Visibility Model
 
