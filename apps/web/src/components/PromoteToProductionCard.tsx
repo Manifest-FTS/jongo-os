@@ -42,8 +42,44 @@ type PromoteResponse = {
   replayed?: boolean;
   idempotencyKey?: string;
   retryAfterSeconds?: number;
-  blockingReason?: string;
+  blockingReason?: "promote_cooldown" | "production_deployment_in_progress" | "staging_to_production_preflight_blocked";
+  actionHint?: string;
+  blockingDeployment?: {
+    id?: string;
+    status?: string;
+    triggeredAt?: string;
+  };
 };
+
+function formatPromoteError(payload: PromoteResponse): string {
+  const base = payload.error ?? "Unable to trigger production deployment.";
+
+  if (payload.blockingReason === "promote_cooldown") {
+    const retrySuffix = (payload.retryAfterSeconds ?? 0) > 0
+      ? ` Retry in ${payload.retryAfterSeconds}s.`
+      : "";
+    const hintSuffix = payload.actionHint ? ` ${payload.actionHint}` : "";
+    return `${base}${retrySuffix}${hintSuffix}`.trim();
+  }
+
+  if (payload.blockingReason === "production_deployment_in_progress") {
+    const deploymentId = payload.blockingDeployment?.id;
+    const deploymentSuffix = deploymentId ? ` Current deployment: ${deploymentId}.` : "";
+    const hintSuffix = payload.actionHint ? ` ${payload.actionHint}` : "";
+    return `${base}${deploymentSuffix}${hintSuffix}`.trim();
+  }
+
+  if (payload.blockingReason === "staging_to_production_preflight_blocked") {
+    const hintSuffix = payload.actionHint ? ` ${payload.actionHint}` : "";
+    return `${base}${hintSuffix}`.trim();
+  }
+
+  if (payload.actionHint) {
+    return `${base} ${payload.actionHint}`.trim();
+  }
+
+  return base;
+}
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -232,7 +268,7 @@ export default function PromoteToProductionCard({
         }
 
         setStatus("error");
-        setMessage(payload?.error ?? "Unable to trigger production deployment.");
+        setMessage(formatPromoteError(payload));
         return;
       }
 

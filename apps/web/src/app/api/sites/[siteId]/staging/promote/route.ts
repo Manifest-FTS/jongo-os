@@ -16,6 +16,17 @@ type PromoteBody = {
   idempotencyKey?: string;
 };
 
+type BlockingReason =
+  | "promote_cooldown"
+  | "production_deployment_in_progress"
+  | "staging_to_production_preflight_blocked";
+
+type BlockingDeploymentPayload = {
+  id: string;
+  status: string;
+  triggeredAt?: string;
+};
+
 const PROMOTE_BLOCK_COOLDOWN_MS = 30_000;
 const IDEMPOTENCY_KEY_RE = /^[a-zA-Z0-9:_-]{8,128}$/;
 
@@ -35,6 +46,31 @@ function buildSiteIdentityWhere(siteId: string) {
     slug: siteId,
     deletedAt: null
   };
+}
+
+function blockedPromoteResponse(params: {
+  status: 409 | 429;
+  error: string;
+  promoteAttemptId: string;
+  idempotencyKey?: string;
+  blockingReason: BlockingReason;
+  actionHint: string;
+  retryAfterSeconds?: number;
+  blockingDeployment?: BlockingDeploymentPayload;
+  preflight?: Record<string, unknown>;
+  previousBlockedAt?: string;
+}) {
+  return NextResponse.json({
+    error: params.error,
+    promoteAttemptId: params.promoteAttemptId,
+    idempotencyKey: params.idempotencyKey,
+    blockingReason: params.blockingReason,
+    actionHint: params.actionHint,
+    retryAfterSeconds: params.retryAfterSeconds,
+    blockingDeployment: params.blockingDeployment,
+    preflight: params.preflight,
+    previousBlockedAt: params.previousBlockedAt
+  }, { status: params.status });
 }
 
 async function recordStagingAuditLog(params: {
@@ -290,14 +326,23 @@ export async function POST(req: Request, { params }: Params) {
         req
       });
 
-      return NextResponse.json({
+      return blockedPromoteResponse({
+        status: 429,
         error: `Promotion temporarily rate-limited after repeated blocked attempts. Retry in ${retryAfterSeconds}s.`,
         promoteAttemptId,
         idempotencyKey,
-        retryAfterSeconds,
         blockingReason: "promote_cooldown",
-        previousBlockedAt: recentBlocked.createdAt.toISOString()
-      }, { status: 429 });
+        actionHint: "Wait for the cooldown timer to expire, then retry promotion once.",
+        retryAfterSeconds,
+        previousBlockedAt: recentBlocked.createdAt.toISOString(),
+        blockingDeployment: recentBlocked.blockingDeploymentId
+          ? {
+              id: recentBlocked.blockingDeploymentId,
+              status: "in_progress",
+              triggeredAt: recentBlocked.blockingTriggeredAt
+            }
+          : undefined
+      });
     }
   }
 
@@ -331,16 +376,19 @@ export async function POST(req: Request, { params }: Params) {
       req
     });
 
-    return NextResponse.json({
+    return blockedPromoteResponse({
+      status: 409,
       error: "A production deployment is already in progress. Wait for completion before retrying promote.",
       promoteAttemptId,
       idempotencyKey,
+      blockingReason: "production_deployment_in_progress",
+      actionHint: "Wait for the current production deployment to finish, then refresh status and retry.",
       blockingDeployment: {
         id: blockingDeploymentId,
         status: inProgressProduction.status,
         triggeredAt: inProgressProduction.triggeredAt
       }
-    }, { status: 409 });
+    });
   }
 
   const [stagingCapability, backupInventory] = await Promise.all([
@@ -368,12 +416,15 @@ export async function POST(req: Request, { params }: Params) {
       req
     });
 
-    return NextResponse.json({
+    return blockedPromoteResponse({
+      status: 409,
       error: "Staging-to-production preflight is blocked.",
       promoteAttemptId,
       idempotencyKey,
+      blockingReason: "staging_to_production_preflight_blocked",
+      actionHint: "Resolve preflight blockers shown in staging readiness, then retry promotion.",
       preflight
-    }, { status: 409 });
+    });
   }
 
   try {

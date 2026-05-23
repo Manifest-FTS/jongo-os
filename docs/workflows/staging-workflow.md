@@ -24,6 +24,7 @@
 - dedupe retried promote submissions via idempotency key and replay prior trigger response
 - block duplicate promote execution while a production deployment is already in progress
 - apply a short cooldown after repeated blocked promote attempts and return retry timing guidance
+- return normalized blocked response metadata (blockingReason/actionHint/retryAfterSeconds/deployment context)
 - surface live cooldown countdown in promote UI and keep controls disabled until retry window expires
 - record deployment event and actor metadata
 - enforce confirmation phrase in UI/API before trigger executes
