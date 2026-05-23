@@ -31,7 +31,7 @@
 - staging action audit trail with latest enable/disable/domain updates
 - staging audit filter controls (all events vs domain sync)
 - staging audit expand/collapse controls for deeper operator review
-- staging audit export controls (copy filtered history as text or JSON)
+- staging audit export controls (copy or download filtered history as text or JSON)
 - simple action audit trail for collaboration context
 
 ## MVP Guardrails

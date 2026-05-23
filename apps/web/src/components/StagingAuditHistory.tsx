@@ -55,6 +55,27 @@ function isDomainSyncAction(actionType?: string): boolean {
   return actionType === "staging_domains_updated" || actionType === "staging_domains_update_failed";
 }
 
+function formatAuditExportText(items: StagingAuditHistoryItem[]): string {
+  return items
+    .map((item) => {
+      const lines = [
+        `${formatActionLabel(item.actionType)} (${formatAuditAgo(item.createdAt)})`,
+        `Message: ${item.message}`
+      ];
+
+      if (item.domains.length > 0) {
+        lines.push(`Domains: ${item.domains.join(", ")}`);
+      }
+
+      if (item.preferredStagingDomain) {
+        lines.push(`Preferred staging domain: ${item.preferredStagingDomain}`);
+      }
+
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
 export default function StagingAuditHistory({ items }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
@@ -96,28 +117,47 @@ export default function StagingAuditHistory({ items }: Props) {
   }
 
   async function copyAsText() {
-    const text = filteredItems
-      .map((item) => {
-        const lines = [
-          `${formatActionLabel(item.actionType)} (${formatAuditAgo(item.createdAt)})`,
-          `Message: ${item.message}`
-        ];
-
-        if (item.domains.length > 0) {
-          lines.push(`Domains: ${item.domains.join(", ")}`);
-        }
-
-        if (item.preferredStagingDomain) {
-          lines.push(`Preferred staging domain: ${item.preferredStagingDomain}`);
-        }
-
-        return lines.join("\n");
-      })
-      .join("\n\n");
-
     await copyToClipboard(
-      text,
+      formatAuditExportText(filteredItems),
       `Copied ${filteredItems.length} filtered staging audit events as text.`
+    );
+  }
+
+  function downloadContent(content: string, filename: string, mimeType: string) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+    setCopyStatus("success");
+    setCopyMessage(`Downloaded ${filename}.`);
+  }
+
+  function buildExportFilename(extension: "txt" | "json") {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const scope = filterMode === "domain-sync" ? "domain-sync" : "all";
+    return `staging-audit-${scope}-${stamp}.${extension}`;
+  }
+
+  function downloadAsText() {
+    downloadContent(
+      formatAuditExportText(filteredItems),
+      buildExportFilename("txt"),
+      "text/plain;charset=utf-8"
+    );
+  }
+
+  function downloadAsJson() {
+    downloadContent(
+      JSON.stringify(filteredItems, null, 2),
+      buildExportFilename("json"),
+      "application/json;charset=utf-8"
     );
   }
 
@@ -147,7 +187,7 @@ export default function StagingAuditHistory({ items }: Props) {
       </p>
 
       {filteredItems.length > 0 ? (
-        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", flexWrap: "wrap", marginBottom: "0.75rem" }}>
           <button
             type="button"
             className="button button-secondary"
@@ -161,6 +201,20 @@ export default function StagingAuditHistory({ items }: Props) {
             onClick={copyAsJson}
           >
             Copy JSON
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={downloadAsText}
+          >
+            Download text
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={downloadAsJson}
+          >
+            Download JSON
           </button>
         </div>
       ) : null}
