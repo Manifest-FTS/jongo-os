@@ -13,9 +13,11 @@ type Params = { params: Promise<{ siteId: string }> };
 
 type PromoteBody = {
   confirmationPhrase?: string;
+  idempotencyKey?: string;
 };
 
 const PROMOTE_BLOCK_COOLDOWN_MS = 30_000;
+const IDEMPOTENCY_KEY_RE = /^[a-zA-Z0-9:_-]{8,128}$/;
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -67,6 +69,70 @@ type RecentBlockedPromoteContext = {
   blockingDeploymentId?: string;
   blockingTriggeredAt?: string;
 };
+
+type ReplayTriggeredPromoteContext = {
+  promoteAttemptId?: string;
+  deploymentId?: string;
+  mode?: string;
+  message?: string;
+  preflight?: Record<string, unknown>;
+};
+
+function normalizeIdempotencyKey(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
+async function readTriggeredReplayByIdempotencyKey(params: {
+  organizationId: string;
+  actorId: string;
+  resourceId: string;
+  idempotencyKey: string;
+}): Promise<ReplayTriggeredPromoteContext | null> {
+  const { db } = await import("@/lib/db");
+  const logs = await db.auditLog.findMany({
+    where: {
+      organizationId: params.organizationId,
+      actorId: params.actorId,
+      action: "site_updated",
+      resourceType: "site_staging",
+      resourceId: params.resourceId
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    select: {
+      details: true
+    }
+  });
+
+  for (const log of logs) {
+    const details = (typeof log.details === "object" && log.details !== null
+      ? log.details
+      : null) as Record<string, unknown> | null;
+    const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
+    const loggedKey = typeof details?.idempotencyKey === "string" ? details.idempotencyKey : undefined;
+
+    if (actionType !== "staging_promote_triggered" || loggedKey !== params.idempotencyKey) {
+      continue;
+    }
+
+    return {
+      promoteAttemptId: typeof details?.promoteAttemptId === "string" ? details.promoteAttemptId : undefined,
+      deploymentId: typeof details?.deploymentId === "string" ? details.deploymentId : undefined,
+      mode: typeof details?.mode === "string" ? details.mode : undefined,
+      message: typeof details?.message === "string" ? details.message : undefined,
+      preflight: (typeof details?.preflight === "object" && details.preflight !== null)
+        ? (details.preflight as Record<string, unknown>)
+        : undefined
+    };
+  }
+
+  return null;
+}
 
 async function readRecentBlockedPromoteContext(params: {
   organizationId: string;
@@ -130,6 +196,11 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Confirmation phrase must be PROMOTE" }, { status: 400 });
   }
 
+  const idempotencyKey = normalizeIdempotencyKey(body.idempotencyKey) ?? normalizeIdempotencyKey(req.headers.get("Idempotency-Key"));
+  if (idempotencyKey && !IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+    return NextResponse.json({ error: "Invalid idempotency key format." }, { status: 400 });
+  }
+
   const promoteAttemptId = crypto.randomUUID();
 
   const { db } = await import("@/lib/db");
@@ -168,6 +239,28 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Coolify service UUID is not linked." }, { status: 409 });
   }
 
+  if (idempotencyKey) {
+    const replay = await readTriggeredReplayByIdempotencyKey({
+      organizationId: site.organizationId,
+      actorId: session.user.id,
+      resourceId: site.id,
+      idempotencyKey
+    });
+
+    if (replay) {
+      return NextResponse.json({
+        ok: true,
+        replayed: true,
+        idempotencyKey,
+        promoteAttemptId: replay.promoteAttemptId,
+        deploymentId: replay.deploymentId,
+        mode: replay.mode,
+        message: replay.message ?? "Promotion already triggered for this idempotency key.",
+        preflight: replay.preflight
+      });
+    }
+  }
+
   const recentBlocked = await readRecentBlockedPromoteContext({
     organizationId: site.organizationId,
     actorId: session.user.id,
@@ -185,6 +278,7 @@ export async function POST(req: Request, { params }: Params) {
         resourceId: site.id,
         details: {
           promoteAttemptId,
+          idempotencyKey,
           appUuid,
           blockingReason: "promote_cooldown",
           retryAfterSeconds,
@@ -199,6 +293,7 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({
         error: `Promotion temporarily rate-limited after repeated blocked attempts. Retry in ${retryAfterSeconds}s.`,
         promoteAttemptId,
+        idempotencyKey,
         retryAfterSeconds,
         blockingReason: "promote_cooldown",
         previousBlockedAt: recentBlocked.createdAt.toISOString()
@@ -225,6 +320,7 @@ export async function POST(req: Request, { params }: Params) {
       resourceId: site.id,
       details: {
         promoteAttemptId,
+        idempotencyKey,
         appUuid,
         blockingReason: "production_deployment_in_progress",
         blockingDeploymentId,
@@ -238,6 +334,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({
       error: "A production deployment is already in progress. Wait for completion before retrying promote.",
       promoteAttemptId,
+      idempotencyKey,
       blockingDeployment: {
         id: blockingDeploymentId,
         status: inProgressProduction.status,
@@ -263,6 +360,7 @@ export async function POST(req: Request, { params }: Params) {
       resourceId: site.id,
       details: {
         promoteAttemptId,
+        idempotencyKey,
         appUuid,
         preflight,
         message: "Staging-to-production promote blocked by preflight checks."
@@ -273,6 +371,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({
       error: "Staging-to-production preflight is blocked.",
       promoteAttemptId,
+      idempotencyKey,
       preflight
     }, { status: 409 });
   }
@@ -287,6 +386,7 @@ export async function POST(req: Request, { params }: Params) {
       resourceId: site.id,
       details: {
         promoteAttemptId,
+        idempotencyKey,
         appUuid,
         deploymentId: result.deploymentId,
         mode: result.mode,
@@ -299,6 +399,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({
       ok: true,
       promoteAttemptId,
+      idempotencyKey,
       deploymentId: result.deploymentId,
       mode: result.mode,
       message: result.message,
@@ -314,6 +415,7 @@ export async function POST(req: Request, { params }: Params) {
       resourceId: site.id,
       details: {
         promoteAttemptId,
+        idempotencyKey,
         appUuid,
         preflight,
         message
@@ -324,6 +426,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({
       error: message,
       promoteAttemptId,
+      idempotencyKey,
       preflight
     }, { status: 502 });
   }

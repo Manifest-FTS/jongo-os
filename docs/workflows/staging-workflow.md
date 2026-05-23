@@ -21,6 +21,7 @@
 - require explicit promotion action
 - validate latest staging health checks
 - trigger production deployment in Coolify
+- dedupe retried promote submissions via idempotency key and replay prior trigger response
 - block duplicate promote execution while a production deployment is already in progress
 - apply a short cooldown after repeated blocked promote attempts and return retry timing guidance
 - surface live cooldown countdown in promote UI and keep controls disabled until retry window expires

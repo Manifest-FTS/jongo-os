@@ -39,6 +39,8 @@ type PromoteResponse = {
   message?: string;
   deploymentId?: string;
   promoteAttemptId?: string;
+  replayed?: boolean;
+  idempotencyKey?: string;
   retryAfterSeconds?: number;
   blockingReason?: string;
 };
@@ -75,6 +77,7 @@ export default function PromoteToProductionCard({
   const [latestProductionDeployment, setLatestProductionDeployment] = useState<DeploymentStatus | null>(null);
   const [inProgressProductionDeployment, setInProgressProductionDeployment] = useState<DeploymentStatus | null>(null);
   const [latestPromoteAttemptId, setLatestPromoteAttemptId] = useState<string | null>(null);
+  const [promoteIdempotencyKey, setPromoteIdempotencyKey] = useState("");
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownTick, setCooldownTick] = useState(() => Date.now());
 
@@ -193,6 +196,7 @@ export default function PromoteToProductionCard({
 
     setShowConfirm(false);
     setConfirmationPhrase("");
+    setPromoteIdempotencyKey("");
     setStatus("idle");
     setMessage("Promotion is locked while production deployment is in progress.");
   }, [showConfirm, isPromoteLockedByInProgress]);
@@ -202,14 +206,22 @@ export default function PromoteToProductionCard({
       return;
     }
 
+    const requestIdempotencyKey = promoteIdempotencyKey || crypto.randomUUID();
+    if (!promoteIdempotencyKey) {
+      setPromoteIdempotencyKey(requestIdempotencyKey);
+    }
+
     setStatus("pending");
     setMessage("");
 
     try {
       const response = await fetch(`/api/sites/${siteId}/staging/promote`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmationPhrase })
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": requestIdempotencyKey
+        },
+        body: JSON.stringify({ confirmationPhrase, idempotencyKey: requestIdempotencyKey })
       });
 
       const payload = (await response.json()) as PromoteResponse;
@@ -228,11 +240,13 @@ export default function PromoteToProductionCard({
       setCooldownUntil(null);
       setShowConfirm(false);
       setConfirmationPhrase("");
+      setPromoteIdempotencyKey("");
       const defaultMessage = payload?.deploymentId
         ? `Production deploy triggered (${payload.deploymentId}).`
         : "Production deploy triggered.";
       const attemptSuffix = payload?.promoteAttemptId ? ` Attempt ${payload.promoteAttemptId}.` : "";
-      setMessage(`${payload?.message ?? defaultMessage}${attemptSuffix}`.trim());
+      const replaySuffix = payload?.replayed ? " (replayed request)" : "";
+      setMessage(`${payload?.message ?? defaultMessage}${attemptSuffix}${replaySuffix}`.trim());
       if (payload?.promoteAttemptId) {
         setLatestPromoteAttemptId(payload.promoteAttemptId);
       }
@@ -251,6 +265,7 @@ export default function PromoteToProductionCard({
 
     setMessage("");
     setStatus("idle");
+    setPromoteIdempotencyKey(crypto.randomUUID());
     setShowConfirm(true);
   }
 
@@ -261,6 +276,7 @@ export default function PromoteToProductionCard({
 
     setShowConfirm(false);
     setConfirmationPhrase("");
+    setPromoteIdempotencyKey("");
   }
 
   return (
