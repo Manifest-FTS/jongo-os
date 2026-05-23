@@ -5,8 +5,6 @@ import PendingBadge from "@/components/PendingBadge";
 import WordPressTelemetryConnectionPanel from "@/components/WordPressTelemetryConnectionPanel";
 import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
 import {
-  formatWordPressCollectorStatus,
-  formatWordPressTelemetryValue,
   getWordPressTelemetryFreshness
 } from "@/lib/wordpress-telemetry";
 import { auth } from "@/lib/auth.config";
@@ -202,17 +200,6 @@ export default async function IntegrationsPage({ params }: Params) {
             <span className={`status-chip ${wpTelemetry.tone}`}>{wpTelemetry.label}</span>
           </h3>
           <p className="card-muted" style={{ marginTop: 0 }}>{wpTelemetry.summary}</p>
-          <div style={{ display: "grid", gap: "0.55rem" }}>
-            <p style={{ margin: 0 }}>Core version: {formatWordPressTelemetryValue(wpTelemetry.signals.coreVersion)}</p>
-            <p style={{ margin: 0 }}>Plugin status: {formatWordPressTelemetryValue(wpTelemetry.signals.pluginStatus)}</p>
-            <p style={{ margin: 0 }}>Theme status: {formatWordPressTelemetryValue(wpTelemetry.signals.themeStatus)}</p>
-            <p style={{ margin: 0 }}>Update availability: {formatWordPressTelemetryValue(wpTelemetry.signals.updateAvailability)}</p>
-            <p style={{ margin: 0 }}>Maintenance mode: {formatWordPressTelemetryValue(wpTelemetry.signals.maintenanceMode)}</p>
-            <p style={{ margin: 0 }}>Site health: {formatWordPressTelemetryValue(wpTelemetry.signals.siteHealth)}</p>
-            <p style={{ margin: 0 }}>
-              Monitoring status: <span className="tag">{formatWordPressCollectorStatus(wpTelemetry.collectorStatus)}</span>
-            </p>
-          </div>
           {wpTelemetry.needsSetup && wpTelemetry.setupSteps.length > 0 ? (
             <div style={{ marginTop: "0.65rem" }}>
               <p style={{ margin: "0 0 0.4rem", fontSize: "0.82rem", fontWeight: 600 }}>Guided setup</p>
@@ -233,17 +220,13 @@ export default async function IntegrationsPage({ params }: Params) {
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             Last updated: {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
           </p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-            {freshness.label}
-            {freshness.isStale ? " - data may be out of date" : ""}
-          </p>
           {canViewInternalMetadata ? (
             <p style={{ margin: "0.55rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
               Need maintenance details? Open app settings for mapping and provider checks.
             </p>
           ) : null}
           <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
-            <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugin stats tab</Link>
+            <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugins page</Link>
           </p>
         </article>
       ) : (
