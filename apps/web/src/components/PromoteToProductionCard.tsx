@@ -140,6 +140,23 @@ export default function PromoteToProductionCard({
     return `/sites/${siteId}/staging?attemptId=${encodeURIComponent(latestPromoteAttemptId)}`;
   }, [latestPromoteAttemptId, siteId]);
 
+  const isPromoteLockedByInProgress = Boolean(inProgressProductionDeployment);
+  const isPromoteLocked = disabled || status === "pending" || isPromoteLockedByInProgress;
+  const promoteLockReason = isPromoteLockedByInProgress
+    ? "Promotion is locked while production deployment is in progress."
+    : disabledReason;
+
+  useEffect(() => {
+    if (!showConfirm || !isPromoteLockedByInProgress) {
+      return;
+    }
+
+    setShowConfirm(false);
+    setConfirmationPhrase("");
+    setStatus("idle");
+    setMessage("Promotion is locked while production deployment is in progress.");
+  }, [showConfirm, isPromoteLockedByInProgress]);
+
   async function submitPromote() {
     if (status === "pending") {
       return;
@@ -182,7 +199,7 @@ export default function PromoteToProductionCard({
   }
 
   function openConfirmPanel() {
-    if (disabled || status === "pending") {
+    if (isPromoteLocked) {
       return;
     }
 
@@ -211,14 +228,14 @@ export default function PromoteToProductionCard({
         type="button"
         className="button"
         onClick={openConfirmPanel}
-        disabled={disabled || status === "pending"}
+        disabled={isPromoteLocked}
       >
         {status === "pending" ? "Triggering production deploy..." : "Promote staging to production"}
       </button>
 
-      {disabled && disabledReason ? (
+      {isPromoteLocked && promoteLockReason ? (
         <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
-          Why locked: {disabledReason}
+          Why locked: {promoteLockReason}
         </p>
       ) : null}
 
@@ -266,7 +283,7 @@ export default function PromoteToProductionCard({
               type="button"
               className="button"
               onClick={submitPromote}
-              disabled={status === "pending" || confirmationPhrase.trim().toUpperCase() !== "PROMOTE"}
+              disabled={isPromoteLocked || confirmationPhrase.trim().toUpperCase() !== "PROMOTE"}
             >
               Confirm promote
             </button>

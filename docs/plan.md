@@ -93,6 +93,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Promotion trigger is blocked when a production deployment is already in progress (duplicate-trigger guard).
 - Repeated blocked promote attempts are rate-limited with a short server-side cooldown and retry guidance.
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
+- Promote UI disables trigger/confirm while production deployment is in progress and explains lock reason.
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.
 - Staging workspace shows a terminal-state banner for the latest promotion outcome.
 - Staging workspace includes a manual refresh control for deployment status.

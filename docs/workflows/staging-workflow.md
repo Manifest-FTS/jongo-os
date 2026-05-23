@@ -30,6 +30,7 @@
 - persist promote lifecycle outcomes (in progress/succeeded/failed) into staging audit history
 - display a terminal-state banner on the staging page for the latest promotion outcome
 - provide a manual refresh control for the live deployment status panel
+- lock promote trigger and confirm controls while production deployment is in progress
 - show started/completed timing for the latest production deployment result
 - include a promote attempt correlation id in trigger response and audit timeline
 - provide one-click copy for attempt id in staging promote surfaces
