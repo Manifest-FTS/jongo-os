@@ -12,7 +12,10 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
-type Params = { params: Promise<{ siteId: string }> };
+type Params = {
+  params: Promise<{ siteId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
 type StagingAuditEntry = {
   id: string;
@@ -218,8 +221,13 @@ function promoteOutcomeLabel(actionType: StagingPromoteOutcome["actionType"]): s
   return "Promotion triggered";
 }
 
-export default async function StagingPage({ params }: Params) {
+export default async function StagingPage({ params, searchParams }: Params) {
   const { siteId } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const searchAttemptIdRaw = resolvedSearchParams.attemptId;
+  const initialAttemptId = Array.isArray(searchAttemptIdRaw)
+    ? searchAttemptIdRaw[0]?.trim() ?? ""
+    : searchAttemptIdRaw?.trim() ?? "";
   const session = await auth();
   const workspace = await getSiteWorkspace(siteId, {
     userId: session?.user?.id,
@@ -348,6 +356,13 @@ export default async function StagingPage({ params }: Params) {
                   Attempt id: <code>{latestPromoteOutcome.promoteAttemptId}</code>
                 </p>
                 <CopyTextButton value={latestPromoteOutcome.promoteAttemptId} label="Copy attempt id" />
+                <Link
+                  href={`/sites/${siteId}/staging?attemptId=${encodeURIComponent(latestPromoteOutcome.promoteAttemptId)}`}
+                  className="action-link"
+                  style={{ fontSize: "0.8rem" }}
+                >
+                  Open filtered audit
+                </Link>
               </div>
             ) : null}
             {latestPromoteOutcome.deploymentId ? (
@@ -566,7 +581,7 @@ export default async function StagingPage({ params }: Params) {
                 </p>
               </article>
 
-              <StagingAuditHistory items={stagingAuditItems} />
+              <StagingAuditHistory items={stagingAuditItems} initialAttemptId={initialAttemptId} />
             </>
           )}
 

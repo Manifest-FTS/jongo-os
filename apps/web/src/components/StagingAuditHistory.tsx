@@ -14,6 +14,7 @@ type StagingAuditHistoryItem = {
 
 type Props = {
   items: StagingAuditHistoryItem[];
+  initialAttemptId?: string;
 };
 
 type FilterMode = "all" | "domain-sync" | "attempt";
@@ -91,7 +92,7 @@ function formatAuditExportText(items: StagingAuditHistoryItem[]): string {
     .join("\n\n");
 }
 
-export default function StagingAuditHistory({ items }: Props) {
+export default function StagingAuditHistory({ items, initialAttemptId }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [attemptFilter, setAttemptFilter] = useState("");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
@@ -122,6 +123,16 @@ export default function StagingAuditHistory({ items }: Props) {
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_COUNT);
   }, [filterMode, normalizedAttemptFilter]);
+
+  useEffect(() => {
+    const normalized = initialAttemptId?.trim() ?? "";
+    if (!normalized) {
+      return;
+    }
+
+    setAttemptFilter(normalized);
+    setFilterMode("attempt");
+  }, [initialAttemptId]);
 
   function activateLatestAttemptFilter() {
     if (!latestAttemptId) {

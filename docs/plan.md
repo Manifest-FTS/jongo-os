@@ -98,6 +98,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Promotion events include a correlation attempt id for retry-safe incident tracing.
 - Promote status and terminal banner include one-click copy for attempt id.
 - Staging audit history includes attempt-id filtering with a latest-attempt shortcut.
+- Staging page supports attemptId deep links that open audit history pre-filtered to a promotion attempt.
 - Redundant staging status chip/copy is removed from settings.
 
 ### Current Scope Boundary
