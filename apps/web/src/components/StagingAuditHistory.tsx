@@ -447,6 +447,49 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     });
   }, [filterMode, normalizedAttemptFilter, scopedAttemptItems, attemptStatusById]);
 
+  const incidentHandoffJson = useMemo(() => {
+    if (filterMode !== "attempt" || !normalizedAttemptFilter || scopedAttemptItems.length === 0) {
+      return null;
+    }
+
+    const latestPromoteEvent = scopedAttemptItems.find((item) => isPromoteAction(item.actionType));
+    const endpointStatus = attemptStatusById[normalizedAttemptFilter];
+    const fallbackStatus = fallbackAttemptStatus(latestPromoteEvent?.actionType);
+    const statusLabel = endpointStatus?.label ?? fallbackStatus?.label ?? "Unknown";
+
+    let deploymentId: string | undefined;
+    let blockingReason: string | undefined;
+    for (const item of scopedAttemptItems) {
+      const deploymentMatch = item.message.match(/deployment\s+([A-Za-z0-9-]+)/i);
+      if (!deploymentId && deploymentMatch?.[1]) {
+        deploymentId = deploymentMatch[1];
+      }
+
+      if (!blockingReason && item.actionType === "staging_promote_blocked") {
+        blockingReason = "blocked";
+      }
+    }
+
+    const latest = scopedAttemptItems[0];
+    const oldest = scopedAttemptItems[scopedAttemptItems.length - 1];
+
+    return JSON.stringify({
+      attemptId: normalizedAttemptFilter,
+      status: statusLabel,
+      timelineEventCount: scopedAttemptItems.length,
+      latestEventAt: latest?.createdAt,
+      firstEventAt: oldest?.createdAt,
+      latestMessage: latestPromoteEvent?.message ?? latest?.message,
+      deploymentId,
+      blockingReason,
+      events: scopedAttemptItems.map((item) => ({
+        createdAt: item.createdAt,
+        actionType: item.actionType,
+        message: item.message
+      }))
+    }, null, 2);
+  }, [filterMode, normalizedAttemptFilter, scopedAttemptItems, attemptStatusById]);
+
   async function copyToClipboard(content: string, successMessage: string) {
     try {
       await navigator.clipboard.writeText(content);
@@ -638,6 +681,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               onClick={() => copyToClipboard(incidentHandoff, `Copied incident handoff for attempt ${normalizedAttemptFilter}.`)}
             >
               Copy incident handoff
+            </button>
+          ) : null}
+          {incidentHandoffJson ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => copyToClipboard(incidentHandoffJson, `Copied incident handoff JSON for attempt ${normalizedAttemptFilter}.`)}
+            >
+              Copy incident handoff JSON
             </button>
           ) : null}
           <button
