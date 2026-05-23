@@ -27,16 +27,7 @@ export default async function DashboardPage() {
   const visibleOverviewSites = overview.sites.filter((site) => visibleSitesByName.has(site.name.trim().toLowerCase()));
   const wordpressSites = visibleOverviewSites.filter((site) => site.siteType === "wordpress");
   const healthySites = visibleSiteDirectory.filter((site) => site.status === "healthy").length;
-  const degradedSites = visibleSiteDirectory.filter((site) => site.status === "degraded").length;
-  const errorSites = visibleSiteDirectory.filter((site) => site.status === "error").length;
   const unknownSites = visibleSiteDirectory.filter((site) => site.status === "unknown").length;
-  const totalSites = Math.max(visibleSiteDirectory.length, 1);
-  const healthBars = [
-    { label: "Healthy", value: healthySites, tone: "healthy" },
-    { label: "Degraded", value: degradedSites, tone: "degraded" },
-    { label: "Error", value: errorSites, tone: "error" },
-    ...(unknownSites > 0 ? [{ label: "Offline / Unknown", value: unknownSites, tone: "unknown" }] : [])
-  ];
 
   return (
     <div className="page-stack">
@@ -77,46 +68,23 @@ export default async function DashboardPage() {
           <div className="panel-header">
             <div>
               <p className="panel-kicker">Site health</p>
-              <h2 className="card-title">Operational health</h2>
+              <h2 className="card-title">Workspace summary</h2>
             </div>
             <span className="status-chip healthy">{healthySites}/{visibleSiteDirectory.length || 0} healthy</span>
           </div>
 
-          <div className="health-summary-grid">
-            {healthBars.map((item) => (
-              <div key={item.label} className="health-stat-block">
-                <p className={`health-stat-value ${item.tone}`}>{item.value}</p>
-                <p className="health-stat-label">{item.label}</p>
-              </div>
-            ))}
-          </div>
+          <p className="card-muted" style={{ marginTop: 0 }}>
+            {healthySites} app{healthySites === 1 ? " is" : "s are"} healthy right now.
+            {unknownSites > 0 ? ` ${unknownSites} app${unknownSites === 1 ? " is" : "s are"} offline or restarting.` : ""}
+          </p>
 
-          <div className="health-bars">
-            {healthBars.map((item) => (
-              <div key={item.label} className="health-bar-row">
-                <div className="health-bar-meta">
-                  <span>{item.label}</span>
-                  <span>{Math.round((item.value / totalSites) * 100)}%</span>
-                </div>
-                <div className="health-bar-track">
-                  <span className={`health-bar-fill ${item.tone}`} style={{ width: `${Math.max((item.value / totalSites) * 100, item.value > 0 ? 8 : 0)}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="card-muted" style={{ marginBottom: 0 }}>
+            Use the apps list for filters and the app pages for maintenance details.
+          </p>
 
-          {unknownSites > 0 && (
-            <p className="health-reconcile-note">
-              {unknownSites} app{unknownSites === 1 ? " is" : "s are"} offline or restarting — not counted in healthy or degraded.
-            </p>
-          )}
-
-          {wordpressSites.length > 0 ? (
-            <div className="dashboard-inline-note">
-              <span className="tag">WordPress footprint</span>
-              <span className="card-muted">{wordpressSites.length} WordPress app{wordpressSites.length === 1 ? "" : "s"} in this workspace.</span>
-            </div>
-          ) : null}
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.88rem" }}>
+            <Link href="/apps" className="action-link">Open apps list</Link>
+          </p>
         </article>
 
         <article className="card dashboard-activity-panel">
