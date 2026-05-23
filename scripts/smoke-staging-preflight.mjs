@@ -66,6 +66,7 @@ async function readPreflight(siteId) {
 function printRow(siteId, result) {
   const ready = Boolean(result.body?.readyForSyncTesting);
   const blockers = Array.isArray(result.body?.blockers) ? result.body.blockers : [];
+  const suggestedActions = Array.isArray(result.body?.suggestedActions) ? result.body.suggestedActions : [];
   const preflight = result.body?.preflight?.productionToStaging;
   const tone = preflight?.tone || "unknown";
   const label = preflight?.label || "unknown";
@@ -78,6 +79,13 @@ function printRow(siteId, result) {
     console.log("  Blockers:");
     for (const blocker of blockers) {
       console.log(`   - ${blocker}`);
+    }
+  }
+
+  if (suggestedActions.length > 0) {
+    console.log("  Suggested actions:");
+    for (const step of suggestedActions) {
+      console.log(`   - ${step}`);
     }
   }
 

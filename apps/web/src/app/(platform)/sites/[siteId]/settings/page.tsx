@@ -85,7 +85,7 @@ export default async function SiteSettingsPage({ params }: Params) {
           <div>
             <h3 className="card-title" style={{ margin: 0 }}>Staging Environment</h3>
             <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-              Turn on a staging copy of your production site.
+              Turn on a staging copy of your production site. Jongo attempts provisioning in Coolify when enabled.
             </p>
           </div>
           <SiteStagingToggle

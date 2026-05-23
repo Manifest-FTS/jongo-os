@@ -127,7 +127,7 @@ export default async function StagingPage({ params }: Params) {
         </div>
         {!stagingConfigured && (
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to manage staging workflows.
+            Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to trigger Jongo&apos;s auto-provision attempt in Coolify. If unsupported, provision staging manually in Coolify and return here.
           </p>
         )}
       </article>

@@ -116,6 +116,23 @@ export async function GET(_req: Request, { params }: Params) {
     blockers.push("Dry-run sync plan could not resolve a staging target.");
   }
 
+  const suggestedActions: string[] = [];
+  if (!site.stagingEnabled) {
+    suggestedActions.push("Enable staging in app settings. Jongo will attempt staging provisioning in Coolify automatically.");
+  }
+  if (site.stagingEnabled && appUuid && !stagingCapability?.detected) {
+    suggestedActions.push("Staging is enabled but not detected yet. Verify Coolify staging support for this app and create/provision staging manually if auto-provision is unsupported.");
+  }
+  if (!appUuid) {
+    suggestedActions.push("Link a Coolify Service UUID in app settings so staging detection and provisioning can run.");
+  }
+  if (backupReadiness.locked) {
+    suggestedActions.push(backupReadiness.nextStep ?? "Fix backup readiness blockers before sync testing.");
+  }
+  if (readyForSyncTesting) {
+    suggestedActions.push("Run dry-run preflight checks and validate staging content before any manual promote/sync action in Coolify.");
+  }
+
   return NextResponse.json({
     site: {
       id: site.id,
@@ -127,6 +144,7 @@ export async function GET(_req: Request, { params }: Params) {
     stagingConfigured,
     readyForSyncTesting,
     blockers,
+    suggestedActions,
     backupReadiness,
     preflight: {
       productionToStaging,
