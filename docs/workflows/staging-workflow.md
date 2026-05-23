@@ -28,6 +28,7 @@
 - deployment timeline view
 - environment health cards for production/staging
 - staging domain editor with Coolify sync feedback
+- staging action audit trail with latest enable/disable/domain updates
 - simple action audit trail for collaboration context
 
 ## MVP Guardrails

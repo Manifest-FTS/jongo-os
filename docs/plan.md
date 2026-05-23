@@ -230,6 +230,7 @@ Focused on staging-specific workflows:
 - Staging → Production deploy workflow
 - Environment comparison/diff awareness
 - Staging domain management synced to Coolify
+- Staging audit history for enable, disable, and domain updates
 - Staging-specific configurations
 
 #### Settings Tab

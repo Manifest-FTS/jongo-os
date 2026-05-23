@@ -6,10 +6,17 @@ import DeployButton from "@/components/DeployButton";
 import StagingDomainForm from "@/components/StagingDomainForm";
 import Link from "next/link";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
 type Params = { params: Promise<{ siteId: string }> };
+
+type StagingAuditEntry = {
+  id: string;
+  createdAt: Date;
+  details: unknown;
+};
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -87,6 +94,37 @@ function parseDomainValues(raw?: string): string[] {
   return [...new Set(values)];
 }
 
+function formatActionLabel(actionType?: string): string {
+  switch (actionType) {
+    case "staging_enable_requested":
+      return "Staging enable requested";
+    case "staging_enable_existing":
+      return "Staging already present";
+    case "staging_enable_provision":
+      return "Staging provisioned";
+    case "staging_disable_requested":
+      return "Staging disable requested";
+    case "staging_disable_destroy":
+      return "Staging disabled and destroyed";
+    case "staging_domains_updated":
+      return "Staging domains updated";
+    case "staging_domains_update_failed":
+      return "Staging domains update failed";
+    default:
+      return actionType ?? "Staging action";
+  }
+}
+
+function formatAuditAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default async function StagingPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -125,6 +163,18 @@ export default async function StagingPage({ params }: Params) {
   const stagingModelCopy = getStagingModelCopy(workspace?.siteType);
   const stagingDomains = parseDomainValues(stagingCapability?.fqdn);
   const stagingDomainsInput = stagingDomains.join(", ");
+  const stagingAuditLogs: StagingAuditEntry[] = workspace.organizationId
+    ? await db.auditLog.findMany({
+        where: {
+          organizationId: workspace.organizationId,
+          resourceType: "site_staging",
+          resourceId: workspace.id,
+          action: "site_updated"
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5
+      })
+    : [];
 
   const dryRunPlan =
     stagingConfigured && appUuid && stagingCapability
@@ -265,70 +315,118 @@ export default async function StagingPage({ params }: Params) {
 
           {/* Dry-Run Sync Plan */}
           {dryRunPlan && (
-            <article className="card">
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                <h3 className="card-title" style={{ margin: 0 }}>Sync Plan (Dry Run)</h3>
-                <span className="tag">Read-only preview</span>
-              </div>
-              <p className="card-muted" style={{ marginBottom: "1rem" }}>
-                This is a read-only plan of what a production→staging sync would do. No changes have been made.
-              </p>
-
-              <div style={{ display: "grid", gap: "0.6rem", fontSize: "0.88rem", marginBottom: "1rem" }}>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <span style={{ fontWeight: 600, minWidth: "140px" }}>Source:</span>
-                  <span>{dryRunPlan.source.name} <span className="tag">{dryRunPlan.source.environment}</span></span>
+            <>
+              <article className="card">
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                  <h3 className="card-title" style={{ margin: 0 }}>Sync Plan (Dry Run)</h3>
+                  <span className="tag">Read-only preview</span>
                 </div>
-                {dryRunPlan.target ? (
-                  <>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <span style={{ fontWeight: 600, minWidth: "140px" }}>Target:</span>
-                      <span>{dryRunPlan.target.name} <span className="tag">{dryRunPlan.target.environment}</span></span>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <span style={{ fontWeight: 600, minWidth: "140px" }}>Database:</span>
-                      <span>{dryRunPlan.databaseBehavior.replace(/-/g, " ")}</span>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <span style={{ fontWeight: 600, minWidth: "140px" }}>Files:</span>
-                      <span>{dryRunPlan.filesBehavior.replace(/-/g, " ")}</span>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <span style={{ fontWeight: 600, minWidth: "140px" }}>Domain:</span>
-                      <span>{dryRunPlan.domainBehavior.replace(/-/g, " ")}</span>
-                    </div>
-                  </>
-                ) : (
-                  <p className="card-muted">Target staging application not available – sync cannot be planned.</p>
+                <p className="card-muted" style={{ marginBottom: "1rem" }}>
+                  This is a read-only plan of what a production→staging sync would do. No changes have been made.
+                </p>
+
+                <div style={{ display: "grid", gap: "0.6rem", fontSize: "0.88rem", marginBottom: "1rem" }}>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <span style={{ fontWeight: 600, minWidth: "140px" }}>Source:</span>
+                    <span>{dryRunPlan.source.name} <span className="tag">{dryRunPlan.source.environment}</span></span>
+                  </div>
+                  {dryRunPlan.target ? (
+                    <>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <span style={{ fontWeight: 600, minWidth: "140px" }}>Target:</span>
+                        <span>{dryRunPlan.target.name} <span className="tag">{dryRunPlan.target.environment}</span></span>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <span style={{ fontWeight: 600, minWidth: "140px" }}>Database:</span>
+                        <span>{dryRunPlan.databaseBehavior.replace(/-/g, " ")}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <span style={{ fontWeight: 600, minWidth: "140px" }}>Files:</span>
+                        <span>{dryRunPlan.filesBehavior.replace(/-/g, " ")}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <span style={{ fontWeight: 600, minWidth: "140px" }}>Domain:</span>
+                        <span>{dryRunPlan.domainBehavior.replace(/-/g, " ")}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="card-muted">Target staging application not available – sync cannot be planned.</p>
+                  )}
+                </div>
+
+                {dryRunPlan.risks.length > 0 && (
+                  <div style={{ background: "var(--surface-alt)", borderRadius: "8px", padding: "0.75rem", marginBottom: "0.75rem" }}>
+                    <p style={{ margin: "0 0 0.5rem", fontWeight: 600, fontSize: "0.88rem" }}>Risks</p>
+                    <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.25rem" }}>
+                      {dryRunPlan.risks.map((risk, i) => (
+                        <li key={i} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{risk}</li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
-              </div>
 
-              {dryRunPlan.risks.length > 0 && (
-                <div style={{ background: "var(--surface-alt)", borderRadius: "8px", padding: "0.75rem", marginBottom: "0.75rem" }}>
-                  <p style={{ margin: "0 0 0.5rem", fontWeight: 600, fontSize: "0.88rem" }}>Risks</p>
-                  <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.25rem" }}>
-                    {dryRunPlan.risks.map((risk, i) => (
-                      <li key={i} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{risk}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                {dryRunPlan.warnings.length > 0 && (
+                  <div style={{ background: "var(--surface-alt)", borderRadius: "8px", padding: "0.75rem" }}>
+                    <p style={{ margin: "0 0 0.5rem", fontWeight: 600, fontSize: "0.88rem" }}>Warnings</p>
+                    <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.25rem" }}>
+                      {dryRunPlan.warnings.map((warning, i) => (
+                        <li key={i} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-              {dryRunPlan.warnings.length > 0 && (
-                <div style={{ background: "var(--surface-alt)", borderRadius: "8px", padding: "0.75rem" }}>
-                  <p style={{ margin: "0 0 0.5rem", fontWeight: 600, fontSize: "0.88rem" }}>Warnings</p>
-                  <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.25rem" }}>
-                    {dryRunPlan.warnings.map((warning, i) => (
-                      <li key={i} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{warning}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.82rem" }}>
+                  Sync execution is not available in this interface. Contact your platform administrator to perform a sync via Coolify.
+                </p>
+              </article>
 
-              <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.82rem" }}>
-                Sync execution is not available in this interface. Contact your platform administrator to perform a sync via Coolify.
-              </p>
-            </article>
+              <article className="card">
+                <h3 className="card-title">Staging Audit History</h3>
+                <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+                  Recent staging enable, disable, and domain update actions recorded by Jongo.
+                </p>
+                {stagingAuditLogs.length === 0 ? (
+                  <p className="card-muted" style={{ marginBottom: 0 }}>
+                    No staging audit events recorded yet.
+                  </p>
+                ) : (
+                  <div style={{ display: "grid", gap: "0.6rem" }}>
+                    {stagingAuditLogs.map((entry) => {
+                      const details = entry.details as Record<string, unknown> | null | undefined;
+                      const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
+                      const message = typeof details?.message === "string"
+                        ? details.message
+                        : typeof details?.provisioningMessage === "string"
+                          ? details.provisioningMessage
+                          : "Staging action recorded.";
+
+                      return (
+                        <div key={entry.id} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.75rem" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
+                            <div>
+                              <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(actionType)}</strong>
+                              <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>{message}</p>
+                            </div>
+                            <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{formatAuditAgo(entry.createdAt.toISOString())}</span>
+                          </div>
+                          {Array.isArray(details?.domains) && details.domains.length > 0 ? (
+                            <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem" }}>
+                              Domains: {details.domains.join(", ")}
+                            </p>
+                          ) : null}
+                          {typeof details?.preferredStagingDomain === "string" && details.preferredStagingDomain ? (
+                            <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
+                              Preferred staging domain: {details.preferredStagingDomain}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+            </>
           )}
 
           {/* Go Live */}

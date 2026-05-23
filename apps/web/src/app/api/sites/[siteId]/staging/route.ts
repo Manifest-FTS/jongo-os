@@ -40,6 +40,32 @@ function buildSiteIdentityWhere(siteId: string) {
   };
 }
 
+async function recordStagingAuditLog(params: {
+  organizationId: string;
+  actorId: string;
+  actionType: string;
+  resourceId: string;
+  details: Record<string, unknown>;
+  req: Request;
+}) {
+  const { db } = await import("@/lib/db");
+  await db.auditLog.create({
+    data: {
+      organizationId: params.organizationId,
+      actorId: params.actorId,
+      action: "site_updated",
+      resourceType: "site_staging",
+      resourceId: params.resourceId,
+      details: {
+        actionType: params.actionType,
+        ...params.details
+      },
+      ipAddress: params.req.headers.get("x-forwarded-for") ?? params.req.headers.get("x-real-ip") ?? "unknown",
+      userAgent: params.req.headers.get("user-agent") ?? undefined
+    }
+  });
+}
+
 export async function GET(_req: Request, { params }: Params) {
   const authorizedByToken = hasOpsToken(_req);
   const session = await auth();
@@ -216,7 +242,21 @@ export async function POST(req: Request, { params }: Params) {
       data: { stagingEnabled: true }
     });
 
+    const enableAuditDetails: Record<string, unknown> = {
+      enabled: true,
+      appUuid: appUuid || null
+    };
+
     if (!appUuid) {
+      await recordStagingAuditLog({
+        organizationId: site.organizationId,
+        actorId: session.user.id,
+        actionType: "staging_enable_requested",
+        resourceId: site.id,
+        details: enableAuditDetails,
+        req
+      });
+
       return NextResponse.json({
         enabled: true,
         stagedDetected: false,
@@ -226,6 +266,19 @@ export async function POST(req: Request, { params }: Params) {
 
     const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
     if (currentCapability.detected) {
+      await recordStagingAuditLog({
+        organizationId: site.organizationId,
+        actorId: session.user.id,
+        actionType: "staging_enable_existing",
+        resourceId: site.id,
+        details: {
+          ...enableAuditDetails,
+          stagedDetected: true,
+          capability: currentCapability
+        },
+        req
+      });
+
       return NextResponse.json({
         enabled: true,
         stagedDetected: true,
@@ -245,6 +298,23 @@ export async function POST(req: Request, { params }: Params) {
         preferredStagingDomain
       );
     }
+
+    await recordStagingAuditLog({
+      organizationId: site.organizationId,
+      actorId: session.user.id,
+      actionType: "staging_enable_provision",
+      resourceId: site.id,
+      details: {
+        ...enableAuditDetails,
+        stagedDetected: capabilityAfterProvision.detected,
+        provisioned: provisionResult.ok,
+        preferredStagingDomain: preferredStagingDomain ?? null,
+        stagingDomainApplied,
+        capability: capabilityAfterProvision,
+        provisioningMessage: provisionResult.message
+      },
+      req
+    });
 
     return NextResponse.json({
       enabled: true,
@@ -272,6 +342,22 @@ export async function POST(req: Request, { params }: Params) {
   await db.site.update({
     where: { id: site.id },
     data: { stagingEnabled: false }
+  });
+
+  await recordStagingAuditLog({
+    organizationId: site.organizationId,
+    actorId: session.user.id,
+    actionType: destroyResult?.ok ? "staging_disable_destroy" : "staging_disable_requested",
+    resourceId: site.id,
+    details: {
+      enabled: false,
+      appUuid: appUuid || null,
+      stagedDetected: Boolean(capability?.detected),
+      destroyed: Boolean(destroyResult?.ok),
+      burnExisting: Boolean(body.burnExisting),
+      message: destroyResult?.message ?? "Staging disabled in Jongo."
+    },
+    req
   });
 
   return NextResponse.json({
@@ -354,6 +440,22 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   const updated = await applyCoolifyApplicationDomains(capability.applicationUuid, requestedDomains);
+
+  await recordStagingAuditLog({
+    organizationId: site.organizationId,
+    actorId: session.user.id,
+    actionType: updated ? "staging_domains_updated" : "staging_domains_update_failed",
+    resourceId: site.id,
+    details: {
+      domains: requestedDomains,
+      stagingApplicationUuid: capability.applicationUuid,
+      updated,
+      message: updated
+        ? "Staging domains updated in Coolify."
+        : "Unable to update staging domains through the current Coolify API routes."
+    },
+    req
+  });
 
   if (!updated) {
     return NextResponse.json({
