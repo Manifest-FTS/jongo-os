@@ -593,6 +593,27 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     }, null, 2);
   }, [filterMode, normalizedAttemptFilter, scopedAttemptItems, attemptStatusById, attemptDetailsById]);
 
+  const incidentHandoffPackageJson = useMemo(() => {
+    if (!incidentHandoff || !incidentHandoffJson || !normalizedAttemptFilter) {
+      return null;
+    }
+
+    let structuredPayload: unknown;
+    try {
+      structuredPayload = JSON.parse(incidentHandoffJson);
+    } catch {
+      return null;
+    }
+
+    return JSON.stringify({
+      formatVersion: 1,
+      generatedAt: new Date().toISOString(),
+      attemptId: normalizedAttemptFilter,
+      handoffText: incidentHandoff,
+      handoffJson: structuredPayload
+    }, null, 2);
+  }, [incidentHandoff, incidentHandoffJson, normalizedAttemptFilter]);
+
   async function copyToClipboard(content: string, successMessage: string) {
     try {
       await navigator.clipboard.writeText(content);
@@ -655,6 +676,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "") || "unspecified";
     return `incident-handoff-attempt-${slug}-${stamp}.json`;
+  }
+
+  function buildIncidentPackageFilename(attemptId: string) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const slug = attemptId
+      .replace(/[^a-zA-Z0-9-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "unspecified";
+    return `incident-package-attempt-${slug}-${stamp}.json`;
   }
 
   function downloadAsText() {
@@ -815,6 +845,19 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               )}
             >
               Download incident handoff JSON
+            </button>
+          ) : null}
+          {incidentHandoffPackageJson ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => downloadContent(
+                incidentHandoffPackageJson,
+                buildIncidentPackageFilename(normalizedAttemptFilter || "unspecified"),
+                "application/json;charset=utf-8"
+              )}
+            >
+              Download incident package
             </button>
           ) : null}
           <button
