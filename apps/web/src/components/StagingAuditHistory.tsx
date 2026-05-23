@@ -6,6 +6,7 @@ type StagingAuditHistoryItem = {
   id: string;
   createdAt: string;
   actionType?: string;
+  promoteAttemptId?: string;
   message: string;
   domains: string[];
   preferredStagingDomain?: string;
@@ -15,7 +16,7 @@ type Props = {
   items: StagingAuditHistoryItem[];
 };
 
-type FilterMode = "all" | "domain-sync";
+type FilterMode = "all" | "domain-sync" | "attempt";
 
 const INITIAL_VISIBLE_COUNT = 5;
 const SHOW_MORE_STEP = 5;
@@ -73,6 +74,10 @@ function formatAuditExportText(items: StagingAuditHistoryItem[]): string {
         `Message: ${item.message}`
       ];
 
+      if (item.promoteAttemptId) {
+        lines.push(`Attempt id: ${item.promoteAttemptId}`);
+      }
+
       if (item.domains.length > 0) {
         lines.push(`Domains: ${item.domains.join(", ")}`);
       }
@@ -88,21 +93,49 @@ function formatAuditExportText(items: StagingAuditHistoryItem[]): string {
 
 export default function StagingAuditHistory({ items }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [attemptFilter, setAttemptFilter] = useState("");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
   const [copyMessage, setCopyMessage] = useState("");
+  const latestAttemptId = useMemo(() => {
+    const entry = items.find((item) => typeof item.promoteAttemptId === "string" && item.promoteAttemptId.length > 0);
+    return entry?.promoteAttemptId ?? "";
+  }, [items]);
+  const normalizedAttemptFilter = attemptFilter.trim();
 
   const filteredItems = useMemo(() => {
     if (filterMode === "all") {
       return items;
     }
 
+    if (filterMode === "attempt") {
+      if (!normalizedAttemptFilter) {
+        return [];
+      }
+
+      return items.filter((item) => item.promoteAttemptId === normalizedAttemptFilter);
+    }
+
     return items.filter((item) => isDomainSyncAction(item.actionType));
-  }, [items, filterMode]);
+  }, [items, filterMode, normalizedAttemptFilter]);
 
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_COUNT);
-  }, [filterMode]);
+  }, [filterMode, normalizedAttemptFilter]);
+
+  function activateLatestAttemptFilter() {
+    if (!latestAttemptId) {
+      return;
+    }
+
+    setAttemptFilter(latestAttemptId);
+    setFilterMode("attempt");
+  }
+
+  function clearAttemptFilter() {
+    setAttemptFilter("");
+    setFilterMode("all");
+  }
 
   const visibleItems = filteredItems.slice(0, visibleCount);
   const canShowMore = visibleItems.length < filteredItems.length;
@@ -190,11 +223,71 @@ export default function StagingAuditHistory({ items }: Props) {
           >
             Domain sync
           </button>
+          <button
+            type="button"
+            className={filterMode === "attempt" ? "button" : "button button-secondary"}
+            onClick={() => setFilterMode("attempt")}
+          >
+            Attempt
+          </button>
         </div>
       </div>
       <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
         Recent staging enable, disable, and domain update actions recorded by Jongo.
       </p>
+
+      <div style={{ display: "grid", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <label htmlFor="staging-audit-attempt-filter" style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+            Attempt id filter:
+          </label>
+          <input
+            id="staging-audit-attempt-filter"
+            type="text"
+            value={attemptFilter}
+            onChange={(event) => {
+              setAttemptFilter(event.target.value);
+              setFilterMode("attempt");
+            }}
+            placeholder="Enter promote attempt id"
+            style={{
+              minWidth: "220px",
+              border: "1px solid var(--border)",
+              borderRadius: "8px",
+              background: "var(--surface)",
+              color: "var(--text)",
+              padding: "0.4rem 0.55rem",
+              fontSize: "0.8rem"
+            }}
+          />
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={clearAttemptFilter}
+          >
+            Clear
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={activateLatestAttemptFilter}
+            disabled={!latestAttemptId}
+          >
+            Latest attempt
+          </button>
+          {latestAttemptId ? (
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+              Latest attempt id: {latestAttemptId}
+            </p>
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+              No promote attempt id recorded yet.
+            </p>
+          )}
+        </div>
+      </div>
 
       {filteredItems.length > 0 ? (
         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", flexWrap: "wrap", marginBottom: "0.75rem" }}>
@@ -262,6 +355,11 @@ export default function StagingAuditHistory({ items }: Props) {
               {item.domains.length > 0 ? (
                 <p style={{ margin: "0.45rem 0 0", fontSize: "0.82rem" }}>
                   Domains: {item.domains.join(", ")}
+                </p>
+              ) : null}
+              {item.promoteAttemptId ? (
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
+                  Attempt id: {item.promoteAttemptId}
                 </p>
               ) : null}
               {item.preferredStagingDomain ? (

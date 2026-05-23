@@ -97,6 +97,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Promote status surfaces explicit completion timing (started/completed age) for the latest deployment.
 - Promotion events include a correlation attempt id for retry-safe incident tracing.
 - Promote status and terminal banner include one-click copy for attempt id.
+- Staging audit history includes attempt-id filtering with a latest-attempt shortcut.
 - Redundant staging status chip/copy is removed from settings.
 
 ### Current Scope Boundary

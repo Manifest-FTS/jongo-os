@@ -35,6 +35,7 @@ type StagingAuditHistoryItem = {
   id: string;
   createdAt: string;
   actionType?: string;
+  promoteAttemptId?: string;
   message: string;
   domains: string[];
   preferredStagingDomain?: string;
@@ -272,6 +273,7 @@ export default async function StagingPage({ params }: Params) {
   const stagingAuditItems: StagingAuditHistoryItem[] = stagingAuditLogs.map((entry) => {
     const details = entry.details as Record<string, unknown> | null | undefined;
     const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
+    const promoteAttemptId = typeof details?.promoteAttemptId === "string" ? details.promoteAttemptId : undefined;
     const message = typeof details?.message === "string"
       ? details.message
       : typeof details?.provisioningMessage === "string"
@@ -288,6 +290,7 @@ export default async function StagingPage({ params }: Params) {
       id: entry.id,
       createdAt: entry.createdAt.toISOString(),
       actionType,
+      promoteAttemptId,
       message,
       domains,
       preferredStagingDomain
