@@ -56,6 +56,13 @@ function formatAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function statusCopy(status: SiteItem["status"]): { label: string; tone: string } {
+  if (status === "healthy") return { label: "On track", tone: "healthy" };
+  if (status === "degraded") return { label: "Needs review", tone: "degraded" };
+  if (status === "error") return { label: "Action needed", tone: "error" };
+  return { label: "Unavailable", tone: "unknown" };
+}
+
 export default function SiteDirectoryView({
   sites,
   userId
@@ -111,10 +118,10 @@ export default function SiteDirectoryView({
           />
           <div className="filter-group" aria-label="Site status filters">
             <button type="button" className={`filter-pill ${statusFilter === "all" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "all" })}>All</button>
-            <button type="button" className={`filter-pill ${statusFilter === "healthy" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "healthy" })}>Healthy</button>
-            <button type="button" className={`filter-pill ${statusFilter === "degraded" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "degraded" })}>Degraded</button>
-            <button type="button" className={`filter-pill ${statusFilter === "error" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "error" })}>Error</button>
-            <button type="button" className={`filter-pill ${statusFilter === "unknown" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "unknown" })}>Offline</button>
+            <button type="button" className={`filter-pill ${statusFilter === "healthy" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "healthy" })}>On track</button>
+            <button type="button" className={`filter-pill ${statusFilter === "degraded" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "degraded" })}>Needs review</button>
+            <button type="button" className={`filter-pill ${statusFilter === "error" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "error" })}>Action needed</button>
+            <button type="button" className={`filter-pill ${statusFilter === "unknown" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "unknown" })}>Unavailable</button>
           </div>
         </div>
 
@@ -156,12 +163,13 @@ export default function SiteDirectoryView({
         <section className={`directory-results ${view === "list" ? "directory-list" : "directory-grid"}`}>
           {filtered.map((site) => {
             const resolvedType = isKnownResourceType(site.resourceType) ? site.resourceType : "Web App";
+            const state = statusCopy(site.status);
             return (
               <article key={site.id} className="card tone-card directory-row">
                 <div className="directory-main">
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.45rem", flexWrap: "wrap" }}>
                     <ResourceTypePill type={resolvedType} size="sm" />
-                    <span className={`status-chip ${site.status}`}>{site.status === "unknown" ? "Offline / Unknown" : site.status}</span>
+                    <span className={`status-chip ${state.tone}`}>{state.label}</span>
                   </div>
                   <div className="directory-title-row">
                     <h2 className="directory-title" style={{ fontSize: "1.06rem", lineHeight: 1.2 }}>{site.name}</h2>
