@@ -101,6 +101,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging audit provides a one-click failed/blocked-attempt toggle that auto-focuses the latest incident attempt id.
 - Staging audit supports one-click incident handoff copy for the active attempt scope (status, timestamps, latest message, context).
 - Staging audit supports one-click incident handoff JSON copy for structured ticket/automation payloads.
+- Staging audit supports incident handoff JSON download with stable attempt-id and timestamp filename pattern.
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
 - Promote UI disables trigger/confirm while production deployment is in progress and explains lock reason.
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.

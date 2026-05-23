@@ -50,6 +50,7 @@
 - promote-related audit controls include a failed/blocked quick toggle that jumps to latest incident attempt scope
 - promote-related audit controls include one-click incident handoff copy for the currently scoped attempt
 - promote-related audit controls include one-click incident handoff JSON copy for structured incident workflows
+- promote-related audit controls include incident handoff JSON download for direct ticket attachments
 - staging audit filter controls (all events vs domain sync)
 - staging audit attempt-id filter controls (manual entry and latest-attempt shortcut)
 - latest-attempt shortcut acts as a toggle for fast scope entry/exit
