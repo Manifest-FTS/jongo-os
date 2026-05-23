@@ -100,6 +100,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging audit history includes attempt-id filtering with a latest-attempt shortcut.
 - Staging page supports attemptId deep links that open audit history pre-filtered to a promotion attempt.
 - Promote attempt surfaces include one-click copy for deep links to pre-filtered staging audit views.
+- Staging audit history displays an active-filter indicator (including attempt id when scoped).
 - Redundant staging status chip/copy is removed from settings.
 
 ### Current Scope Boundary

@@ -103,6 +103,19 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
     return entry?.promoteAttemptId ?? "";
   }, [items]);
   const normalizedAttemptFilter = attemptFilter.trim();
+  const activeFilterLabel = useMemo(() => {
+    if (filterMode === "all") {
+      return "All events";
+    }
+
+    if (filterMode === "domain-sync") {
+      return "Domain sync events";
+    }
+
+    return normalizedAttemptFilter
+      ? `Attempt: ${normalizedAttemptFilter}`
+      : "Attempt filter (no id set)";
+  }, [filterMode, normalizedAttemptFilter]);
 
   const filteredItems = useMemo(() => {
     if (filterMode === "all") {
@@ -246,6 +259,10 @@ export default function StagingAuditHistory({ items, initialAttemptId }: Props) 
       <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
         Recent staging enable, disable, and domain update actions recorded by Jongo.
       </p>
+
+      <div style={{ marginBottom: "0.75rem" }}>
+        <span className="tag">Active filter: {activeFilterLabel}</span>
+      </div>
 
       <div style={{ display: "grid", gap: "0.5rem", marginBottom: "0.75rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
