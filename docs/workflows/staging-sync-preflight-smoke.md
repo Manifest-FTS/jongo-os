@@ -17,16 +17,32 @@ This endpoint is read-only and does not execute sync actions.
 
 - Deployment includes `feat: add staging sync preflight testing endpoint` or newer.
 - `OWNERSHIP_SYNC_TOKEN` is set in the target environment.
-- App IDs or slugs to check are known.
+- By default, site IDs are discovered dynamically from `GET /api/sites/staging-targets`.
 
 ## Run
 
 ```bash
 APP_BASE_URL="https://jongo.example.com" \
 OWNERSHIP_SYNC_TOKEN="<token>" \
-STAGING_SITE_IDS="waterfallkeepersofnc-org,joyfeed-web" \
 npm run smoke:staging-preflight
 ```
+
+Default dynamic discovery scope is `linked` (apps with a Coolify UUID).
+
+Optional scope override:
+
+```bash
+APP_BASE_URL="https://jongo.example.com" \
+OWNERSHIP_SYNC_TOKEN="<token>" \
+STAGING_SITE_DISCOVERY_SCOPE="all" \
+npm run smoke:staging-preflight
+```
+
+Accepted scope values:
+
+- `linked` (default)
+- `staging-enabled`
+- `all`
 
 Or pass IDs directly:
 
@@ -34,6 +50,15 @@ Or pass IDs directly:
 APP_BASE_URL="https://jongo.example.com" \
 OWNERSHIP_SYNC_TOKEN="<token>" \
 npm run smoke:staging-preflight -- waterfallkeepersofnc-org joyfeed-web
+```
+
+Optional explicit env list override:
+
+```bash
+APP_BASE_URL="https://jongo.example.com" \
+OWNERSHIP_SYNC_TOKEN="<token>" \
+STAGING_SITE_IDS="waterfallkeepersofnc-org,joyfeed-web" \
+npm run smoke:staging-preflight
 ```
 
 ## Exit Behavior
