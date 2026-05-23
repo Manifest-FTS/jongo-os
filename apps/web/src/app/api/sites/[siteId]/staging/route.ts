@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { isAdminRole } from "@/lib/roles";
 import {
   applyCoolifyApplicationDomain,
+  applyCoolifyApplicationDomains,
   buildStagingSyncDryRunPlan,
   deriveCoolifyStagingDomainFromProduction,
   getCoolifyAppBackupInventory,
@@ -278,5 +279,95 @@ export async function POST(req: Request, { params }: Params) {
     stagedDetected: Boolean(capability?.detected),
     destroyed: Boolean(destroyResult?.ok),
     message: destroyResult?.message ?? "Staging disabled in Jongo."
+  });
+}
+
+export async function PATCH(req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { siteId } = await params;
+
+  let body: { domains?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  if (typeof body.domains !== "string" || body.domains.trim().length === 0) {
+    return NextResponse.json({ error: "'domains' must be a non-empty comma-separated string" }, { status: 400 });
+  }
+
+  const { db } = await import("@/lib/db");
+  const site = await db.site.findFirst({
+    where: {
+      ...buildSiteIdentityWhere(siteId),
+      organization: {
+        deletedAt: null,
+        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
+      }
+    },
+    include: {
+      organization: {
+        select: {
+          id: true,
+          ownerId: true,
+          collaborators: { where: { userId: session.user.id }, select: { role: true } }
+        }
+      }
+    }
+  });
+
+  if (!site) {
+    return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+  }
+
+  const callerIsOwner = site.organization.ownerId === session.user.id;
+  const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
+  if (!callerIsAdmin) {
+    return NextResponse.json({ error: "Only admins can manage staging domains" }, { status: 403 });
+  }
+
+  const appUuid = site.coolifyServiceUuid?.trim() || "";
+  const projectId = site.coolifyProjectId?.trim() || undefined;
+  if (!appUuid) {
+    return NextResponse.json({ error: "Coolify service UUID is not linked." }, { status: 409 });
+  }
+
+  const capability = await getCoolifyAppStagingCapability(appUuid, projectId);
+  if (!capability.detected || !capability.applicationUuid) {
+    return NextResponse.json({
+      error: "Staging application is not detected yet. Enable staging and verify Coolify staging app exists first."
+    }, { status: 409 });
+  }
+
+  const requestedDomains = body.domains
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (requestedDomains.length === 0) {
+    return NextResponse.json({ error: "No valid domains provided." }, { status: 400 });
+  }
+
+  const updated = await applyCoolifyApplicationDomains(capability.applicationUuid, requestedDomains);
+
+  if (!updated) {
+    return NextResponse.json({
+      ok: false,
+      stagingApplicationUuid: capability.applicationUuid,
+      requestedDomains,
+      message: "Unable to update staging domains through the current Coolify API routes."
+    }, { status: 502 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    stagingApplicationUuid: capability.applicationUuid,
+    requestedDomains,
+    message: "Staging domains updated in Coolify."
   });
 }

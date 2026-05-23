@@ -3,8 +3,9 @@ import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import DeployButton from "@/components/DeployButton";
+import StagingDomainForm from "@/components/StagingDomainForm";
 import Link from "next/link";
-import { getSiteWorkspace } from "@/lib/repositories";
+import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -72,6 +73,20 @@ function getStagingModelCopy(siteType?: string): { title: string; body: string; 
   };
 }
 
+function parseDomainValues(raw?: string): string[] {
+  if (!raw) {
+    return [];
+  }
+
+  const values = raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => value.replace(/^https?:\/\//i, ""));
+
+  return [...new Set(values)];
+}
+
 export default async function StagingPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -83,6 +98,12 @@ export default async function StagingPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+
+  const canManageDomains = Boolean(
+    session?.user?.id &&
+    workspace.organizationId &&
+    await isClientAdmin(workspace.organizationId, session.user.id)
+  );
 
   const stagingEnabled = Boolean(workspace?.stagingEnabled);
   const appUuid = workspace?.coolifyServiceUuid;
@@ -102,6 +123,8 @@ export default async function StagingPage({ params }: Params) {
   const prodToStagingPreflight = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
   const stagingToProdPreflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
   const stagingModelCopy = getStagingModelCopy(workspace?.siteType);
+  const stagingDomains = parseDomainValues(stagingCapability?.fqdn);
+  const stagingDomainsInput = stagingDomains.join(", ");
 
   const dryRunPlan =
     stagingConfigured && appUuid && stagingCapability
@@ -191,13 +214,19 @@ export default async function StagingPage({ params }: Params) {
                 {stagingCapability.applicationName && (
                   <p style={{ margin: 0 }}>Application: <code>{stagingCapability.applicationName}</code></p>
                 )}
-                {stagingCapability.fqdn && (
-                  <p style={{ margin: 0 }}>
-                    Domain:{" "}
-                    <a href={`https://${stagingCapability.fqdn}`} target="_blank" rel="noopener noreferrer" className="action-link">
-                      {stagingCapability.fqdn}
-                    </a>
-                  </p>
+                {stagingDomains.length > 0 && (
+                  <div style={{ margin: 0 }}>
+                    <p style={{ margin: 0 }}>Domains:</p>
+                    <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1rem", display: "grid", gap: "0.15rem" }}>
+                      {stagingDomains.map((domain) => (
+                        <li key={domain} style={{ fontSize: "0.86rem" }}>
+                          <a href={`https://${domain}`} target="_blank" rel="noopener noreferrer" className="action-link">
+                            {domain}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
                 {stagingCapability.status && (
                   <p style={{ margin: 0 }}>
@@ -209,6 +238,12 @@ export default async function StagingPage({ params }: Params) {
                     Staging environment exists but no application is deployed yet. Contact your platform administrator.
                   </p>
                 )}
+                {canManageDomains ? (
+                  <StagingDomainForm
+                    siteId={siteId}
+                    initialDomains={stagingDomainsInput}
+                  />
+                ) : null}
                 <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
                   Checked {formatAgo(stagingCapability.checkedAt)}
                 </p>

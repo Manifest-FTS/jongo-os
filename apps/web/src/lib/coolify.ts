@@ -1127,6 +1127,29 @@ function toHttpsUrl(input: string): string | undefined {
   }
 }
 
+function normalizeCoolifyDomains(input: string | string[]): string[] {
+  const rawValues = Array.isArray(input)
+    ? input
+    : input
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const raw of rawValues) {
+    const value = toHttpsUrl(raw);
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    normalized.push(value);
+  }
+
+  return normalized;
+}
+
 function buildStagingDomainFromProductionUrl(productionRaw: string): string | undefined {
   const first = extractFirstHostLikeValue(productionRaw);
   if (!first) {
@@ -1169,17 +1192,20 @@ export async function deriveCoolifyStagingDomainFromProduction(appUuid: string):
   }
 }
 
-export async function applyCoolifyApplicationDomain(appUuid: string, fqdn: string): Promise<boolean> {
-  const normalized = toHttpsUrl(fqdn);
-  if (!normalized) {
+export async function applyCoolifyApplicationDomains(appUuid: string, input: string | string[]): Promise<boolean> {
+  const normalizedDomains = normalizeCoolifyDomains(input);
+  if (normalizedDomains.length === 0) {
     return false;
   }
 
+  const commaSeparatedDomains = normalizedDomains.join(",");
   const requestBodies: Record<string, unknown>[] = [
-    { fqdn: normalized },
-    { domain: normalized },
-    { domains: [normalized] },
-    { urls: [normalized] }
+    { fqdn: commaSeparatedDomains },
+    { domain: commaSeparatedDomains },
+    { domains: normalizedDomains },
+    { urls: normalizedDomains },
+    { domains: commaSeparatedDomains },
+    { urls: commaSeparatedDomains }
   ];
   const paths = [
     `/api/v1/applications/${encodeURIComponent(appUuid)}`,
@@ -1201,6 +1227,10 @@ export async function applyCoolifyApplicationDomain(appUuid: string, fqdn: strin
   }
 
   return false;
+}
+
+export async function applyCoolifyApplicationDomain(appUuid: string, fqdn: string): Promise<boolean> {
+  return applyCoolifyApplicationDomains(appUuid, fqdn);
 }
 
 export async function provisionCoolifyStagingFromProduction(
