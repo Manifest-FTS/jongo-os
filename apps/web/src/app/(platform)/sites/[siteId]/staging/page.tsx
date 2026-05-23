@@ -148,6 +148,9 @@ export default async function StagingPage({ params }: Params) {
             <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
               Execution remains disabled in this interface. Use these checks to confirm readiness.
             </p>
+            <p style={{ margin: "0 0 0.75rem", fontSize: "0.88rem" }}>
+              Programmatic testing: <code>GET /api/sites/{siteId}/staging</code> returns sync-readiness and dry-run plan details.
+            </p>
             <div style={{ display: "grid", gap: "0.65rem" }}>
               <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.65rem 0.75rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>

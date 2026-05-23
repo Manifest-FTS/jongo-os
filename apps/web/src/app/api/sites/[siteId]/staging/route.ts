@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isAdminRole } from "@/lib/roles";
 import {
+  buildStagingSyncDryRunPlan,
+  getCoolifyAppBackupInventory,
   destroyCoolifyApplication,
   getCoolifyAppStagingCapability,
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
+import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -25,6 +28,101 @@ function buildSiteIdentityWhere(siteId: string) {
     slug: siteId,
     deletedAt: null
   };
+}
+
+export async function GET(_req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { siteId } = await params;
+  const { db } = await import("@/lib/db");
+
+  const site = await db.site.findFirst({
+    where: {
+      ...buildSiteIdentityWhere(siteId),
+      organization: {
+        deletedAt: null,
+        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
+      }
+    },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      stagingEnabled: true,
+      coolifyServiceUuid: true,
+      coolifyProjectId: true
+    }
+  });
+
+  if (!site) {
+    return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+  }
+
+  const appUuid = site.coolifyServiceUuid?.trim() || "";
+  const projectId = site.coolifyProjectId?.trim() || undefined;
+
+  const [stagingCapability, backupInventory] = appUuid
+    ? await Promise.all([
+        getCoolifyAppStagingCapability(appUuid, projectId),
+        getCoolifyAppBackupInventory(appUuid)
+      ])
+    : [null, null];
+
+  const stagingConfigured = Boolean(site.stagingEnabled && stagingCapability?.detected);
+  const backupReadiness = getBackupReadiness(backupInventory, appUuid || undefined);
+  const productionToStaging = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
+  const stagingToProduction = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
+
+  const dryRunPlan =
+    stagingConfigured && appUuid && stagingCapability
+      ? await buildStagingSyncDryRunPlan(appUuid, site.name ?? site.slug ?? site.id, stagingCapability)
+      : null;
+
+  const readyForSyncTesting = Boolean(
+    stagingConfigured &&
+    !backupReadiness.locked &&
+    dryRunPlan?.target
+  );
+
+  const blockers: string[] = [];
+  if (!site.stagingEnabled) {
+    blockers.push("Staging is disabled in Jongo for this app.");
+  }
+  if (!appUuid) {
+    blockers.push("Coolify service UUID is not linked.");
+  }
+  if (!stagingCapability?.detected) {
+    blockers.push("No staging environment/application is currently detected in Coolify.");
+  }
+  if (backupReadiness.locked) {
+    blockers.push(backupReadiness.reason ?? "Backup readiness is not satisfied.");
+  }
+  if (stagingConfigured && dryRunPlan && !dryRunPlan.target) {
+    blockers.push("Dry-run sync plan could not resolve a staging target.");
+  }
+
+  return NextResponse.json({
+    site: {
+      id: site.id,
+      slug: site.slug,
+      name: site.name
+    },
+    generatedAt: new Date().toISOString(),
+    stagingEnabled: site.stagingEnabled,
+    stagingConfigured,
+    readyForSyncTesting,
+    blockers,
+    backupReadiness,
+    preflight: {
+      productionToStaging,
+      stagingToProduction
+    },
+    stagingCapability,
+    dryRunPlan
+  });
 }
 
 export async function POST(req: Request, { params }: Params) {
