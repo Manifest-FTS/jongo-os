@@ -108,9 +108,8 @@ export default async function DeploymentsPage({ params }: Params) {
     ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
     : "Dry-run mode: execution remains disabled in this interface.";
   const workflowModel = getResourceWorkflowModel(workspace?.siteType);
+  const latestDeployment = deployments[0];
 
-  const productionDeployments = deployments.filter((d) => d.environment === "production");
-  const stagingDeployments = deployments.filter((d) => d.environment === "staging");
   const lastSuccess = deployments.find((d) => d.status === "success" || d.status === "healthy");
 
   return (
@@ -121,38 +120,32 @@ export default async function DeploymentsPage({ params }: Params) {
           <p className="metric-label">Total Deploys</p>
         </article>
         <article className="card metric-card">
-          <p className="metric-value">{productionDeployments.length}</p>
-          <p className="metric-label">Production</p>
-        </article>
-        <article className="card metric-card">
-          <p className="metric-value">{stagingDeployments.length}</p>
-          <p className="metric-label">Staging</p>
-        </article>
-        <article className="card metric-card">
           <p className="metric-value" style={{ fontSize: "1rem" }}>
             {lastSuccess ? formatRelativeTime(lastSuccess.triggeredAt) : "—"}
           </p>
           <p className="metric-label">Last Success</p>
         </article>
+        <article className="card metric-card">
+          <p className="metric-value" style={{ fontSize: "1rem" }}>
+            {latestDeployment ? formatRelativeTime(latestDeployment.triggeredAt) : "—"}
+          </p>
+          <p className="metric-label">Last Activity</p>
+        </article>
       </section>
 
       <section className="grid" style={{ marginBottom: "1rem" }}>
         <article className="card">
-          <h3 className="card-title">Current Status</h3>
-          <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.5rem" }}>
-            <p style={{ margin: 0 }}>
-              Production:{" "}
-              <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>
-                {site?.productionStatus ?? "unknown"}
-              </span>
-            </p>
-            <p style={{ margin: 0 }}>
-              Staging:{" "}
-              <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
-                {site?.stagingStatus ?? "unknown"}
-              </span>
-            </p>
-          </div>
+          <h3 className="card-title">Deployment Readiness</h3>
+          <p className="card-muted" style={{ marginBottom: "0.5rem" }}>
+            {stagingConfigured
+              ? "Staging is configured and deploy flow controls are available below."
+              : "Staging is not configured yet, so only production deploy flow is shown."}
+          </p>
+          <p className="card-muted" style={{ margin: 0 }}>
+            {backupReadiness.locked
+              ? backupReadiness.reason ?? "Backup checks are currently blocking deploy actions."
+              : "Backup checks are passing, but actions stay in dry-run mode in this phase."}
+          </p>
         </article>
 
         <article className="card">
