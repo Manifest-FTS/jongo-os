@@ -154,4 +154,5 @@ Batch remediation before this run:
 
 - Latest identifier-rich manual queue: `docs/workflows/staging-remediation-queue-latest.md`
 - Latest operator checklist tracker: `docs/workflows/staging-remediation-tracker-latest.md`
+- Latest delta report: `docs/workflows/staging-remediation-delta-latest.md`
 - One-command refresh flow: `npm run ops:refresh-staging-remediation` (or `:with-smoke` / `:strict`)

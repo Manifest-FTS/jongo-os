@@ -25,6 +25,7 @@
     "smoke:staging-promote": "node ./scripts/smoke-staging-promote.mjs",
     "ops:export-staging-remediation-queue": "node ./scripts/export-staging-remediation-queue.mjs",
     "ops:generate-staging-remediation-tracker": "node ./scripts/generate-staging-remediation-tracker.mjs",
+    "ops:export-staging-remediation-delta": "node ./scripts/export-staging-remediation-delta.mjs",
     "ops:refresh-staging-remediation": "node ./scripts/refresh-staging-remediation.mjs",
     "ops:refresh-staging-remediation:with-smoke": "node ./scripts/refresh-staging-remediation.mjs --with-smoke",
     "ops:refresh-staging-remediation:strict": "node ./scripts/refresh-staging-remediation.mjs --with-smoke --strict-smoke",
