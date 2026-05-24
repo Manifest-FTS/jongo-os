@@ -44,6 +44,7 @@
 - attempt API-driven staging provisioning in controlled batches via `npm run ops:remediate-staging-provision -- <app-slug...>` and apply with `npm run ops:remediate-staging-provision:apply -- <app-slug...>` to validate whether Coolify auto-provision is available for each app set
 - generate identifier-rich manual execution queue via `npm run ops:export-staging-remediation-queue` (artifact: `docs/workflows/staging-remediation-queue-latest.md`) before Coolify-side remediation batches
 - generate checklist tracker from queue via `npm run ops:generate-staging-remediation-tracker` (artifact: `docs/workflows/staging-remediation-tracker-latest.md`) for batch-by-batch operator execution
+- refresh queue + tracker in one pass via `npm run ops:refresh-staging-remediation`; include smoke with `npm run ops:refresh-staging-remediation:with-smoke` or strict mode with `npm run ops:refresh-staging-remediation:strict`
 
 ## Visibility Model
 
