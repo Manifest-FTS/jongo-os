@@ -187,7 +187,14 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       ) : null}
 
       {error ? <p className="form-error" style={{ margin: 0 }}>{error}</p> : null}
-      {message ? <p className="form-success" style={{ margin: 0 }}>{message}</p> : null}
+      {message ? (
+        <p
+          className={manualProvisionRequired ? undefined : "form-success"}
+          style={manualProvisionRequired ? { margin: 0, fontSize: "0.82rem", color: "#a15c00" } : { margin: 0 }}
+        >
+          {message}
+        </p>
+      ) : null}
       {manualProvisionRequired ? (
         <p style={{ margin: 0, fontSize: "0.82rem", color: "#a15c00" }}>
           {actionHint ?? "Manual provisioning in Coolify is required before staging will be detected."}
