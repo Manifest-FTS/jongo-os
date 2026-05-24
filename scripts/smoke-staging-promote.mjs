@@ -1,5 +1,6 @@
 const baseUrl = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
+const sessionCookie = (process.env.SESSION_COOKIE || "").trim();
 const discoveryScope = (process.env.STAGING_SITE_DISCOVERY_SCOPE || "linked").trim();
 const failOnBlocked = (process.env.FAIL_ON_BLOCKED || "false").toLowerCase() === "true";
 const allowProductionTrigger = (process.env.ALLOW_PRODUCTION_TRIGGER || "false").toLowerCase() === "true";
@@ -11,17 +12,38 @@ const envIds = (process.env.STAGING_SITE_IDS || "")
   .map((value) => value.trim())
   .filter(Boolean);
 
-if (!token) {
-  console.error("Missing OWNERSHIP_SYNC_TOKEN env var.");
+if (!token && !sessionCookie) {
+  console.error("Missing authentication: set OWNERSHIP_SYNC_TOKEN or SESSION_COOKIE.");
   process.exit(1);
 }
 
 function buildHeaders() {
-  return {
+  const headers = {
     Accept: "application/json",
-    Authorization: `Bearer ${token}`,
     "Content-Type": "application/json"
   };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (sessionCookie) {
+    headers.Cookie = sessionCookie;
+  }
+
+  return headers;
+}
+
+function maybeExplainAuthRedirect(status, bodyText, locationHeader) {
+  const looksLikeRedirect = status >= 300 && status < 400;
+  const loginLocation = typeof locationHeader === "string" && locationHeader.toLowerCase().includes("/auth/login");
+  const loginBody = typeof bodyText === "string" && bodyText.toLowerCase().includes("/auth/login");
+
+  if (looksLikeRedirect && (loginLocation || loginBody)) {
+    return "Endpoint redirected to login. Provide SESSION_COOKIE for local/dev auth or use a reachable live APP_BASE_URL with valid token auth.";
+  }
+
+  return null;
 }
 
 function randomIdempotencyKey(siteId) {
@@ -36,6 +58,12 @@ function randomIdempotencyKey(siteId) {
 
 async function parseJsonResponse(res) {
   const text = await res.text();
+
+  const authRedirectMessage = maybeExplainAuthRedirect(res.status, text, res.headers.get("location"));
+  if (authRedirectMessage) {
+    throw new Error(authRedirectMessage);
+  }
+
   try {
     return text ? JSON.parse(text) : {};
   } catch {
