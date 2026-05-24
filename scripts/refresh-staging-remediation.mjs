@@ -62,6 +62,12 @@ async function run() {
     ["run", "ops:export-staging-remediation-delta"]
   );
 
+  await runStep(
+    "Export staging remediation next batch",
+    "npm",
+    ["run", "ops:export-staging-remediation-next-batch"]
+  );
+
   if (withSmoke) {
     await runStep(
       strictSmoke ? "Run strict staging promote smoke" : "Run non-strict staging promote smoke",
@@ -78,6 +84,7 @@ async function run() {
   console.log("- docs/workflows/staging-remediation-queue-latest.md");
   console.log("- docs/workflows/staging-remediation-tracker-latest.md");
   console.log("- docs/workflows/staging-remediation-delta-latest.md");
+  console.log("- docs/workflows/staging-remediation-next-batch.md");
 }
 
 run().catch((error) => {

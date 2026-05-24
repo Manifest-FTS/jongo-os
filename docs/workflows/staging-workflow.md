@@ -46,6 +46,7 @@
 - generate checklist tracker from queue via `npm run ops:generate-staging-remediation-tracker` (artifact: `docs/workflows/staging-remediation-tracker-latest.md`) for batch-by-batch operator execution
 - refresh queue + tracker in one pass via `npm run ops:refresh-staging-remediation`; include smoke with `npm run ops:refresh-staging-remediation:with-smoke` or strict mode with `npm run ops:refresh-staging-remediation:strict`
 - generate queue delta report via `npm run ops:export-staging-remediation-delta` (artifact: `docs/workflows/staging-remediation-delta-latest.md`) to see app-level progress/regressions between batches
+- generate minimal unblock batch via `npm run ops:export-staging-remediation-next-batch` (artifact: `docs/workflows/staging-remediation-next-batch.md`) to prioritize the fastest path toward first trigger-path validation
 
 ## Visibility Model
 
