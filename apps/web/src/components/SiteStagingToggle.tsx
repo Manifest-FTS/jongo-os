@@ -93,6 +93,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
 
   const isDisableAction = pendingAction === "disable";
   const isEnableAction = pendingAction === "enable";
+  const waitingForManualStagingSetup = enabled && !hasDetectedStaging;
 
   return (
     <div style={{ display: "grid", gap: "0.55rem", justifyItems: "end", minWidth: "260px" }}>
@@ -190,6 +191,11 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       {manualProvisionRequired ? (
         <p style={{ margin: 0, fontSize: "0.82rem", color: "#a15c00" }}>
           {actionHint ?? "Manual provisioning in Coolify is required before staging will be detected."}
+        </p>
+      ) : null}
+      {waitingForManualStagingSetup && !manualProvisionRequired ? (
+        <p style={{ margin: 0, fontSize: "0.82rem", color: "#a15c00" }}>
+          Staging is enabled in Jongo, but no staging app is detected in Coolify yet. Create or attach staging in Coolify, then refresh.
         </p>
       ) : null}
     </div>
