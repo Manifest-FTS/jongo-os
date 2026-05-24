@@ -34,6 +34,8 @@
     "db:studio": "prisma studio",
     "db:repair-legacy-ids": "node ./scripts/repair-legacy-ids.mjs",
     "db:repair-legacy-ids:apply": "node ./scripts/repair-legacy-ids.mjs --apply",
+    "db:remediate-staging-enable": "node ./scripts/remediate-staging-enable.mjs",
+    "db:remediate-staging-enable:apply": "node ./scripts/remediate-staging-enable.mjs --apply",
     "db:sync-approved-mappings": "node ./scripts/sync-approved-coolify-mappings.mjs",
     "db:sync-approved-mappings:apply": "node ./scripts/sync-approved-coolify-mappings.mjs --apply",
     "db:seed": "node prisma/seed.js",

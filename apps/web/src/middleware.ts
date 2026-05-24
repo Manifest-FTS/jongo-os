@@ -65,6 +65,24 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  if (/^\/api\/sites\/[^/]+\/staging\/promote$/i.test(pathname)) {
+    const operationsToken = process.env.OWNERSHIP_SYNC_TOKEN;
+    const authHeader = req.headers.get("authorization") ?? "";
+    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (operationsToken && providedToken && providedToken === operationsToken) {
+      return NextResponse.next();
+    }
+  }
+
+  if (/^\/api\/sites\/[^/]+\/staging\/promote-attempt$/i.test(pathname)) {
+    const operationsToken = process.env.OWNERSHIP_SYNC_TOKEN;
+    const authHeader = req.headers.get("authorization") ?? "";
+    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (operationsToken && providedToken && providedToken === operationsToken) {
+      return NextResponse.next();
+    }
+  }
+
   if (pathname === "/api/sites/staging-targets") {
     const operationsToken = process.env.OWNERSHIP_SYNC_TOKEN;
     const authHeader = req.headers.get("authorization") ?? "";

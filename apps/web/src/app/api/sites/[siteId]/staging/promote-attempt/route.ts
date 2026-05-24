@@ -4,6 +4,13 @@ import { getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
 
+function hasOpsToken(req: Request): boolean {
+  const configured = process.env.OWNERSHIP_SYNC_TOKEN?.trim() || "";
+  const authHeader = req.headers.get("authorization") ?? "";
+  const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
+  return Boolean(configured && provided && configured === provided);
+}
+
 type PromoteAttemptActionType =
   | "staging_promote_blocked"
   | "staging_promote_triggered"
@@ -94,8 +101,9 @@ function statusTone(status: PromoteAttemptStatus): "healthy" | "degraded" | "err
 }
 
 export async function GET(req: Request, { params }: Params) {
+  const authorizedByToken = hasOpsToken(req);
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -106,10 +114,12 @@ export async function GET(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Query param attemptId is required." }, { status: 400 });
   }
 
-  const viewer = {
-    userId: session.user.id,
-    email: session.user.email ?? undefined
-  };
+  const viewer = session?.user?.id
+    ? {
+        userId: session.user.id,
+        email: session.user.email ?? undefined
+      }
+    : undefined;
 
   const workspace = await getSiteWorkspace(siteId, viewer);
   if (!workspace || !workspace.organizationId) {

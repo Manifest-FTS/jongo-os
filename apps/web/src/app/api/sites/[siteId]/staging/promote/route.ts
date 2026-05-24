@@ -30,6 +30,13 @@ type BlockingDeploymentPayload = {
 const PROMOTE_BLOCK_COOLDOWN_MS = 30_000;
 const IDEMPOTENCY_KEY_RE = /^[a-zA-Z0-9:_-]{8,128}$/;
 
+function hasOpsToken(req: Request): boolean {
+  const configured = process.env.OWNERSHIP_SYNC_TOKEN?.trim() || "";
+  const authHeader = req.headers.get("authorization") ?? "";
+  const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
+  return Boolean(configured && provided && configured === provided);
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -75,7 +82,7 @@ function blockedPromoteResponse(params: {
 
 async function recordStagingAuditLog(params: {
   organizationId: string;
-  actorId: string;
+  actorId?: string;
   actionType: string;
   resourceId: string;
   details: Record<string, unknown>;
@@ -85,7 +92,7 @@ async function recordStagingAuditLog(params: {
   await db.auditLog.create({
     data: {
       organizationId: params.organizationId,
-      actorId: params.actorId,
+      actorId: params.actorId ?? null,
       action: "site_updated",
       resourceType: "site_staging",
       resourceId: params.resourceId,
@@ -125,7 +132,7 @@ function normalizeIdempotencyKey(value: string | null | undefined): string | und
 
 async function readTriggeredReplayByIdempotencyKey(params: {
   organizationId: string;
-  actorId: string;
+  actorId?: string;
   resourceId: string;
   idempotencyKey: string;
 }): Promise<ReplayTriggeredPromoteContext | null> {
@@ -133,7 +140,7 @@ async function readTriggeredReplayByIdempotencyKey(params: {
   const logs = await db.auditLog.findMany({
     where: {
       organizationId: params.organizationId,
-      actorId: params.actorId,
+      ...(params.actorId ? { actorId: params.actorId } : {}),
       action: "site_updated",
       resourceType: "site_staging",
       resourceId: params.resourceId
@@ -172,14 +179,14 @@ async function readTriggeredReplayByIdempotencyKey(params: {
 
 async function readRecentBlockedPromoteContext(params: {
   organizationId: string;
-  actorId: string;
+  actorId?: string;
   resourceId: string;
 }): Promise<RecentBlockedPromoteContext | null> {
   const { db } = await import("@/lib/db");
   const logs = await db.auditLog.findMany({
     where: {
       organizationId: params.organizationId,
-      actorId: params.actorId,
+      ...(params.actorId ? { actorId: params.actorId } : {}),
       action: "site_updated",
       resourceType: "site_staging",
       resourceId: params.resourceId
@@ -214,10 +221,13 @@ async function readRecentBlockedPromoteContext(params: {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const authorizedByToken = hasOpsToken(req);
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const actorId = session?.user?.id;
 
   const { siteId } = await params;
 
@@ -240,31 +250,48 @@ export async function POST(req: Request, { params }: Params) {
   const promoteAttemptId = crypto.randomUUID();
 
   const { db } = await import("@/lib/db");
-  const site = await db.site.findFirst({
-    where: {
-      ...buildSiteIdentityWhere(siteId),
-      organization: {
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      }
-    },
-    include: {
-      organization: {
-        select: {
-          id: true,
-          ownerId: true,
-          collaborators: { where: { userId: session.user.id }, select: { role: true } }
+  const site = await db.site.findFirst(
+    authorizedByToken
+      ? {
+          where: {
+            ...buildSiteIdentityWhere(siteId)
+          },
+          include: {
+            organization: {
+              select: {
+                id: true,
+                ownerId: true,
+                collaborators: { select: { role: true }, take: 1 }
+              }
+            }
+          }
         }
-      }
-    }
-  });
+      : {
+          where: {
+            ...buildSiteIdentityWhere(siteId),
+            organization: {
+              deletedAt: null,
+              OR: [{ ownerId: session!.user!.id }, { collaborators: { some: { userId: session!.user!.id } } }]
+            }
+          },
+          include: {
+            organization: {
+              select: {
+                id: true,
+                ownerId: true,
+                collaborators: { where: { userId: session!.user!.id }, select: { role: true } }
+              }
+            }
+          }
+        }
+  );
 
   if (!site) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
   }
 
-  const callerIsOwner = site.organization.ownerId === session.user.id;
-  const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
+  const callerIsOwner = Boolean(session?.user?.id && site.organization.ownerId === session.user.id);
+  const callerIsAdmin = authorizedByToken || callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
   if (!callerIsAdmin) {
     return NextResponse.json({ error: "Only admins can promote staging to production" }, { status: 403 });
   }
@@ -278,7 +305,7 @@ export async function POST(req: Request, { params }: Params) {
   if (idempotencyKey) {
     const replay = await readTriggeredReplayByIdempotencyKey({
       organizationId: site.organizationId,
-      actorId: session.user.id,
+      actorId,
       resourceId: site.id,
       idempotencyKey
     });
@@ -299,7 +326,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const recentBlocked = await readRecentBlockedPromoteContext({
     organizationId: site.organizationId,
-    actorId: session.user.id,
+    actorId,
     resourceId: site.id
   });
   if (recentBlocked?.blockingReason === "production_deployment_in_progress") {
@@ -309,7 +336,7 @@ export async function POST(req: Request, { params }: Params) {
 
       await recordStagingAuditLog({
         organizationId: site.organizationId,
-        actorId: session.user.id,
+        actorId,
         actionType: "staging_promote_blocked",
         resourceId: site.id,
         details: {
@@ -346,10 +373,12 @@ export async function POST(req: Request, { params }: Params) {
     }
   }
 
-  const viewer = {
-    userId: session.user.id,
-    email: session.user.email ?? undefined
-  };
+  const viewer = session?.user?.id
+    ? {
+        userId: session.user.id,
+        email: session.user.email ?? undefined
+      }
+    : undefined;
 
   const deployments = await listSiteDeployments(siteId, viewer);
   const inProgressProduction = deployments.find(
@@ -360,7 +389,7 @@ export async function POST(req: Request, { params }: Params) {
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,
-      actorId: session.user.id,
+      actorId,
       actionType: "staging_promote_blocked",
       resourceId: site.id,
       details: {
@@ -403,7 +432,7 @@ export async function POST(req: Request, { params }: Params) {
   if (preflight.tone === "error") {
     await recordStagingAuditLog({
       organizationId: site.organizationId,
-      actorId: session.user.id,
+      actorId,
       actionType: "staging_promote_blocked",
       resourceId: site.id,
       details: {
@@ -432,7 +461,7 @@ export async function POST(req: Request, { params }: Params) {
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,
-      actorId: session.user.id,
+      actorId,
       actionType: "staging_promote_triggered",
       resourceId: site.id,
       details: {
@@ -461,7 +490,7 @@ export async function POST(req: Request, { params }: Params) {
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,
-      actorId: session.user.id,
+      actorId,
       actionType: "staging_promote_failed",
       resourceId: site.id,
       details: {
