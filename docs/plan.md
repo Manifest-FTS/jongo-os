@@ -104,6 +104,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging audit supports incident handoff JSON download with stable attempt-id and timestamp filename pattern.
 - Staging audit supports one-click incident package download that bundles both human-readable handoff text and structured JSON in a single attachment artifact.
 - Staging audit supports one-click incident package copy for fast ticket/comment paste workflows.
+- Staging audit supports one-click summary-only copy for rapid incident status updates without full payload export.
 - Incident package payload includes a deterministic summary block (status/severity/isIncident/recommendedNextAction/blockingReason) for rapid operator triage.
 - Incident package summary accepts optional operator-provided metadata fields (owner/ticketId/environmentNote) before copy/download.
 - Incident package metadata fields persist per site and attempt id in the browser so repeated handoffs retain operator defaults.

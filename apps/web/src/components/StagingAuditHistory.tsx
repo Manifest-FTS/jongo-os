@@ -76,6 +76,18 @@ type IncidentPackageMetadata = {
   environmentNote: string;
 };
 
+type IncidentPackageSummary = {
+  status: string;
+  statusLabel: string;
+  severity: "high" | "medium" | "low" | "unknown";
+  isIncident: boolean;
+  blockingReason?: string;
+  recommendedNextAction: string;
+  owner?: string;
+  ticketId?: string;
+  environmentNote?: string;
+};
+
 function buildIncidentMetadataStorageKey(siteId: string, attemptId: string): string {
   return `${INCIDENT_METADATA_STORAGE_PREFIX}:${siteId}:${attemptId}`;
 }
@@ -134,6 +146,34 @@ function clearIncidentPackageMetadata(siteId: string, attemptId: string): void {
   } catch {
     // Ignore storage failures in restricted browser contexts.
   }
+}
+
+function formatIncidentSummaryText(attemptId: string, summary: IncidentPackageSummary): string {
+  const lines = [
+    `Attempt id: ${attemptId}`,
+    `Status: ${summary.statusLabel} (${summary.status})`,
+    `Severity: ${summary.severity}`,
+    `Incident: ${summary.isIncident ? "yes" : "no"}`,
+    `Recommended next action: ${summary.recommendedNextAction}`
+  ];
+
+  if (summary.blockingReason) {
+    lines.push(`Blocking reason: ${summary.blockingReason}`);
+  }
+
+  if (summary.owner) {
+    lines.push(`Owner: ${summary.owner}`);
+  }
+
+  if (summary.ticketId) {
+    lines.push(`Ticket id: ${summary.ticketId}`);
+  }
+
+  if (summary.environmentNote) {
+    lines.push(`Environment note: ${summary.environmentNote}`);
+  }
+
+  return lines.join("\n");
 }
 
 function formatAuditAgo(iso: string): string {
@@ -692,26 +732,26 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
       return null;
     }
 
-    let structuredPayload: unknown;
+    let structuredPayload: Record<string, unknown> | null = null;
     try {
-      structuredPayload = JSON.parse(incidentHandoffJson);
+      const parsed = JSON.parse(incidentHandoffJson) as unknown;
+      structuredPayload = typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : null;
     } catch {
       return null;
     }
 
-    const payloadRecord =
-      typeof structuredPayload === "object" && structuredPayload !== null
-        ? structuredPayload as Record<string, unknown>
-        : null;
+    if (!structuredPayload) {
+      return null;
+    }
 
-    const statusRaw = typeof payloadRecord?.status === "string" ? payloadRecord.status : "unknown";
-    const statusLabelRaw = typeof payloadRecord?.statusLabel === "string" ? payloadRecord.statusLabel : "Unknown";
-    const blockingReasonRaw = typeof payloadRecord?.blockingReason === "string" ? payloadRecord.blockingReason : undefined;
-    const ownerRaw = incidentOwner.trim();
-    const ticketIdRaw = incidentTicketId.trim();
-    const environmentNoteRaw = incidentEnvironmentNote.trim();
+    const statusRaw = typeof structuredPayload.status === "string" ? structuredPayload.status : "unknown";
+    const statusLabelRaw = typeof structuredPayload.statusLabel === "string" ? structuredPayload.statusLabel : "Unknown";
+    const blockingReasonRaw = typeof structuredPayload.blockingReason === "string" ? structuredPayload.blockingReason : undefined;
+    const ownerRaw = incidentOwner.trim() || undefined;
+    const ticketIdRaw = incidentTicketId.trim() || undefined;
+    const environmentNoteRaw = incidentEnvironmentNote.trim() || undefined;
 
-    const severity =
+    const severity: IncidentPackageSummary["severity"] =
       statusRaw === "failed" || statusRaw === "blocked"
         ? "high"
         : statusRaw === "in_progress" || statusRaw === "triggered"
@@ -731,25 +771,47 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               ? "No incident action required; record completion in operations log."
               : "Review attempt timeline and deployment context to determine next operator step.";
 
+    const summary: IncidentPackageSummary = {
+      status: statusRaw,
+      statusLabel: statusLabelRaw,
+      severity,
+      isIncident: severity === "high",
+      blockingReason: blockingReasonRaw,
+      recommendedNextAction,
+      owner: ownerRaw,
+      ticketId: ticketIdRaw,
+      environmentNote: environmentNoteRaw
+    };
+
     return JSON.stringify({
       formatVersion: 1,
       generatedAt: new Date().toISOString(),
       attemptId: normalizedAttemptFilter,
-      summary: {
-        status: statusRaw,
-        statusLabel: statusLabelRaw,
-        severity,
-        isIncident: severity === "high",
-        blockingReason: blockingReasonRaw,
-        recommendedNextAction,
-        owner: ownerRaw || undefined,
-        ticketId: ticketIdRaw || undefined,
-        environmentNote: environmentNoteRaw || undefined
-      },
+      summary,
       handoffText: incidentHandoff,
       handoffJson: structuredPayload
     }, null, 2);
   }, [incidentHandoff, incidentHandoffJson, normalizedAttemptFilter, incidentOwner, incidentTicketId, incidentEnvironmentNote]);
+
+  const incidentSummaryOnlyText = useMemo(() => {
+    if (!incidentHandoffPackageJson || !normalizedAttemptFilter) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(incidentHandoffPackageJson) as {
+        summary?: IncidentPackageSummary;
+      };
+
+      if (!parsed.summary) {
+        return null;
+      }
+
+      return formatIncidentSummaryText(normalizedAttemptFilter, parsed.summary);
+    } catch {
+      return null;
+    }
+  }, [incidentHandoffPackageJson, normalizedAttemptFilter]);
 
   async function copyToClipboard(content: string, successMessage: string) {
     try {
@@ -1080,6 +1142,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               onClick={() => copyToClipboard(incidentHandoffPackageJson, `Copied incident package for attempt ${normalizedAttemptFilter}.`)}
             >
               Copy incident package
+            </button>
+          ) : null}
+          {incidentSummaryOnlyText ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => copyToClipboard(incidentSummaryOnlyText, `Copied incident summary for attempt ${normalizedAttemptFilter}.`)}
+            >
+              Copy summary only
             </button>
           ) : null}
           {incidentHandoffPackageJson ? (
