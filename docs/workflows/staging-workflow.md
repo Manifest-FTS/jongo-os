@@ -54,6 +54,7 @@
 - promote-related audit controls include one-click incident package download that bundles handoff text plus structured JSON into one attachment artifact
 - promote-related audit controls include one-click incident package copy for direct paste into incident threads
 - promote-related audit controls include one-click summary-only copy for concise incident thread updates
+- promote-related audit controls include one-click summary-only text download for lightweight incident attachments
 - incident package payload includes a deterministic triage summary block (status, severity, incident flag, blocking reason, recommended next action)
 - incident package supports optional operator metadata enrichment before export (owner, ticket id, environment note)
 - incident package metadata fields persist in-browser per site/attempt scope so repeated handoffs retain defaults

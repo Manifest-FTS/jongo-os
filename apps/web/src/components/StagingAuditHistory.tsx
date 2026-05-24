@@ -886,6 +886,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     return `incident-package-attempt-${slug}-${stamp}.json`;
   }
 
+  function buildIncidentSummaryFilename(attemptId: string) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const slug = attemptId
+      .replace(/[^a-zA-Z0-9-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "unspecified";
+    return `incident-summary-attempt-${slug}-${stamp}.txt`;
+  }
+
   function downloadAsText() {
     downloadContent(
       formatAuditExportText(filteredItems, activeFilterLabel),
@@ -1151,6 +1160,19 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               onClick={() => copyToClipboard(incidentSummaryOnlyText, `Copied incident summary for attempt ${normalizedAttemptFilter}.`)}
             >
               Copy summary only
+            </button>
+          ) : null}
+          {incidentSummaryOnlyText ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => downloadContent(
+                incidentSummaryOnlyText,
+                buildIncidentSummaryFilename(normalizedAttemptFilter || "unspecified"),
+                "text/plain;charset=utf-8"
+              )}
+            >
+              Download summary only
             </button>
           ) : null}
           {incidentHandoffPackageJson ? (
