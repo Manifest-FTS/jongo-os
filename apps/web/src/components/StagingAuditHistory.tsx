@@ -176,6 +176,35 @@ function formatIncidentSummaryText(attemptId: string, summary: IncidentPackageSu
   return lines.join("\n");
 }
 
+function formatIncidentSummaryMarkdown(attemptId: string, summary: IncidentPackageSummary): string {
+  const lines = [
+    `## Incident Summary`,
+    `- Attempt id: ${attemptId}`,
+    `- Status: ${summary.statusLabel} (${summary.status})`,
+    `- Severity: ${summary.severity}`,
+    `- Incident: ${summary.isIncident ? "yes" : "no"}`,
+    `- Recommended next action: ${summary.recommendedNextAction}`
+  ];
+
+  if (summary.blockingReason) {
+    lines.push(`- Blocking reason: ${summary.blockingReason}`);
+  }
+
+  if (summary.owner) {
+    lines.push(`- Owner: ${summary.owner}`);
+  }
+
+  if (summary.ticketId) {
+    lines.push(`- Ticket id: ${summary.ticketId}`);
+  }
+
+  if (summary.environmentNote) {
+    lines.push(`- Environment note: ${summary.environmentNote}`);
+  }
+
+  return lines.join("\n");
+}
+
 function formatAuditAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -813,6 +842,26 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     }
   }, [incidentHandoffPackageJson, normalizedAttemptFilter]);
 
+  const incidentSummaryOnlyMarkdown = useMemo(() => {
+    if (!incidentHandoffPackageJson || !normalizedAttemptFilter) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(incidentHandoffPackageJson) as {
+        summary?: IncidentPackageSummary;
+      };
+
+      if (!parsed.summary) {
+        return null;
+      }
+
+      return formatIncidentSummaryMarkdown(normalizedAttemptFilter, parsed.summary);
+    } catch {
+      return null;
+    }
+  }, [incidentHandoffPackageJson, normalizedAttemptFilter]);
+
   async function copyToClipboard(content: string, successMessage: string) {
     try {
       await navigator.clipboard.writeText(content);
@@ -893,6 +942,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "") || "unspecified";
     return `incident-summary-attempt-${slug}-${stamp}.txt`;
+  }
+
+  function buildIncidentSummaryMarkdownFilename(attemptId: string) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const slug = attemptId
+      .replace(/[^a-zA-Z0-9-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "unspecified";
+    return `incident-summary-attempt-${slug}-${stamp}.md`;
   }
 
   function downloadAsText() {
@@ -1162,6 +1220,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               Copy summary only
             </button>
           ) : null}
+          {incidentSummaryOnlyMarkdown ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => copyToClipboard(incidentSummaryOnlyMarkdown, `Copied markdown incident summary for attempt ${normalizedAttemptFilter}.`)}
+            >
+              Copy summary markdown
+            </button>
+          ) : null}
           {incidentSummaryOnlyText ? (
             <button
               type="button"
@@ -1173,6 +1240,19 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               )}
             >
               Download summary only
+            </button>
+          ) : null}
+          {incidentSummaryOnlyMarkdown ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => downloadContent(
+                incidentSummaryOnlyMarkdown,
+                buildIncidentSummaryMarkdownFilename(normalizedAttemptFilter || "unspecified"),
+                "text/markdown;charset=utf-8"
+              )}
+            >
+              Download summary markdown
             </button>
           ) : null}
           {incidentHandoffPackageJson ? (

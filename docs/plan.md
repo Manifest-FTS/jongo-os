@@ -106,6 +106,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging audit supports one-click incident package copy for fast ticket/comment paste workflows.
 - Staging audit supports one-click summary-only copy for rapid incident status updates without full payload export.
 - Staging audit supports one-click summary-only text download for lightweight incident ticket attachments.
+- Staging audit supports summary-only quick-format variants (plain text and markdown) for copy/download compatibility across chat and ticket tools.
 - Incident package payload includes a deterministic summary block (status/severity/isIncident/recommendedNextAction/blockingReason) for rapid operator triage.
 - Incident package summary accepts optional operator-provided metadata fields (owner/ticketId/environmentNote) before copy/download.
 - Incident package metadata fields persist per site and attempt id in the browser so repeated handoffs retain operator defaults.
