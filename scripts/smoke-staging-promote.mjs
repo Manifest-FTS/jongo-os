@@ -1,6 +1,7 @@
 const baseUrl = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
 const sessionCookie = (process.env.SESSION_COOKIE || "").trim();
+const allowNoAuthLocal = (process.env.ALLOW_NO_AUTH_LOCAL || "false").toLowerCase() === "true";
 const discoveryScope = (process.env.STAGING_SITE_DISCOVERY_SCOPE || "linked").trim();
 const failOnBlocked = (process.env.FAIL_ON_BLOCKED || "false").toLowerCase() === "true";
 const allowProductionTrigger = (process.env.ALLOW_PRODUCTION_TRIGGER || "false").toLowerCase() === "true";
@@ -12,7 +13,9 @@ const envIds = (process.env.STAGING_SITE_IDS || "")
   .map((value) => value.trim())
   .filter(Boolean);
 
-if (!token && !sessionCookie) {
+const isLocalBaseUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(baseUrl);
+
+if (!token && !sessionCookie && !(allowNoAuthLocal && isLocalBaseUrl)) {
   console.error("Missing authentication: set OWNERSHIP_SYNC_TOKEN or SESSION_COOKIE.");
   process.exit(1);
 }

@@ -115,7 +115,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
 - Promote UI disables trigger/confirm while production deployment is in progress and explains lock reason.
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.
-- Core staging-to-production behavior has an executable smoke script (`npm run smoke:staging-promote`) that validates blocked schema, idempotency replay, and promote-attempt status lookup (auth via `OWNERSHIP_SYNC_TOKEN` or `SESSION_COOKIE`).
+- Core staging-to-production behavior has an executable smoke script (`npm run smoke:staging-promote`) that validates blocked schema, idempotency replay, and promote-attempt status lookup (auth via `OWNERSHIP_SYNC_TOKEN` or `SESSION_COOKIE`, with optional local fallback `ALLOW_NO_AUTH_LOCAL=true` under intentional dev auth bypass).
 - Staging workspace shows a terminal-state banner for the latest promotion outcome.
 - Staging workspace includes a manual refresh control for deployment status.
 - Promote status surfaces explicit completion timing (started/completed age) for the latest deployment.
