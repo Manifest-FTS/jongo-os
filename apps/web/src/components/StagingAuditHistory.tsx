@@ -108,9 +108,31 @@ function writeIncidentPackageMetadata(siteId: string, attemptId: string, metadat
   }
 
   try {
+    const isEmpty =
+      metadata.owner.trim().length === 0 &&
+      metadata.ticketId.trim().length === 0 &&
+      metadata.environmentNote.trim().length === 0;
+
+    if (isEmpty) {
+      window.localStorage.removeItem(buildIncidentMetadataStorageKey(siteId, attemptId));
+      return;
+    }
+
     window.localStorage.setItem(buildIncidentMetadataStorageKey(siteId, attemptId), JSON.stringify(metadata));
   } catch {
     // Ignore storage quota or privacy mode failures.
+  }
+}
+
+function clearIncidentPackageMetadata(siteId: string, attemptId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(buildIncidentMetadataStorageKey(siteId, attemptId));
+  } catch {
+    // Ignore storage failures in restricted browser contexts.
   }
 }
 
@@ -818,6 +840,19 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     );
   }
 
+  function clearSavedIncidentMetadata() {
+    if (!normalizedAttemptFilter) {
+      return;
+    }
+
+    clearIncidentPackageMetadata(siteId, normalizedAttemptFilter);
+    setIncidentOwner("");
+    setIncidentTicketId("");
+    setIncidentEnvironmentNote("");
+    setCopyStatus("success");
+    setCopyMessage(`Cleared saved incident metadata for attempt ${normalizedAttemptFilter}.`);
+  }
+
   return (
     <article className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "0.4rem" }}>
@@ -989,6 +1024,18 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
                 fontSize: "0.8rem"
               }}
             />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+              <p style={{ margin: 0, fontSize: "0.74rem", color: "var(--muted)" }}>
+                Metadata is saved per site and attempt in this browser.
+              </p>
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={clearSavedIncidentMetadata}
+              >
+                Clear saved metadata
+              </button>
+            </div>
           </div>
         ) : null}
       </div>
