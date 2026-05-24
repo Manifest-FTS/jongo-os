@@ -6,6 +6,7 @@ const discoveryScope = (process.env.STAGING_SITE_DISCOVERY_SCOPE || "linked").tr
 const failOnBlocked = (process.env.FAIL_ON_BLOCKED || "false").toLowerCase() === "true";
 const allowProductionTrigger = (process.env.ALLOW_PRODUCTION_TRIGGER || "false").toLowerCase() === "true";
 const checkAttemptEndpoint = (process.env.CHECK_PROMOTE_ATTEMPT_ENDPOINT || "true").toLowerCase() !== "false";
+const includePreflightMatrix = (process.env.INCLUDE_PREFLIGHT_MATRIX || "true").toLowerCase() !== "false";
 
 const cliIds = process.argv.slice(2).map((value) => value.trim()).filter(Boolean);
 const envIds = (process.env.STAGING_SITE_IDS || "")
@@ -127,6 +128,16 @@ async function readPromoteAttempt(siteId, attemptId) {
   return { status: res.status, body };
 }
 
+async function readStagingPreflight(siteId) {
+  const res = await fetch(`${baseUrl}/api/sites/${encodeURIComponent(siteId)}/staging`, {
+    headers: buildHeaders(),
+    redirect: "manual"
+  });
+
+  const body = await parseJsonResponse(res);
+  return { status: res.status, body };
+}
+
 function validateBlockedResponse(result) {
   const reason = result.body?.blockingReason;
   const actionHint = result.body?.actionHint;
@@ -211,7 +222,7 @@ async function runForSite(siteId) {
       }
     }
 
-    return { blocked: false, triggered: true };
+    return { blocked: false, triggered: true, blockerMatrix: null };
   }
 
   if (first.status === 409 || first.status === 429) {
@@ -234,7 +245,37 @@ async function runForSite(siteId) {
       }
     }
 
-    return { blocked: true, triggered: false };
+    let blockerMatrix = null;
+    if (includePreflightMatrix) {
+      try {
+        const preflightResult = await readStagingPreflight(siteId);
+        const blockers = Array.isArray(preflightResult.body?.blockers)
+          ? preflightResult.body.blockers.filter((value) => typeof value === "string")
+          : [];
+        const suggestedActions = Array.isArray(preflightResult.body?.suggestedActions)
+          ? preflightResult.body.suggestedActions.filter((value) => typeof value === "string")
+          : [];
+
+        blockerMatrix = {
+          siteId,
+          stagingHttpStatus: preflightResult.status,
+          promoteBlockingReason: first.body.blockingReason,
+          blockers,
+          suggestedActions
+        };
+      } catch (error) {
+        blockerMatrix = {
+          siteId,
+          stagingHttpStatus: 0,
+          promoteBlockingReason: first.body.blockingReason,
+          blockers: [],
+          suggestedActions: [],
+          preflightReadError: error.message
+        };
+      }
+    }
+
+    return { blocked: true, triggered: false, blockerMatrix };
   }
 
   throw new Error(`unexpected promote status ${first.status}: ${first.body?.error || "unknown error"}`);
@@ -259,12 +300,16 @@ async function run() {
   let failures = 0;
   let blockedCount = 0;
   let triggeredCount = 0;
+  const blockerMatrixRows = [];
 
   for (const siteId of siteIds) {
     try {
       const result = await runForSite(siteId);
       blockedCount += result.blocked ? 1 : 0;
       triggeredCount += result.triggered ? 1 : 0;
+      if (result.blockerMatrix) {
+        blockerMatrixRows.push(result.blockerMatrix);
+      }
 
       if (result.blocked && failOnBlocked) {
         failures += 1;
@@ -277,6 +322,34 @@ async function run() {
   }
 
   console.log(`\nSummary: triggered=${triggeredCount}, blocked=${blockedCount}, failed=${failures}`);
+
+  if (blockerMatrixRows.length > 0) {
+    console.log("\nBlocked preflight matrix:");
+    for (const row of blockerMatrixRows) {
+      console.log(`\n[${row.siteId}] promoteReason=${row.promoteBlockingReason} stagingHTTP=${row.stagingHttpStatus}`);
+
+      if (row.preflightReadError) {
+        console.log(`  preflightReadError: ${row.preflightReadError}`);
+        continue;
+      }
+
+      if (row.blockers.length === 0) {
+        console.log("  blockers: (none reported)");
+      } else {
+        console.log("  blockers:");
+        for (const blocker of row.blockers) {
+          console.log(`   - ${blocker}`);
+        }
+      }
+
+      if (row.suggestedActions.length > 0) {
+        console.log("  suggestedActions:");
+        for (const action of row.suggestedActions) {
+          console.log(`   - ${action}`);
+        }
+      }
+    }
+  }
 
   if (failures > 0) {
     process.exit(1);

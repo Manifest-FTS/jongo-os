@@ -39,6 +39,7 @@
 - provide one-click copy for attempt id in staging promote surfaces
 - expose per-attempt status lookup by promote attempt id for focused incident triage
 - validate core promote API path with `npm run smoke:staging-promote` (blocked-schema checks by default; set `ALLOW_PRODUCTION_TRIGGER=true` to intentionally validate trigger + idempotency replay; authenticate via `OWNERSHIP_SYNC_TOKEN` or `SESSION_COOKIE`; local-dev fallback supports `ALLOW_NO_AUTH_LOCAL=true` when dev auth bypass is intentionally enabled)
+- capture each strict smoke execution blocker matrix in `docs/workflows/staging-promote-smoke-latest.md` and use it as the remediation checklist before trigger-path validation
 
 ## Visibility Model
 
