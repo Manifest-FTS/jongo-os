@@ -153,3 +153,4 @@ Batch remediation before this run:
 ## Ops Artifact
 
 - Latest identifier-rich manual queue: `docs/workflows/staging-remediation-queue-latest.md`
+- Latest operator checklist tracker: `docs/workflows/staging-remediation-tracker-latest.md`
