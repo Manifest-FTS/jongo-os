@@ -19,6 +19,12 @@ Batch remediation before this run:
   - `airbb-wordpress`
   - `aptennis-org`
   - `gimmepower-com`
+- Attempted API-driven staging auto-provision for all 13 linked apps:
+  - command: `npm run ops:remediate-staging-provision:apply`
+  - success responses: 13/13
+  - `stagedDetected=true`: 0/13
+  - `provisioned=true`: 0/13
+  - common response message: `Unable to provision staging automatically. Verify Coolify staging support for this app and provision manually if needed.`
 
 ## Result Summary
 
@@ -35,6 +41,7 @@ Batch remediation before this run:
 - Remaining blocker classes:
   - `No staging environment/application is currently detected in Coolify.` (13/13)
   - `Backups not configured.` (7/13)
+- Auto-provision behavior validated: staging enable/provision API path is reachable with ops-token auth but Coolify did not auto-provision any current app.
 
 ## Blocker Matrix
 
@@ -102,10 +109,8 @@ Batch remediation before this run:
 8. `fts-branding-guide`
 - Blockers:
   - No staging environment/application is currently detected in Coolify.
-  - Backups not configured.
 - Suggested actions:
   - Staging is enabled but not detected yet. Verify Coolify staging support for this app and create/provision staging manually if auto-provision is unsupported.
-  - Configure at least one automated backup schedule in Coolify.
 
 9. `waterfallkeepersofnc-org`
 - Blockers:
@@ -134,15 +139,13 @@ Batch remediation before this run:
 13. `gimmepower-com`
 - Blockers:
   - No staging environment/application is currently detected in Coolify.
-  - Backups not configured.
 - Suggested actions:
   - Staging is enabled but not detected yet. Verify Coolify staging support for this app and create/provision staging manually if auto-provision is unsupported.
-  - Configure at least one automated backup schedule in Coolify.
 
 ## Next Core Actions
 
-1. Enable staging in Jongo for all blocked apps where disabled.
-2. Confirm/create staging environment in Coolify for each app.
-3. Configure backup schedule for apps showing backup blocker.
-4. Re-run strict promote smoke (`FAIL_ON_BLOCKED=true`) until blocked count reaches zero.
-5. Then run trigger-path validation intentionally (`ALLOW_PRODUCTION_TRIGGER=true`) on one controlled app.
+1. Create/attach staging environments manually in Coolify for all 13 linked apps (auto-provision currently unsupported/unsuccessful for this set).
+2. Configure backup schedules for apps still reporting backup blockers:
+  - `freebling-app`, `millenion-fitness`, `daniel-kane`, `a3th9r`, `jongo-open-source`, `cc-empowermaps`, `airbb-wordpress`.
+3. Re-run strict promote smoke (`FAIL_ON_BLOCKED=true`) after each remediation batch until blocked count reaches zero.
+4. Run trigger-path validation intentionally (`ALLOW_PRODUCTION_TRIGGER=true`) on one controlled app after preflight blockers are cleared.

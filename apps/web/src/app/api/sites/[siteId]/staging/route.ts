@@ -42,7 +42,7 @@ function buildSiteIdentityWhere(siteId: string) {
 
 async function recordStagingAuditLog(params: {
   organizationId: string;
-  actorId: string;
+  actorId?: string;
   actionType: string;
   resourceId: string;
   details: Record<string, unknown>;
@@ -52,7 +52,7 @@ async function recordStagingAuditLog(params: {
   await db.auditLog.create({
     data: {
       organizationId: params.organizationId,
-      actorId: params.actorId,
+      actorId: params.actorId ?? null,
       action: "site_updated",
       resourceType: "site_staging",
       resourceId: params.resourceId,
@@ -185,10 +185,13 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const authorizedByToken = hasOpsToken(req);
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const actorId = session?.user?.id;
 
   const { siteId } = await params;
 
@@ -204,31 +207,48 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const { db } = await import("@/lib/db");
-  const site = await db.site.findFirst({
-    where: {
-      ...buildSiteIdentityWhere(siteId),
-      organization: {
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      }
-    },
-    include: {
-      organization: {
-        select: {
-          id: true,
-          ownerId: true,
-          collaborators: { where: { userId: session.user.id }, select: { role: true } }
+  const site = await db.site.findFirst(
+    authorizedByToken
+      ? {
+          where: {
+            ...buildSiteIdentityWhere(siteId)
+          },
+          include: {
+            organization: {
+              select: {
+                id: true,
+                ownerId: true,
+                collaborators: { select: { role: true }, take: 1 }
+              }
+            }
+          }
         }
-      }
-    }
-  });
+      : {
+          where: {
+            ...buildSiteIdentityWhere(siteId),
+            organization: {
+              deletedAt: null,
+              OR: [{ ownerId: session!.user!.id }, { collaborators: { some: { userId: session!.user!.id } } }]
+            }
+          },
+          include: {
+            organization: {
+              select: {
+                id: true,
+                ownerId: true,
+                collaborators: { where: { userId: session!.user!.id }, select: { role: true } }
+              }
+            }
+          }
+        }
+  );
 
   if (!site) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
   }
 
-  const callerIsOwner = site.organization.ownerId === session.user.id;
-  const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
+  const callerIsOwner = Boolean(session?.user?.id && site.organization.ownerId === session.user.id);
+  const callerIsAdmin = authorizedByToken || callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
   if (!callerIsAdmin) {
     return NextResponse.json({ error: "Only admins can manage staging" }, { status: 403 });
   }
@@ -250,7 +270,7 @@ export async function POST(req: Request, { params }: Params) {
     if (!appUuid) {
       await recordStagingAuditLog({
         organizationId: site.organizationId,
-        actorId: session.user.id,
+        actorId,
         actionType: "staging_enable_requested",
         resourceId: site.id,
         details: enableAuditDetails,
@@ -268,7 +288,7 @@ export async function POST(req: Request, { params }: Params) {
     if (currentCapability.detected) {
       await recordStagingAuditLog({
         organizationId: site.organizationId,
-        actorId: session.user.id,
+        actorId,
         actionType: "staging_enable_existing",
         resourceId: site.id,
         details: {
@@ -301,7 +321,7 @@ export async function POST(req: Request, { params }: Params) {
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,
-      actorId: session.user.id,
+      actorId,
       actionType: "staging_enable_provision",
       resourceId: site.id,
       details: {
@@ -346,7 +366,7 @@ export async function POST(req: Request, { params }: Params) {
 
   await recordStagingAuditLog({
     organizationId: site.organizationId,
-    actorId: session.user.id,
+    actorId,
     actionType: destroyResult?.ok ? "staging_disable_destroy" : "staging_disable_requested",
     resourceId: site.id,
     details: {
