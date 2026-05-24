@@ -605,10 +605,47 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
       return null;
     }
 
+    const payloadRecord =
+      typeof structuredPayload === "object" && structuredPayload !== null
+        ? structuredPayload as Record<string, unknown>
+        : null;
+
+    const statusRaw = typeof payloadRecord?.status === "string" ? payloadRecord.status : "unknown";
+    const statusLabelRaw = typeof payloadRecord?.statusLabel === "string" ? payloadRecord.statusLabel : "Unknown";
+    const blockingReasonRaw = typeof payloadRecord?.blockingReason === "string" ? payloadRecord.blockingReason : undefined;
+
+    const severity =
+      statusRaw === "failed" || statusRaw === "blocked"
+        ? "high"
+        : statusRaw === "in_progress" || statusRaw === "triggered"
+          ? "medium"
+          : statusRaw === "succeeded"
+            ? "low"
+            : "unknown";
+
+    const recommendedNextAction =
+      statusRaw === "blocked"
+        ? "Resolve blocking condition and retry promote after cooldown guidance."
+        : statusRaw === "failed"
+          ? "Review deployment logs, identify failure point, and rerun promote when corrected."
+          : statusRaw === "in_progress" || statusRaw === "triggered"
+            ? "Monitor deployment status until terminal state before taking further action."
+            : statusRaw === "succeeded"
+              ? "No incident action required; record completion in operations log."
+              : "Review attempt timeline and deployment context to determine next operator step.";
+
     return JSON.stringify({
       formatVersion: 1,
       generatedAt: new Date().toISOString(),
       attemptId: normalizedAttemptFilter,
+      summary: {
+        status: statusRaw,
+        statusLabel: statusLabelRaw,
+        severity,
+        isIncident: severity === "high",
+        blockingReason: blockingReasonRaw,
+        recommendedNextAction
+      },
       handoffText: incidentHandoff,
       handoffJson: structuredPayload
     }, null, 2);
@@ -845,6 +882,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               )}
             >
               Download incident handoff JSON
+            </button>
+          ) : null}
+          {incidentHandoffPackageJson ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => copyToClipboard(incidentHandoffPackageJson, `Copied incident package for attempt ${normalizedAttemptFilter}.`)}
+            >
+              Copy incident package
             </button>
           ) : null}
           {incidentHandoffPackageJson ? (
