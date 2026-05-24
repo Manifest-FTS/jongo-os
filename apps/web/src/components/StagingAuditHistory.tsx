@@ -68,6 +68,51 @@ type AttemptStatusDetails = {
 
 const INITIAL_VISIBLE_COUNT = 5;
 const SHOW_MORE_STEP = 5;
+const INCIDENT_METADATA_STORAGE_PREFIX = "jongo-os:incident-package-metadata";
+
+type IncidentPackageMetadata = {
+  owner: string;
+  ticketId: string;
+  environmentNote: string;
+};
+
+function buildIncidentMetadataStorageKey(siteId: string, attemptId: string): string {
+  return `${INCIDENT_METADATA_STORAGE_PREFIX}:${siteId}:${attemptId}`;
+}
+
+function readIncidentPackageMetadata(siteId: string, attemptId: string): IncidentPackageMetadata {
+  if (typeof window === "undefined") {
+    return { owner: "", ticketId: "", environmentNote: "" };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(buildIncidentMetadataStorageKey(siteId, attemptId));
+    if (!raw) {
+      return { owner: "", ticketId: "", environmentNote: "" };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<IncidentPackageMetadata>;
+    return {
+      owner: typeof parsed.owner === "string" ? parsed.owner : "",
+      ticketId: typeof parsed.ticketId === "string" ? parsed.ticketId : "",
+      environmentNote: typeof parsed.environmentNote === "string" ? parsed.environmentNote : ""
+    };
+  } catch {
+    return { owner: "", ticketId: "", environmentNote: "" };
+  }
+}
+
+function writeIncidentPackageMetadata(siteId: string, attemptId: string, metadata: IncidentPackageMetadata): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(buildIncidentMetadataStorageKey(siteId, attemptId), JSON.stringify(metadata));
+  } catch {
+    // Ignore storage quota or privacy mode failures.
+  }
+}
 
 function formatAuditAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -297,6 +342,30 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
   }, [items, attemptStatusById]);
 
   const normalizedAttemptFilter = attemptFilter.trim();
+
+  useEffect(() => {
+    if (filterMode !== "attempt" || !normalizedAttemptFilter) {
+      return;
+    }
+
+    const metadata = readIncidentPackageMetadata(siteId, normalizedAttemptFilter);
+    setIncidentOwner(metadata.owner);
+    setIncidentTicketId(metadata.ticketId);
+    setIncidentEnvironmentNote(metadata.environmentNote);
+  }, [filterMode, normalizedAttemptFilter, siteId]);
+
+  useEffect(() => {
+    if (filterMode !== "attempt" || !normalizedAttemptFilter) {
+      return;
+    }
+
+    writeIncidentPackageMetadata(siteId, normalizedAttemptFilter, {
+      owner: incidentOwner,
+      ticketId: incidentTicketId,
+      environmentNote: incidentEnvironmentNote
+    });
+  }, [filterMode, normalizedAttemptFilter, siteId, incidentOwner, incidentTicketId, incidentEnvironmentNote]);
+
   const activeFilterLabel = useMemo(() => {
     if (filterMode === "all") {
       return "All events";

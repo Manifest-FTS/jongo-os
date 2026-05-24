@@ -106,6 +106,7 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging audit supports one-click incident package copy for fast ticket/comment paste workflows.
 - Incident package payload includes a deterministic summary block (status/severity/isIncident/recommendedNextAction/blockingReason) for rapid operator triage.
 - Incident package summary accepts optional operator-provided metadata fields (owner/ticketId/environmentNote) before copy/download.
+- Incident package metadata fields persist per site and attempt id in the browser so repeated handoffs retain operator defaults.
 - Incident handoff text/JSON exports source deployment id/status, blocking reason, and lifecycle timestamps from the promote-attempt endpoint payload (deterministic, no message parsing).
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
 - Promote UI disables trigger/confirm while production deployment is in progress and explains lock reason.
