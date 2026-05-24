@@ -166,7 +166,9 @@ export async function GET(_req: Request, { params }: Params) {
     site: {
       id: site.id,
       slug: site.slug,
-      name: site.name
+      name: site.name,
+      coolifyServiceUuid: site.coolifyServiceUuid,
+      coolifyProjectId: site.coolifyProjectId
     },
     generatedAt: new Date().toISOString(),
     stagingEnabled: site.stagingEnabled,

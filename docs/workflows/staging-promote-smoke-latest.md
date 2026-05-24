@@ -149,3 +149,7 @@ Batch remediation before this run:
   - `freebling-app`, `millenion-fitness`, `daniel-kane`, `a3th9r`, `jongo-open-source`, `cc-empowermaps`, `airbb-wordpress`.
 3. Re-run strict promote smoke (`FAIL_ON_BLOCKED=true`) after each remediation batch until blocked count reaches zero.
 4. Run trigger-path validation intentionally (`ALLOW_PRODUCTION_TRIGGER=true`) on one controlled app after preflight blockers are cleared.
+
+## Ops Artifact
+
+- Latest identifier-rich manual queue: `docs/workflows/staging-remediation-queue-latest.md`

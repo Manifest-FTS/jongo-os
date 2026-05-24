@@ -23,6 +23,7 @@
     "smoke:coolify": "node ./scripts/smoke-coolify.mjs",
     "smoke:staging-preflight": "node ./scripts/smoke-staging-preflight.mjs",
     "smoke:staging-promote": "node ./scripts/smoke-staging-promote.mjs",
+    "ops:export-staging-remediation-queue": "node ./scripts/export-staging-remediation-queue.mjs",
     "dev:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1 -Dev",
     "start:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1",
     "docker:up": "docker compose up --build -d",

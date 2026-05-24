@@ -42,6 +42,7 @@
 - capture each strict smoke execution blocker matrix in `docs/workflows/staging-promote-smoke-latest.md` and use it as the remediation checklist before trigger-path validation
 - clear Jongo-side staging-disabled blockers in controlled batches via `npm run db:remediate-staging-enable -- <app-slug...>` and apply with `npm run db:remediate-staging-enable:apply -- <app-slug...>` before re-running strict smoke
 - attempt API-driven staging provisioning in controlled batches via `npm run ops:remediate-staging-provision -- <app-slug...>` and apply with `npm run ops:remediate-staging-provision:apply -- <app-slug...>` to validate whether Coolify auto-provision is available for each app set
+- generate identifier-rich manual execution queue via `npm run ops:export-staging-remediation-queue` (artifact: `docs/workflows/staging-remediation-queue-latest.md`) before Coolify-side remediation batches
 
 ## Visibility Model
 
