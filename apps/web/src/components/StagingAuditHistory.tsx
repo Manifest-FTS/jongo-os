@@ -259,6 +259,9 @@ function formatIncidentHandoffText(params: {
 export default function StagingAuditHistory({ siteId, items, initialAttemptId }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [attemptFilter, setAttemptFilter] = useState("");
+  const [incidentOwner, setIncidentOwner] = useState("");
+  const [incidentTicketId, setIncidentTicketId] = useState("");
+  const [incidentEnvironmentNote, setIncidentEnvironmentNote] = useState("");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
   const [copyMessage, setCopyMessage] = useState("");
@@ -613,6 +616,9 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
     const statusRaw = typeof payloadRecord?.status === "string" ? payloadRecord.status : "unknown";
     const statusLabelRaw = typeof payloadRecord?.statusLabel === "string" ? payloadRecord.statusLabel : "Unknown";
     const blockingReasonRaw = typeof payloadRecord?.blockingReason === "string" ? payloadRecord.blockingReason : undefined;
+    const ownerRaw = incidentOwner.trim();
+    const ticketIdRaw = incidentTicketId.trim();
+    const environmentNoteRaw = incidentEnvironmentNote.trim();
 
     const severity =
       statusRaw === "failed" || statusRaw === "blocked"
@@ -644,12 +650,15 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
         severity,
         isIncident: severity === "high",
         blockingReason: blockingReasonRaw,
-        recommendedNextAction
+        recommendedNextAction,
+        owner: ownerRaw || undefined,
+        ticketId: ticketIdRaw || undefined,
+        environmentNote: environmentNoteRaw || undefined
       },
       handoffText: incidentHandoff,
       handoffJson: structuredPayload
     }, null, 2);
-  }, [incidentHandoff, incidentHandoffJson, normalizedAttemptFilter]);
+  }, [incidentHandoff, incidentHandoffJson, normalizedAttemptFilter, incidentOwner, incidentTicketId, incidentEnvironmentNote]);
 
   async function copyToClipboard(content: string, successMessage: string) {
     try {
@@ -849,6 +858,70 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
             </p>
           )}
         </div>
+
+        {filterMode === "attempt" && normalizedAttemptFilter ? (
+          <div
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "8px",
+              background: "var(--surface-alt)",
+              padding: "0.6rem",
+              display: "grid",
+              gap: "0.45rem"
+            }}
+          >
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+              Optional incident package metadata
+            </p>
+            <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+              <input
+                type="text"
+                value={incidentOwner}
+                onChange={(event) => setIncidentOwner(event.target.value)}
+                placeholder="Owner"
+                style={{
+                  minWidth: "140px",
+                  border: "1px solid var(--border)",
+                  borderRadius: "8px",
+                  background: "var(--surface)",
+                  color: "var(--text)",
+                  padding: "0.4rem 0.55rem",
+                  fontSize: "0.8rem"
+                }}
+              />
+              <input
+                type="text"
+                value={incidentTicketId}
+                onChange={(event) => setIncidentTicketId(event.target.value)}
+                placeholder="Ticket id"
+                style={{
+                  minWidth: "140px",
+                  border: "1px solid var(--border)",
+                  borderRadius: "8px",
+                  background: "var(--surface)",
+                  color: "var(--text)",
+                  padding: "0.4rem 0.55rem",
+                  fontSize: "0.8rem"
+                }}
+              />
+            </div>
+            <input
+              type="text"
+              value={incidentEnvironmentNote}
+              onChange={(event) => setIncidentEnvironmentNote(event.target.value)}
+              placeholder="Environment note (optional)"
+              style={{
+                minWidth: "220px",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                background: "var(--surface)",
+                color: "var(--text)",
+                padding: "0.4rem 0.55rem",
+                fontSize: "0.8rem"
+              }}
+            />
+          </div>
+        ) : null}
       </div>
 
       {filteredItems.length > 0 ? (

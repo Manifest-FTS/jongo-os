@@ -54,6 +54,7 @@
 - promote-related audit controls include one-click incident package download that bundles handoff text plus structured JSON into one attachment artifact
 - promote-related audit controls include one-click incident package copy for direct paste into incident threads
 - incident package payload includes a deterministic triage summary block (status, severity, incident flag, blocking reason, recommended next action)
+- incident package supports optional operator metadata enrichment before export (owner, ticket id, environment note)
 - incident handoff text/JSON fields are composed from per-attempt endpoint data (deployment id/status, blocking reason, triggered/finished/updated timestamps) instead of parsing free-form log messages
 - staging audit filter controls (all events vs domain sync)
 - staging audit attempt-id filter controls (manual entry and latest-attempt shortcut)
