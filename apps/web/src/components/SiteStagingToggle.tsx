@@ -11,12 +11,21 @@ type Props = {
 
 type PendingAction = "enable" | "disable" | null;
 
+type StagingToggleResponse = {
+  error?: string;
+  message?: string;
+  actionHint?: string | null;
+  manualProvisionRequired?: boolean;
+};
+
 export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedStaging }: Props) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [actionHint, setActionHint] = useState<string | null>(null);
+  const [manualProvisionRequired, setManualProvisionRequired] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [burnOnDisable, setBurnOnDisable] = useState(false);
 
@@ -27,6 +36,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
 
     setError(null);
     setMessage(null);
+    setActionHint(null);
+    setManualProvisionRequired(false);
 
     setLoading(true);
 
@@ -40,7 +51,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
         })
       });
 
-      const payload = await response.json();
+      const payload = (await response.json()) as StagingToggleResponse;
       if (!response.ok) {
         setError(payload?.error ?? "Unable to update staging state.");
         return;
@@ -50,6 +61,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       setPendingAction(null);
       setBurnOnDisable(false);
       setMessage(payload?.message ?? (nextEnabled ? "Staging enabled." : "Staging disabled."));
+      setActionHint(payload?.actionHint ?? null);
+      setManualProvisionRequired(Boolean(payload?.manualProvisionRequired));
       router.refresh();
     } catch {
       setError("Network error while updating staging.");
@@ -64,6 +77,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
     }
     setError(null);
     setMessage(null);
+    setActionHint(null);
+    setManualProvisionRequired(false);
     setBurnOnDisable(false);
     setPendingAction(enabled ? "disable" : "enable");
   }
@@ -172,6 +187,11 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
 
       {error ? <p className="form-error" style={{ margin: 0 }}>{error}</p> : null}
       {message ? <p className="form-success" style={{ margin: 0 }}>{message}</p> : null}
+      {manualProvisionRequired ? (
+        <p style={{ margin: 0, fontSize: "0.82rem", color: "#a15c00" }}>
+          {actionHint ?? "Manual provisioning in Coolify is required before staging will be detected."}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -1054,6 +1054,7 @@ export type CoolifyActionResult = {
   mode: "live" | "mock";
   ok: boolean;
   message: string;
+  reason?: "credentials_missing" | "auto_provision_unsupported" | "request_sent";
 };
 
 async function coolifyMutate(
@@ -1244,7 +1245,8 @@ export async function provisionCoolifyStagingFromProduction(
     return {
       mode: "mock",
       ok: false,
-      message: "Coolify credentials missing. Staging cannot be provisioned from this environment."
+      message: "Coolify credentials missing. Staging cannot be provisioned from this environment.",
+      reason: "credentials_missing"
     };
   }
 
@@ -1277,7 +1279,8 @@ export async function provisionCoolifyStagingFromProduction(
       return {
         mode: "live",
         ok: true,
-        message: "Staging provisioning request sent to Coolify."
+        message: "Staging provisioning request sent to Coolify.",
+        reason: "request_sent"
       };
     }
   }
@@ -1285,7 +1288,8 @@ export async function provisionCoolifyStagingFromProduction(
   return {
     mode: "live",
     ok: false,
-    message: "Unable to provision staging automatically. Verify Coolify staging support for this app and provision manually if needed."
+    message: "Automatic staging provisioning is unavailable for this app via current Coolify API routes. Provision staging manually in Coolify.",
+    reason: "auto_provision_unsupported"
   };
 }
 

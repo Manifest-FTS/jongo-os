@@ -330,6 +330,8 @@ export async function POST(req: Request, { params }: Params) {
         ...enableAuditDetails,
         stagedDetected: capabilityAfterProvision.detected,
         provisioned: provisionResult.ok,
+        manualProvisionRequired: !capabilityAfterProvision.detected && !provisionResult.ok,
+        provisioningReason: provisionResult.reason ?? null,
         preferredStagingDomain: preferredStagingDomain ?? null,
         stagingDomainApplied,
         capability: capabilityAfterProvision,
@@ -338,13 +340,23 @@ export async function POST(req: Request, { params }: Params) {
       req
     });
 
+    const manualProvisionRequired = !capabilityAfterProvision.detected && !provisionResult.ok;
+    const actionHint = manualProvisionRequired
+      ? "Create or attach a staging environment in Coolify for this app, then refresh staging status in Jongo."
+      : null;
+
     return NextResponse.json({
       enabled: true,
       stagedDetected: capabilityAfterProvision.detected,
       provisioned: provisionResult.ok,
+      manualProvisionRequired,
+      provisioningReason: provisionResult.reason ?? null,
+      actionHint,
       preferredStagingDomain,
       stagingDomainApplied,
-      message: provisionResult.message,
+      message: manualProvisionRequired
+        ? "Staging is enabled in Jongo. Automatic provisioning is unavailable for this app, so complete staging creation in Coolify."
+        : provisionResult.message,
       capability: capabilityAfterProvision
     });
   }
