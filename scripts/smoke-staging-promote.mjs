@@ -7,6 +7,8 @@ const failOnBlocked = (process.env.FAIL_ON_BLOCKED || "false").toLowerCase() ===
 const allowProductionTrigger = (process.env.ALLOW_PRODUCTION_TRIGGER || "false").toLowerCase() === "true";
 const checkAttemptEndpoint = (process.env.CHECK_PROMOTE_ATTEMPT_ENDPOINT || "true").toLowerCase() !== "false";
 const includePreflightMatrix = (process.env.INCLUDE_PREFLIGHT_MATRIX || "true").toLowerCase() !== "false";
+const healthCheckRetries = Math.max(1, Number.parseInt(process.env.SMOKE_HEALTHCHECK_RETRIES || "4", 10) || 4);
+const healthCheckDelayMs = Math.max(100, Number.parseInt(process.env.SMOKE_HEALTHCHECK_DELAY_MS || "1500", 10) || 1500);
 
 const cliIds = process.argv.slice(2).map((value) => value.trim()).filter(Boolean);
 const envIds = (process.env.STAGING_SITE_IDS || "")
@@ -58,6 +60,10 @@ function randomIdempotencyKey(siteId) {
     .toLowerCase() || "site";
 
   return `smoke-promote:${slug}:${Date.now()}:${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function parseJsonResponse(res) {
@@ -185,6 +191,8 @@ function validateTriggeredResponse(result) {
 }
 
 async function runForSite(siteId) {
+  await ensureSiteReadyForPromoteSmoke(siteId);
+
   const idempotencyKey = randomIdempotencyKey(siteId);
   console.log(`\n[${siteId}] promote smoke with idempotency key ${idempotencyKey}`);
 
@@ -279,6 +287,36 @@ async function runForSite(siteId) {
   }
 
   throw new Error(`unexpected promote status ${first.status}: ${first.body?.error || "unknown error"}`);
+}
+
+async function ensureSiteReadyForPromoteSmoke(siteId) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= healthCheckRetries; attempt += 1) {
+    try {
+      const preflight = await readStagingPreflight(siteId);
+
+      if (preflight.status === 200) {
+        return;
+      }
+
+      const detail = typeof preflight.body?.error === "string"
+        ? preflight.body.error
+        : `unexpected staging HTTP ${preflight.status}`;
+
+      throw new Error(detail);
+    } catch (error) {
+      lastError = error;
+      if (attempt < healthCheckRetries) {
+        console.log(`  [${siteId}] pre-smoke health check attempt ${attempt}/${healthCheckRetries} failed: ${error.message}`);
+        await sleep(healthCheckDelayMs);
+      }
+    }
+  }
+
+  throw new Error(
+    `pre-smoke health check failed after ${healthCheckRetries} attempt(s): ${lastError?.message || "unknown error"}`
+  );
 }
 
 async function run() {

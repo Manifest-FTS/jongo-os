@@ -30,6 +30,10 @@ type BlockingDeploymentPayload = {
 const PROMOTE_BLOCK_COOLDOWN_MS = 30_000;
 const IDEMPOTENCY_KEY_RE = /^[a-zA-Z0-9:_-]{8,128}$/;
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function hasOpsToken(req: Request): boolean {
   const configured = process.env.OWNERSHIP_SYNC_TOKEN?.trim() || "";
   const authHeader = req.headers.get("authorization") ?? "";
@@ -420,12 +424,25 @@ export async function POST(req: Request, { params }: Params) {
     });
   }
 
-  const [stagingCapability, backupInventory] = await Promise.all([
-    getCoolifyAppStagingCapability(appUuid, projectId),
-    getCoolifyAppBackupInventory(appUuid)
-  ]);
+  const backupInventoryPromise = getCoolifyAppBackupInventory(appUuid);
+  let stagingCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
 
-  const stagingConfigured = Boolean(site.stagingEnabled && stagingCapability.detected);
+  // Coolify reads can intermittently fail even when staging exists.
+  // Retry unresolved capability briefly before treating preflight as blocked.
+  if (site.stagingEnabled && !stagingCapability.applicationUuid) {
+    for (const retryDelayMs of [250, 500]) {
+      await sleep(retryDelayMs);
+      const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+      stagingCapability = retriedCapability;
+      if (retriedCapability.applicationUuid) {
+        break;
+      }
+    }
+  }
+
+  const backupInventory = await backupInventoryPromise;
+
+  const stagingConfigured = Boolean(site.stagingEnabled && stagingCapability.detected && stagingCapability.applicationUuid);
   const backupReadiness = getBackupReadiness(backupInventory, appUuid);
   const preflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
 

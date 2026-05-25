@@ -23,6 +23,13 @@ const PUBLIC_PATHS = [
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  const ownershipSyncToken = process.env.OWNERSHIP_SYNC_TOKEN;
+  const authHeader = req.headers.get("authorization") ?? "";
+  const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const hasOpsToken = Boolean(
+    ownershipSyncToken && providedToken && providedToken === ownershipSyncToken
+  );
+
   // Allow public paths and static assets through
   if (
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
@@ -38,56 +45,22 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname === "/api/coolify/ownership/sync") {
-    const syncToken = process.env.OWNERSHIP_SYNC_TOKEN;
-    const authHeader = req.headers.get("authorization") ?? "";
-    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (syncToken && providedToken && providedToken === syncToken) {
-      return NextResponse.next();
-    }
+  if (pathname === "/api/coolify/ownership/sync" && hasOpsToken) {
+    return NextResponse.next();
   }
 
-  if (pathname === "/api/diagnostics/runtime") {
-    const diagnosticsToken = process.env.OWNERSHIP_SYNC_TOKEN;
-    const authHeader = req.headers.get("authorization") ?? "";
-    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (diagnosticsToken && providedToken && providedToken === diagnosticsToken) {
-      return NextResponse.next();
-    }
+  if (pathname === "/api/diagnostics/runtime" && hasOpsToken) {
+    return NextResponse.next();
   }
 
-  if (/^\/api\/sites\/[^/]+\/staging$/i.test(pathname)) {
-    const operationsToken = process.env.OWNERSHIP_SYNC_TOKEN;
-    const authHeader = req.headers.get("authorization") ?? "";
-    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (operationsToken && providedToken && providedToken === operationsToken) {
+  // Operational staging endpoints support machine-token auth for scripted checks.
+  if (hasOpsToken) {
+    if (pathname === "/api/sites/staging-targets") {
       return NextResponse.next();
     }
-  }
 
-  if (/^\/api\/sites\/[^/]+\/staging\/promote$/i.test(pathname)) {
-    const operationsToken = process.env.OWNERSHIP_SYNC_TOKEN;
-    const authHeader = req.headers.get("authorization") ?? "";
-    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (operationsToken && providedToken && providedToken === operationsToken) {
-      return NextResponse.next();
-    }
-  }
-
-  if (/^\/api\/sites\/[^/]+\/staging\/promote-attempt$/i.test(pathname)) {
-    const operationsToken = process.env.OWNERSHIP_SYNC_TOKEN;
-    const authHeader = req.headers.get("authorization") ?? "";
-    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (operationsToken && providedToken && providedToken === operationsToken) {
-      return NextResponse.next();
-    }
-  }
-
-  if (pathname === "/api/sites/staging-targets") {
-    const operationsToken = process.env.OWNERSHIP_SYNC_TOKEN;
-    const authHeader = req.headers.get("authorization") ?? "";
-    const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (operationsToken && providedToken && providedToken === operationsToken) {
+    const isStagingRoute = /^\/api\/sites\/[^/]+\/staging(?:\/|$)/.test(pathname);
+    if (isStagingRoute) {
       return NextResponse.next();
     }
   }

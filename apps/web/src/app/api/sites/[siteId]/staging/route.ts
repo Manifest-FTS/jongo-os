@@ -5,6 +5,7 @@ import {
   applyCoolifyApplicationDomain,
   applyCoolifyApplicationDomains,
   buildStagingSyncDryRunPlan,
+  deleteCoolifyStagingEnvironment,
   deriveCoolifyStagingDomainFromProduction,
   getCoolifyAppBackupInventory,
   destroyCoolifyApplication,
@@ -14,6 +15,10 @@ import {
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 
 type Params = { params: Promise<{ siteId: string }> };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function hasOpsToken(req: Request): boolean {
   const configured = process.env.OWNERSHIP_SYNC_TOKEN?.trim() || "";
@@ -112,7 +117,7 @@ export async function GET(_req: Request, { params }: Params) {
       ])
     : [null, null];
 
-  const stagingConfigured = Boolean(site.stagingEnabled && stagingCapability?.detected);
+  const stagingConfigured = Boolean(site.stagingEnabled && stagingCapability?.detected && stagingCapability?.applicationUuid);
   const backupReadiness = getBackupReadiness(backupInventory, appUuid || undefined);
   const productionToStaging = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
   const stagingToProduction = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
@@ -138,6 +143,9 @@ export async function GET(_req: Request, { params }: Params) {
   if (!stagingCapability?.detected) {
     blockers.push("No staging environment/application is currently detected in Coolify.");
   }
+  if (site.stagingEnabled && stagingCapability?.detected && !stagingCapability?.applicationUuid) {
+    blockers.push("Staging environment exists but no staging application target is attached yet.");
+  }
   if (backupReadiness.locked) {
     blockers.push(backupReadiness.reason ?? "Backup readiness is not satisfied.");
   }
@@ -151,6 +159,9 @@ export async function GET(_req: Request, { params }: Params) {
   }
   if (site.stagingEnabled && appUuid && !stagingCapability?.detected) {
     suggestedActions.push("Staging is enabled but not detected yet. Verify Coolify staging support for this app and create/provision staging manually if auto-provision is unsupported.");
+  }
+  if (site.stagingEnabled && stagingCapability?.detected && !stagingCapability?.applicationUuid) {
+    suggestedActions.push("Provision or attach a staging application in Coolify so sync and promote checks can target a concrete staging app.");
   }
   if (!appUuid) {
     suggestedActions.push("Link a Coolify Service UUID in app settings so staging detection and provisioning can run.");
@@ -287,7 +298,8 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
-    if (currentCapability.detected) {
+    const currentStagingTargetResolved = Boolean(currentCapability.detected && currentCapability.applicationUuid);
+    if (currentStagingTargetResolved) {
       await recordStagingAuditLog({
         organizationId: site.organizationId,
         actorId,
@@ -304,14 +316,30 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({
         enabled: true,
         stagedDetected: true,
-        message: "Staging is already detected in Coolify.",
+        stagingCreationAttempted: false,
+        stagingCreationRequestAccepted: false,
+        stagingTargetResolved: true,
+        message: "Staging application is already detected in Coolify.",
         capability: currentCapability
       });
     }
 
     const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
-    const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain);
-    const capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId);
+    const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
+
+    let capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId);
+    if (!capabilityAfterProvision.applicationUuid) {
+      for (const retryDelayMs of [250, 500]) {
+        await sleep(retryDelayMs);
+        const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+        capabilityAfterProvision = retriedCapability;
+        if (retriedCapability.applicationUuid) {
+          break;
+        }
+      }
+    }
+
+    const stagingTargetResolved = Boolean(capabilityAfterProvision.detected && capabilityAfterProvision.applicationUuid);
 
     let stagingDomainApplied = false;
     if (preferredStagingDomain && capabilityAfterProvision.applicationUuid) {
@@ -328,9 +356,9 @@ export async function POST(req: Request, { params }: Params) {
       resourceId: site.id,
       details: {
         ...enableAuditDetails,
-        stagedDetected: capabilityAfterProvision.detected,
+        stagedDetected: stagingTargetResolved,
         provisioned: provisionResult.ok,
-        manualProvisionRequired: !capabilityAfterProvision.detected && !provisionResult.ok,
+        manualProvisionRequired: !stagingTargetResolved,
         provisioningReason: provisionResult.reason ?? null,
         preferredStagingDomain: preferredStagingDomain ?? null,
         stagingDomainApplied,
@@ -340,28 +368,39 @@ export async function POST(req: Request, { params }: Params) {
       req
     });
 
-    const manualProvisionRequired = !capabilityAfterProvision.detected && !provisionResult.ok;
+    const manualProvisionRequired = !stagingTargetResolved;
     const actionHint = manualProvisionRequired
-      ? "Create or attach a staging environment in Coolify for this app, then refresh staging status in Jongo."
+      ? (provisionResult.ok
+          ? "Attach or provision a staging application target in Coolify for this app, then refresh staging status in Jongo."
+          : "Create or attach a staging environment in Coolify for this app, then refresh staging status in Jongo.")
       : null;
+    const enableMessage = manualProvisionRequired
+      ? (provisionResult.ok
+          ? "Staging environment is ready in Coolify, but no staging application target is attached yet."
+          : "Staging is enabled in Jongo. Automatic provisioning is unavailable for this app, so complete staging creation in Coolify.")
+      : (provisionResult.ok
+          ? provisionResult.message
+          : "Staging is enabled in Jongo and a staging application target is detected in Coolify.");
 
     return NextResponse.json({
       enabled: true,
-      stagedDetected: capabilityAfterProvision.detected,
+      stagedDetected: stagingTargetResolved,
+      stagingCreationAttempted: true,
+      stagingCreationRequestAccepted: Boolean(provisionResult.ok),
+      stagingTargetResolved,
       provisioned: provisionResult.ok,
       manualProvisionRequired,
       provisioningReason: provisionResult.reason ?? null,
       actionHint,
       preferredStagingDomain,
       stagingDomainApplied,
-      message: manualProvisionRequired
-        ? "Staging is enabled in Jongo. Automatic provisioning is unavailable for this app, so complete staging creation in Coolify."
-        : provisionResult.message,
+      message: enableMessage,
       capability: capabilityAfterProvision
     });
   }
 
   let destroyResult: { ok: boolean; message: string } | null = null;
+  let destroyEnvironmentResult: { ok: boolean; message: string } | null = null;
   let capability = null as Awaited<ReturnType<typeof getCoolifyAppStagingCapability>> | null;
 
   if (appUuid) {
@@ -370,6 +409,11 @@ export async function POST(req: Request, { params }: Params) {
     if (shouldDestroy && capability?.applicationUuid) {
       const result = await destroyCoolifyApplication(capability.applicationUuid);
       destroyResult = { ok: result.ok, message: result.message };
+    }
+
+    if (Boolean(body.burnExisting) && projectId) {
+      const environmentResult = await deleteCoolifyStagingEnvironment(projectId);
+      destroyEnvironmentResult = { ok: environmentResult.ok, message: environmentResult.message };
     }
   }
 
@@ -387,9 +431,9 @@ export async function POST(req: Request, { params }: Params) {
       enabled: false,
       appUuid: appUuid || null,
       stagedDetected: Boolean(capability?.detected),
-      destroyed: Boolean(destroyResult?.ok),
+      destroyed: Boolean(destroyResult?.ok || destroyEnvironmentResult?.ok),
       burnExisting: Boolean(body.burnExisting),
-      message: destroyResult?.message ?? "Staging disabled in Jongo."
+      message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
     },
     req
   });
@@ -397,8 +441,8 @@ export async function POST(req: Request, { params }: Params) {
   return NextResponse.json({
     enabled: false,
     stagedDetected: Boolean(capability?.detected),
-    destroyed: Boolean(destroyResult?.ok),
-    message: destroyResult?.message ?? "Staging disabled in Jongo."
+    destroyed: Boolean(destroyResult?.ok || destroyEnvironmentResult?.ok),
+    message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
   });
 }
 

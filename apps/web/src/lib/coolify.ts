@@ -532,6 +532,35 @@ async function coolifyFetch(path: string): Promise<unknown> {
   }
 }
 
+async function resolveCoolifyProjectEndpointId(projectId: string): Promise<string> {
+  if (!projectId) {
+    return projectId;
+  }
+
+  try {
+    await coolifyFetch(`/api/v1/projects/${projectId}`);
+    return projectId;
+  } catch {
+    if (/^\d+$/.test(projectId)) {
+      return projectId;
+    }
+
+    const projectsPayload = await coolifyFetch("/api/v1/projects");
+    const projects = normalizeProjectRecords(projectsPayload);
+    const normalizedProjectId = projectId.trim().toLowerCase();
+
+    const matchedProject = projects.find((project) => {
+      if (project.id.trim().toLowerCase() === normalizedProjectId) {
+        return true;
+      }
+
+      return Boolean(project.numericId && project.numericId.trim().toLowerCase() === normalizedProjectId);
+    });
+
+    return matchedProject?.numericId || matchedProject?.id || projectId;
+  }
+}
+
 function mockOverview(): CoolifyOverview {
   return {
     mode: "mock",
@@ -1054,7 +1083,13 @@ export type CoolifyActionResult = {
   mode: "live" | "mock";
   ok: boolean;
   message: string;
-  reason?: "credentials_missing" | "auto_provision_unsupported" | "request_sent";
+  reason?:
+    | "credentials_missing"
+    | "auto_provision_unsupported"
+    | "request_sent"
+    | "environment_ready"
+    | "environment_created"
+    | "environment_deleted";
 };
 
 async function coolifyMutate(
@@ -1234,9 +1269,146 @@ export async function applyCoolifyApplicationDomain(appUuid: string, fqdn: strin
   return applyCoolifyApplicationDomains(appUuid, fqdn);
 }
 
+function isLikelyStagingEnvironmentName(name: string): boolean {
+  const normalized = name.trim().toLowerCase();
+  return normalized.includes("stag") || normalized.includes("preview") || normalized === "dev";
+}
+
+export async function ensureCoolifyStagingEnvironment(projectId: string): Promise<CoolifyActionResult> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    return {
+      mode: "mock",
+      ok: false,
+      message: "Coolify credentials missing. Staging environment cannot be created from this environment.",
+      reason: "credentials_missing"
+    };
+  }
+
+  try {
+    const projectEndpointId = await resolveCoolifyProjectEndpointId(projectId);
+    const projectPayload = await coolifyFetch(`/api/v1/projects/${projectEndpointId}`);
+    const projectObj = projectPayload && typeof projectPayload === "object" && !Array.isArray(projectPayload)
+      ? (projectPayload as Record<string, unknown>)
+      : {};
+    const environments = ensureArray(projectObj.environments ?? []);
+
+    const existingStagingEnv = environments.find((env) => {
+      const name = stringValue(env as Record<string, unknown>, ["name", "environment_name"], "");
+      return isLikelyStagingEnvironmentName(name);
+    });
+
+    if (existingStagingEnv) {
+      return {
+        mode: "live",
+        ok: true,
+        message: "Staging environment already exists in Coolify.",
+        reason: "environment_ready"
+      };
+    }
+
+    const created = await coolifyMutate(
+      `/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments`,
+      "POST",
+      { name: "staging" }
+    );
+
+    if (created) {
+      return {
+        mode: "live",
+        ok: true,
+        message: "Staging environment created in Coolify.",
+        reason: "environment_created"
+      };
+    }
+  } catch {
+    // Fall through to unsupported result.
+  }
+
+  return {
+    mode: "live",
+    ok: false,
+    message: "Automatic staging environment creation is unavailable for this project via current Coolify API routes.",
+    reason: "auto_provision_unsupported"
+  };
+}
+
+export async function deleteCoolifyStagingEnvironment(projectId: string): Promise<CoolifyActionResult> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+
+  if (!baseUrl || !token) {
+    return {
+      mode: "mock",
+      ok: false,
+      message: "Coolify credentials missing. Staging environment cannot be deleted from this environment.",
+      reason: "credentials_missing"
+    };
+  }
+
+  try {
+    const projectEndpointId = await resolveCoolifyProjectEndpointId(projectId);
+    const projectPayload = await coolifyFetch(`/api/v1/projects/${projectEndpointId}`);
+    const projectObj = projectPayload && typeof projectPayload === "object" && !Array.isArray(projectPayload)
+      ? (projectPayload as Record<string, unknown>)
+      : {};
+    const environments = ensureArray(projectObj.environments ?? []);
+
+    const stagingEnv = environments.find((env) => {
+      const name = stringValue(env as Record<string, unknown>, ["name", "environment_name"], "");
+      return isLikelyStagingEnvironmentName(name);
+    }) as Record<string, unknown> | undefined;
+
+    if (!stagingEnv) {
+      return {
+        mode: "live",
+        ok: false,
+        message: "No staging environment exists in Coolify to delete.",
+        reason: "environment_ready"
+      };
+    }
+
+    const envUuid = stringValue(stagingEnv, ["uuid"], "");
+    if (!envUuid) {
+      return {
+        mode: "live",
+        ok: false,
+        message: "Staging environment UUID was not found; delete must be completed manually.",
+        reason: "auto_provision_unsupported"
+      };
+    }
+
+    const deleted = await coolifyMutate(
+      `/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments/${encodeURIComponent(envUuid)}`,
+      "DELETE"
+    );
+
+    if (deleted) {
+      return {
+        mode: "live",
+        ok: true,
+        message: "Staging environment deleted in Coolify.",
+        reason: "environment_deleted"
+      };
+    }
+  } catch {
+    // Fall through to unsupported result.
+  }
+
+  return {
+    mode: "live",
+    ok: false,
+    message: "Unable to delete staging environment automatically. Remove it manually in Coolify.",
+    reason: "auto_provision_unsupported"
+  };
+}
+
 export async function provisionCoolifyStagingFromProduction(
   appUuid: string,
-  preferredStagingDomain?: string
+  preferredStagingDomain?: string,
+  projectId?: string
 ): Promise<CoolifyActionResult> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
@@ -1282,6 +1454,13 @@ export async function provisionCoolifyStagingFromProduction(
         message: "Staging provisioning request sent to Coolify.",
         reason: "request_sent"
       };
+    }
+  }
+
+  if (projectId) {
+    const ensuredEnvironment = await ensureCoolifyStagingEnvironment(projectId);
+    if (ensuredEnvironment.ok) {
+      return ensuredEnvironment;
     }
   }
 
@@ -1990,7 +2169,8 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     }
 
     // Get all environments for the project
-    const projectPayload = await coolifyFetch(`/api/v1/projects/${resolvedProjectId}`);
+    const projectEndpointId = await resolveCoolifyProjectEndpointId(resolvedProjectId);
+    const projectPayload = await coolifyFetch(`/api/v1/projects/${projectEndpointId}`);
     const projectObj = projectPayload && typeof projectPayload === "object" && !Array.isArray(projectPayload)
       ? (projectPayload as Record<string, unknown>)
       : {};
@@ -2014,10 +2194,48 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     const stagingEnvObj = stagingEnv as Record<string, unknown>;
     const stagingEnvId = stringValue(stagingEnvObj, ["id", "uuid"], "");
     const stagingEnvName = stringValue(stagingEnvObj, ["name"], "staging");
+    const projectIdCandidates = new Set<string>([resolvedProjectId, projectEndpointId].filter(Boolean));
 
     // Look for an application in the staging environment
     const stagingApplications = ensureArray(stagingEnvObj.applications ?? []);
-    const stagingApp = stagingApplications[0] as Record<string, unknown> | undefined;
+    let stagingApp = stagingApplications[0] as Record<string, unknown> | undefined;
+
+    // Some Coolify project payloads omit nested applications for environments.
+    // Fall back to scanning the application inventory by environment ID/name.
+    if (!stagingApp) {
+      try {
+        const applicationsPayload = await coolifyFetch("/api/v1/applications");
+        const applications = ensureArray(applicationsPayload);
+        const normalizedStagingEnvName = stagingEnvName.trim().toLowerCase();
+
+        stagingApp = applications.find((app) => {
+          const appEnvId = stringValue(app, ["environment_id", "environmentId", "environment_uuid"], "");
+          const appEnvName = stringValue(app, ["environment_name", "environment"], "").trim().toLowerCase();
+          const appProjectId = stringValue(app, ["project_uuid", "project_id", "project"], "");
+          const appDeletedAt = stringValue(app, ["deleted_at"], "");
+
+          const matchesEnvironment =
+            (stagingEnvId.length > 0 && appEnvId === stagingEnvId) ||
+            (normalizedStagingEnvName.length > 0 && appEnvName === normalizedStagingEnvName);
+
+          if (!matchesEnvironment) {
+            return false;
+          }
+
+          if (appDeletedAt.length > 0) {
+            return false;
+          }
+
+          if (projectIdCandidates.size === 0 || appProjectId.length === 0) {
+            return true;
+          }
+
+          return projectIdCandidates.has(appProjectId);
+        }) as Record<string, unknown> | undefined;
+      } catch {
+        // Keep reporting environment-only staging if list endpoint cannot be fetched.
+      }
+    }
 
     if (!stagingApp) {
       return {
@@ -2072,14 +2290,23 @@ export async function buildStagingSyncDryRunPlan(
   };
 
   if (!stagingCapability.detected || !stagingCapability.applicationUuid) {
+    const hasEnvironmentOnlyStaging = Boolean(stagingCapability.detected && !stagingCapability.applicationUuid);
     return {
       source,
       target: null,
       databaseBehavior: "unknown",
       filesBehavior: "unknown",
       domainBehavior: "unknown",
-      risks: ["No staging environment detected – cannot plan sync."],
-      warnings: ["Enable staging first in Settings."]
+      risks: [
+        hasEnvironmentOnlyStaging
+          ? "Staging environment exists but no staging application target is attached yet."
+          : "No staging environment detected – cannot plan sync."
+      ],
+      warnings: [
+        hasEnvironmentOnlyStaging
+          ? "Provision or attach a staging application in Coolify before running sync or promote paths."
+          : "Enable staging first in Settings."
+      ]
     };
   }
 
