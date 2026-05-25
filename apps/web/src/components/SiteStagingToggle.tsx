@@ -47,6 +47,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("confirm");
   const [finalizing, setFinalizing] = useState(false);
+  const [finalizeAttempt, setFinalizeAttempt] = useState(0);
 
   async function waitForLifecycleCompletion(nextEnabled: boolean, burnExisting: boolean, manualRequired: boolean) {
     // If manual provisioning is required, Jongo has completed what it can server-side.
@@ -55,6 +56,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
     }
 
     for (let attempt = 0; attempt < STAGING_OPERATION_MAX_POLLS; attempt += 1) {
+      setFinalizeAttempt(attempt + 1);
       try {
         const response = await fetch(`/api/sites/${siteId}/staging`, { method: "GET" });
         if (response.ok) {
@@ -95,6 +97,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
 
     setLoading(true);
     setFinalizing(false);
+    setFinalizeAttempt(0);
 
     try {
       const response = await fetch(`/api/sites/${siteId}/staging`, {
@@ -136,8 +139,12 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       setModalMode("result");
       setModalOpen(true);
       setFinalizing(false);
+      setFinalizeAttempt(0);
     } finally {
       setLoading(false);
+      if (!finalizing) {
+        setFinalizeAttempt(0);
+      }
     }
   }
 
@@ -175,6 +182,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
     setMessage(null);
     setActionHint(null);
     setManualProvisionRequired(false);
+    setFinalizeAttempt(0);
   }
 
   const interactionLocked = loading || finalizing;
@@ -182,6 +190,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   const isEnableAction = pendingAction === "enable";
   const waitingForManualStagingSetup = enabled && !hasDetectedStaging;
   const showResultBody = modalMode === "result" || Boolean(error || message || actionHint || waitingForManualStagingSetup);
+  const settleAttemptsRemaining = Math.max(0, STAGING_OPERATION_MAX_POLLS - finalizeAttempt);
+  const settleSecondsRemaining = Math.ceil((settleAttemptsRemaining * STAGING_OPERATION_POLL_DELAY_MS) / 1000);
 
   return (
     <div style={{ display: "grid", gap: "0.55rem", justifyItems: "end", minWidth: "260px" }}>
@@ -321,9 +331,14 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                   </p>
                 ) : null}
                 {finalizing ? (
-                  <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>
-                    Finalizing staging operation. Controls stay locked until this step completes.
-                  </p>
+                  <div style={{ margin: "0.55rem 0 0", display: "grid", gap: "0.3rem" }}>
+                    <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--muted)" }}>
+                      Finalizing staging operation. Controls stay locked until this step completes.
+                    </p>
+                    <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+                      Check {Math.max(1, finalizeAttempt)} of {STAGING_OPERATION_MAX_POLLS} · up to ~{settleSecondsRemaining}s remaining
+                    </p>
+                  </div>
                 ) : null}
 
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
