@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getCoolifyAppBackupInventory, getCoolifyAppStagingCapability } from "@/lib/coolify";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import { getCachedDirectoryBackupPosture, type DirectoryBackupPosture } from "@/lib/directory-backup-posture-cache";
+import { getCachedDirectoryStagingPosture, type DirectoryStagingPosture } from "@/lib/directory-staging-posture-cache";
 import { getAppsEmptyStateMessage } from "@/lib/reason-messages";
 import { getInventorySnapshot, isClientAdmin } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 const DIRECTORY_BACKUP_FETCH_BATCH_SIZE = 4;
 const DIRECTORY_BACKUP_POSTURE_TTL_MS = 60_000;
+const DIRECTORY_STAGING_POSTURE_TTL_MS = 60_000;
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -123,25 +125,16 @@ async function buildDirectoryStagingPosture(
 ): Promise<
   Map<
     string,
-    {
-      environmentReady: boolean;
-      targetAttached: boolean;
-      checkedAt?: string;
-    }
+    DirectoryStagingPosture
   >
 > {
-  const stagingPosture = new Map<string, { environmentReady: boolean; targetAttached: boolean; checkedAt?: string }>();
+  const stagingPosture = new Map<string, DirectoryStagingPosture>();
 
   if (overviewMode !== "live") {
     return stagingPosture;
   }
 
-  const records: Array<{
-    siteId: string;
-    environmentReady: boolean;
-    targetAttached: boolean;
-    checkedAt?: string;
-  } | null> = [];
+  const records: Array<{ siteId: string; posture: DirectoryStagingPosture } | null> = [];
 
   for (let index = 0; index < siteDirectory.length; index += DIRECTORY_BACKUP_FETCH_BATCH_SIZE) {
     const batch = siteDirectory.slice(index, index + DIRECTORY_BACKUP_FETCH_BATCH_SIZE);
@@ -152,12 +145,22 @@ async function buildDirectoryStagingPosture(
           return null;
         }
 
-        const capability = await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined);
+        const posture = await getCachedDirectoryStagingPosture(
+          appUuid,
+          DIRECTORY_STAGING_POSTURE_TTL_MS,
+          async (): Promise<DirectoryStagingPosture> => {
+            const capability = await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined);
+            return {
+              environmentReady: Boolean(capability.detected),
+              targetAttached: Boolean(capability.applicationUuid),
+              checkedAt: capability.checkedAt
+            };
+          }
+        );
+
         return {
           siteId: site.id,
-          environmentReady: Boolean(capability.detected),
-          targetAttached: Boolean(capability.applicationUuid),
-          checkedAt: capability.checkedAt
+          posture
         };
       })
     );
@@ -171,9 +174,9 @@ async function buildDirectoryStagingPosture(
     }
 
     stagingPosture.set(record.siteId, {
-      environmentReady: record.environmentReady,
-      targetAttached: record.targetAttached,
-      checkedAt: record.checkedAt
+      environmentReady: record.posture.environmentReady,
+      targetAttached: record.posture.targetAttached,
+      checkedAt: record.posture.checkedAt
     });
   }
 
