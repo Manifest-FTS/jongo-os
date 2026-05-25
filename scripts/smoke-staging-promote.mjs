@@ -5,6 +5,7 @@ const allowNoAuthLocal = (process.env.ALLOW_NO_AUTH_LOCAL || "false").toLowerCas
 const discoveryScope = (process.env.STAGING_SITE_DISCOVERY_SCOPE || "linked").trim();
 const failOnBlocked = (process.env.FAIL_ON_BLOCKED || "false").toLowerCase() === "true";
 const allowProductionTrigger = (process.env.ALLOW_PRODUCTION_TRIGGER || "false").toLowerCase() === "true";
+const allowHeadlessPromoteSmoke = (process.env.ALLOW_HEADLESS_PROMOTE_SMOKE || "false").toLowerCase() === "true";
 const checkAttemptEndpoint = (process.env.CHECK_PROMOTE_ATTEMPT_ENDPOINT || "true").toLowerCase() !== "false";
 const includePreflightMatrix = (process.env.INCLUDE_PREFLIGHT_MATRIX || "true").toLowerCase() !== "false";
 const healthCheckRetries = Math.max(1, Number.parseInt(process.env.SMOKE_HEALTHCHECK_RETRIES || "4", 10) || 4);
@@ -101,6 +102,16 @@ async function discoverSiteIds() {
     .map((item) => item?.recommendedId)
     .filter((value) => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim());
+}
+
+function assertAllowedSmokeTargets(siteIds) {
+  const blockedHeadlessTargets = siteIds.filter((siteId) => siteId === "joyfeed-app");
+  if (blockedHeadlessTargets.length > 0 && !allowHeadlessPromoteSmoke) {
+    throw new Error(
+      "Refusing to run promote smoke for joyfeed-app by default. " +
+      "Use waterfallkeepersofnc-org for the operational pass, or set ALLOW_HEADLESS_PROMOTE_SMOKE=true to override intentionally."
+    );
+  }
 }
 
 async function postPromote(siteId, idempotencyKey) {
@@ -330,6 +341,8 @@ async function run() {
     console.error("No site IDs found. Pass IDs as args, set STAGING_SITE_IDS, or ensure discovery endpoint returns sites.");
     process.exit(1);
   }
+
+  assertAllowedSmokeTargets(siteIds);
 
   if (cliIds.length === 0 && envIds.length === 0) {
     console.log(`Discovered ${siteIds.length} site(s) dynamically using scope='${discoveryScope}'.`);

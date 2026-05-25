@@ -13,8 +13,8 @@ Use this when you need deterministic proof that:
 
 ## Test Scope Guidance
 
-- Use `waterfallkeepersofnc-org` (and similar WordPress/service-backed sites) for staging lifecycle tests (toggle OFF with cleanup, toggle ON, environment create/delete behavior).
-- Use `joyfeed-app` for promote trigger-path smoke because it has a known staging application target and predictable idempotency/attempt-state behavior.
+- Use `waterfallkeepersofnc-org` (and similar WordPress-backed sites with real staging expectations) for staging lifecycle and promote-path validation in this pass.
+- Do not use `joyfeed-app` as the default smoke target. It is a Sanity-backed headless Next.js app, not the canonical WordPress staging candidate for this operational pass.
 - Do not assume non-WordPress apps with external dependencies (env-var heavy services, Sanity-backed apps, etc.) are good candidates for staging clone validation.
 
 ## Prerequisites
@@ -42,7 +42,7 @@ From repo root:
 Set-Location "c:/Users/kevin/devkev/projects/manifestfts/fts-operations/jongo-os"
 $env:APP_BASE_URL='http://localhost:3000'
 $env:OWNERSHIP_SYNC_TOKEN='<token>'
-$env:STAGING_SITE_IDS='joyfeed-app'
+$env:STAGING_SITE_IDS='waterfallkeepersofnc-org'
 $env:ALLOW_PRODUCTION_TRIGGER='true'
 $env:SMOKE_HEALTHCHECK_RETRIES='5'
 $env:SMOKE_HEALTHCHECK_DELAY_MS='1500'
@@ -76,7 +76,7 @@ If smoke fails:
 
 ```powershell
 $headers = @{ Authorization = 'Bearer <token>' }
-Invoke-WebRequest -UseBasicParsing -Headers $headers 'http://localhost:3000/api/sites/joyfeed-app/staging' | Select-Object -ExpandProperty Content
+Invoke-WebRequest -UseBasicParsing -Headers $headers 'http://localhost:3000/api/sites/waterfallkeepersofnc-org/staging' | Select-Object -ExpandProperty Content
 ```
 
 2. Confirm DB tunnel:
