@@ -19,6 +19,21 @@ type StagingToggleResponse = {
   manualProvisionRequired?: boolean;
 };
 
+type StagingStatusResponse = {
+  stagingEnabled?: boolean;
+  stagingConfigured?: boolean;
+  stagingCapability?: {
+    detected?: boolean;
+  };
+};
+
+const STAGING_OPERATION_POLL_DELAY_MS = 1500;
+const STAGING_OPERATION_MAX_POLLS = 20;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedStaging }: Props) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -31,6 +46,42 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   const [burnOnDisable, setBurnOnDisable] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("confirm");
+  const [finalizing, setFinalizing] = useState(false);
+
+  async function waitForLifecycleCompletion(nextEnabled: boolean, burnExisting: boolean, manualRequired: boolean) {
+    // If manual provisioning is required, Jongo has completed what it can server-side.
+    if (nextEnabled && manualRequired) {
+      return { completed: true };
+    }
+
+    for (let attempt = 0; attempt < STAGING_OPERATION_MAX_POLLS; attempt += 1) {
+      try {
+        const response = await fetch(`/api/sites/${siteId}/staging`, { method: "GET" });
+        if (response.ok) {
+          const status = (await response.json()) as StagingStatusResponse;
+          const stagingEnabled = Boolean(status?.stagingEnabled);
+          const stagingConfigured = Boolean(status?.stagingConfigured);
+          const stagingDetected = Boolean(status?.stagingCapability?.detected);
+
+          if (nextEnabled) {
+            if (stagingEnabled && (stagingConfigured || stagingDetected)) {
+              return { completed: true };
+            }
+          } else if (!stagingEnabled) {
+            if (!burnExisting || !stagingDetected) {
+              return { completed: true };
+            }
+          }
+        }
+      } catch {
+        // Keep polling until timeout to avoid transient network errors dropping the operation lock.
+      }
+
+      await delay(STAGING_OPERATION_POLL_DELAY_MS);
+    }
+
+    return { completed: false };
+  }
 
   async function submitToggle(nextEnabled: boolean, burnExisting: boolean) {
     if (loading) {
@@ -43,6 +94,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
     setManualProvisionRequired(false);
 
     setLoading(true);
+    setFinalizing(false);
 
     try {
       const response = await fetch(`/api/sites/${siteId}/staging`, {
@@ -70,11 +122,20 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       setManualProvisionRequired(Boolean(payload?.manualProvisionRequired));
       setModalMode("result");
       setModalOpen(true);
+
+      setFinalizing(true);
+      const settleResult = await waitForLifecycleCompletion(nextEnabled, burnExisting, Boolean(payload?.manualProvisionRequired));
+      if (!settleResult.completed) {
+        setActionHint((previous) => previous ?? "Background staging operation is still settling in Coolify. Wait a moment before running another toggle.");
+      }
+      setFinalizing(false);
+
       router.refresh();
     } catch {
       setError("Network error while updating staging.");
       setModalMode("result");
       setModalOpen(true);
+      setFinalizing(false);
     } finally {
       setLoading(false);
     }
@@ -116,6 +177,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
     setManualProvisionRequired(false);
   }
 
+  const interactionLocked = loading || finalizing;
   const isDisableAction = pendingAction === "disable";
   const isEnableAction = pendingAction === "enable";
   const waitingForManualStagingSetup = enabled && !hasDetectedStaging;
@@ -128,7 +190,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
         onClick={requestToggle}
         aria-label={`Turn staging ${enabled ? "off" : "on"}`}
         aria-pressed={enabled}
-        disabled={loading}
+        disabled={interactionLocked}
         style={{
           width: "58px",
           height: "32px",
@@ -136,7 +198,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
           border: `1px solid ${enabled ? "var(--accent)" : "var(--border)"}`,
           background: enabled ? "var(--accent)" : "var(--surface-alt)",
           position: "relative",
-          cursor: loading ? "not-allowed" : "pointer",
+          cursor: interactionLocked ? "not-allowed" : "pointer",
           transition: "background 0.2s ease, border-color 0.2s ease"
         }}
       >
@@ -157,7 +219,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       </button>
 
       <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
-        {loading ? "Updating..." : enabled ? "On" : "Off"}
+        {interactionLocked ? "Updating..." : enabled ? "On" : "Off"}
       </p>
 
       {modalOpen ? (
@@ -217,7 +279,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                     type="button"
                     className="button button-secondary"
                     onClick={cancelPendingAction}
-                    disabled={loading}
+                    disabled={interactionLocked}
                   >
                     Cancel
                   </button>
@@ -225,9 +287,13 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                     type="button"
                     className="button"
                     onClick={() => submitToggle(isEnableAction, isDisableAction ? burnOnDisable : false)}
-                    disabled={loading}
+                    disabled={interactionLocked}
                   >
-                    {isEnableAction ? "Accept and enable" : "Accept and disable"}
+                    {interactionLocked
+                      ? "Please wait..."
+                      : isEnableAction
+                        ? "Accept and enable"
+                        : "Accept and disable"}
                   </button>
                 </div>
               </>
@@ -254,13 +320,18 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                     Staging is enabled in Jongo, but no staging app is detected in Coolify yet. Create or attach staging in Coolify, then refresh.
                   </p>
                 ) : null}
+                {finalizing ? (
+                  <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>
+                    Finalizing staging operation. Controls stay locked until this step completes.
+                  </p>
+                ) : null}
 
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
                   <button
                     type="button"
                     className="button"
                     onClick={closeResultModal}
-                    disabled={loading}
+                    disabled={interactionLocked}
                   >
                     Close
                   </button>
