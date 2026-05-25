@@ -4,6 +4,11 @@ Date: 2026-05-24
 Mode: local smoke against `http://localhost:3000` with `ALLOW_NO_AUTH_LOCAL=true`, `FAIL_ON_BLOCKED=true`
 Command: `npm run smoke:staging-promote`
 
+Policy update (2026-05-25):
+
+- Use `waterfallkeepersofnc-org` as the approved trigger-path smoke target for current operational testing.
+- Do not use `joyfeed-app` for default promote trigger smoke unless explicitly overridden for headless-app diagnostics.
+
 Batch remediation before this run:
 
 - Enabled `stagingEnabled=true` in Jongo for 12 previously-disabled linked apps:

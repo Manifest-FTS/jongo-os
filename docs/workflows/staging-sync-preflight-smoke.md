@@ -51,7 +51,7 @@ Or pass IDs directly:
 ```bash
 APP_BASE_URL="https://jongo.example.com" \
 OWNERSHIP_SYNC_TOKEN="<token>" \
-npm run smoke:staging-preflight -- waterfallkeepersofnc-org joyfeed-web
+npm run smoke:staging-preflight -- waterfallkeepersofnc-org airbb-wordpress
 ```
 
 Optional explicit env list override:
@@ -59,7 +59,7 @@ Optional explicit env list override:
 ```bash
 APP_BASE_URL="https://jongo.example.com" \
 OWNERSHIP_SYNC_TOKEN="<token>" \
-STAGING_SITE_IDS="waterfallkeepersofnc-org,joyfeed-web" \
+STAGING_SITE_IDS="waterfallkeepersofnc-org,airbb-wordpress" \
 npm run smoke:staging-preflight
 ```
 
