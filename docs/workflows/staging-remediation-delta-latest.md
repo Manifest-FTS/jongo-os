@@ -1,6 +1,6 @@
 # Staging Remediation Delta (Latest)
 
-Generated: 2026-05-25T02:43:51.163Z
+Generated: 2026-05-25T23:53:05.129Z
 Previous queue: docs/workflows/staging-remediation-queue-previous.md
 Current queue: docs/workflows/staging-remediation-queue-latest.md
 
@@ -8,7 +8,7 @@ Current queue: docs/workflows/staging-remediation-queue-latest.md
 
 - Current apps in queue: 13
 - Current missing staging detection: 13
-- Current backup blocker count: 6
+- Current backup blocker count: 13
 
 ## Delta Summary
 

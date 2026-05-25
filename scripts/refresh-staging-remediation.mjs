@@ -69,12 +69,14 @@ async function run() {
   );
 
   if (withSmoke) {
+    const smokeSiteIds = process.env.REMEDIATION_SMOKE_SITE_IDS || "waterfallkeepersofnc-org";
     await runStep(
       strictSmoke ? "Run strict staging promote smoke" : "Run non-strict staging promote smoke",
       "npm",
       ["run", "smoke:staging-promote"],
       {
-        FAIL_ON_BLOCKED: strictSmoke ? "true" : "false"
+        FAIL_ON_BLOCKED: strictSmoke ? "true" : "false",
+        STAGING_SITE_IDS: smokeSiteIds
       }
     );
   }
