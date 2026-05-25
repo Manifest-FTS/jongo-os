@@ -36,6 +36,7 @@ Keep both files in sync locally if you use both entrypoints. The database URL sh
 Use a target the Hetzner host can reach directly:
 
 - safest option: a localhost-only bind on the Hetzner host, such as `127.0.0.1:5432`
+- if your stack uses a host-local relay container, use that relay port (example observed in this repo environment: `127.0.0.1:15432`)
 - acceptable option: a Docker bridge or published host port that the host can reach
 - avoid: Coolify app-network service names like `o4g2cpls648gnz0f1he7be7c`, which only resolve inside the container network
 
@@ -63,6 +64,9 @@ If you want a wrapper, use the helper script in this repo:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\db-tunnel.ps1 -ServerHost <SERVER_IP> -RemoteHost 127.0.0.1 -RemotePort 5432
+
+# if your host uses the relay port variant:
+powershell -ExecutionPolicy Bypass -File .\scripts\db-tunnel.ps1 -ServerHost <SERVER_IP> -RemoteHost 127.0.0.1 -RemotePort 15432
 ```
 
 If the Hetzner host uses another localhost-only bind for Postgres, replace `127.0.0.1:5432` with that host-side target.
