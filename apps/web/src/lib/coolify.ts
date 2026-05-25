@@ -1431,6 +1431,8 @@ export type AppBackupInventory = {
 
 export type StagingCapabilityRecord = {
   detected: boolean;
+  resourceKind?: "application" | "service" | "database" | "unknown";
+  projectEnvNames?: string[];
   environmentId?: string;
   environmentName?: string;
   applicationUuid?: string;
@@ -1942,21 +1944,49 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
   }
 
   try {
+    let resourceKind: StagingCapabilityRecord["resourceKind"] = "unknown";
+    let rootResource: Record<string, unknown> | null = null;
+
+    const resourceLookups: Array<{
+      kind: NonNullable<StagingCapabilityRecord["resourceKind"]>;
+      path: string;
+    }> = [
+      { kind: "application", path: `/api/v1/applications/${appUuid}` },
+      { kind: "service", path: `/api/v1/services/${appUuid}` },
+      { kind: "database", path: `/api/v1/databases/${appUuid}` }
+    ];
+
+    for (const lookup of resourceLookups) {
+      try {
+        const payload = await coolifyFetch(lookup.path);
+        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+          rootResource = payload as Record<string, unknown>;
+          resourceKind = lookup.kind;
+          break;
+        }
+      } catch {
+        // Try the next resource class.
+      }
+    }
+
     // Resolve project if not supplied
     let resolvedProjectId = projectId;
     if (!resolvedProjectId) {
-      try {
-        const appPayload = await coolifyFetch(`/api/v1/applications/${appUuid}`);
-        if (appPayload && typeof appPayload === "object" && !Array.isArray(appPayload)) {
-          resolvedProjectId = stringValue(appPayload as Record<string, unknown>, ["project_uuid", "project_id", "project"], "");
-        }
-      } catch {
-        return { detected: false, note: "application_not_found", checkedAt };
+      if (rootResource) {
+        resolvedProjectId = stringValue(rootResource, ["project_uuid", "project_id", "project"], "");
+      }
+      if (!resolvedProjectId) {
+        return {
+          detected: false,
+          resourceKind,
+          note: rootResource ? "no_project_resolved" : "resource_not_found",
+          checkedAt
+        };
       }
     }
 
     if (!resolvedProjectId) {
-      return { detected: false, note: "no_project_resolved", checkedAt };
+      return { detected: false, resourceKind, note: "no_project_resolved", checkedAt };
     }
 
     // Get all environments for the project
@@ -1965,6 +1995,9 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
       ? (projectPayload as Record<string, unknown>)
       : {};
     const environments = ensureArray(projectObj.environments ?? []);
+    const projectEnvNames = environments
+      .map((env) => stringValue(env as Record<string, unknown>, ["name", "environment_name"], ""))
+      .filter((name) => name.length > 0);
 
     const stagingEnv = environments.find((env) => {
       const name = stringValue(env as Record<string, unknown>, ["name"], "").toLowerCase();
@@ -1972,7 +2005,10 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     });
 
     if (!stagingEnv) {
-      return { detected: false, note: "no_staging_environment_in_project", checkedAt };
+      const note = projectEnvNames.length > 0 && projectEnvNames.every((name) => name.toLowerCase().includes("prod"))
+        ? "project_only_has_production_environment"
+        : "no_staging_environment_in_project";
+      return { detected: false, resourceKind, projectEnvNames, note, checkedAt };
     }
 
     const stagingEnvObj = stagingEnv as Record<string, unknown>;
@@ -1986,6 +2022,8 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     if (!stagingApp) {
       return {
         detected: true,
+        resourceKind,
+        projectEnvNames,
         environmentId: stagingEnvId,
         environmentName: stagingEnvName,
         note: "staging_environment_exists_no_application",
@@ -2000,6 +2038,8 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
 
     return {
       detected: true,
+      resourceKind,
+      projectEnvNames,
       environmentId: stagingEnvId,
       environmentName: stagingEnvName,
       applicationUuid: stagingAppUuid || undefined,

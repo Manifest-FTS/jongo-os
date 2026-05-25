@@ -16,7 +16,7 @@ function parseQueueTable(markdown) {
     if (!trimmed.startsWith("|")) {
       continue;
     }
-    if (trimmed.includes("| App | Coolify Service UUID |")) {
+    if (trimmed.includes("| App | Resource Kind | Coolify Service UUID |")) {
       continue;
     }
     if (trimmed.startsWith("| ---")) {
@@ -27,6 +27,19 @@ function parseQueueTable(markdown) {
       .split("|")
       .map((value) => value.trim())
       .filter((value, index, arr) => !(index === 0 || index === arr.length - 1));
+
+    if (cols.length >= 10) {
+      rows.push({
+        app: cols[0],
+        serviceUuid: cols[2] === "-" ? "" : cols[2],
+        projectId: cols[3] === "-" ? "" : cols[3],
+        stagingDetected: cols[5] === "yes",
+        stagingAppUuid: cols[6] === "-" ? "" : cols[6],
+        blockers: cols[8],
+        suggestedActions: cols[9]
+      });
+      continue;
+    }
 
     if (cols.length < 7) {
       continue;

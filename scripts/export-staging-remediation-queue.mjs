@@ -92,6 +92,9 @@ async function run() {
       siteName: site.name || site.slug || site.id || siteId,
       coolifyServiceUuid: site.coolifyServiceUuid || "",
       coolifyProjectId: site.coolifyProjectId || "",
+      resourceKind: capability.resourceKind || "unknown",
+      projectEnvNames: Array.isArray(capability.projectEnvNames) ? capability.projectEnvNames : [],
+      capabilityNote: capability.note || "",
       stagingDetected: Boolean(capability.detected),
       stagingApplicationUuid: capability.applicationUuid || "",
       blockers: formatList(body.blockers),
@@ -117,12 +120,12 @@ async function run() {
   lines.push("");
   lines.push("## Queue");
   lines.push("");
-  lines.push("| App | Coolify Service UUID | Coolify Project ID | Staging detected | Staging App UUID | Blockers | Suggested actions |");
-  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
+  lines.push("| App | Resource Kind | Coolify Service UUID | Coolify Project ID | Project Environments | Staging detected | Staging App UUID | Capability Note | Blockers | Suggested actions |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
 
   for (const row of rows) {
     lines.push(
-      `| ${row.siteId} | ${row.coolifyServiceUuid || "-"} | ${row.coolifyProjectId || "-"} | ${row.stagingDetected ? "yes" : "no"} | ${row.stagingApplicationUuid || "-"} | ${row.blockers.replace(/\|/g, "\\|")} | ${row.suggestedActions.replace(/\|/g, "\\|")} |`
+      `| ${row.siteId} | ${row.resourceKind || "unknown"} | ${row.coolifyServiceUuid || "-"} | ${row.coolifyProjectId || "-"} | ${(row.projectEnvNames.length > 0 ? row.projectEnvNames.join(", ") : "-").replace(/\|/g, "\\|")} | ${row.stagingDetected ? "yes" : "no"} | ${row.stagingApplicationUuid || "-"} | ${(row.capabilityNote || "-").replace(/\|/g, "\\|")} | ${row.blockers.replace(/\|/g, "\\|")} | ${row.suggestedActions.replace(/\|/g, "\\|")} |`
     );
   }
 

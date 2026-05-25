@@ -16,7 +16,7 @@ function parseQueueTable(markdown) {
       continue;
     }
 
-    if (trimmed.includes("| App | Coolify Service UUID |")) {
+    if (trimmed.includes("| App | Resource Kind | Coolify Service UUID |")) {
       continue;
     }
 
@@ -29,18 +29,19 @@ function parseQueueTable(markdown) {
       .map((value) => value.trim())
       .filter((value, index, arr) => !(index === 0 || index === arr.length - 1));
 
-    if (cols.length < 7) {
+    if (cols.length < 10) {
       continue;
     }
 
     rows.push({
       app: cols[0],
-      serviceUuid: cols[1] === "-" ? "" : cols[1],
-      projectId: cols[2] === "-" ? "" : cols[2],
-      stagingDetected: cols[3],
-      stagingAppUuid: cols[4] === "-" ? "" : cols[4],
-      blockers: cols[5],
-      suggestedActions: cols[6]
+      resourceKind: cols[1] === "-" ? "unknown" : cols[1],
+      serviceUuid: cols[2] === "-" ? "" : cols[2],
+      projectId: cols[3] === "-" ? "" : cols[3],
+      stagingDetected: cols[5],
+      stagingAppUuid: cols[6] === "-" ? "" : cols[6],
+      blockers: cols[8],
+      suggestedActions: cols[9]
     });
   }
 
@@ -86,7 +87,7 @@ function run() {
   lines.push("");
 
   for (const row of stagingMissing) {
-    lines.push(`- [ ] ${row.app} (service=${row.serviceUuid || "n/a"}, project=${row.projectId || "n/a"})`);
+    lines.push(`- [ ] ${row.app} (${row.resourceKind}; service=${row.serviceUuid || "n/a"}, project=${row.projectId || "n/a"})`);
   }
 
   lines.push("");
@@ -94,7 +95,7 @@ function run() {
   lines.push("");
 
   for (const row of backupMissing) {
-    lines.push(`- [ ] ${row.app} (service=${row.serviceUuid || "n/a"}, project=${row.projectId || "n/a"})`);
+    lines.push(`- [ ] ${row.app} (${row.resourceKind}; service=${row.serviceUuid || "n/a"}, project=${row.projectId || "n/a"})`);
   }
 
   lines.push("");

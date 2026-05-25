@@ -1,22 +1,23 @@
 # Staging Remediation Next Batch
 
-Generated: 2026-05-24T22:30:41.554Z
+Generated: 2026-05-25T02:43:51.709Z
 Source queue: docs/workflows/staging-remediation-queue-latest.md
 Batch size: 3
 
 ## Current Blocker Snapshot
 
 - Missing staging detection: 13
+- Application targets missing staging: 7
 - Missing staging only (no backup blocker): 7
 - Missing staging + backup blocker: 6
 
 ## Recommended Next Manual Batch
 
-Selection rule: prioritize apps blocked only on staging detection to unlock trigger-path testing fastest.
+Selection rule: prioritize application resources blocked only on staging detection, because they are the shortest path to first real promote validation.
 
-- joyfeed-app (service=gyn7ag00fyb4g9fydnggxt92, project=cplzvcszywes0ayod4jk4hme)
-- fts-branding-guide (service=qs8dtldmyaubydle9z34vqiq, project=ip1hwipx8sn24rd0dni67lb0)
-- waterfallkeepersofnc-org (service=oqcc7xm49tb98otptx9ymtx7, project=cx7ldowl163oc24u2tqsbzuq)
+- joyfeed-app (application; service=gyn7ag00fyb4g9fydnggxt92, project=cplzvcszywes0ayod4jk4hme, envs=production)
+- fts-branding-guide (application; service=qs8dtldmyaubydle9z34vqiq, project=ip1hwipx8sn24rd0dni67lb0, envs=production)
+- airbb-wordpress (application; service=lammq9t83cwkiyjei935dq70, project=mjynfwh1sdxqciadxglgfr9o, envs=production)
 
 ## Manual Steps
 
