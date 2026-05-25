@@ -11,6 +11,12 @@ Use this when you need deterministic proof that:
 - idempotency replay works,
 - promote-attempt status endpoint resolves.
 
+## Test Scope Guidance
+
+- Use `waterfallkeepersofnc-org` (and similar WordPress/service-backed sites) for staging lifecycle tests (toggle OFF with cleanup, toggle ON, environment create/delete behavior).
+- Use `joyfeed-app` for promote trigger-path smoke because it has a known staging application target and predictable idempotency/attempt-state behavior.
+- Do not assume non-WordPress apps with external dependencies (env-var heavy services, Sanity-backed apps, etc.) are good candidates for staging clone validation.
+
 ## Prerequisites
 
 - Web app running locally (`npm run dev:web`) with required env.

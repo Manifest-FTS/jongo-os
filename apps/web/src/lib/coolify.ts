@@ -1364,26 +1364,38 @@ export async function deleteCoolifyStagingEnvironment(projectId: string): Promis
     if (!stagingEnv) {
       return {
         mode: "live",
-        ok: false,
+        ok: true,
         message: "No staging environment exists in Coolify to delete.",
         reason: "environment_ready"
       };
     }
 
     const envUuid = stringValue(stagingEnv, ["uuid"], "");
-    if (!envUuid) {
+    const envId = stringValue(stagingEnv, ["id"], "");
+    if (!envUuid && !envId) {
       return {
         mode: "live",
         ok: false,
-        message: "Staging environment UUID was not found; delete must be completed manually.",
+        message: "Staging environment identifier was not found; delete must be completed manually.",
         reason: "auto_provision_unsupported"
       };
     }
 
-    const deleted = await coolifyMutate(
-      `/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments/${encodeURIComponent(envUuid)}`,
-      "DELETE"
-    );
+    const deletePaths: string[] = [];
+    if (envUuid) {
+      deletePaths.push(`/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments/${encodeURIComponent(envUuid)}`);
+    }
+    if (envId) {
+      deletePaths.push(`/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments/${encodeURIComponent(envId)}`);
+    }
+
+    let deleted = false;
+    for (const path of deletePaths) {
+      deleted = await coolifyMutate(path, "DELETE");
+      if (deleted) {
+        break;
+      }
+    }
 
     if (deleted) {
       return {

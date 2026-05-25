@@ -400,7 +400,7 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   let destroyResult: { ok: boolean; message: string } | null = null;
-  let destroyEnvironmentResult: { ok: boolean; message: string } | null = null;
+  let destroyEnvironmentResult: { ok: boolean; message: string; reason?: string } | null = null;
   let capability = null as Awaited<ReturnType<typeof getCoolifyAppStagingCapability>> | null;
 
   if (appUuid) {
@@ -413,9 +413,17 @@ export async function POST(req: Request, { params }: Params) {
 
     if (Boolean(body.burnExisting) && projectId) {
       const environmentResult = await deleteCoolifyStagingEnvironment(projectId);
-      destroyEnvironmentResult = { ok: environmentResult.ok, message: environmentResult.message };
+      destroyEnvironmentResult = {
+        ok: environmentResult.ok,
+        message: environmentResult.message,
+        reason: environmentResult.reason
+      };
     }
   }
+
+  const environmentDestroyed = destroyEnvironmentResult?.reason === "environment_deleted";
+  const destroyed = Boolean(destroyResult?.ok || environmentDestroyed);
+  const destroyActionType = destroyed ? "staging_disable_destroy" : "staging_disable_requested";
 
   await db.site.update({
     where: { id: site.id },
@@ -425,13 +433,13 @@ export async function POST(req: Request, { params }: Params) {
   await recordStagingAuditLog({
     organizationId: site.organizationId,
     actorId,
-    actionType: destroyResult?.ok ? "staging_disable_destroy" : "staging_disable_requested",
+    actionType: destroyActionType,
     resourceId: site.id,
     details: {
       enabled: false,
       appUuid: appUuid || null,
       stagedDetected: Boolean(capability?.detected),
-      destroyed: Boolean(destroyResult?.ok || destroyEnvironmentResult?.ok),
+      destroyed,
       burnExisting: Boolean(body.burnExisting),
       message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
     },
@@ -441,7 +449,7 @@ export async function POST(req: Request, { params }: Params) {
   return NextResponse.json({
     enabled: false,
     stagedDetected: Boolean(capability?.detected),
-    destroyed: Boolean(destroyResult?.ok || destroyEnvironmentResult?.ok),
+    destroyed,
     message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
   });
 }
