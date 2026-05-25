@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCoolifyAppBackupInventory } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory, getCoolifyAppStagingCapability } from "@/lib/coolify";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import { getCachedDirectoryBackupPosture, type DirectoryBackupPosture } from "@/lib/directory-backup-posture-cache";
 import { getAppsEmptyStateMessage } from "@/lib/reason-messages";
@@ -117,6 +117,69 @@ async function buildDirectoryBackupPosture(
   return backupPosture;
 }
 
+async function buildDirectoryStagingPosture(
+  siteDirectory: Awaited<ReturnType<typeof getInventorySnapshot>>["siteDirectory"],
+  overviewMode: "live" | "mock"
+): Promise<
+  Map<
+    string,
+    {
+      environmentReady: boolean;
+      targetAttached: boolean;
+      checkedAt?: string;
+    }
+  >
+> {
+  const stagingPosture = new Map<string, { environmentReady: boolean; targetAttached: boolean; checkedAt?: string }>();
+
+  if (overviewMode !== "live") {
+    return stagingPosture;
+  }
+
+  const records: Array<{
+    siteId: string;
+    environmentReady: boolean;
+    targetAttached: boolean;
+    checkedAt?: string;
+  } | null> = [];
+
+  for (let index = 0; index < siteDirectory.length; index += DIRECTORY_BACKUP_FETCH_BATCH_SIZE) {
+    const batch = siteDirectory.slice(index, index + DIRECTORY_BACKUP_FETCH_BATCH_SIZE);
+    const batchRecords = await Promise.all(
+      batch.map(async (site) => {
+        const appUuid = site.coolifyServiceUuid ?? (site.source === "coolify" ? site.id : undefined);
+        if (!appUuid) {
+          return null;
+        }
+
+        const capability = await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined);
+        return {
+          siteId: site.id,
+          environmentReady: Boolean(capability.detected),
+          targetAttached: Boolean(capability.applicationUuid),
+          checkedAt: capability.checkedAt
+        };
+      })
+    );
+
+    records.push(...batchRecords);
+  }
+
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+
+    stagingPosture.set(record.siteId, {
+      environmentReady: record.environmentReady,
+      targetAttached: record.targetAttached,
+      checkedAt: record.checkedAt
+    });
+  }
+
+  return stagingPosture;
+}
+
 export default async function SitesPage() {
   const session = await auth();
   const viewerUserId = session?.user?.id;
@@ -127,7 +190,10 @@ export default async function SitesPage() {
   const overview = inventory.overview;
   const siteDirectory = inventory.siteDirectory;
   const emptyReason = inventory.emptyReason;
-  const backupPostureBySiteId = await buildDirectoryBackupPosture(siteDirectory, overview.mode);
+  const [backupPostureBySiteId, stagingPostureBySiteId] = await Promise.all([
+    buildDirectoryBackupPosture(siteDirectory, overview.mode),
+    buildDirectoryStagingPosture(siteDirectory, overview.mode)
+  ]);
 
   const uniqueClientDbIds = [...new Set(siteDirectory.map((site) => site.clientDbId).filter((id): id is string => Boolean(id)))];
   const adminStateEntries = viewerUserId
@@ -219,7 +285,10 @@ export default async function SitesPage() {
               backupLocalStatus: backupPostureBySiteId.get(site.id)?.localStatus,
               backupOffsiteLabel: backupPostureBySiteId.get(site.id)?.offsiteLabel,
               backupOffsiteTone: backupPostureBySiteId.get(site.id)?.offsiteTone,
-              backupCheckedAt: backupPostureBySiteId.get(site.id)?.checkedAt
+              backupCheckedAt: backupPostureBySiteId.get(site.id)?.checkedAt,
+              stagingEnvironmentReady: stagingPostureBySiteId.get(site.id)?.environmentReady,
+              stagingTargetAttached: stagingPostureBySiteId.get(site.id)?.targetAttached,
+              stagingCheckedAt: stagingPostureBySiteId.get(site.id)?.checkedAt
             };
           })}
         />

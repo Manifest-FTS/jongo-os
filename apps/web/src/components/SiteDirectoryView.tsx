@@ -25,6 +25,9 @@ type SiteItem = {
   backupOffsiteLabel?: string;
   backupOffsiteTone?: "healthy" | "degraded" | "unknown";
   backupCheckedAt?: string;
+  stagingEnvironmentReady?: boolean;
+  stagingTargetAttached?: boolean;
+  stagingCheckedAt?: string;
 };
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType | "all", string> = {
@@ -182,9 +185,24 @@ export default function SiteDirectoryView({
                       {site.backupOffsiteLabel ? <span className={`status-chip ${site.backupOffsiteTone ?? "unknown"}`}>Offsite: {site.backupOffsiteLabel}</span> : null}
                     </div>
                   ) : null}
+                  {(site.stagingEnvironmentReady !== undefined || site.stagingTargetAttached !== undefined) ? (
+                    <div className="directory-badges">
+                      <span className={`status-chip ${site.stagingEnvironmentReady ? "healthy" : "unknown"}`}>
+                        {site.stagingEnvironmentReady ? "Env created" : "Env missing"}
+                      </span>
+                      <span className={`status-chip ${site.stagingTargetAttached ? "healthy" : "degraded"}`}>
+                        {site.stagingTargetAttached ? "Target attached" : "Target missing"}
+                      </span>
+                    </div>
+                  ) : null}
                   {site.backupCheckedAt ? (
                     <p style={{ margin: "0.2rem 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
                       Backup status checked {formatAgo(site.backupCheckedAt)}
+                    </p>
+                  ) : null}
+                  {site.stagingCheckedAt ? (
+                    <p style={{ margin: "0.2rem 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
+                      Staging status checked {formatAgo(site.stagingCheckedAt)}
                     </p>
                   ) : null}
                   {site.showInternalMetadata ? (
