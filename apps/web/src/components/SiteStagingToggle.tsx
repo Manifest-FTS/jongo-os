@@ -17,6 +17,7 @@ type StagingToggleResponse = {
   message?: string;
   actionHint?: string | null;
   manualProvisionRequired?: boolean;
+  destroyed?: boolean;
 };
 
 type StagingStatusResponse = {
@@ -126,12 +127,20 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       setModalMode("result");
       setModalOpen(true);
 
-      setFinalizing(true);
-      const settleResult = await waitForLifecycleCompletion(nextEnabled, burnExisting, Boolean(payload?.manualProvisionRequired));
-      if (!settleResult.completed) {
-        setActionHint((previous) => previous ?? "Background staging operation is still settling in Coolify. Wait a moment before running another toggle.");
+      const disableCleanupFailed = !nextEnabled && burnExisting && payload?.destroyed === false;
+      if (disableCleanupFailed) {
+        setActionHint((previous) => previous ?? "Staging was disabled in Jongo, but resource cleanup failed in Coolify. Resolve cleanup manually before running another destructive toggle.");
       }
-      setFinalizing(false);
+
+      const shouldFinalize = nextEnabled && !Boolean(payload?.manualProvisionRequired);
+      if (shouldFinalize) {
+        setFinalizing(true);
+        const settleResult = await waitForLifecycleCompletion(nextEnabled, burnExisting, Boolean(payload?.manualProvisionRequired));
+        if (!settleResult.completed) {
+          setActionHint((previous) => previous ?? "Background staging operation is still settling in Coolify. Wait a moment before running another toggle.");
+        }
+        setFinalizing(false);
+      }
 
       router.refresh();
     } catch {
@@ -142,9 +151,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       setFinalizeAttempt(0);
     } finally {
       setLoading(false);
-      if (!finalizing) {
-        setFinalizeAttempt(0);
-      }
+      setFinalizeAttempt(0);
     }
   }
 

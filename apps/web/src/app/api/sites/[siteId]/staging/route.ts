@@ -369,14 +369,19 @@ export async function POST(req: Request, { params }: Params) {
     });
 
     const manualProvisionRequired = !stagingTargetResolved;
+    const environmentOnlyProvisioned = provisionResult.reason === "environment_created";
     const actionHint = manualProvisionRequired
       ? (provisionResult.ok
-          ? "Attach or provision a staging application target in Coolify for this app, then refresh staging status in Jongo."
+        ? (environmentOnlyProvisioned
+          ? "No staging resource was auto-cloned for this app on the current Coolify API path. Create or attach a staging application target in Coolify, then refresh staging status in Jongo."
+          : "Attach or provision a staging application target in Coolify for this app, then refresh staging status in Jongo.")
           : "Create or attach a staging environment in Coolify for this app, then refresh staging status in Jongo.")
       : null;
     const enableMessage = manualProvisionRequired
       ? (provisionResult.ok
-          ? "Staging environment is ready in Coolify, but no staging application target is attached yet."
+        ? (environmentOnlyProvisioned
+          ? "Staging environment namespace was created in Coolify, but no staging application was cloned or attached."
+          : "Staging environment is ready in Coolify, but no staging application target is attached yet.")
           : "Staging is enabled in Jongo. Automatic provisioning is unavailable for this app, so complete staging creation in Coolify.")
       : (provisionResult.ok
           ? provisionResult.message
@@ -450,6 +455,9 @@ export async function POST(req: Request, { params }: Params) {
     enabled: false,
     stagedDetected: Boolean(capability?.detected),
     destroyed,
+    actionHint: !destroyed && Boolean(body.burnExisting)
+      ? "Jongo disabled staging, but automatic cleanup failed. Remove staging resources manually in Coolify before re-enabling destructive cleanup."
+      : null,
     message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
   });
 }
