@@ -1,5 +1,5 @@
 ﻿import { getCoolifyOverview } from "@/lib/coolify";
-import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory, getCoolifyAppStagingCapability, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import { getBackupReadiness } from "@/lib/deploy-guards";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
@@ -160,6 +160,9 @@ export default async function SiteOverviewPage({ params }: Params) {
   const backupInventory = workspace?.coolifyServiceUuid
     ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
     : null;
+  const stagingCapability = workspace?.coolifyServiceUuid
+    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace?.coolifyProjectId ?? undefined)
+    : null;
   const backupReadiness = getBackupReadiness(backupInventory, workspace?.coolifyServiceUuid);
   const backupLockReason = backupReadiness.locked
     ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
@@ -176,7 +179,9 @@ export default async function SiteOverviewPage({ params }: Params) {
     localStatus: backupLocalStatus,
     schedules: backupInventory?.schedules.filter((schedule) => schedule.enabled)
   });
-  const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
+  const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
+  const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
+  const stagingConfigured = Boolean(workspace?.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
   const workflowModel = getResourceWorkflowModel(workspace?.siteType);
 
   const readinessChecks: ReadinessCheck[] = [
@@ -234,9 +239,11 @@ export default async function SiteOverviewPage({ params }: Params) {
       label: "Staging configured",
       state: stagingConfigured ? "ready" : workspace?.stagingEnabled ? "attention" : "not_configured",
       detail: stagingConfigured
-        ? "Staging is configured and has status telemetry."
-        : workspace?.stagingEnabled
-          ? "Staging flag is enabled but live staging status is unavailable."
+        ? "Staging environment and target are both attached."
+        : workspace?.stagingEnabled && stagingEnvironmentReady
+          ? "Staging environment exists but no staging target is attached yet."
+          : workspace?.stagingEnabled
+            ? "Staging is enabled but no staging environment is detected in Coolify."
           : "Staging is not configured for this app.",
       nextStep: "Configure staging environment mapping in app settings."
     },
@@ -275,6 +282,14 @@ export default async function SiteOverviewPage({ params }: Params) {
               {site?.stagingStatus ?? "unknown"}
             </span>
           </p>
+          <p style={{ margin: "0.35rem 0", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>
+              {stagingEnvironmentReady ? "Environment created" : "Environment missing"}
+            </span>
+            <span className={`status-chip ${stagingTargetAttached ? "healthy" : "degraded"}`}>
+              {stagingTargetAttached ? "Target attached" : "Target missing"}
+            </span>
+          </p>
           <p style={{ margin: "0.35rem 0" }}>
             Overall:{" "}
             <span className={`status-chip ${site?.status ?? "unknown"}`}>
@@ -300,7 +315,9 @@ export default async function SiteOverviewPage({ params }: Params) {
             </div>
           ) : (
             <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-              Staging controls are hidden until a staging environment is configured. Configure staging in Settings.
+              {workspace?.stagingEnabled && stagingEnvironmentReady
+                ? "Staging environment exists, but no target is attached yet. Attach a staging target in Coolify, then refresh this page."
+                : "Staging controls are hidden until a staging environment is configured. Configure staging in Settings."}
             </p>
           )}
           <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
@@ -326,7 +343,11 @@ export default async function SiteOverviewPage({ params }: Params) {
               </p>
             </>
           ) : (
-            <p className="card-muted">Staging is not configured yet. Configure it in Settings to unlock staging workflows.</p>
+            <p className="card-muted">
+              {workspace?.stagingEnabled && stagingEnvironmentReady
+                ? "Staging environment exists but target attachment is incomplete. Complete target attachment in Coolify, then continue in Staging."
+                : "Staging is not configured yet. Configure it in Settings to unlock staging workflows."}
+            </p>
           )}
         </article>
 
