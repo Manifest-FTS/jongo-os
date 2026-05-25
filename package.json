@@ -43,6 +43,8 @@
     "db:repair-legacy-ids:apply": "node ./scripts/repair-legacy-ids.mjs --apply",
     "db:remediate-staging-enable": "node ./scripts/remediate-staging-enable.mjs",
     "db:remediate-staging-enable:apply": "node ./scripts/remediate-staging-enable.mjs --apply",
+    "ops:remediate-staging-environments": "node ./scripts/remediate-staging-environments.mjs",
+    "ops:remediate-staging-environments:apply": "node ./scripts/remediate-staging-environments.mjs --apply",
     "ops:remediate-staging-provision": "node ./scripts/remediate-staging-provision.mjs",
     "ops:remediate-staging-provision:apply": "node ./scripts/remediate-staging-provision.mjs --apply",
     "db:sync-approved-mappings": "node ./scripts/sync-approved-coolify-mappings.mjs",
