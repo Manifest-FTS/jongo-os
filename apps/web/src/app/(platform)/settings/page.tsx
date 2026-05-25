@@ -54,6 +54,33 @@ export default async function SettingsPage() {
         ? "watch"
         : "healthy"
     : "unknown";
+  const directoryStagingCacheLookupTotal = diagnostics
+    ? diagnostics.directoryStagingPostureCache.hits +
+      diagnostics.directoryStagingPostureCache.misses +
+      diagnostics.directoryStagingPostureCache.inFlightJoins
+    : 0;
+  const directoryStagingCacheHitRate =
+    directoryStagingCacheLookupTotal > 0
+      ? ((diagnostics!.directoryStagingPostureCache.hits + diagnostics!.directoryStagingPostureCache.inFlightJoins) /
+          directoryStagingCacheLookupTotal) *
+        100
+      : 0;
+  const directoryStagingCacheMissRate =
+    directoryStagingCacheLookupTotal > 0
+      ? (diagnostics!.directoryStagingPostureCache.misses / directoryStagingCacheLookupTotal) * 100
+      : 0;
+  const directoryStagingCacheStatusTone = diagnostics
+    ? diagnostics.directoryStagingPostureCache.errors > 0 || directoryStagingCacheMissRate >= 50
+      ? "degraded"
+      : "healthy"
+    : "unknown";
+  const directoryStagingCacheStatusLabel = diagnostics
+    ? diagnostics.directoryStagingPostureCache.errors > 0
+      ? "attention"
+      : directoryStagingCacheMissRate >= 50
+        ? "watch"
+        : "healthy"
+    : "unknown";
 
   return (
     <div>
@@ -231,6 +258,12 @@ export default async function SettingsPage() {
                 </p>
                 <p style={{ margin: 0 }}>
                   Directory backup cache summary: lookups={directoryCacheLookupTotal}, hit-rate={directoryCacheHitRate.toFixed(1)}%, errors={diagnostics.directoryBackupPostureCache.errors}, last-event={diagnostics.directoryBackupPostureCache.lastEventAt ?? "never"}
+                </p>
+                <p style={{ margin: 0 }}>
+                  Directory staging cache health: <span className={`status-chip ${directoryStagingCacheStatusTone}`}>{directoryStagingCacheStatusLabel}</span>
+                </p>
+                <p style={{ margin: 0 }}>
+                  Directory staging cache summary: lookups={directoryStagingCacheLookupTotal}, hit-rate={directoryStagingCacheHitRate.toFixed(1)}%, errors={diagnostics.directoryStagingPostureCache.errors}, last-event={diagnostics.directoryStagingPostureCache.lastEventAt ?? "never"}
                 </p>
                 <p style={{ margin: 0 }}>
                   Scope applied: {recentRepoCall?.scopeApplied ? "yes" : "no"}

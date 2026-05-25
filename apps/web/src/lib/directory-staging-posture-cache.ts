@@ -1,3 +1,5 @@
+import { recordDirectoryStagingPostureCacheEvent } from "./diagnostics";
+
 export type DirectoryStagingPosture = {
   environmentReady: boolean;
   targetAttached: boolean;
@@ -21,20 +23,30 @@ export async function getCachedDirectoryStagingPosture(
   const cached = cache.get(key);
 
   if (cached?.value && nowMs - cached.cachedAtMs < ttlMs) {
+    recordDirectoryStagingPostureCacheEvent("hit", key);
     return cached.value;
   }
 
   if (cached?.inFlight) {
+    recordDirectoryStagingPostureCacheEvent("in_flight_join", key);
     return cached.inFlight;
   }
 
+  recordDirectoryStagingPostureCacheEvent("miss", key);
+
   const inFlight = (async (): Promise<DirectoryStagingPosture> => {
-    const value = await loader();
-    cache.set(key, {
-      value,
-      cachedAtMs: Date.now()
-    });
-    return value;
+    try {
+      const value = await loader();
+      cache.set(key, {
+        value,
+        cachedAtMs: Date.now()
+      });
+      recordDirectoryStagingPostureCacheEvent("store", key);
+      return value;
+    } catch (error) {
+      recordDirectoryStagingPostureCacheEvent("error", key);
+      throw error;
+    }
   })();
 
   cache.set(key, {

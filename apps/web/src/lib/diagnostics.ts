@@ -48,6 +48,15 @@ type DirectoryBackupPostureCacheKeyCounters = {
   lastEventAt?: string;
 };
 
+type DirectoryStagingPostureCacheKeyCounters = {
+  hits: number;
+  misses: number;
+  inFlightJoins: number;
+  stores: number;
+  errors: number;
+  lastEventAt?: string;
+};
+
 type RuntimeDiagnosticsState = {
   updatedAt: string;
   lastSuccessfulCoolifyInventoryFetchAt?: string;
@@ -64,6 +73,15 @@ type RuntimeDiagnosticsState = {
     lastEventAt?: string;
     byKey: Record<string, DirectoryBackupPostureCacheKeyCounters>;
   };
+  directoryStagingPostureCache: {
+    hits: number;
+    misses: number;
+    inFlightJoins: number;
+    stores: number;
+    errors: number;
+    lastEventAt?: string;
+    byKey: Record<string, DirectoryStagingPostureCacheKeyCounters>;
+  };
 };
 
 const MAX_COOLIFY_ENDPOINT_CALLS = 80;
@@ -77,6 +95,14 @@ const state: RuntimeDiagnosticsState = {
   coolifyInventoryHistory: [],
   repositoryCalls: [],
   directoryBackupPostureCache: {
+    hits: 0,
+    misses: 0,
+    inFlightJoins: 0,
+    stores: 0,
+    errors: 0,
+    byKey: {}
+  },
+  directoryStagingPostureCache: {
     hits: 0,
     misses: 0,
     inFlightJoins: 0,
@@ -150,6 +176,38 @@ function trimDirectoryCacheKeysIfNeeded() {
   for (const key of keys) {
     if (!keep.has(key)) {
       delete state.directoryBackupPostureCache.byKey[key];
+    }
+  }
+}
+
+function trimDirectoryStagingCacheKeysIfNeeded() {
+  const keys = Object.keys(state.directoryStagingPostureCache.byKey);
+  if (keys.length <= MAX_DIRECTORY_CACHE_KEYS) {
+    return;
+  }
+
+  const sorted = keys
+    .map((key) => {
+      const counters = state.directoryStagingPostureCache.byKey[key];
+      const lookups = counters.hits + counters.misses + counters.inFlightJoins;
+      return {
+        key,
+        lookups,
+        lastEventAt: counters.lastEventAt ?? ""
+      };
+    })
+    .sort((a, b) => {
+      if (b.lookups !== a.lookups) {
+        return b.lookups - a.lookups;
+      }
+
+      return b.lastEventAt.localeCompare(a.lastEventAt);
+    });
+
+  const keep = new Set(sorted.slice(0, MAX_DIRECTORY_CACHE_KEYS).map((item) => item.key));
+  for (const key of keys) {
+    if (!keep.has(key)) {
+      delete state.directoryStagingPostureCache.byKey[key];
     }
   }
 }
@@ -257,8 +315,64 @@ export function recordDirectoryBackupPostureCacheEvent(
   touch();
 }
 
+export function recordDirectoryStagingPostureCacheEvent(
+  event: "hit" | "miss" | "in_flight_join" | "store" | "error",
+  key?: string
+) {
+  const now = new Date().toISOString();
+  const counters = state.directoryStagingPostureCache;
+  if (event === "hit") counters.hits += 1;
+  if (event === "miss") counters.misses += 1;
+  if (event === "in_flight_join") counters.inFlightJoins += 1;
+  if (event === "store") counters.stores += 1;
+  if (event === "error") counters.errors += 1;
+  counters.lastEventAt = now;
+
+  const normalizedKey = normalizeDiagnosticsKey(key);
+  if (normalizedKey) {
+    const perKey = (counters.byKey[normalizedKey] ??= {
+      hits: 0,
+      misses: 0,
+      inFlightJoins: 0,
+      stores: 0,
+      errors: 0
+    });
+    if (event === "hit") perKey.hits += 1;
+    if (event === "miss") perKey.misses += 1;
+    if (event === "in_flight_join") perKey.inFlightJoins += 1;
+    if (event === "store") perKey.stores += 1;
+    if (event === "error") perKey.errors += 1;
+    perKey.lastEventAt = now;
+    trimDirectoryStagingCacheKeysIfNeeded();
+  }
+
+  touch();
+}
+
 export function getRuntimeDiagnosticsSnapshot() {
   const directoryCacheByKeyTop = Object.entries(state.directoryBackupPostureCache.byKey)
+    .map(([key, counters]) => ({
+      key,
+      hits: counters.hits,
+      misses: counters.misses,
+      inFlightJoins: counters.inFlightJoins,
+      stores: counters.stores,
+      errors: counters.errors,
+      lastEventAt: counters.lastEventAt,
+      lookups: counters.hits + counters.misses + counters.inFlightJoins
+    }))
+    .sort((a, b) => {
+      if (b.lookups !== a.lookups) {
+        return b.lookups - a.lookups;
+      }
+      if (b.errors !== a.errors) {
+        return b.errors - a.errors;
+      }
+      return (b.lastEventAt ?? "").localeCompare(a.lastEventAt ?? "");
+    })
+    .slice(0, 10);
+
+  const directoryStagingCacheByKeyTop = Object.entries(state.directoryStagingPostureCache.byKey)
     .map(([key, counters]) => ({
       key,
       hits: counters.hits,
@@ -299,6 +413,11 @@ export function getRuntimeDiagnosticsSnapshot() {
       ...state.directoryBackupPostureCache,
       byKey: { ...state.directoryBackupPostureCache.byKey },
       byKeyTop: directoryCacheByKeyTop
+    },
+    directoryStagingPostureCache: {
+      ...state.directoryStagingPostureCache,
+      byKey: { ...state.directoryStagingPostureCache.byKey },
+      byKeyTop: directoryStagingCacheByKeyTop
     }
   };
 }
