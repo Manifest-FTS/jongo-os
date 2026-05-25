@@ -42,6 +42,8 @@ export default async function SiteSettingsPage({ params }: Params) {
   const stagingCapability = workspace?.coolifyServiceUuid
     ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined)
     : null;
+  const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
+  const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
 
   return (
     <div>
@@ -87,11 +89,19 @@ export default async function SiteSettingsPage({ params }: Params) {
             <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
               Turn on a staging copy of your production site. Jongo attempts automatic provisioning, and will guide manual Coolify setup when auto-provision is unavailable.
             </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", marginTop: "0.55rem", flexWrap: "wrap" }}>
+              <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>
+                {stagingEnvironmentReady ? "Environment created" : "Environment missing"}
+              </span>
+              <span className={`status-chip ${stagingTargetAttached ? "healthy" : "degraded"}`}>
+                {stagingTargetAttached ? "Target attached" : "Target missing"}
+              </span>
+            </div>
           </div>
           <SiteStagingToggle
             siteId={siteId}
             initialEnabled={Boolean(workspace.stagingEnabled)}
-            hasDetectedStaging={Boolean(stagingCapability?.detected)}
+            hasDetectedStaging={stagingEnvironmentReady}
           />
         </div>
         <p style={{ margin: "0.85rem 0 0", fontSize: "0.88rem" }}>
