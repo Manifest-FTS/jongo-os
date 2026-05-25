@@ -1,5 +1,5 @@
 import DeployButton from "@/components/DeployButton";
-import { getCoolifyOverview, getCoolifyAppBackupInventory } from "@/lib/coolify";
+import { getCoolifyOverview, getCoolifyAppBackupInventory, getCoolifyAppStagingCapability } from "@/lib/coolify";
 import { getBackupReadiness } from "@/lib/deploy-guards";
 import { getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
@@ -99,7 +99,12 @@ export default async function DeploymentsPage({ params }: Params) {
   }
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
-  const stagingConfigured = Boolean(workspace?.stagingEnabled && site?.stagingStatus && site.stagingStatus !== "unknown");
+  const stagingCapability = workspace?.coolifyServiceUuid
+    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace?.coolifyProjectId ?? undefined)
+    : null;
+  const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
+  const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
+  const stagingConfigured = Boolean(workspace?.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
   const backupInventory = workspace?.coolifyServiceUuid
     ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
     : null;
@@ -139,7 +144,17 @@ export default async function DeploymentsPage({ params }: Params) {
           <p className="card-muted" style={{ marginBottom: "0.5rem" }}>
             {stagingConfigured
               ? "Staging is configured and deploy flow controls are available below."
-              : "Staging is not configured yet, so only production deploy flow is shown."}
+              : workspace?.stagingEnabled && stagingEnvironmentReady
+                ? "Staging environment exists, but no staging target is attached yet."
+                : "Staging is not configured yet, so only production deploy flow is shown."}
+          </p>
+          <p style={{ margin: "0 0 0.5rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>
+              {stagingEnvironmentReady ? "Environment created" : "Environment missing"}
+            </span>
+            <span className={`status-chip ${stagingTargetAttached ? "healthy" : "degraded"}`}>
+              {stagingTargetAttached ? "Target attached" : "Target missing"}
+            </span>
           </p>
           <p className="card-muted" style={{ margin: 0 }}>
             {backupReadiness.locked
@@ -176,7 +191,9 @@ export default async function DeploymentsPage({ params }: Params) {
             </>
           ) : (
             <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-              Staging is not configured. Sync and promote controls appear here after staging is detected.
+              {workspace?.stagingEnabled && stagingEnvironmentReady
+                ? "Staging environment exists, but target attachment is incomplete. Attach a staging target in Coolify to unlock sync and promote controls."
+                : "Staging is not configured. Sync and promote controls appear here after staging is detected."}
             </p>
           )}
         </article>
