@@ -620,7 +620,9 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No valid domains provided." }, { status: 400 });
   }
 
-  const updated = await applyCoolifyApplicationDomains(capability.applicationUuid, requestedDomains);
+  const updated = capability.resourceKind === "service"
+    ? await applyCoolifyServiceDomains(capability.applicationUuid, requestedDomains)
+    : await applyCoolifyApplicationDomains(capability.applicationUuid, requestedDomains);
 
   await recordStagingAuditLog({
     organizationId: site.organizationId,

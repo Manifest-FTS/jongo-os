@@ -29,6 +29,7 @@ type BlockingDeploymentPayload = {
 
 const PROMOTE_BLOCK_COOLDOWN_MS = 30_000;
 const IDEMPOTENCY_KEY_RE = /^[a-zA-Z0-9:_-]{8,128}$/;
+const PROMOTE_SEMANTICS_NOTE = "Promote triggers a production deployment; it does not copy staging files/database into production.";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -322,7 +323,7 @@ export async function POST(req: Request, { params }: Params) {
         promoteAttemptId: replay.promoteAttemptId,
         deploymentId: replay.deploymentId,
         mode: replay.mode,
-        message: replay.message ?? "Promotion already triggered for this idempotency key.",
+        message: `${replay.message ?? "Promotion already triggered for this idempotency key."} ${PROMOTE_SEMANTICS_NOTE}`,
         preflight: replay.preflight
       });
     }
@@ -402,7 +403,6 @@ export async function POST(req: Request, { params }: Params) {
         appUuid,
         blockingReason: "production_deployment_in_progress",
         blockingDeploymentId,
-        blockingDeploymentStatus: inProgressProduction.status,
         blockingTriggeredAt: inProgressProduction.triggeredAt,
         message: `Promotion blocked because production deployment ${blockingDeploymentId} is already in progress.`
       },
@@ -488,7 +488,7 @@ export async function POST(req: Request, { params }: Params) {
         deploymentId: result.deploymentId,
         mode: result.mode,
         preflight,
-        message: result.message
+        message: `${result.message} ${PROMOTE_SEMANTICS_NOTE}`
       },
       req
     });
@@ -499,7 +499,7 @@ export async function POST(req: Request, { params }: Params) {
       idempotencyKey,
       deploymentId: result.deploymentId,
       mode: result.mode,
-      message: result.message,
+      message: `${result.message} ${PROMOTE_SEMANTICS_NOTE}`,
       preflight
     });
   } catch (error) {

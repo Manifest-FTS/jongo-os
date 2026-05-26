@@ -1361,6 +1361,18 @@ export async function applyCoolifyServiceDomains(serviceUuid: string, input: str
     return false;
   }
 
+  const hostDomains = normalizedDomains
+    .map((value) => {
+      try {
+        return new URL(value).hostname;
+      } catch {
+        return "";
+      }
+    })
+    .filter((value) => value.length > 0);
+
+  const hostDomainCsv = hostDomains.join(",");
+
   const requestBodies: Record<string, unknown>[] = [
     {
       urls: normalizedDomains.map((url, index) => ({
@@ -1369,21 +1381,40 @@ export async function applyCoolifyServiceDomains(serviceUuid: string, input: str
       })),
       force_domain_override: true
     },
+    {
+      urls: hostDomains.map((url, index) => ({
+        name: index === 0 ? "default" : `domain-${index + 1}`,
+        url
+      })),
+      force_domain_override: true
+    },
     { urls: normalizedDomains },
+    { urls: hostDomains },
+    { domains: hostDomains },
+    { domains: hostDomainCsv },
+    { domain: hostDomainCsv },
+    { fqdn: hostDomainCsv },
     { fqdn: normalizedDomains.join(",") },
     { domain: normalizedDomains.join(",") }
   ];
 
-  const path = `/api/v1/services/${encodeURIComponent(serviceUuid)}`;
-  for (const body of requestBodies) {
-    const patchOk = await coolifyMutate(path, "PATCH", body);
-    if (patchOk) {
-      return true;
-    }
+  const paths = [
+    `/api/v1/services/${encodeURIComponent(serviceUuid)}`,
+    `/api/v1/services/${encodeURIComponent(serviceUuid)}/settings`,
+    `/api/v1/services/${encodeURIComponent(serviceUuid)}/domains`
+  ];
 
-    const postOk = await coolifyMutate(path, "POST", body);
-    if (postOk) {
-      return true;
+  for (const path of paths) {
+    for (const body of requestBodies) {
+      const patchOk = await coolifyMutate(path, "PATCH", body);
+      if (patchOk) {
+        return true;
+      }
+
+      const postOk = await coolifyMutate(path, "POST", body);
+      if (postOk) {
+        return true;
+      }
     }
   }
 
@@ -2812,9 +2843,29 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     const stagingAppUuid = stringValue(resolvedStagingTarget, ["uuid", "id"], "");
     const defaultTargetName = resourceKind === "service" ? "staging service" : "staging app";
     const stagingAppName = stringValue(resolvedStagingTarget, ["name"], defaultTargetName);
-    const stagingDomains = extractStagingDomainList(resolvedStagingTarget);
+    let detailedStagingTarget = resolvedStagingTarget;
+    const detailPath = resourceKind === "service"
+      ? `/api/v1/services/${encodeURIComponent(stagingAppUuid)}`
+      : `/api/v1/applications/${encodeURIComponent(stagingAppUuid)}`;
+
+    if (stagingAppUuid) {
+      try {
+        const detailPayload = await coolifyFetch(detailPath);
+        if (detailPayload && typeof detailPayload === "object" && !Array.isArray(detailPayload)) {
+          detailedStagingTarget = detailPayload as Record<string, unknown>;
+        }
+      } catch {
+        // Keep list payload fallback when detail endpoint is unavailable.
+      }
+    }
+
+    const stagingDomains = extractStagingDomainList(detailedStagingTarget);
     const fqdn = stagingDomains.join(",") || undefined;
-    const status = statusFromRaw(resolvedStagingTarget.status ?? resolvedStagingTarget.current_status);
+    const status = statusFromRaw(
+      detailedStagingTarget.status ??
+      detailedStagingTarget.current_status ??
+      detailedStagingTarget.server_status
+    );
 
     return {
       detected: true,

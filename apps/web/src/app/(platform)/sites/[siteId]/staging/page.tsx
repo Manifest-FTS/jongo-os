@@ -1,4 +1,8 @@
-import { getCoolifyAppStagingCapability, buildStagingSyncDryRunPlan } from "@/lib/coolify";
+import {
+  getCoolifyAppStagingCapability,
+  buildStagingSyncDryRunPlan,
+  deriveCoolifyStagingDomainFromProduction
+} from "@/lib/coolify";
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
@@ -267,8 +271,14 @@ export default async function StagingPage({ params, searchParams }: Params) {
       ? stagingToProdPreflight.detail
       : undefined;
   const stagingModelCopy = getStagingModelCopy(workspace?.siteType);
+  const preferredStagingDomain = appUuid
+    ? await deriveCoolifyStagingDomainFromProduction(appUuid)
+    : undefined;
   const stagingDomains = parseDomainValues(stagingCapability?.fqdn);
-  const stagingDomainsInput = stagingDomains.join(", ");
+  const effectiveStagingDomains = stagingDomains.length > 0
+    ? stagingDomains
+    : parseDomainValues(preferredStagingDomain);
+  const stagingDomainsInput = effectiveStagingDomains.join(", ");
   const stagingAuditLogs: StagingAuditEntry[] = workspace.organizationId
     ? await db.auditLog.findMany({
         where: {
@@ -477,11 +487,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
                 {stagingCapability.applicationName && (
                   <p style={{ margin: 0 }}>Application: <code>{stagingCapability.applicationName}</code></p>
                 )}
-                {stagingDomains.length > 0 && (
+                {effectiveStagingDomains.length > 0 && (
                   <div style={{ margin: 0 }}>
                     <p style={{ margin: 0 }}>Domains:</p>
                     <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1rem", display: "grid", gap: "0.15rem" }}>
-                      {stagingDomains.map((domain) => (
+                      {effectiveStagingDomains.map((domain) => (
                         <li key={domain} style={{ fontSize: "0.86rem" }}>
                           <a href={`https://${domain}`} target="_blank" rel="noopener noreferrer" className="action-link">
                             {domain}
