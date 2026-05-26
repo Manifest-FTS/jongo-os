@@ -1089,7 +1089,15 @@ export type CoolifyActionResult = {
     | "request_sent"
     | "environment_ready"
     | "environment_created"
-    | "environment_deleted";
+    | "environment_deleted"
+    | "service_created";
+};
+
+type StagingEnvironmentResolution = {
+  projectEndpointId: string;
+  stagingEnvironmentId?: string;
+  stagingEnvironmentName?: string;
+  created: boolean;
 };
 
 async function coolifyMutate(
@@ -1269,6 +1277,41 @@ export async function applyCoolifyApplicationDomain(appUuid: string, fqdn: strin
   return applyCoolifyApplicationDomains(appUuid, fqdn);
 }
 
+export async function applyCoolifyServiceDomains(serviceUuid: string, input: string | string[]): Promise<boolean> {
+  const normalizedDomains = normalizeCoolifyDomains(input);
+  if (normalizedDomains.length === 0) {
+    return false;
+  }
+
+  const requestBodies: Record<string, unknown>[] = [
+    {
+      urls: normalizedDomains.map((url, index) => ({
+        name: index === 0 ? "default" : `domain-${index + 1}`,
+        url
+      })),
+      force_domain_override: true
+    },
+    { urls: normalizedDomains },
+    { fqdn: normalizedDomains.join(",") },
+    { domain: normalizedDomains.join(",") }
+  ];
+
+  const path = `/api/v1/services/${encodeURIComponent(serviceUuid)}`;
+  for (const body of requestBodies) {
+    const patchOk = await coolifyMutate(path, "PATCH", body);
+    if (patchOk) {
+      return true;
+    }
+
+    const postOk = await coolifyMutate(path, "POST", body);
+    if (postOk) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function isLikelyStagingEnvironmentName(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   return normalized.includes("stag") || normalized.includes("preview") || normalized === "dev";
@@ -1436,6 +1479,221 @@ export async function provisionCoolifyStagingFromProduction(
 
   const normalizedPreferredDomain = preferredStagingDomain ? toHttpsUrl(preferredStagingDomain) : undefined;
 
+  const verifyStagingTarget = async (): Promise<boolean> => {
+    const capability = await getCoolifyAppStagingCapability(appUuid, projectId);
+    if (capability.detected && capability.applicationUuid) {
+      return true;
+    }
+
+    for (const retryDelayMs of [250, 500, 1000]) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+      if (retriedCapability.detected && retriedCapability.applicationUuid) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const resolveStagingEnvironment = async (): Promise<StagingEnvironmentResolution | null> => {
+    if (!projectId) {
+      return null;
+    }
+
+    try {
+      const projectEndpointId = await resolveCoolifyProjectEndpointId(projectId);
+      const projectPayload = await coolifyFetch(`/api/v1/projects/${projectEndpointId}`);
+      const projectObj = projectPayload && typeof projectPayload === "object" && !Array.isArray(projectPayload)
+        ? (projectPayload as Record<string, unknown>)
+        : {};
+      let environments = ensureArray(projectObj.environments ?? []);
+
+      let stagingEnvironment = environments.find((env) => {
+        const name = stringValue(env as Record<string, unknown>, ["name", "environment_name"], "");
+        return isLikelyStagingEnvironmentName(name);
+      }) as Record<string, unknown> | undefined;
+
+      let created = false;
+      if (!stagingEnvironment) {
+        const createOk = await coolifyMutate(
+          `/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments`,
+          "POST",
+          { name: "staging" }
+        );
+
+        if (createOk) {
+          created = true;
+          const refreshedProjectPayload = await coolifyFetch(`/api/v1/projects/${projectEndpointId}`);
+          const refreshedProjectObj = refreshedProjectPayload && typeof refreshedProjectPayload === "object" && !Array.isArray(refreshedProjectPayload)
+            ? (refreshedProjectPayload as Record<string, unknown>)
+            : {};
+          environments = ensureArray(refreshedProjectObj.environments ?? []);
+          stagingEnvironment = environments.find((env) => {
+            const name = stringValue(env as Record<string, unknown>, ["name", "environment_name"], "");
+            return isLikelyStagingEnvironmentName(name);
+          }) as Record<string, unknown> | undefined;
+        }
+      }
+
+      return {
+        projectEndpointId,
+        stagingEnvironmentId: stagingEnvironment
+          ? stringValue(stagingEnvironment, ["uuid", "id"], "") || undefined
+          : undefined,
+        stagingEnvironmentName: stagingEnvironment
+          ? stringValue(stagingEnvironment, ["name", "environment_name"], "") || undefined
+          : undefined,
+        created
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const createServiceFromSource = async (stagingEnvironment: StagingEnvironmentResolution): Promise<boolean> => {
+    if (!stagingEnvironment.stagingEnvironmentId || !stagingEnvironment.stagingEnvironmentName) {
+      return false;
+    }
+
+    let sourceService: Record<string, unknown> | null = null;
+    try {
+      const payload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(appUuid)}`);
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        sourceService = payload as Record<string, unknown>;
+      }
+    } catch {
+      sourceService = null;
+    }
+
+    if (!sourceService) {
+      return false;
+    }
+
+    const resolveServerUuid = async (): Promise<string> => {
+      const directServerUuid =
+        stringValue(sourceService!, ["server_uuid"], "") ||
+        (typeof sourceService!.server === "object" && sourceService!.server !== null
+          ? stringValue(sourceService!.server as Record<string, unknown>, ["uuid"], "")
+          : "");
+      if (directServerUuid) {
+        return directServerUuid;
+      }
+
+      const serverId = stringValue(sourceService!, ["server_id"], "");
+      if (!serverId) {
+        return "";
+      }
+
+      try {
+        const serversPayload = await coolifyFetch("/api/v1/servers");
+        const servers = ensureArray(serversPayload);
+        const matched = servers.find((server) => stringValue(server, ["id"], "") === serverId);
+        if (!matched) {
+          return "";
+        }
+
+        return stringValue(matched, ["uuid"], "");
+      } catch {
+        return "";
+      }
+    };
+
+    const resolveDestinationUuid = async (serverUuid: string): Promise<string> => {
+      const directDestinationUuid =
+        stringValue(sourceService!, ["destination_uuid"], "") ||
+        (typeof sourceService!.destination === "object" && sourceService!.destination !== null
+          ? stringValue(sourceService!.destination as Record<string, unknown>, ["uuid"], "")
+          : "");
+      if (directDestinationUuid) {
+        return directDestinationUuid;
+      }
+
+      const destinationId = stringValue(sourceService!, ["destination_id"], "");
+      if (!destinationId || !serverUuid) {
+        return "";
+      }
+
+      try {
+        const serverPayload = await coolifyFetch(`/api/v1/servers/${encodeURIComponent(serverUuid)}`);
+        if (!serverPayload || typeof serverPayload !== "object" || Array.isArray(serverPayload)) {
+          return "";
+        }
+
+        const serverObj = serverPayload as Record<string, unknown>;
+        const destinations = ensureArray(serverObj.destinations ?? serverObj.destination ?? []);
+        const matched = destinations.find((destination) => stringValue(destination, ["id"], "") === destinationId);
+        if (!matched) {
+          return "";
+        }
+
+        return stringValue(matched, ["uuid"], "");
+      } catch {
+        return "";
+      }
+    };
+
+    const resolvedProjectId =
+      projectId ||
+      stringValue(sourceService, ["project_uuid", "project_id", "project"], "");
+
+    const serverUuid = await resolveServerUuid();
+    const destinationUuid = await resolveDestinationUuid(serverUuid);
+    const serviceType = stringValue(sourceService, ["service_type", "type"], "");
+    const dockerComposeRaw = stringValue(sourceService, ["docker_compose_raw"], "");
+    const sourceName = stringValue(sourceService, ["name"], "service");
+
+    if (!serverUuid || !resolvedProjectId) {
+      return false;
+    }
+
+    const baseBody: Record<string, unknown> = {
+      name: `${sourceName}-staging`,
+      project_uuid: resolvedProjectId,
+      environment_name: stagingEnvironment.stagingEnvironmentName,
+      environment_uuid: stagingEnvironment.stagingEnvironmentId,
+      server_uuid: serverUuid,
+      instant_deploy: false
+    };
+
+    if (destinationUuid) {
+      baseBody.destination_uuid = destinationUuid;
+    }
+
+    if (normalizedPreferredDomain) {
+      baseBody.urls = [{ name: "default", url: normalizedPreferredDomain }];
+      baseBody.force_domain_override = true;
+    }
+
+    const candidateBodies: Record<string, unknown>[] = [];
+    if (dockerComposeRaw) {
+      candidateBodies.push({
+        ...baseBody,
+        docker_compose_raw: dockerComposeRaw
+      });
+    }
+    if (serviceType) {
+      candidateBodies.push({
+        ...baseBody,
+        type: serviceType
+      });
+    }
+
+    for (const body of candidateBodies) {
+      const created = await coolifyMutate("/api/v1/services", "POST", body);
+      if (!created) {
+        continue;
+      }
+
+      const verified = await verifyStagingTarget();
+      if (verified) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   const candidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = [
     {
       path: `/api/v1/services/${encodeURIComponent(appUuid)}/staging`,
@@ -1478,18 +1736,46 @@ export async function provisionCoolifyStagingFromProduction(
   for (const request of candidateRequests) {
     const ok = await coolifyMutate(request.path, "POST", request.body);
     if (ok) {
+      const verified = await verifyStagingTarget();
+      if (verified) {
+        return {
+          mode: "live",
+          ok: true,
+          message: "Staging provisioning request sent to Coolify.",
+          reason: "request_sent"
+        };
+      }
+    }
+  }
+
+  const stagingEnvironment = await resolveStagingEnvironment();
+  if (stagingEnvironment?.created) {
+    const verifiedAfterCreate = await verifyStagingTarget();
+    if (verifiedAfterCreate) {
       return {
         mode: "live",
         ok: true,
-        message: "Staging provisioning request sent to Coolify.",
-        reason: "request_sent"
+        message: "Staging environment created in Coolify.",
+        reason: "environment_created"
+      };
+    }
+  }
+
+  if (stagingEnvironment) {
+    const createdFromSource = await createServiceFromSource(stagingEnvironment);
+    if (createdFromSource) {
+      return {
+        mode: "live",
+        ok: true,
+        message: "Staging service target created from production service settings.",
+        reason: "service_created"
       };
     }
   }
 
   if (projectId) {
     const ensuredEnvironment = await ensureCoolifyStagingEnvironment(projectId);
-    if (ensuredEnvironment.ok) {
+    if (ensuredEnvironment.ok && await verifyStagingTarget()) {
       return ensuredEnvironment;
     }
   }
@@ -1551,37 +1837,47 @@ export async function triggerCoolifyDeploy(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const path = `/api/v1/deploy?uuid=${encodeURIComponent(serviceUuid)}`;
+    const candidateRequests: Array<{ method: "GET" | "POST"; path: string }> = [
+      { method: "GET", path: `/api/v1/services/${encodeURIComponent(serviceUuid)}/start` },
+      { method: "POST", path: `/api/v1/services/${encodeURIComponent(serviceUuid)}/start` },
+      { method: "GET", path: `/api/v1/deploy?uuid=${encodeURIComponent(serviceUuid)}` }
+    ];
 
-    const response = await fetch(`${baseUrl}${path}`, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`
-      },
-      signal: controller.signal
-    });
+    let lastStatusCode = 0;
+    for (const request of candidateRequests) {
+      const response = await fetch(`${baseUrl}${request.path}`, {
+        method: request.method,
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        signal: controller.signal
+      });
 
-    if (!response.ok) {
-      throw new Error(`Coolify deploy failed (${response.status})`);
+      if (!response.ok) {
+        lastStatusCode = response.status;
+        continue;
+      }
+
+      const payload = (await response.json()) as Record<string, unknown>;
+      const deployments = Array.isArray(payload.deployments) ? payload.deployments as Record<string, unknown>[] : [];
+      const first = deployments[0] ?? {};
+      const deploymentId =
+        typeof first.deployment_uuid === "string"
+          ? first.deployment_uuid
+          : typeof payload.deployment_uuid === "string"
+            ? payload.deployment_uuid
+            : `dep-${Date.now()}`;
+
+      return {
+        mode: "live",
+        deploymentId,
+        message: `Deploy triggered on ${environment}.`
+      };
     }
 
-    const payload = (await response.json()) as Record<string, unknown>;
-    const deployments = Array.isArray(payload.deployments) ? payload.deployments as Record<string, unknown>[] : [];
-    const first = deployments[0] ?? {};
-    const deploymentId =
-      typeof first.deployment_uuid === "string"
-        ? first.deployment_uuid
-        : typeof payload.deployment_uuid === "string"
-          ? payload.deployment_uuid
-          : `dep-${Date.now()}`;
-
-    return {
-      mode: "live",
-      deploymentId,
-      message: `Deploy triggered on ${environment}.`
-    };
+    throw new Error(`Coolify deploy failed (${lastStatusCode || 500})`);
   } finally {
     clearTimeout(timer);
   }

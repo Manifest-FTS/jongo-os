@@ -22,18 +22,19 @@ Invoke-RestMethod -Headers $headers -Uri "http://localhost:3000/api/diagnostics/
 - `GET /api/v1/resources` -> 200
 - `GET /api/v1/services` -> 200
 - `GET /api/v1/databases` -> 200
-- Inventory history: success=true, sitesCount=30, projectsCount=15, environmentsCount=19
+- Inventory history: success=true, sitesCount=31, projectsCount=15, environmentsCount=19
 
 ## Interpretation
 
 - Coolify API auth/reachability is currently healthy in local runtime.
-- Current Waterfall blocker is structural: staging environment exists, but no staging service target is attached.
+- Staging target is now detected for Waterfall (`stagingConfigured=true`).
+- Remaining failure moved to promote trigger execution: upstream Coolify deploy returns HTTP 403.
 
 ## Immediate Remediation Path
 
-1. In Coolify project `cx7ldowl163oc24u2tqsbzuq`, attach/provision a staging service target for `waterfallkeepersofnc-org`.
-2. Re-run `npm run smoke:staging-preflight -- waterfallkeepersofnc-org` and confirm no staging-target blocker remains.
-3. Re-run strict promote smoke and verify trigger-path success once preflight clears.
+1. Validate Coolify token deploy authorization (`api.ability:deploy`) for production service promote trigger paths.
+2. Re-run strict promote smoke and confirm trigger path returns HTTP 200 with `ok=true`.
+3. Capture updated promote smoke evidence once deploy authorization is fixed.
 
 ## Related Artifacts
 

@@ -21,27 +21,28 @@ npm run smoke:staging-promote
 ## Result Summary
 
 - Triggered: 0
-- Blocked: 1
-- Failed: 1 (expected with `FAIL_ON_BLOCKED=true`)
-- Promote-attempt endpoint checks: 1/1 returned HTTP 200
-- Promote blocking reason: `staging_to_production_preflight_blocked`
+- Blocked: 0
+- Failed: 1
+- Promote trigger endpoint returned HTTP `502`
+- Promote runtime error: `Coolify deploy failed (403)`
 
 ## Blocker Matrix
 
 ### `waterfallkeepersofnc-org`
 
 - Blockers:
-  - Staging environment exists but no staging service target is attached yet.
+  - Promote trigger failed upstream: Coolify deploy authorization returned HTTP 403.
 - Suggested actions:
-  - Provision or attach a staging service in Coolify so sync and promote checks can target a concrete staging service.
+  - Validate Coolify API token deploy permission (`api.ability:deploy`) for the team/resource.
+  - Re-run strict promote smoke after token/permission update.
 
 ## Next Core Actions
 
-1. In Coolify project `cx7ldowl163oc24u2tqsbzuq`, attach or provision a staging service target for `waterfallkeepersofnc-org`.
-2. Re-run preflight and confirm `stagingConfigured=true`.
+1. Keep current staging target in place (`stagingConfigured=true` is already verified).
+2. Update Coolify token/permissions so promote deploy actions are authorized.
 3. Re-run strict smoke after each remediation change:
    - `npm run ops:refresh-staging-remediation:strict`
-4. Only run trigger-path success validation when preflight blockers clear.
+4. Run trigger-path success validation once deploy authorization 403 is cleared.
 
 ## Related Artifacts
 

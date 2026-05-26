@@ -16,16 +16,15 @@ Command: `npm run smoke:staging-preflight -- waterfallkeepersofnc-org`
 
 - Site: `waterfallkeepersofnc-org`
 - HTTP status: `200`
-- Readiness: `NOT READY`
-- Preflight label/tone: `Blocked` / `error`
-- Blockers:
-  - Staging environment exists but no staging service target is attached yet.
+- Readiness: `READY`
+- Preflight label/tone: `Ready` / `healthy`
+- Blockers: none
 - Backup readiness: `ready`
 
 ## Suggested Actions Returned By API
 
-- Provision or attach a staging service in Coolify so sync and promote checks can target a concrete staging service.
+- Run dry-run preflight checks and validate staging content before any manual promote/sync action in Coolify.
 
 ## Operational Decision
 
-- Promote trigger-path smoke remains blocked for Waterfall Keepers until a staging service target is attached in Coolify.
+- Preflight gate is clear; remaining work has moved to promote-trigger execution authorization.

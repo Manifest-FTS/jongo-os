@@ -4,6 +4,7 @@ import { isAdminRole } from "@/lib/roles";
 import {
   applyCoolifyApplicationDomain,
   applyCoolifyApplicationDomains,
+  applyCoolifyServiceDomains,
   buildStagingSyncDryRunPlan,
   deleteCoolifyStagingEnvironment,
   deriveCoolifyStagingDomainFromProduction,
@@ -360,10 +361,12 @@ export async function POST(req: Request, { params }: Params) {
 
     let stagingDomainApplied = false;
     if (preferredStagingDomain && capabilityAfterProvision.applicationUuid) {
-      stagingDomainApplied = await applyCoolifyApplicationDomain(
-        capabilityAfterProvision.applicationUuid,
-        preferredStagingDomain
-      );
+      stagingDomainApplied = capabilityAfterProvision.resourceKind === "service"
+        ? await applyCoolifyServiceDomains(capabilityAfterProvision.applicationUuid, preferredStagingDomain)
+        : await applyCoolifyApplicationDomain(
+            capabilityAfterProvision.applicationUuid,
+            preferredStagingDomain
+          );
     }
 
     await recordStagingAuditLog({
