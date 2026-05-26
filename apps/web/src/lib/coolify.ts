@@ -1094,7 +1094,9 @@ export type CoolifyActionResult = {
     | "environment_ready"
     | "environment_created"
     | "environment_deleted"
-    | "service_created";
+    | "service_created"
+    | "resource_deleted"
+    | "resource_already_absent";
 };
 
 type StagingEnvironmentResolution = {
@@ -1275,13 +1277,29 @@ function buildStagingDomainFromProductionUrl(productionRaw: string): string | un
 
 export async function deriveCoolifyStagingDomainFromProduction(appUuid: string): Promise<string | undefined> {
   try {
-    const payload = await coolifyFetch(`/api/v1/applications/${encodeURIComponent(appUuid)}`);
-    const app = (typeof payload === "object" && payload !== null ? payload : {}) as Record<string, unknown>;
+    const candidates: string[] = [];
 
-    const candidates = [
-      stringValue(app, ["fqdn", "url", "urls", "domain", "domains"], ""),
-      stringValue(app, ["preview_url", "production_url"], "")
-    ].filter((value) => value.length > 0);
+    const payloadLookups = [
+      `/api/v1/applications/${encodeURIComponent(appUuid)}`,
+      `/api/v1/services/${encodeURIComponent(appUuid)}`
+    ];
+
+    for (const path of payloadLookups) {
+      try {
+        const payload = await coolifyFetch(path);
+        const resource = (typeof payload === "object" && payload !== null ? payload : {}) as Record<string, unknown>;
+
+        candidates.push(
+          stringValue(resource, ["fqdn", "url", "domain", "domains", "preview_url", "production_url"], "")
+        );
+
+        for (const domainCandidate of extractCoolifyDomainCandidates(resource.urls)) {
+          candidates.push(domainCandidate);
+        }
+      } catch {
+        // Continue to next endpoint.
+      }
+    }
 
     for (const candidate of candidates) {
       const derived = buildStagingDomainFromProductionUrl(candidate);
@@ -1827,7 +1845,7 @@ export async function provisionCoolifyStagingFromProduction(
       return {
         mode: "live",
         ok: true,
-        message: "Staging service target created from production service settings.",
+        message: "Staging service target created from production service settings. Runtime files/database content is not auto-cloned on this fallback path.",
         reason: "service_created"
       };
     }
@@ -1848,7 +1866,10 @@ export async function provisionCoolifyStagingFromProduction(
   };
 }
 
-export async function destroyCoolifyApplication(appUuid: string): Promise<CoolifyActionResult> {
+export async function destroyCoolifyApplication(
+  appUuid: string,
+  resourceKind?: "application" | "service" | "database" | "unknown"
+): Promise<CoolifyActionResult> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
 
@@ -1860,19 +1881,98 @@ export async function destroyCoolifyApplication(appUuid: string): Promise<Coolif
     };
   }
 
-  const ok = await coolifyMutate(`/api/v1/applications/${encodeURIComponent(appUuid)}`, "DELETE");
-  if (ok) {
-    return {
-      mode: "live",
-      ok: true,
-      message: "Staging application removed in Coolify."
-    };
+  const orderedKinds: Array<"application" | "service" | "database"> = resourceKind === "application"
+    ? ["application", "service", "database"]
+    : resourceKind === "service"
+      ? ["service", "application", "database"]
+      : resourceKind === "database"
+        ? ["database", "application", "service"]
+        : ["application", "service", "database"];
+
+  const deletePathsByKind: Record<"application" | "service" | "database", string[]> = {
+    application: [
+      `/api/v1/applications/${encodeURIComponent(appUuid)}`,
+      `/api/v1/resources/${encodeURIComponent(appUuid)}`
+    ],
+    service: [
+      `/api/v1/services/${encodeURIComponent(appUuid)}`,
+      `/api/v1/resources/${encodeURIComponent(appUuid)}`
+    ],
+    database: [
+      `/api/v1/databases/${encodeURIComponent(appUuid)}`,
+      `/api/v1/resources/${encodeURIComponent(appUuid)}`
+    ]
+  };
+
+  for (const kind of orderedKinds) {
+    for (const path of deletePathsByKind[kind]) {
+      const ok = await coolifyMutate(path, "DELETE");
+      if (!ok) {
+        continue;
+      }
+
+      return {
+        mode: "live",
+        ok: true,
+        message: "Staging target removed in Coolify.",
+        reason: "resource_deleted"
+      };
+    }
+  }
+
+  // Some deployments expose delete semantics via POST action routes.
+  const actionPaths = [
+    `/api/v1/services/${encodeURIComponent(appUuid)}/delete`,
+    `/api/v1/applications/${encodeURIComponent(appUuid)}/delete`
+  ];
+
+  for (const path of actionPaths) {
+    const ok = await coolifyMutate(path, "POST");
+    if (ok) {
+      return {
+        mode: "live",
+        ok: true,
+        message: "Staging target removed in Coolify.",
+        reason: "resource_deleted"
+      };
+    }
+  }
+
+  const probePaths = [
+    `/api/v1/applications/${encodeURIComponent(appUuid)}`,
+    `/api/v1/services/${encodeURIComponent(appUuid)}`,
+    `/api/v1/databases/${encodeURIComponent(appUuid)}`
+  ];
+
+  for (const path of probePaths) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (response.status === 404) {
+        return {
+          mode: "live",
+          ok: true,
+          message: "Staging target was already removed in Coolify.",
+          reason: "resource_already_absent"
+        };
+      }
+    } catch {
+      // Ignore probe errors and continue.
+    }
   }
 
   return {
     mode: "live",
     ok: false,
-    message: "Unable to destroy staging application automatically. Remove it manually in Coolify."
+    message: "Unable to destroy staging target automatically. Remove it manually in Coolify.",
+    reason: "auto_provision_unsupported"
   };
 }
 

@@ -326,6 +326,12 @@ export async function POST(req: Request, { params }: Params) {
     const currentStagingTargetResolved = Boolean(currentCapability.detected && currentCapability.applicationUuid);
     if (currentStagingTargetResolved) {
       const currentStagingRunning = currentCapability.status === "healthy";
+      const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
+      const stagingDomainApplied = preferredStagingDomain && currentCapability.applicationUuid
+        ? (currentCapability.resourceKind === "service"
+            ? await applyCoolifyServiceDomains(currentCapability.applicationUuid, preferredStagingDomain)
+            : await applyCoolifyApplicationDomain(currentCapability.applicationUuid, preferredStagingDomain))
+        : false;
       await recordStagingAuditLog({
         organizationId: site.organizationId,
         actorId,
@@ -334,6 +340,8 @@ export async function POST(req: Request, { params }: Params) {
         details: {
           ...enableAuditDetails,
           stagedDetected: true,
+          preferredStagingDomain: preferredStagingDomain ?? null,
+          stagingDomainApplied,
           capability: currentCapability
         },
         req
@@ -346,6 +354,8 @@ export async function POST(req: Request, { params }: Params) {
         stagingCreationAttempted: false,
         stagingCreationRequestAccepted: false,
         stagingTargetResolved: true,
+        preferredStagingDomain,
+        stagingDomainApplied,
         stagingRunning: currentStagingRunning,
         actionHint: currentStagingRunning
           ? null
@@ -427,6 +437,7 @@ export async function POST(req: Request, { params }: Params) {
     const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
     const manualProvisionRequired = !stagingTargetResolved;
     const stagingRunning = capabilityAfterProvision.status === "healthy";
+    const requiresContentSync = provisionResult.reason === "service_created";
     const environmentOnlyProvisioned = provisionResult.reason === "environment_created";
     const actionHint = manualProvisionRequired
       ? (provisionResult.ok
@@ -434,6 +445,8 @@ export async function POST(req: Request, { params }: Params) {
           ? `No staging resource was auto-cloned for this app on the current Coolify API path. Create or attach a staging ${targetLabel} target in Coolify, then refresh staging status in Jongo.`
           : `Attach or provision a staging ${targetLabel} target in Coolify for this app, then refresh staging status in Jongo.`)
           : "Create or attach a staging environment in Coolify for this app, then refresh staging status in Jongo.")
+      : requiresContentSync
+        ? "Staging target was created from service settings only. Perform explicit database/files sync or clone workflow in Coolify before using it as a production-like staging copy."
       : !stagingRunning
         ? `Staging ${targetLabel} is attached but not running yet. Start/deploy it in Coolify, then refresh staging status in Jongo.`
       : null;
@@ -476,8 +489,18 @@ export async function POST(req: Request, { params }: Params) {
     capability = await getCoolifyAppStagingCapability(appUuid, projectId);
     const shouldDestroy = Boolean(body.burnExisting) && Boolean(capability.detected && capability.applicationUuid);
     if (shouldDestroy && capability?.applicationUuid) {
-      const result = await destroyCoolifyApplication(capability.applicationUuid);
+      const result = await destroyCoolifyApplication(capability.applicationUuid, capability.resourceKind);
       destroyResult = { ok: result.ok, message: result.message };
+
+      if (!destroyResult.ok) {
+        const afterDestroyProbe = await getCoolifyAppStagingCapability(appUuid, projectId);
+        if (!afterDestroyProbe.applicationUuid) {
+          destroyResult = {
+            ok: true,
+            message: "Staging target is no longer attached in Coolify."
+          };
+        }
+      }
     }
 
     if (Boolean(body.burnExisting) && projectId) {
