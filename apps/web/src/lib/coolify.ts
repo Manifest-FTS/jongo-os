@@ -1845,6 +1845,7 @@ export async function triggerCoolifyDeploy(
 
     let lastStatusCode = 0;
     for (const request of candidateRequests) {
+      const startedAt = Date.now();
       const response = await fetch(`${baseUrl}${request.path}`, {
         method: request.method,
         cache: "no-store",
@@ -1857,10 +1858,26 @@ export async function triggerCoolifyDeploy(
 
       if (!response.ok) {
         lastStatusCode = response.status;
+        recordCoolifyEndpointCall({
+          path: request.path,
+          method: request.method,
+          statusCode: response.status,
+          success: false,
+          durationMs: Date.now() - startedAt,
+          error: `Coolify deploy candidate failed (${response.status})`
+        });
         continue;
       }
 
       const payload = (await response.json()) as Record<string, unknown>;
+      recordCoolifyEndpointCall({
+        path: request.path,
+        method: request.method,
+        statusCode: response.status,
+        success: true,
+        responseCount: estimateResponseCount(payload),
+        durationMs: Date.now() - startedAt
+      });
       const deployments = Array.isArray(payload.deployments) ? payload.deployments as Record<string, unknown>[] : [];
       const first = deployments[0] ?? {};
       const deploymentId =
