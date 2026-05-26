@@ -1438,6 +1438,24 @@ export async function provisionCoolifyStagingFromProduction(
 
   const candidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = [
     {
+      path: `/api/v1/services/${encodeURIComponent(appUuid)}/staging`,
+      body: normalizedPreferredDomain
+        ? { fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : undefined
+    },
+    {
+      path: `/api/v1/services/${encodeURIComponent(appUuid)}/clone`,
+      body: normalizedPreferredDomain
+        ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : { environment: "staging" }
+    },
+    {
+      path: `/api/v1/services/${encodeURIComponent(appUuid)}/duplicate`,
+      body: normalizedPreferredDomain
+        ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : { environment: "staging" }
+    },
+    {
       path: `/api/v1/applications/${encodeURIComponent(appUuid)}/staging`,
       body: normalizedPreferredDomain
         ? { fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
@@ -2224,6 +2242,7 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     // Look for an application in the staging environment
     const stagingApplications = ensureArray(stagingEnvObj.applications ?? []);
     let stagingApp = stagingApplications[0] as Record<string, unknown> | undefined;
+    let stagingService: Record<string, unknown> | undefined;
 
     // Some Coolify project payloads omit nested applications for environments.
     // Fall back to scanning the application inventory by environment ID/name.
@@ -2262,7 +2281,50 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
       }
     }
 
-    if (!stagingApp) {
+    // Service resources can expose staging targets as services without a nested applications entry.
+    if (!stagingApp && resourceKind === "service") {
+      const stagingServices = ensureArray(stagingEnvObj.services ?? []);
+      stagingService = stagingServices[0] as Record<string, unknown> | undefined;
+
+      if (!stagingService) {
+        try {
+          const servicesPayload = await coolifyFetch("/api/v1/services");
+          const services = ensureArray(servicesPayload);
+          const normalizedStagingEnvName = stagingEnvName.trim().toLowerCase();
+
+          stagingService = services.find((service) => {
+            const serviceEnvId = stringValue(service, ["environment_id", "environmentId", "environment_uuid"], "");
+            const serviceEnvName = stringValue(service, ["environment_name", "environment"], "").trim().toLowerCase();
+            const serviceProjectId = stringValue(service, ["project_uuid", "project_id", "project"], "");
+            const serviceDeletedAt = stringValue(service, ["deleted_at"], "");
+
+            const matchesEnvironment =
+              (stagingEnvId.length > 0 && serviceEnvId === stagingEnvId) ||
+              (normalizedStagingEnvName.length > 0 && serviceEnvName === normalizedStagingEnvName);
+
+            if (!matchesEnvironment) {
+              return false;
+            }
+
+            if (serviceDeletedAt.length > 0) {
+              return false;
+            }
+
+            if (projectIdCandidates.size === 0 || serviceProjectId.length === 0) {
+              return true;
+            }
+
+            return projectIdCandidates.has(serviceProjectId);
+          }) as Record<string, unknown> | undefined;
+        } catch {
+          // Keep reporting environment-only staging if list endpoint cannot be fetched.
+        }
+      }
+    }
+
+    const resolvedStagingTarget = stagingApp ?? stagingService;
+
+    if (!resolvedStagingTarget) {
       return {
         detected: true,
         resourceKind,
@@ -2274,10 +2336,11 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
       };
     }
 
-    const stagingAppUuid = stringValue(stagingApp, ["uuid", "id"], "");
-    const stagingAppName = stringValue(stagingApp, ["name"], "staging app");
-    const fqdn = stringValue(stagingApp, ["fqdn", "staging_fqdn", "urls"], "") || undefined;
-    const status = statusFromRaw(stagingApp.status ?? stagingApp.current_status);
+    const stagingAppUuid = stringValue(resolvedStagingTarget, ["uuid", "id"], "");
+    const defaultTargetName = resourceKind === "service" ? "staging service" : "staging app";
+    const stagingAppName = stringValue(resolvedStagingTarget, ["name"], defaultTargetName);
+    const fqdn = stringValue(resolvedStagingTarget, ["fqdn", "staging_fqdn", "urls"], "") || undefined;
+    const status = statusFromRaw(resolvedStagingTarget.status ?? resolvedStagingTarget.current_status);
 
     return {
       detected: true,

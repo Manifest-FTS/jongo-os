@@ -19,14 +19,13 @@ Command: `npm run smoke:staging-preflight -- waterfallkeepersofnc-org`
 - Readiness: `NOT READY`
 - Preflight label/tone: `Blocked` / `error`
 - Blockers:
-  - Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.
-  - Backup telemetry unavailable.
+  - Staging environment exists but no staging service target is attached yet.
+- Backup readiness: `ready`
 
 ## Suggested Actions Returned By API
 
-- Verify COOLIFY_API_TOKEN scope, COOLIFY_API_BASE_URL reachability, and any Coolify allowlist/edge restrictions; then re-run staging preflight.
-- Verify Coolify API token scope, endpoint reachability/allowlist policy, and service-database backup endpoint access.
+- Provision or attach a staging service in Coolify so sync and promote checks can target a concrete staging service.
 
 ## Operational Decision
 
-- Promote trigger-path smoke remains blocked for Waterfall Keepers until the above preflight blockers are cleared.
+- Promote trigger-path smoke remains blocked for Waterfall Keepers until a staging service target is attached in Coolify.
