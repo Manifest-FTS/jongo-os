@@ -105,11 +105,15 @@ function statusFromRaw(value: unknown): SiteOverview["status"] {
     return "degraded";
   }
 
+  if (normalized.includes("stopped") || normalized.includes("exited") || normalized.includes("sleep")) {
+    return "degraded";
+  }
+
   if (normalized.includes("failed") || normalized.includes("error") || normalized.includes("crash")) {
     return "error";
   }
 
-  // restarting / exited / stopped / unknown / empty raw status → unknown
+  // restarting / unknown / empty raw status → unknown
   return "unknown";
 }
 
@@ -1194,6 +1198,62 @@ function normalizeCoolifyDomains(input: string | string[]): string[] {
   return normalized;
 }
 
+function extractCoolifyDomainCandidates(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(value)) {
+    const values: string[] = [];
+    for (const entry of value) {
+      if (typeof entry === "string") {
+        values.push(entry);
+        continue;
+      }
+
+      if (typeof entry === "object" && entry !== null) {
+        const record = entry as Record<string, unknown>;
+        const urlCandidate = stringValue(record, ["url", "fqdn", "domain", "name"], "");
+        if (urlCandidate) {
+          values.push(urlCandidate);
+        }
+      }
+    }
+    return values;
+  }
+
+  return [];
+}
+
+function extractStagingDomainList(target: Record<string, unknown>): string[] {
+  const candidates = [
+    ...extractCoolifyDomainCandidates(target.fqdn),
+    ...extractCoolifyDomainCandidates(target.staging_fqdn),
+    ...extractCoolifyDomainCandidates(target.domain),
+    ...extractCoolifyDomainCandidates(target.domains),
+    ...extractCoolifyDomainCandidates(target.url),
+    ...extractCoolifyDomainCandidates(target.urls)
+  ];
+
+  return normalizeCoolifyDomains(candidates);
+}
+
+function buildStagingResourceName(sourceName: string): string {
+  const trimmed = sourceName.trim();
+  if (!trimmed) {
+    return "staging.service";
+  }
+
+  if (/^staging\./i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `staging.${trimmed}`;
+}
+
 function buildStagingDomainFromProductionUrl(productionRaw: string): string | undefined {
   const first = extractFirstHostLikeValue(productionRaw);
   if (!first) {
@@ -1648,7 +1708,7 @@ export async function provisionCoolifyStagingFromProduction(
     }
 
     const baseBody: Record<string, unknown> = {
-      name: `${sourceName}-staging`,
+      name: buildStagingResourceName(sourceName),
       project_uuid: resolvedProjectId,
       environment_name: stagingEnvironment.stagingEnvironmentName,
       environment_uuid: stagingEnvironment.stagingEnvironmentId,
@@ -2652,7 +2712,8 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     const stagingAppUuid = stringValue(resolvedStagingTarget, ["uuid", "id"], "");
     const defaultTargetName = resourceKind === "service" ? "staging service" : "staging app";
     const stagingAppName = stringValue(resolvedStagingTarget, ["name"], defaultTargetName);
-    const fqdn = stringValue(resolvedStagingTarget, ["fqdn", "staging_fqdn", "urls"], "") || undefined;
+    const stagingDomains = extractStagingDomainList(resolvedStagingTarget);
+    const fqdn = stagingDomains.join(",") || undefined;
     const status = statusFromRaw(resolvedStagingTarget.status ?? resolvedStagingTarget.current_status);
 
     return {

@@ -11,6 +11,7 @@ import {
   getCoolifyAppBackupInventory,
   destroyCoolifyApplication,
   getCoolifyAppStagingCapability,
+  triggerCoolifyDeploy,
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
@@ -141,6 +142,7 @@ export async function GET(_req: Request, { params }: Params) {
 
   const readyForSyncTesting = Boolean(
     stagingConfigured &&
+    stagingCapability?.status === "healthy" &&
     !backupReadiness.locked &&
     dryRunPlan?.target
   );
@@ -159,6 +161,9 @@ export async function GET(_req: Request, { params }: Params) {
   }
   if (site.stagingEnabled && stagingCapability?.detected && !stagingCapability?.applicationUuid) {
     blockers.push(`Staging environment exists but no staging ${stagingTargetLabel(stagingCapability?.resourceKind)} target is attached yet.`);
+  }
+  if (site.stagingEnabled && stagingCapability?.detected && stagingCapability?.applicationUuid && stagingCapability.status !== "healthy") {
+    blockers.push("Staging target is attached but not running/deployed in Coolify.");
   }
   if (backupReadiness.locked) {
     blockers.push(backupReadiness.reason ?? "Backup readiness is not satisfied.");
@@ -179,6 +184,9 @@ export async function GET(_req: Request, { params }: Params) {
   if (site.stagingEnabled && stagingCapability?.detected && !stagingCapability?.applicationUuid) {
     const targetLabel = stagingTargetLabel(stagingCapability?.resourceKind);
     suggestedActions.push(`Provision or attach a staging ${targetLabel} in Coolify so sync and promote checks can target a concrete staging ${targetLabel}.`);
+  }
+  if (site.stagingEnabled && stagingCapability?.detected && stagingCapability?.applicationUuid && stagingCapability.status !== "healthy") {
+    suggestedActions.push("Start/deploy the staging target in Coolify, then re-run staging preflight in Jongo.");
   }
   if (!appUuid) {
     suggestedActions.push("Link a Coolify Service UUID in app settings so staging detection and provisioning can run.");
@@ -317,6 +325,7 @@ export async function POST(req: Request, { params }: Params) {
     const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
     const currentStagingTargetResolved = Boolean(currentCapability.detected && currentCapability.applicationUuid);
     if (currentStagingTargetResolved) {
+      const currentStagingRunning = currentCapability.status === "healthy";
       await recordStagingAuditLog({
         organizationId: site.organizationId,
         actorId,
@@ -337,7 +346,13 @@ export async function POST(req: Request, { params }: Params) {
         stagingCreationAttempted: false,
         stagingCreationRequestAccepted: false,
         stagingTargetResolved: true,
-        message: `Staging ${targetLabel} is already detected in Coolify.`,
+        stagingRunning: currentStagingRunning,
+        actionHint: currentStagingRunning
+          ? null
+          : `Staging ${targetLabel} is attached but not running yet. Start/deploy it in Coolify, then refresh staging status in Jongo.`,
+        message: currentStagingRunning
+          ? `Staging ${targetLabel} is already detected in Coolify.`
+          : `Staging ${targetLabel} is detected, but it is not currently running/deployed in Coolify.`,
         capability: currentCapability
       });
     }
@@ -358,6 +373,26 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     const stagingTargetResolved = Boolean(capabilityAfterProvision.detected && capabilityAfterProvision.applicationUuid);
+
+    let stagingDeployTriggered = false;
+    if (
+      stagingTargetResolved &&
+      capabilityAfterProvision.resourceKind === "service" &&
+      capabilityAfterProvision.applicationUuid &&
+      capabilityAfterProvision.status !== "healthy"
+    ) {
+      try {
+        await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
+        stagingDeployTriggered = true;
+      } catch {
+        stagingDeployTriggered = false;
+      }
+
+      if (stagingDeployTriggered) {
+        await sleep(500);
+        capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId);
+      }
+    }
 
     let stagingDomainApplied = false;
     if (preferredStagingDomain && capabilityAfterProvision.applicationUuid) {
@@ -382,6 +417,7 @@ export async function POST(req: Request, { params }: Params) {
         provisioningReason: provisionResult.reason ?? null,
         preferredStagingDomain: preferredStagingDomain ?? null,
         stagingDomainApplied,
+        stagingDeployTriggered,
         capability: capabilityAfterProvision,
         provisioningMessage: provisionResult.message
       },
@@ -390,6 +426,7 @@ export async function POST(req: Request, { params }: Params) {
 
     const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
     const manualProvisionRequired = !stagingTargetResolved;
+    const stagingRunning = capabilityAfterProvision.status === "healthy";
     const environmentOnlyProvisioned = provisionResult.reason === "environment_created";
     const actionHint = manualProvisionRequired
       ? (provisionResult.ok
@@ -397,6 +434,8 @@ export async function POST(req: Request, { params }: Params) {
           ? `No staging resource was auto-cloned for this app on the current Coolify API path. Create or attach a staging ${targetLabel} target in Coolify, then refresh staging status in Jongo.`
           : `Attach or provision a staging ${targetLabel} target in Coolify for this app, then refresh staging status in Jongo.`)
           : "Create or attach a staging environment in Coolify for this app, then refresh staging status in Jongo.")
+      : !stagingRunning
+        ? `Staging ${targetLabel} is attached but not running yet. Start/deploy it in Coolify, then refresh staging status in Jongo.`
       : null;
     const enableMessage = manualProvisionRequired
       ? (provisionResult.ok
@@ -404,6 +443,8 @@ export async function POST(req: Request, { params }: Params) {
           ? `Staging environment namespace was created in Coolify, but no staging ${targetLabel} was cloned or attached.`
           : `Staging environment is ready in Coolify, but no staging ${targetLabel} target is attached yet.`)
           : "Staging is enabled in Jongo. Automatic provisioning is unavailable for this app, so complete staging creation in Coolify.")
+      : !stagingRunning
+        ? `Staging ${targetLabel} is detected, but it is not currently running/deployed in Coolify.`
       : (provisionResult.ok
           ? provisionResult.message
           : `Staging is enabled in Jongo and a staging ${targetLabel} target is detected in Coolify.`);
@@ -420,6 +461,8 @@ export async function POST(req: Request, { params }: Params) {
       actionHint,
       preferredStagingDomain,
       stagingDomainApplied,
+      stagingDeployTriggered,
+      stagingRunning,
       message: enableMessage,
       capability: capabilityAfterProvision
     });

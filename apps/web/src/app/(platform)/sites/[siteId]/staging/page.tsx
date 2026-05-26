@@ -256,6 +256,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
     : [null, null];
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
+  const stagingTargetRunning = stagingCapability?.status === "healthy";
   const stagingConfigured = Boolean(stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
   const backupReadiness = getBackupReadiness(backupInventory, appUuid);
   const prodToStagingPreflight = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
@@ -323,7 +324,9 @@ export default async function StagingPage({ params, searchParams }: Params) {
             <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600 }}>Staging Environment</h2>
             <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
               {stagingConfigured
-                ? "Staging is active. Validate changes here before promoting to production."
+                ? (stagingTargetRunning
+                  ? "Staging is active. Validate changes here before promoting to production."
+                  : "Staging target is attached but not running/deployed in Coolify yet.")
                 : stagingEnvironmentReady
                   ? "Staging environment exists, but no staging target is attached yet."
                   : "Staging is not configured for this site."}
@@ -335,6 +338,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
               <span className={`status-chip ${stagingTargetAttached ? "healthy" : "degraded"}`}>
                 {stagingTargetAttached ? "Target attached" : "Target missing"}
               </span>
+              {stagingTargetAttached ? (
+                <span className={`status-chip ${stagingTargetRunning ? "healthy" : "degraded"}`}>
+                  {stagingTargetRunning ? "Target running" : "Target not running"}
+                </span>
+              ) : null}
             </div>
           </div>
           <span className={`status-chip ${stagingConfigured ? "healthy" : "unknown"}`}>
