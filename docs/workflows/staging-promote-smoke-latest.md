@@ -20,29 +20,28 @@ npm run smoke:staging-promote
 
 ## Result Summary
 
-- Triggered: 0
+- Triggered: 1
 - Blocked: 0
-- Failed: 1
-- Promote trigger endpoint returned HTTP `502`
-- Promote runtime error: `Coolify deploy failed (403)`
+- Failed: 0
+- First promote endpoint returned HTTP `200`
+- Idempotency replay endpoint returned HTTP `200` with replay confirmation
+- Promote-attempt endpoint checks: 1/1 returned HTTP `200`
 
 ## Blocker Matrix
 
 ### `waterfallkeepersofnc-org`
 
 - Blockers:
-  - Promote trigger failed upstream: Coolify deploy authorization returned HTTP 403.
+  - none
 - Suggested actions:
-  - Validate Coolify API token deploy permission (`api.ability:deploy`) for the team/resource.
-  - Re-run strict promote smoke after token/permission update.
+  - Review deployment lifecycle in staging audit and confirm downstream deployment completion status.
 
 ## Next Core Actions
 
-1. Keep current staging target in place (`stagingConfigured=true` is already verified).
-2. Update Coolify token/permissions so promote deploy actions are authorized.
-3. Re-run strict smoke after each remediation change:
-   - `npm run ops:refresh-staging-remediation:strict`
-4. Run trigger-path success validation once deploy authorization 403 is cleared.
+1. Keep current staging target and token posture in place while promoting remaining blocked sites.
+2. Re-run strict smoke after each remediation change:
+  - `npm run ops:refresh-staging-remediation:strict`
+3. Capture deployment completion outcomes for the triggered attempt in staging audit artifacts.
 
 ## Related Artifacts
 

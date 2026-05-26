@@ -1,6 +1,6 @@
 # Staging Remediation Delta (Latest)
 
-Generated: 2026-05-26T13:07:22.875Z
+Generated: 2026-05-26T15:54:58.778Z
 Previous queue: docs/workflows/staging-remediation-queue-previous.md
 Current queue: docs/workflows/staging-remediation-queue-latest.md
 
@@ -20,53 +20,18 @@ Current queue: docs/workflows/staging-remediation-queue-latest.md
 
 - Apps added to queue: 0
 - Apps removed from queue: 0
-- Staging detection improved (no -> yes): 5
+- Staging detection improved (no -> yes): 0
 - Staging detection regressed (yes -> no): 0
-- Apps with blocker changes: 12
-
-### Staging Detection Improved
-
-- airbb-wordpress
-- fts-branding-guide
-- jongo-open-source
-- joyfeed-app
-- waterfallkeepersofnc-org
+- Apps with blocker changes: 3
 
 ### Blocker Changes
 
-- a3th9r
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: No staging environment/application is currently detected in Coolify.; Backups not configured.
-- airbb-wordpress
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: Staging environment exists but no staging application target is attached yet.
 - aptennis-org
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: No staging environment/application is currently detected in Coolify.
-- daniel-kane
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: No staging environment/application is currently detected in Coolify.; Backups not configured.
-- freebling-app
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: No staging environment/application is currently detected in Coolify.; Backups not configured.
-- fts-branding-guide
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: Staging environment exists but no staging application target is attached yet.
-- gimmepower-com
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: No staging environment/application is currently detected in Coolify.
-- jongo-open-source
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Staging environment exists but no staging application target is attached yet.; Backup telemetry unavailable.
-- joyfeed-app
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: (none)
-- millenion-fitness
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: No staging environment/application is currently detected in Coolify.; Backups not configured.
+  - previous: No staging environment/application is currently detected in Coolify.
+  - current: Staging is disabled in Jongo for this app.; No staging environment/application is currently detected in Coolify.
 - waterfallkeepersofnc-org
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: Staging environment exists but no staging service target is attached yet.
+  - previous: Staging environment exists but no staging service target is attached yet.
+  - current: (none)
 - wptest-manifest-fts-com
-  - previous: Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.; Backup telemetry unavailable.
-  - current: No staging environment/application is currently detected in Coolify.
+  - previous: No staging environment/application is currently detected in Coolify.
+  - current: Staging is disabled in Jongo for this app.; No staging environment/application is currently detected in Coolify.

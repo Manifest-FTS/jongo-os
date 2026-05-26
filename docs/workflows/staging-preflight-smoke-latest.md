@@ -27,4 +27,4 @@ Command: `npm run smoke:staging-preflight -- waterfallkeepersofnc-org`
 
 ## Operational Decision
 
-- Preflight gate is clear; remaining work has moved to promote-trigger execution authorization.
+- Preflight gate is clear and strict promote smoke now reaches trigger-path success with idempotency replay.

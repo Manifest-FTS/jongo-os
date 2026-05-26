@@ -28,13 +28,13 @@ Invoke-RestMethod -Headers $headers -Uri "http://localhost:3000/api/diagnostics/
 
 - Coolify API auth/reachability is currently healthy in local runtime.
 - Staging target is now detected for Waterfall (`stagingConfigured=true`).
-- Remaining failure moved to promote trigger execution: upstream Coolify deploy returns HTTP 403.
+- Strict promote smoke now passes trigger-path validation (HTTP 200 + idempotency replay + attempt lookup).
 
 ## Immediate Remediation Path
 
-1. Validate Coolify token deploy authorization (`api.ability:deploy`) for production service promote trigger paths.
-2. Re-run strict promote smoke and confirm trigger path returns HTTP 200 with `ok=true`.
-3. Capture updated promote smoke evidence once deploy authorization is fixed.
+1. Keep runtime token and deploy permissions stable as remediation expands to remaining sites.
+2. Continue strict smoke-driven remediation batch runs and monitor for regressions.
+3. Capture deployment completion outcomes in promote workflow artifacts.
 
 ## Related Artifacts
 
