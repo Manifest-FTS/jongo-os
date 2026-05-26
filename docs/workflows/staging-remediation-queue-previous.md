@@ -1,13 +1,13 @@
 # Staging Remediation Queue (Latest)
 
-Generated: 2026-05-26T01:42:49.409Z
+Generated: 2026-05-26T03:24:10.354Z
 Base URL: http://localhost:3000
 
 ## Summary
 
 - Linked apps scanned: 13
 - Missing staging detection: 13
-- Backup blocker present: 0
+- Backup blocker present: 13
 - Preferred trigger-path smoke target: waterfallkeepersofnc-org
 
 ## Trigger-Path Policy
@@ -36,5 +36,5 @@ Base URL: http://localhost:3000
 ## Immediate Ops Steps
 
 1. For rows with `Staging detected = no`, create or attach staging in Coolify using the listed service/project identifiers.
-2. For rows with `Backups not configured`, add at least one automated backup schedule in Coolify.
+2. For rows with backup-related blockers, resolve telemetry access or backup schedule/readiness gaps in Coolify.
 3. Re-run strict smoke and regenerate this queue after each remediation batch.

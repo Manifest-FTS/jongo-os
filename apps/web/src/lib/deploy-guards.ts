@@ -60,7 +60,7 @@ export function getBackupReadiness(inventory: AppBackupInventory | null, appUuid
       code: "backup_telemetry_unavailable",
       locked: true,
       reason: "Backup telemetry unavailable.",
-      nextStep: "Verify Coolify API permissions for database backup endpoints and confirm service-database backup lookup support.",
+      nextStep: "Verify Coolify API token scope, endpoint reachability/allowlist policy, and service-database backup endpoint access.",
       lastSuccessfulBackupAt: null,
       hoursSinceSuccess: null,
       warnAfterHours: BACKUP_WARN_AFTER_HOURS,

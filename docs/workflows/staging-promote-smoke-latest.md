@@ -31,19 +31,20 @@ npm run smoke:staging-promote
 ### `waterfallkeepersofnc-org`
 
 - Blockers:
-  - No staging environment/application is currently detected in Coolify.
+  - Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.
   - Backup telemetry unavailable.
 - Suggested actions:
-  - Staging is enabled but not detected yet. Verify Coolify staging support for this app and create/provision staging manually if auto-provision is unsupported.
-  - Verify Coolify API permissions for database backup endpoints and confirm service-database backup lookup support.
+  - Verify COOLIFY_API_TOKEN scope, COOLIFY_API_BASE_URL reachability, and any Coolify allowlist/edge restrictions; then re-run staging preflight.
+  - Verify Coolify API token scope, endpoint reachability/allowlist policy, and service-database backup endpoint access.
 
 ## Next Core Actions
 
-1. In Coolify, create or attach staging for `waterfallkeepersofnc-org`.
-2. Validate API permission scope for backup telemetry endpoints; if confirmed available and still empty, then configure automated backup schedules.
-3. Re-run strict smoke after each remediation change:
+1. Fix Coolify API access first (token scope/base URL/allowlist) and re-run preflight.
+2. After API access is restored, verify whether staging truly exists for `waterfallkeepersofnc-org`; provision only if still missing.
+3. If backup telemetry remains empty after access is restored, validate database backup schedule configuration.
+4. Re-run strict smoke after each remediation change:
    - `npm run ops:refresh-staging-remediation:strict`
-4. Only run trigger-path success validation when preflight blockers clear.
+5. Only run trigger-path success validation when preflight blockers clear.
 
 ## Related Artifacts
 

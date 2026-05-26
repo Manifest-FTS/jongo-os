@@ -121,6 +121,13 @@ export async function GET(_req: Request, { params }: Params) {
   const backupReadiness = getBackupReadiness(backupInventory, appUuid || undefined);
   const productionToStaging = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
   const stagingToProduction = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
+  const coolifyTelemetryUnavailable = Boolean(
+    appUuid && (
+      stagingCapability?.note === "fetch_error" ||
+      backupInventory?.note === "fetch_error" ||
+      backupInventory?.note === "backup_telemetry_unavailable"
+    )
+  );
 
   const dryRunPlan =
     stagingConfigured && appUuid && stagingCapability
@@ -140,7 +147,9 @@ export async function GET(_req: Request, { params }: Params) {
   if (!appUuid) {
     blockers.push("Coolify service UUID is not linked.");
   }
-  if (!stagingCapability?.detected) {
+  if (site.stagingEnabled && appUuid && coolifyTelemetryUnavailable) {
+    blockers.push("Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.");
+  } else if (!stagingCapability?.detected) {
     blockers.push("No staging environment/application is currently detected in Coolify.");
   }
   if (site.stagingEnabled && stagingCapability?.detected && !stagingCapability?.applicationUuid) {
@@ -157,7 +166,9 @@ export async function GET(_req: Request, { params }: Params) {
   if (!site.stagingEnabled) {
     suggestedActions.push("Enable staging in app settings. Jongo will attempt staging provisioning in Coolify automatically.");
   }
-  if (site.stagingEnabled && appUuid && !stagingCapability?.detected) {
+  if (site.stagingEnabled && appUuid && coolifyTelemetryUnavailable) {
+    suggestedActions.push("Verify COOLIFY_API_TOKEN scope, COOLIFY_API_BASE_URL reachability, and any Coolify allowlist/edge restrictions; then re-run staging preflight.");
+  } else if (site.stagingEnabled && appUuid && !stagingCapability?.detected) {
     suggestedActions.push("Staging is enabled but not detected yet. Verify Coolify staging support for this app and create/provision staging manually if auto-provision is unsupported.");
   }
   if (site.stagingEnabled && stagingCapability?.detected && !stagingCapability?.applicationUuid) {
