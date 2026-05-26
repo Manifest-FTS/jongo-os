@@ -50,7 +50,7 @@ function parseQueueTable(markdown) {
 }
 
 function containsBackupBlocker(blockers) {
-  return blockers.toLowerCase().includes("backups not configured");
+  return /backup/i.test(String(blockers || ""));
 }
 
 function run() {
@@ -82,7 +82,7 @@ function run() {
   lines.push("");
   lines.push(`- Total apps in queue: ${rows.length}`);
   lines.push(`- Apps missing staging detection: ${stagingMissing.length}`);
-  lines.push(`- Apps missing backups: ${backupMissing.length}`);
+  lines.push(`- Apps with backup blockers: ${backupMissing.length}`);
   lines.push(`- Preferred trigger-path smoke target: ${preferredTriggerSiteId}`);
   lines.push("");
   lines.push("## Trigger-Path Policy");
@@ -98,7 +98,7 @@ function run() {
   }
 
   lines.push("");
-  lines.push("## Batch B: Backup Schedule Configuration in Coolify");
+  lines.push("## Batch B: Backup Readiness/Telemetry in Coolify");
   lines.push("");
 
   for (const row of backupMissing) {

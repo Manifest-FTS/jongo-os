@@ -82,6 +82,10 @@ function splitSemicolonList(value) {
     .filter(Boolean);
 }
 
+function hasBackupBlocker(blockers) {
+  return /backup/i.test(String(blockers || ""));
+}
+
 function main() {
   const previousPath = path.resolve(process.cwd(), previousFile);
   const currentPath = path.resolve(process.cwd(), currentFile);
@@ -141,7 +145,7 @@ function main() {
   }
 
   const currentMissingStaging = currRows.filter((row) => !row.stagingDetected).length;
-  const currentBackupBlocked = currRows.filter((row) => row.blockers.toLowerCase().includes("backups not configured")).length;
+  const currentBackupBlocked = currRows.filter((row) => hasBackupBlocker(row.blockers)).length;
   const generatedAt = new Date().toISOString();
 
   const lines = [];

@@ -62,6 +62,10 @@ function formatList(items) {
   return items.join("; ");
 }
 
+function hasBackupBlocker(blockers) {
+  return /backup/i.test(String(blockers || ""));
+}
+
 async function run() {
   const siteIds = await discoverSites();
   if (siteIds.length === 0) {
@@ -105,7 +109,7 @@ async function run() {
 
   const generatedAt = new Date().toISOString();
   const missingStaging = rows.filter((row) => !row.stagingDetected).length;
-  const backupBlocked = rows.filter((row) => row.blockers.toLowerCase().includes("backups not configured")).length;
+  const backupBlocked = rows.filter((row) => hasBackupBlocker(row.blockers)).length;
 
   const lines = [];
   lines.push("# Staging Remediation Queue (Latest)");
@@ -140,7 +144,7 @@ async function run() {
   lines.push("## Immediate Ops Steps");
   lines.push("");
   lines.push("1. For rows with `Staging detected = no`, create or attach staging in Coolify using the listed service/project identifiers.");
-  lines.push("2. For rows with `Backups not configured`, add at least one automated backup schedule in Coolify.");
+  lines.push("2. For rows with backup-related blockers, resolve telemetry access or backup schedule/readiness gaps in Coolify.");
   lines.push("3. Re-run strict smoke and regenerate this queue after each remediation batch.");
 
   const content = lines.join("\n");

@@ -52,7 +52,7 @@ function parseQueueRows(markdown) {
 }
 
 function hasBackupBlocker(row) {
-  return row.blockers.toLowerCase().includes("backups not configured");
+  return /backup/i.test(String(row.blockers || ""));
 }
 
 function prioritizePreferredTarget(rows) {
@@ -143,7 +143,7 @@ function main() {
   lines.push("## Manual Steps");
   lines.push("");
   lines.push("1. In Coolify, create/attach staging for each app in the recommended batch.");
-  lines.push("2. If the app also has backup blocker, configure at least one automated backup schedule.");
+  lines.push("2. If the app also has backup blockers, resolve telemetry access and/or backup schedule/readiness gaps.");
   lines.push("3. Run `npm run ops:refresh-staging-remediation:strict` and verify delta/smoke artifacts.");
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });

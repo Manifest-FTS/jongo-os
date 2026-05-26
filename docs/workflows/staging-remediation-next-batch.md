@@ -1,6 +1,6 @@
 # Staging Remediation Next Batch
 
-Generated: 2026-05-26T01:42:51.267Z
+Generated: 2026-05-26T03:24:12.116Z
 Source queue: docs/workflows/staging-remediation-queue-latest.md
 Batch size: 3
 
@@ -8,8 +8,8 @@ Batch size: 3
 
 - Missing staging detection: 13
 - Application targets missing staging: 0
-- Missing staging only (no backup blocker): 13
-- Missing staging + backup blocker: 0
+- Missing staging only (no backup blocker): 0
+- Missing staging + backup blocker: 13
 - Preferred trigger-path smoke target: waterfallkeepersofnc-org
 
 ## Trigger-Path Policy
@@ -19,7 +19,7 @@ Batch size: 3
 
 ## Recommended Next Manual Batch
 
-Selection rule: prioritize apps blocked only on staging detection to unlock trigger-path testing fastest.
+Selection rule: all remaining apps include backup blockers, so this batch minimizes count only.
 Preferred trigger target included in this batch: yes
 
 - waterfallkeepersofnc-org (unknown; service=oqcc7xm49tb98otptx9ymtx7, project=cx7ldowl163oc24u2tqsbzuq, envs=-)
@@ -29,5 +29,5 @@ Preferred trigger target included in this batch: yes
 ## Manual Steps
 
 1. In Coolify, create/attach staging for each app in the recommended batch.
-2. If the app also has backup blocker, configure at least one automated backup schedule.
+2. If the app also has backup blockers, resolve telemetry access and/or backup schedule/readiness gaps.
 3. Run `npm run ops:refresh-staging-remediation:strict` and verify delta/smoke artifacts.
