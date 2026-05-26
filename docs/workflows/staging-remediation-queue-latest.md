@@ -1,6 +1,6 @@
 # Staging Remediation Queue (Latest)
 
-Generated: 2026-05-25T23:53:03.815Z
+Generated: 2026-05-26T01:13:46.237Z
 Base URL: http://localhost:3000
 
 ## Summary
@@ -8,6 +8,12 @@ Base URL: http://localhost:3000
 - Linked apps scanned: 13
 - Missing staging detection: 13
 - Backup blocker present: 13
+- Preferred trigger-path smoke target: waterfallkeepersofnc-org
+
+## Trigger-Path Policy
+
+- Use waterfallkeepersofnc-org for promote trigger-path smoke during this operational pass.
+- Do not use joyfeed-app as a default trigger target. It is diagnostic-only unless explicitly overridden.
 
 ## Queue
 

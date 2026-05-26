@@ -6,6 +6,7 @@ import path from "node:path";
 const previousFile = process.env.PREVIOUS_QUEUE_FILE || "docs/workflows/staging-remediation-queue-previous.md";
 const currentFile = process.env.CURRENT_QUEUE_FILE || "docs/workflows/staging-remediation-queue-latest.md";
 const outputFile = process.env.OUTPUT_FILE || "docs/workflows/staging-remediation-delta-latest.md";
+const preferredTriggerSiteId = (process.env.REMEDIATION_PREFERRED_TRIGGER_SITE || "waterfallkeepersofnc-org").trim();
 
 function parseQueueTable(markdown) {
   const lines = markdown.split(/\r?\n/);
@@ -155,6 +156,12 @@ function main() {
   lines.push(`- Current apps in queue: ${currRows.length}`);
   lines.push(`- Current missing staging detection: ${currentMissingStaging}`);
   lines.push(`- Current backup blocker count: ${currentBackupBlocked}`);
+  lines.push(`- Preferred trigger-path smoke target: ${preferredTriggerSiteId}`);
+  lines.push("");
+  lines.push("## Trigger-Path Policy");
+  lines.push("");
+  lines.push(`- Promote trigger-path checks remain anchored to ${preferredTriggerSiteId} during this operational pass.`);
+  lines.push("- joyfeed-app remains a non-default diagnostic target and should not drive routine strict smoke runs.");
   lines.push("");
   lines.push("## Delta Summary");
   lines.push("");

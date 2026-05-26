@@ -5,6 +5,7 @@ import path from "node:path";
 
 const inputFile = process.env.INPUT_FILE || "docs/workflows/staging-remediation-queue-latest.md";
 const outputFile = process.env.OUTPUT_FILE || "docs/workflows/staging-remediation-tracker-latest.md";
+const preferredTriggerSiteId = (process.env.REMEDIATION_PREFERRED_TRIGGER_SITE || "waterfallkeepersofnc-org").trim();
 
 function parseQueueTable(markdown) {
   const lines = markdown.split(/\r?\n/);
@@ -82,6 +83,12 @@ function run() {
   lines.push(`- Total apps in queue: ${rows.length}`);
   lines.push(`- Apps missing staging detection: ${stagingMissing.length}`);
   lines.push(`- Apps missing backups: ${backupMissing.length}`);
+  lines.push(`- Preferred trigger-path smoke target: ${preferredTriggerSiteId}`);
+  lines.push("");
+  lines.push("## Trigger-Path Policy");
+  lines.push("");
+  lines.push(`- Keep promote trigger validation focused on ${preferredTriggerSiteId} for this pass.`);
+  lines.push("- Treat joyfeed-app as non-default for trigger-path smoke unless explicitly approved.");
   lines.push("");
   lines.push("## Batch A: Staging Creation/Attach in Coolify");
   lines.push("");

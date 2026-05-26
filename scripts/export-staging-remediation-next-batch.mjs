@@ -7,6 +7,7 @@ const queueFile = process.env.QUEUE_FILE || "docs/workflows/staging-remediation-
 const outputFile = process.env.OUTPUT_FILE || "docs/workflows/staging-remediation-next-batch.md";
 const batchSizeRaw = process.env.BATCH_SIZE || "3";
 const batchSize = Number.isFinite(Number(batchSizeRaw)) ? Math.max(1, Number(batchSizeRaw)) : 3;
+const preferredTriggerSiteId = (process.env.REMEDIATION_PREFERRED_TRIGGER_SITE || "waterfallkeepersofnc-org").trim();
 
 function parseQueueRows(markdown) {
   const lines = markdown.split(/\r?\n/);
@@ -54,6 +55,22 @@ function hasBackupBlocker(row) {
   return row.blockers.toLowerCase().includes("backups not configured");
 }
 
+function prioritizePreferredTarget(rows) {
+  if (!preferredTriggerSiteId || rows.length === 0) {
+    return rows;
+  }
+
+  const preferredIndex = rows.findIndex((row) => row.app === preferredTriggerSiteId);
+  if (preferredIndex <= 0) {
+    return rows;
+  }
+
+  const reordered = [...rows];
+  const [preferred] = reordered.splice(preferredIndex, 1);
+  reordered.unshift(preferred);
+  return reordered;
+}
+
 function main() {
   const queuePath = path.resolve(process.cwd(), queueFile);
   const outputPath = path.resolve(process.cwd(), outputFile);
@@ -76,7 +93,7 @@ function main() {
       : stagingOnly.length > 0
         ? stagingOnly
         : stagingMissing;
-  const recommended = recommendedPool.slice(0, batchSize);
+  const recommended = prioritizePreferredTarget(recommendedPool).slice(0, batchSize);
   const generatedAt = new Date().toISOString();
 
   const lines = [];
@@ -92,6 +109,12 @@ function main() {
   lines.push(`- Application targets missing staging: ${applicationTargets.length}`);
   lines.push(`- Missing staging only (no backup blocker): ${stagingOnly.length}`);
   lines.push(`- Missing staging + backup blocker: ${stagingPlusBackup.length}`);
+  lines.push(`- Preferred trigger-path smoke target: ${preferredTriggerSiteId}`);
+  lines.push("");
+  lines.push("## Trigger-Path Policy");
+  lines.push("");
+  lines.push(`- Keep trigger-path promote validation on ${preferredTriggerSiteId} for this pass.`);
+  lines.push("- joyfeed-app remains non-default for trigger-path smoke and should only be used as an explicit override.");
   lines.push("");
   lines.push("## Recommended Next Manual Batch");
   lines.push("");
@@ -108,6 +131,8 @@ function main() {
     } else {
       lines.push("Selection rule: all remaining apps include backup blockers, so this batch minimizes count only.");
     }
+    const preferredIncluded = recommended.some((row) => row.app === preferredTriggerSiteId);
+    lines.push(`Preferred trigger target included in this batch: ${preferredIncluded ? "yes" : "no"}`);
     lines.push("");
     for (const row of recommended) {
       lines.push(`- ${row.app} (${row.resourceKind}; service=${row.serviceUuid || "-"}, project=${row.projectId || "-"}, envs=${row.projectEnvironments || "-"})`);

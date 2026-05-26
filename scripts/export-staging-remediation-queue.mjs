@@ -6,6 +6,7 @@ import path from "node:path";
 const baseUrl = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
 const outputFile = process.env.OUTPUT_FILE || "docs/workflows/staging-remediation-queue-latest.md";
+const preferredTriggerSiteId = (process.env.REMEDIATION_PREFERRED_TRIGGER_SITE || "waterfallkeepersofnc-org").trim();
 
 if (!token) {
   console.error("Missing OWNERSHIP_SYNC_TOKEN.");
@@ -117,6 +118,12 @@ async function run() {
   lines.push(`- Linked apps scanned: ${rows.length}`);
   lines.push(`- Missing staging detection: ${missingStaging}`);
   lines.push(`- Backup blocker present: ${backupBlocked}`);
+  lines.push(`- Preferred trigger-path smoke target: ${preferredTriggerSiteId}`);
+  lines.push("");
+  lines.push("## Trigger-Path Policy");
+  lines.push("");
+  lines.push(`- Use ${preferredTriggerSiteId} for promote trigger-path smoke during this operational pass.`);
+  lines.push("- Do not use joyfeed-app as a default trigger target. It is diagnostic-only unless explicitly overridden.");
   lines.push("");
   lines.push("## Queue");
   lines.push("");

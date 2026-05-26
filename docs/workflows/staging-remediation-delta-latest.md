@@ -1,6 +1,6 @@
 # Staging Remediation Delta (Latest)
 
-Generated: 2026-05-25T23:53:05.129Z
+Generated: 2026-05-26T01:13:47.365Z
 Previous queue: docs/workflows/staging-remediation-queue-previous.md
 Current queue: docs/workflows/staging-remediation-queue-latest.md
 
@@ -9,6 +9,12 @@ Current queue: docs/workflows/staging-remediation-queue-latest.md
 - Current apps in queue: 13
 - Current missing staging detection: 13
 - Current backup blocker count: 13
+- Preferred trigger-path smoke target: waterfallkeepersofnc-org
+
+## Trigger-Path Policy
+
+- Promote trigger-path checks remain anchored to waterfallkeepersofnc-org during this operational pass.
+- joyfeed-app remains a non-default diagnostic target and should not drive routine strict smoke runs.
 
 ## Delta Summary
 

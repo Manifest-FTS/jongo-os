@@ -1,6 +1,6 @@
 # Staging Remediation Tracker (Latest)
 
-Generated: 2026-05-25T23:53:04.436Z
+Generated: 2026-05-26T01:13:46.799Z
 Source queue: docs/workflows/staging-remediation-queue-latest.md
 
 ## Scope Summary
@@ -8,6 +8,12 @@ Source queue: docs/workflows/staging-remediation-queue-latest.md
 - Total apps in queue: 13
 - Apps missing staging detection: 13
 - Apps missing backups: 13
+- Preferred trigger-path smoke target: waterfallkeepersofnc-org
+
+## Trigger-Path Policy
+
+- Keep promote trigger validation focused on waterfallkeepersofnc-org for this pass.
+- Treat joyfeed-app as non-default for trigger-path smoke unless explicitly approved.
 
 ## Batch A: Staging Creation/Attach in Coolify
 
