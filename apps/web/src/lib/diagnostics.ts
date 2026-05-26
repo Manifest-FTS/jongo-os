@@ -3,7 +3,7 @@ type DataFlowSource = "db" | "coolify" | "hybrid" | "mock";
 type CoolifyEndpointCall = {
   at: string;
   path: string;
-  method: "GET";
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   statusCode?: number;
   success: boolean;
   responseCount?: number;
@@ -214,6 +214,7 @@ function trimDirectoryStagingCacheKeysIfNeeded() {
 
 export function recordCoolifyEndpointCall(input: {
   path: string;
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   statusCode?: number;
   success: boolean;
   responseCount?: number;
@@ -223,7 +224,7 @@ export function recordCoolifyEndpointCall(input: {
   state.coolifyEndpointCalls.push({
     at: new Date().toISOString(),
     path: input.path,
-    method: "GET",
+    method: input.method ?? "GET",
     statusCode: input.statusCode,
     success: input.success,
     responseCount: input.responseCount,
