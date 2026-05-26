@@ -1,6 +1,6 @@
 # Staging Preflight Smoke Latest Run
 
-Date: 2026-05-25
+Date: 2026-05-26
 Mode: local smoke against `http://localhost:3000` with ops token auth
 Command: `npm run smoke:staging-preflight -- waterfallkeepersofnc-org`
 
@@ -20,12 +20,12 @@ Command: `npm run smoke:staging-preflight -- waterfallkeepersofnc-org`
 - Preflight label/tone: `Blocked` / `error`
 - Blockers:
   - No staging environment/application is currently detected in Coolify.
-  - Backups not configured.
+  - Backup telemetry unavailable.
 
 ## Suggested Actions Returned By API
 
 - Staging is enabled but not detected yet. Verify Coolify staging support for this app and create/provision staging manually if auto-provision is unsupported.
-- Configure at least one automated backup schedule in Coolify.
+- Verify Coolify API permissions for database backup endpoints and confirm service-database backup lookup support.
 
 ## Operational Decision
 

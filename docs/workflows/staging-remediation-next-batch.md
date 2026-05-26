@@ -1,6 +1,6 @@
 # Staging Remediation Next Batch
 
-Generated: 2026-05-26T01:31:16.470Z
+Generated: 2026-05-26T01:42:51.267Z
 Source queue: docs/workflows/staging-remediation-queue-latest.md
 Batch size: 3
 
@@ -8,8 +8,8 @@ Batch size: 3
 
 - Missing staging detection: 13
 - Application targets missing staging: 0
-- Missing staging only (no backup blocker): 0
-- Missing staging + backup blocker: 13
+- Missing staging only (no backup blocker): 13
+- Missing staging + backup blocker: 0
 - Preferred trigger-path smoke target: waterfallkeepersofnc-org
 
 ## Trigger-Path Policy
@@ -19,12 +19,12 @@ Batch size: 3
 
 ## Recommended Next Manual Batch
 
-Selection rule: all remaining apps include backup blockers, so this batch minimizes count only.
+Selection rule: prioritize apps blocked only on staging detection to unlock trigger-path testing fastest.
 Preferred trigger target included in this batch: yes
 
 - waterfallkeepersofnc-org (unknown; service=oqcc7xm49tb98otptx9ymtx7, project=cx7ldowl163oc24u2tqsbzuq, envs=-)
+- fts-branding-guide (unknown; service=qs8dtldmyaubydle9z34vqiq, project=ip1hwipx8sn24rd0dni67lb0, envs=-)
 - jongo-open-source (unknown; service=dt0v391xre5rgtp50062tunm, project=ip1hwipx8sn24rd0dni67lb0, envs=-)
-- millenion-fitness (unknown; service=c2mqv1xjksrkg2wn6eglw3u6, project=sndclvrx7rwe3zii9sm1fdt2, envs=-)
 
 ## Manual Steps
 

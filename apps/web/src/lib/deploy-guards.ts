@@ -55,6 +55,19 @@ export function getBackupReadiness(inventory: AppBackupInventory | null, appUuid
     };
   }
 
+  if (inventory.note === "backup_telemetry_unavailable" || inventory.note === "fetch_error") {
+    return {
+      code: "backup_telemetry_unavailable",
+      locked: true,
+      reason: "Backup telemetry unavailable.",
+      nextStep: "Verify Coolify API permissions for database backup endpoints and confirm service-database backup lookup support.",
+      lastSuccessfulBackupAt: null,
+      hoursSinceSuccess: null,
+      warnAfterHours: BACKUP_WARN_AFTER_HOURS,
+      staleAfterHours: BACKUP_STALE_AFTER_HOURS
+    };
+  }
+
   if (!inventory.configured) {
     return {
       code: "backups_not_configured",

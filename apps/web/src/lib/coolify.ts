@@ -1905,6 +1905,8 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
     const schedules: BackupScheduleRecord[] = [];
     const recentExecutions: BackupExecutionRecord[] = [];
     const databaseCoverageByResourceId = new Map<string, DatabaseBackupCoverageRecord>();
+    let backupFetchAttempts = 0;
+    let backupFetchFailures = 0;
 
     // Step 2: Try to get databases in the same project/environment
     const rootResource = appRaw ?? serviceRaw;
@@ -2026,19 +2028,23 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
       const dbName = stringValue(db, ["name", "database_name"], dbId);
       if (!dbId) continue;
 
+      backupFetchAttempts += 1;
       try {
         await collectDatabaseBackupTelemetry(dbId, dbName, schedules, recentExecutions);
       } catch {
         // Backup endpoint unavailable for this database
+        backupFetchFailures += 1;
       }
     }
 
     // Step 4: If this resource is a database site, query it directly.
     if (databases.length === 0 && applicationLookupFailed) {
+      backupFetchAttempts += 1;
       try {
         await collectDatabaseBackupTelemetry(appUuid, appUuid, schedules, recentExecutions);
       } catch {
         // Best effort
+        backupFetchFailures += 1;
       }
     }
 
@@ -2086,9 +2092,16 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
     const configured = normalizedSchedules.some((s) => s.enabled);
     const missingSchedules = databaseCoverage.filter((item) => !item.hasSchedule);
     const hasAnyCoverage = databaseCoverage.length > 0;
+    const backupTelemetryEndpointUnavailable =
+      backupFetchAttempts > 0 &&
+      backupFetchFailures >= backupFetchAttempts &&
+      normalizedSchedules.length === 0 &&
+      normalizedExecutions.length === 0;
 
     let note: string | undefined;
-    if (normalizedSchedules.length === 0 && normalizedExecutions.length === 0) {
+    if (backupTelemetryEndpointUnavailable) {
+      note = "backup_telemetry_unavailable";
+    } else if (normalizedSchedules.length === 0 && normalizedExecutions.length === 0) {
       note = databases.length === 0 ? "no_databases_in_environment" : "backups_not_configured";
     } else if (hasAnyCoverage && missingSchedules.length === databaseCoverage.length) {
       note = "backups_not_configured";
