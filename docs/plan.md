@@ -697,6 +697,7 @@ Current production finding (must resolve next):
 
 - Production Coolify API requests are failing authentication (`Unauthenticated` / non-reachable in connection checks).
 - Production database currently has no Site rows, so when Coolify inventory fails auth, Apps can resolve to zero.
+- Service-backed staging resources may expose generated Coolify URLs and reject domain override writes through current routes. Jongo must show the actual Coolify-reported URL when available and treat preferred staging domains as fallback guidance until upstream support is verified.
 
 Immediate next actions:
 

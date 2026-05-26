@@ -274,11 +274,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const preferredStagingDomain = appUuid
     ? await deriveCoolifyStagingDomainFromProduction(appUuid)
     : undefined;
-  const stagingDomains = parseDomainValues(stagingCapability?.fqdn);
-  const effectiveStagingDomains = stagingDomains.length > 0
-    ? stagingDomains
-    : parseDomainValues(preferredStagingDomain);
-  const stagingDomainsInput = effectiveStagingDomains.join(", ");
+  const reportedStagingDomains = parseDomainValues(stagingCapability?.fqdn);
+  const stagingDomainsInput = (reportedStagingDomains.length > 0
+    ? reportedStagingDomains
+    : parseDomainValues(preferredStagingDomain)
+  ).join(", ");
   const stagingAuditLogs: StagingAuditEntry[] = workspace.organizationId
     ? await db.auditLog.findMany({
         where: {
@@ -487,11 +487,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
                 {stagingCapability.applicationName && (
                   <p style={{ margin: 0 }}>Application: <code>{stagingCapability.applicationName}</code></p>
                 )}
-                {effectiveStagingDomains.length > 0 && (
+                {reportedStagingDomains.length > 0 && (
                   <div style={{ margin: 0 }}>
-                    <p style={{ margin: 0 }}>Domains:</p>
+                    <p style={{ margin: 0 }}>Reported by Coolify:</p>
                     <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1rem", display: "grid", gap: "0.15rem" }}>
-                      {effectiveStagingDomains.map((domain) => (
+                      {reportedStagingDomains.map((domain) => (
                         <li key={domain} style={{ fontSize: "0.86rem" }}>
                           <a href={`https://${domain}`} target="_blank" rel="noopener noreferrer" className="action-link">
                             {domain}
@@ -501,6 +501,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
                     </ul>
                   </div>
                 )}
+                {preferredStagingDomain && preferredStagingDomain !== reportedStagingDomains[0] ? (
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                    Preferred staging domain: <code>{preferredStagingDomain}</code>
+                  </p>
+                ) : null}
                 {stagingCapability.status && (
                   <p style={{ margin: 0 }}>
                     Status: <span className={`status-chip ${stagingCapability.status}`}>{stagingCapability.status}</span>
