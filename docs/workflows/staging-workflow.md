@@ -15,6 +15,9 @@
 - if Coolify supports domain updates, sync staging domains from Jongo as comma-separated values
 - track progress and status updates
 - mark result with timestamp, actor, and outcome
+- for service-based WordPress fallback targets, run `npm run ops:remediate-staging-content-sync -- <site-slug...>` for dry-run eligibility checks and `npm run ops:remediate-staging-content-sync:apply -- <site-slug...>` to execute automated prod->staging DB/files clone over SSH
+- if capability telemetry is temporarily unavailable (`fetch_error`), use override inputs to force a controlled run: `npm run ops:remediate-staging-content-sync -- --site-id <site-slug> --prod-service-uuid <prod-service-uuid> --staging-service-uuid <staging-service-uuid> --staging-url <staging-url>`
+- refresh flow integration: `npm run ops:refresh-staging-remediation:with-content-sync` (dry-run) or `npm run ops:refresh-staging-remediation:with-content-sync-apply` (execute sync) and optionally set `REMEDIATION_SYNC_SITE_IDS=slug1,slug2`
 
 ## Workflow 2: Staging to Production Deploy
 

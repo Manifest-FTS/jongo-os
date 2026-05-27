@@ -6,6 +6,8 @@ import { spawn } from "node:child_process";
 
 const withSmoke = process.argv.includes("--with-smoke");
 const strictSmoke = process.argv.includes("--strict-smoke");
+const withContentSync = process.argv.includes("--with-content-sync");
+const withContentSyncApply = process.argv.includes("--with-content-sync-apply");
 const latestQueue = "docs/workflows/staging-remediation-queue-latest.md";
 const previousQueue = "docs/workflows/staging-remediation-queue-previous.md";
 
@@ -68,6 +70,23 @@ async function run() {
     ["run", "ops:export-staging-remediation-next-batch"]
   );
 
+  if (withContentSync || withContentSyncApply) {
+    const syncSiteIds = process.env.REMEDIATION_SYNC_SITE_IDS || process.env.REMEDIATION_SMOKE_SITE_IDS || "wptest-manifest-fts-com";
+    const command = withContentSyncApply
+      ? "ops:remediate-staging-content-sync:apply"
+      : "ops:remediate-staging-content-sync";
+    await runStep(
+      withContentSyncApply
+        ? "Run staging content sync remediation (apply)"
+        : "Run staging content sync remediation (dry-run)",
+      "npm",
+      ["run", command],
+      {
+        STAGING_SITE_IDS: syncSiteIds
+      }
+    );
+  }
+
   if (withSmoke) {
     const smokeSiteIds = process.env.REMEDIATION_SMOKE_SITE_IDS || "waterfallkeepersofnc-org";
     await runStep(
@@ -87,6 +106,9 @@ async function run() {
   console.log("- docs/workflows/staging-remediation-tracker-latest.md");
   console.log("- docs/workflows/staging-remediation-delta-latest.md");
   console.log("- docs/workflows/staging-remediation-next-batch.md");
+  if (withContentSync || withContentSyncApply) {
+    console.log("- staging content sync remediation step executed");
+  }
 }
 
 run().catch((error) => {
