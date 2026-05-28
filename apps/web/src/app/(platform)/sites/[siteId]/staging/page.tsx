@@ -244,7 +244,6 @@ function promoteOutcomeLabel(actionType: StagingPromoteOutcome["actionType"]): s
 
 function getActualSyncTestReadiness(params: {
   stagingConfigured: boolean;
-  siteType?: string;
   preflightTone: "healthy" | "degraded" | "error" | "unknown";
   preflightDetail: string;
   hasDryRunTarget: boolean;
@@ -278,10 +277,6 @@ function getActualSyncTestReadiness(params: {
 
   if (params.filesBehavior && params.filesBehavior !== "rsync-overwrite") {
     blockers.push(`Unexpected files behavior: ${params.filesBehavior}.`);
-  }
-
-  if (params.siteType === "wordpress") {
-    blockers.push("WordPress file/media backup and restore coverage is out of scope in this operational pass.");
   }
 
   if (blockers.length > 0) {
@@ -414,7 +409,6 @@ export default async function StagingPage({ params, searchParams }: Params) {
       : null;
   const actualSyncTestReadiness = getActualSyncTestReadiness({
     stagingConfigured,
-    siteType: workspace?.siteType,
     preflightTone: prodToStagingPreflight.tone,
     preflightDetail: prodToStagingPreflight.detail,
     hasDryRunTarget: Boolean(dryRunPlan?.target),
