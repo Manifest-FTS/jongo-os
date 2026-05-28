@@ -170,6 +170,17 @@ function runSshScript(script) {
     stdio: ["pipe", "pipe", "pipe"]
   });
 
+  const spawnError = result.error;
+  if (spawnError) {
+    const details = `ssh spawn failed: ${spawnError.message}`;
+    return {
+      ok: false,
+      status: result.status ?? 1,
+      stdout: result.stdout || "",
+      stderr: `${result.stderr || ""}${result.stderr ? "\n" : ""}${details}`
+    };
+  }
+
   return {
     ok: result.status === 0,
     status: result.status ?? 1,

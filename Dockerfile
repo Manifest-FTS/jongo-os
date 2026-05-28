@@ -14,6 +14,8 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+RUN apk add --no-cache openssh-client
+
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/apps/web/package.json /app/apps/web/package.json
 COPY --from=build /app/scripts ./scripts
