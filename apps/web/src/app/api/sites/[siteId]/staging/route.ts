@@ -90,6 +90,7 @@ async function runAutoContentSync(params: {
     const response = await fetch(automationUrl, {
       method: "POST",
       signal: controller.signal,
+      redirect: "manual",
       headers: {
         "content-type": "application/json",
         ...(token ? { authorization: `Bearer ${token}` } : {})
@@ -107,6 +108,16 @@ async function runAutoContentSync(params: {
     const responseText = await response.text();
     const responseTail = tailLines(responseText, 10);
     clearTimeout(timeout);
+
+    if (response.status >= 300 && response.status < 400) {
+      return {
+        attempted: true,
+        ok: false,
+        reason: "command_failed",
+        message: `Automatic content sync request redirected (${response.status}).`,
+        responseTail: response.headers.get("location") ?? responseTail
+      };
+    }
 
     if (!response.ok) {
       return {

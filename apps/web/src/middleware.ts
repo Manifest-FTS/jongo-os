@@ -53,6 +53,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  if (pathname === "/api/ops/staging-sync-automation" && hasOpsToken) {
+    return NextResponse.next();
+  }
+
   // Operational staging endpoints support machine-token auth for scripted checks.
   if (hasOpsToken) {
     if (pathname === "/api/sites/staging-targets") {

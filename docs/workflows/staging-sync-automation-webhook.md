@@ -13,12 +13,14 @@ Integration point:
 - API route: `POST /api/sites/[siteId]/staging` in `apps/web/src/app/api/sites/[siteId]/staging/route.ts`
 - Trigger condition: provisioning reason is `service_created`
 - Invocation method: outbound HTTP POST to `STAGING_SYNC_AUTOMATION_URL`
+- First-party automation endpoint available: `POST /api/ops/staging-sync-automation`
 
 ## Required Environment Variables
 
 - `STAGING_SYNC_AUTOMATION_URL`
   - Absolute URL for automation endpoint.
   - If missing, route returns `autoContentSync.reason = "missing_config"` and does not fail the staging enable request.
+  - Recommended local value: `http://localhost:3000/api/ops/staging-sync-automation`
 - `OWNERSHIP_SYNC_TOKEN` (recommended)
   - Added as `Authorization: Bearer <token>` when present.
   - Reuse the same shared token policy as ops scripts.
@@ -64,6 +66,15 @@ Automation endpoint may return any body format. Route behavior:
 - HTTP non-2xx => `autoContentSync.ok = false`, `reason = "command_failed"`
 - Timeout (>45s) => `autoContentSync.ok = false`, `reason = "timed_out"`
 - Missing IDs/URL => `autoContentSync.ok = false`, `reason = "missing_identifiers"`
+
+First-party endpoint behavior (`/api/ops/staging-sync-automation`):
+
+- Auth: bearer token must match `OWNERSHIP_SYNC_TOKEN`
+- Mode: only `apply` is supported
+- Executes: `scripts/remediate-staging-content-sync.mjs --apply` with explicit UUID and URL overrides
+- Success: HTTP `200` with `ok: true`
+- Failure: HTTP `502` with command tails
+- Timeout: HTTP `504` after 10 minutes
 
 The route captures the last response lines into `autoContentSync.responseTail` for diagnostics when available.
 
