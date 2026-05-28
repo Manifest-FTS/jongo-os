@@ -603,6 +603,40 @@ export async function POST(req: Request, { params }: Params) {
             ? await applyCoolifyServiceDomains(capabilityAfterExistingCheck.applicationUuid, preferredStagingDomain)
             : await applyCoolifyApplicationDomain(capabilityAfterExistingCheck.applicationUuid, preferredStagingDomain))
         : false;
+
+      const requestBaseUrl = (() => {
+        try {
+          return new URL(req.url).origin;
+        } catch {
+          return process.env.APP_BASE_URL || "";
+        }
+      })();
+      const derivedStagingUrl = (
+        capabilityAfterExistingCheck.stagingUrl ||
+        capabilityAfterExistingCheck.fqdn?.split(",")[0]?.trim() ||
+        preferredStagingDomain ||
+        ""
+      ).trim();
+      const freshProbe = derivedStagingUrl
+        ? await probeStagingContent(derivedStagingUrl)
+        : { checked: false, freshInstallDetected: false };
+      const shouldSyncExistingFreshInstall = freshProbe.freshInstallDetected;
+
+      const autoContentSync = shouldSyncExistingFreshInstall
+        ? await runAutoContentSync({
+            siteId: site.slug || site.id,
+            productionServiceUuid: appUuid,
+            stagingServiceUuid: capabilityAfterExistingCheck.applicationUuid || "",
+            stagingUrl: derivedStagingUrl,
+            requestBaseUrl
+          })
+        : {
+            attempted: false,
+            ok: false,
+            reason: "not_required",
+            message: "Automatic content sync not required."
+          };
+
       await recordStagingAuditLog({
         organizationId: site.organizationId,
         actorId,
@@ -614,6 +648,8 @@ export async function POST(req: Request, { params }: Params) {
           preferredStagingDomain: preferredStagingDomain ?? null,
           stagingDomainApplied,
           stagingDeployTriggered,
+          freshInstallDetected: freshProbe.freshInstallDetected,
+          autoContentSync,
           capability: capabilityAfterExistingCheck
         },
         req
@@ -630,12 +666,19 @@ export async function POST(req: Request, { params }: Params) {
         stagingDomainApplied,
         stagingDeployTriggered,
         stagingRunning: currentStagingRunning,
-        actionHint: currentStagingRunning
+        actionHint: shouldSyncExistingFreshInstall
+          ? (autoContentSync.ok
+            ? "Existing staging target looked like a fresh install and was synced automatically. Refresh in a moment."
+            : "Existing staging target looked like a fresh install, but automatic content sync did not complete. Retry content sync from Operations.")
+          : currentStagingRunning
           ? null
           : `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`,
-        message: currentStagingRunning
+        message: shouldSyncExistingFreshInstall && autoContentSync.ok
+          ? "Staging was detected and content sync completed automatically."
+          : currentStagingRunning
           ? `Staging ${targetLabel} is already detected.`
           : `Staging ${targetLabel} is detected and still coming online. Refresh in a moment.`,
+        autoContentSync,
         capability: capabilityAfterExistingCheck
       });
     }
@@ -690,7 +733,7 @@ export async function POST(req: Request, { params }: Params) {
     const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
     const manualProvisionRequired = !stagingTargetResolved;
     const stagingRunning = capabilityAfterProvision.status === "healthy";
-    const requiresContentSync = provisionResult.reason === "service_created";
+    const createdNewService = provisionResult.reason === "service_created";
     const environmentOnlyProvisioned = provisionResult.reason === "environment_created";
     const requestBaseUrl = (() => {
       try {
@@ -705,6 +748,17 @@ export async function POST(req: Request, { params }: Params) {
       preferredStagingDomain ||
       ""
     ).trim();
+
+    let freshInstallDetected = false;
+    if (stagingTargetResolved && derivedStagingUrl) {
+      const freshProbe = await probeStagingContent(derivedStagingUrl);
+      freshInstallDetected = freshProbe.freshInstallDetected;
+    }
+
+    const requiresContentSync = createdNewService || freshInstallDetected;
+    const contentSyncReason = createdNewService
+      ? "service_created"
+      : (freshInstallDetected ? "fresh_install_detected" : "not_required");
 
     const autoContentSync = requiresContentSync
       ? await runAutoContentSync({
@@ -737,6 +791,7 @@ export async function POST(req: Request, { params }: Params) {
         stagingDeployTriggered,
         capability: capabilityAfterProvision,
         provisioningMessage: provisionResult.message,
+        contentSyncReason,
         autoContentSync
       },
       req
@@ -750,8 +805,8 @@ export async function POST(req: Request, { params }: Params) {
           : "Check the Staging tab in Coolify and refresh in a few minutes.")
       : requiresContentSync
         ? (autoContentSync.ok
-          ? "Staging target was created and content sync completed automatically. Refresh in a moment."
-          : "Staging target was created from service settings only. Automatic content sync did not complete. Retry content sync from Operations.")
+          ? "Staging content sync completed automatically. Refresh in a moment."
+          : "Staging appears as a fresh install. Automatic content sync did not complete. Retry content sync from Operations.")
       : !stagingRunning
         ? `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`
       : null;
@@ -762,7 +817,7 @@ export async function POST(req: Request, { params }: Params) {
           : "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes.")
           : "Staging is enabled in Jongo, but automatic provisioning is unavailable for this app. Check the Staging tab in Coolify.")
       : (requiresContentSync && autoContentSync.ok)
-        ? "Staging target was created in Coolify and content sync completed automatically."
+        ? "Staging content sync completed automatically."
       : !stagingRunning
         ? `Staging ${targetLabel} is detected and still coming online.`
       : (provisionResult.ok
