@@ -27,8 +27,114 @@ type StagingContentProbe = {
   note?: string;
 };
 
+type AutoContentSyncResult = {
+  attempted: boolean;
+  ok: boolean;
+  reason:
+    | "completed"
+    | "missing_config"
+    | "missing_identifiers"
+    | "command_failed"
+    | "timed_out"
+    | "not_required";
+  message: string;
+  responseTail?: string;
+};
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function tailLines(value: string, count = 12): string {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .slice(-count)
+    .join("\n");
+}
+
+async function runAutoContentSync(params: {
+  siteId: string;
+  productionServiceUuid: string;
+  stagingServiceUuid: string;
+  stagingUrl: string;
+  requestBaseUrl?: string;
+}): Promise<AutoContentSyncResult> {
+  const automationUrl = (process.env.STAGING_SYNC_AUTOMATION_URL || "").trim();
+  const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
+
+  if (!automationUrl) {
+    return {
+      attempted: false,
+      ok: false,
+      reason: "missing_config",
+      message: "Automatic content sync is not configured (missing STAGING_SYNC_AUTOMATION_URL)."
+    };
+  }
+
+  if (!params.productionServiceUuid || !params.stagingServiceUuid || !params.stagingUrl) {
+    return {
+      attempted: false,
+      ok: false,
+      reason: "missing_identifiers",
+      message: "Automatic content sync was skipped due to missing staging/prod identifiers."
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000);
+  const baseUrl = params.requestBaseUrl?.trim() || process.env.APP_BASE_URL || "http://localhost:3000";
+
+  try {
+    const response = await fetch(automationUrl, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        siteId: params.siteId,
+        productionServiceUuid: params.productionServiceUuid,
+        stagingServiceUuid: params.stagingServiceUuid,
+        stagingUrl: params.stagingUrl,
+        appBaseUrl: baseUrl,
+        mode: "apply"
+      })
+    });
+
+    const responseText = await response.text();
+    const responseTail = tailLines(responseText, 10);
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return {
+        attempted: true,
+        ok: false,
+        reason: "command_failed",
+        message: `Automatic content sync request failed (${response.status}).`,
+        responseTail
+      };
+    }
+
+    return {
+      attempted: true,
+      ok: true,
+      reason: "completed",
+      message: "Automatic content sync completed.",
+      responseTail
+    };
+  } catch (error) {
+    clearTimeout(timeout);
+    const timedOut = error instanceof Error && error.name === "AbortError";
+    return {
+      attempted: true,
+      ok: false,
+      reason: timedOut ? "timed_out" : "command_failed",
+      message: timedOut ? "Automatic content sync timed out." : "Automatic content sync failed."
+    };
+  }
 }
 
 function hasOpsToken(req: Request): boolean {
@@ -570,6 +676,40 @@ export async function POST(req: Request, { params }: Params) {
           );
     }
 
+    const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
+    const manualProvisionRequired = !stagingTargetResolved;
+    const stagingRunning = capabilityAfterProvision.status === "healthy";
+    const requiresContentSync = provisionResult.reason === "service_created";
+    const environmentOnlyProvisioned = provisionResult.reason === "environment_created";
+    const requestBaseUrl = (() => {
+      try {
+        return new URL(req.url).origin;
+      } catch {
+        return process.env.APP_BASE_URL || "";
+      }
+    })();
+    const derivedStagingUrl = (
+      capabilityAfterProvision.stagingUrl ||
+      capabilityAfterProvision.fqdn?.split(",")[0]?.trim() ||
+      preferredStagingDomain ||
+      ""
+    ).trim();
+
+    const autoContentSync = requiresContentSync
+      ? await runAutoContentSync({
+          siteId: site.slug || site.id,
+          productionServiceUuid: appUuid,
+          stagingServiceUuid: capabilityAfterProvision.applicationUuid || "",
+          stagingUrl: derivedStagingUrl,
+          requestBaseUrl
+        })
+      : {
+          attempted: false,
+          ok: false,
+          reason: "not_required",
+          message: "Automatic content sync not required."
+        };
+
     await recordStagingAuditLog({
       organizationId: site.organizationId,
       actorId,
@@ -585,16 +725,12 @@ export async function POST(req: Request, { params }: Params) {
         stagingDomainApplied,
         stagingDeployTriggered,
         capability: capabilityAfterProvision,
-        provisioningMessage: provisionResult.message
+        provisioningMessage: provisionResult.message,
+        autoContentSync
       },
       req
     });
 
-    const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
-    const manualProvisionRequired = !stagingTargetResolved;
-    const stagingRunning = capabilityAfterProvision.status === "healthy";
-    const requiresContentSync = provisionResult.reason === "service_created";
-    const environmentOnlyProvisioned = provisionResult.reason === "environment_created";
     const actionHint = manualProvisionRequired
       ? (provisionResult.ok
         ? (environmentOnlyProvisioned
@@ -602,7 +738,9 @@ export async function POST(req: Request, { params }: Params) {
           : "Check the Staging tab in Coolify and refresh in a few minutes.")
           : "Check the Staging tab in Coolify and refresh in a few minutes.")
       : requiresContentSync
-        ? "Staging target was created from service settings only. Run a content sync or clone workflow before using it as production-like staging."
+        ? (autoContentSync.ok
+          ? "Staging target was created and content sync completed automatically. Refresh in a moment."
+          : "Staging target was created from service settings only. Automatic content sync did not complete. Retry content sync from Operations.")
       : !stagingRunning
         ? `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`
       : null;
@@ -612,6 +750,8 @@ export async function POST(req: Request, { params }: Params) {
           ? "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes."
           : "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes.")
           : "Staging is enabled in Jongo, but automatic provisioning is unavailable for this app. Check the Staging tab in Coolify.")
+      : (requiresContentSync && autoContentSync.ok)
+        ? "Staging target was created in Coolify and content sync completed automatically."
       : !stagingRunning
         ? `Staging ${targetLabel} is detected and still coming online.`
       : (provisionResult.ok
@@ -632,6 +772,7 @@ export async function POST(req: Request, { params }: Params) {
       stagingDomainApplied,
       stagingDeployTriggered,
       stagingRunning,
+      autoContentSync,
       message: enableMessage,
       capability: capabilityAfterProvision
     });
