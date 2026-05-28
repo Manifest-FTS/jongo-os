@@ -87,7 +87,7 @@ export default async function SiteSettingsPage({ params }: Params) {
           <div>
             <h3 className="card-title" style={{ margin: 0 }}>Staging Environment</h3>
             <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-              Turn on a staging copy of your production site. Jongo attempts automatic provisioning, and will guide manual Coolify setup when auto-provision is unavailable.
+              Turn on staging for this site. Check the Staging tab in Coolify and give it a few minutes to provision.
             </p>
             <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", marginTop: "0.55rem", flexWrap: "wrap" }}>
               <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>

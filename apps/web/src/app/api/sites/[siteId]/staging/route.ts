@@ -18,6 +18,15 @@ import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 
 type Params = { params: Promise<{ siteId: string }> };
 
+type StagingContentProbe = {
+  checked: boolean;
+  freshInstallDetected: boolean;
+  checkedUrl?: string;
+  finalUrl?: string;
+  statusCode?: number;
+  note?: string;
+};
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -49,6 +58,84 @@ function buildSiteIdentityWhere(siteId: string) {
 
 function stagingTargetLabel(resourceKind?: string): "application" | "service" {
   return resourceKind === "service" ? "service" : "application";
+}
+
+function isLikelyWordPressInstallUrl(value?: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  return /\/wp-admin\/install\.php(?:[?#]|$)/i.test(value);
+}
+
+function normalizeProbeBaseUrl(url?: string): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(withProtocol).toString();
+  } catch {
+    return null;
+  }
+}
+
+async function probeStagingContent(stagingUrl?: string): Promise<StagingContentProbe> {
+  const normalizedBaseUrl = normalizeProbeBaseUrl(stagingUrl);
+  if (!normalizedBaseUrl) {
+    return {
+      checked: false,
+      freshInstallDetected: false,
+      note: "staging_url_unavailable"
+    };
+  }
+
+  const candidates = [
+    normalizedBaseUrl,
+    new URL("/wp-admin/install.php", normalizedBaseUrl).toString()
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, {
+        method: "GET",
+        redirect: "follow",
+        cache: "no-store",
+        headers: {
+          "user-agent": "jongo-staging-content-probe/1.0"
+        }
+      });
+
+      const finalUrl = response.url;
+      const freshInstallDetected =
+        isLikelyWordPressInstallUrl(finalUrl) ||
+        (response.status === 200 && isLikelyWordPressInstallUrl(candidate));
+
+      return {
+        checked: true,
+        freshInstallDetected,
+        checkedUrl: candidate,
+        finalUrl,
+        statusCode: response.status,
+        note: freshInstallDetected ? "wordpress_install_screen_detected" : "ok"
+      };
+    } catch {
+      // Continue to fallback probe candidate.
+    }
+  }
+
+  return {
+    checked: false,
+    freshInstallDetected: false,
+    checkedUrl: normalizedBaseUrl,
+    note: "probe_failed"
+  };
 }
 
 async function recordStagingAuditLog(params: {
@@ -139,12 +226,55 @@ export async function GET(_req: Request, { params }: Params) {
     stagingConfigured && appUuid && stagingCapability
       ? await buildStagingSyncDryRunPlan(appUuid, site.name ?? site.slug ?? site.id, stagingCapability)
       : null;
+  const stagingContentProbe = await probeStagingContent(stagingCapability?.stagingUrl);
+
+  const actualSyncChecks = [
+    "Staging is configured and target is attached.",
+    "Production-to-staging preflight is healthy.",
+    "Dry-run plan resolves target, database behavior, and files behavior.",
+    "Current pass scope allows real file+DB production sync testing for this resource type."
+  ];
+
+  const actualSyncBlockers: string[] = [];
+  if (!stagingConfigured) {
+    actualSyncBlockers.push("Staging is not fully configured.");
+  }
+  if (stagingCapability?.status !== "healthy") {
+    actualSyncBlockers.push("Staging target is not healthy yet.");
+  }
+  if (productionToStaging.tone !== "healthy") {
+    actualSyncBlockers.push(`Preflight is not healthy: ${productionToStaging.detail}`);
+  }
+  if (!dryRunPlan?.target) {
+    actualSyncBlockers.push("Dry-run plan does not resolve a staging target.");
+  }
+  if (dryRunPlan?.databaseBehavior && dryRunPlan.databaseBehavior !== "snapshot-then-overwrite") {
+    actualSyncBlockers.push(`Unexpected database behavior: ${dryRunPlan.databaseBehavior}.`);
+  }
+  if (dryRunPlan?.filesBehavior && dryRunPlan.filesBehavior !== "rsync-overwrite") {
+    actualSyncBlockers.push(`Unexpected files behavior: ${dryRunPlan.filesBehavior}.`);
+  }
+  if (stagingContentProbe.freshInstallDetected) {
+    actualSyncBlockers.push("Staging content still appears to be a fresh WordPress install (install.php detected). Run a production-to-staging content sync before live sync testing.");
+  }
+  const actualSyncReady = actualSyncBlockers.length === 0;
+  const actualSyncTestReadiness = {
+    ready: actualSyncReady,
+    tone: (actualSyncReady ? "healthy" : "error") as "healthy" | "error",
+    label: actualSyncReady ? "Ready" : "Not ready",
+    summary: actualSyncReady
+      ? "Prerequisites are satisfied for a controlled production file+DB sync test."
+      : "Do not run live production file+DB sync testing yet.",
+    blockers: actualSyncBlockers,
+    checks: actualSyncChecks
+  };
 
   const readyForSyncTesting = Boolean(
     stagingConfigured &&
     stagingCapability?.status === "healthy" &&
     !backupReadiness.locked &&
-    dryRunPlan?.target
+    dryRunPlan?.target &&
+    actualSyncReady
   );
 
   const blockers: string[] = [];
@@ -213,11 +343,13 @@ export async function GET(_req: Request, { params }: Params) {
     blockers,
     suggestedActions,
     backupReadiness,
+    actualSyncTestReadiness,
     preflight: {
       productionToStaging,
       stagingToProduction
     },
     stagingCapability,
+    stagingContentProbe,
     dryRunPlan
   });
 }
@@ -318,19 +450,41 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({
         enabled: true,
         stagedDetected: false,
-        message: "Staging enabled in Jongo. Link a Coolify Service UUID to provision or detect staging."
+        message: "Staging enabled in Jongo. Link a service UUID to provision or detect staging."
       });
     }
 
     const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
     const currentStagingTargetResolved = Boolean(currentCapability.detected && currentCapability.applicationUuid);
     if (currentStagingTargetResolved) {
-      const currentStagingRunning = currentCapability.status === "healthy";
+      let capabilityAfterExistingCheck = currentCapability;
+      let currentStagingRunning = capabilityAfterExistingCheck.status === "healthy";
+      let stagingDeployTriggered = false;
+
+      if (
+        !currentStagingRunning &&
+        capabilityAfterExistingCheck.resourceKind === "service" &&
+        capabilityAfterExistingCheck.applicationUuid
+      ) {
+        try {
+          await triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid, "staging");
+          stagingDeployTriggered = true;
+        } catch {
+          stagingDeployTriggered = false;
+        }
+
+        if (stagingDeployTriggered) {
+          await sleep(500);
+          capabilityAfterExistingCheck = await getCoolifyAppStagingCapability(appUuid, projectId);
+          currentStagingRunning = capabilityAfterExistingCheck.status === "healthy";
+        }
+      }
+
       const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
-      const stagingDomainApplied = preferredStagingDomain && currentCapability.applicationUuid
-        ? (currentCapability.resourceKind === "service"
-            ? await applyCoolifyServiceDomains(currentCapability.applicationUuid, preferredStagingDomain)
-            : await applyCoolifyApplicationDomain(currentCapability.applicationUuid, preferredStagingDomain))
+      const stagingDomainApplied = preferredStagingDomain && capabilityAfterExistingCheck.applicationUuid
+        ? (capabilityAfterExistingCheck.resourceKind === "service"
+            ? await applyCoolifyServiceDomains(capabilityAfterExistingCheck.applicationUuid, preferredStagingDomain)
+            : await applyCoolifyApplicationDomain(capabilityAfterExistingCheck.applicationUuid, preferredStagingDomain))
         : false;
       await recordStagingAuditLog({
         organizationId: site.organizationId,
@@ -342,12 +496,13 @@ export async function POST(req: Request, { params }: Params) {
           stagedDetected: true,
           preferredStagingDomain: preferredStagingDomain ?? null,
           stagingDomainApplied,
-          capability: currentCapability
+          stagingDeployTriggered,
+          capability: capabilityAfterExistingCheck
         },
         req
       });
 
-      const targetLabel = stagingTargetLabel(currentCapability?.resourceKind);
+      const targetLabel = stagingTargetLabel(capabilityAfterExistingCheck?.resourceKind);
       return NextResponse.json({
         enabled: true,
         stagedDetected: true,
@@ -356,14 +511,15 @@ export async function POST(req: Request, { params }: Params) {
         stagingTargetResolved: true,
         preferredStagingDomain,
         stagingDomainApplied,
+        stagingDeployTriggered,
         stagingRunning: currentStagingRunning,
         actionHint: currentStagingRunning
           ? null
-          : `Staging ${targetLabel} is attached but not running yet. Start/deploy it in Coolify, then refresh staging status in Jongo.`,
+          : `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`,
         message: currentStagingRunning
-          ? `Staging ${targetLabel} is already detected in Coolify.`
-          : `Staging ${targetLabel} is detected, but it is not currently running/deployed in Coolify.`,
-        capability: currentCapability
+          ? `Staging ${targetLabel} is already detected.`
+          : `Staging ${targetLabel} is detected and still coming online. Refresh in a moment.`,
+        capability: capabilityAfterExistingCheck
       });
     }
 
@@ -442,25 +598,25 @@ export async function POST(req: Request, { params }: Params) {
     const actionHint = manualProvisionRequired
       ? (provisionResult.ok
         ? (environmentOnlyProvisioned
-          ? `No staging resource was auto-cloned for this app on the current Coolify API path. Create or attach a staging ${targetLabel} target in Coolify, then refresh staging status in Jongo.`
-          : `Attach or provision a staging ${targetLabel} target in Coolify for this app, then refresh staging status in Jongo.`)
-          : "Create or attach a staging environment in Coolify for this app, then refresh staging status in Jongo.")
+          ? "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes."
+          : "Check the Staging tab in Coolify and refresh in a few minutes.")
+          : "Check the Staging tab in Coolify and refresh in a few minutes.")
       : requiresContentSync
-        ? "Staging target was created from service settings only. Perform explicit database/files sync or clone workflow in Coolify before using it as a production-like staging copy."
+        ? "Staging target was created from service settings only. Run a content sync or clone workflow before using it as production-like staging."
       : !stagingRunning
-        ? `Staging ${targetLabel} is attached but not running yet. Start/deploy it in Coolify, then refresh staging status in Jongo.`
+        ? `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`
       : null;
     const enableMessage = manualProvisionRequired
       ? (provisionResult.ok
         ? (environmentOnlyProvisioned
-          ? `Staging environment namespace was created in Coolify, but no staging ${targetLabel} was cloned or attached.`
-          : `Staging environment is ready in Coolify, but no staging ${targetLabel} target is attached yet.`)
-          : "Staging is enabled in Jongo. Automatic provisioning is unavailable for this app, so complete staging creation in Coolify.")
+          ? "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes."
+          : "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes.")
+          : "Staging is enabled in Jongo, but automatic provisioning is unavailable for this app. Check the Staging tab in Coolify.")
       : !stagingRunning
-        ? `Staging ${targetLabel} is detected, but it is not currently running/deployed in Coolify.`
+        ? `Staging ${targetLabel} is detected and still coming online.`
       : (provisionResult.ok
           ? provisionResult.message
-          : `Staging is enabled in Jongo and a staging ${targetLabel} target is detected in Coolify.`);
+          : `Staging is enabled in Jongo and a staging ${targetLabel} target is detected.`);
 
     return NextResponse.json({
       enabled: true,
@@ -543,7 +699,7 @@ export async function POST(req: Request, { params }: Params) {
     stagedDetected: Boolean(capability?.detected),
     destroyed,
     actionHint: !destroyed && Boolean(body.burnExisting)
-      ? "Jongo disabled staging, but automatic cleanup failed. Remove staging resources manually in Coolify before re-enabling destructive cleanup."
+      ? "Jongo disabled staging, but automatic cleanup failed. Remove staging resources manually in the infrastructure panel before re-enabling destructive cleanup."
       : null,
     message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
   });
@@ -607,7 +763,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const capability = await getCoolifyAppStagingCapability(appUuid, projectId);
   if (!capability.detected || !capability.applicationUuid) {
     return NextResponse.json({
-      error: "Staging application is not detected yet. Enable staging and verify Coolify staging app exists first."
+      error: "Staging application is not detected yet. Enable staging and verify the staging resource exists first."
     }, { status: 409 });
   }
 
@@ -634,8 +790,8 @@ export async function PATCH(req: Request, { params }: Params) {
       stagingApplicationUuid: capability.applicationUuid,
       updated,
       message: updated
-        ? "Staging domains updated in Coolify."
-        : "Unable to update staging domains through the current Coolify API routes."
+        ? "Staging domains updated."
+        : "Unable to update staging domains through the current API routes."
     },
     req
   });
@@ -645,7 +801,7 @@ export async function PATCH(req: Request, { params }: Params) {
       ok: false,
       stagingApplicationUuid: capability.applicationUuid,
       requestedDomains,
-      message: "Unable to update staging domains through the current Coolify API routes."
+      message: "Unable to update staging domains through the current API routes."
     }, { status: 502 });
   }
 
@@ -653,6 +809,6 @@ export async function PATCH(req: Request, { params }: Params) {
     ok: true,
     stagingApplicationUuid: capability.applicationUuid,
     requestedDomains,
-    message: "Staging domains updated in Coolify."
+    message: "Staging domains updated."
   });
 }

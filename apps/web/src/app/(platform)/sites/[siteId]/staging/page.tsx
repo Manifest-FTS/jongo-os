@@ -27,6 +27,13 @@ type StagingAuditEntry = {
   details: unknown;
 };
 
+type StagingAuditActor = {
+  id: string;
+  fullName?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+};
+
 type StagingPromoteOutcome = {
   actionType: "staging_promote_blocked" | "staging_promote_triggered" | "staging_promote_in_progress" | "staging_promote_succeeded" | "staging_promote_failed";
   promoteAttemptId?: string;
@@ -46,6 +53,16 @@ type StagingAuditHistoryItem = {
   message: string;
   domains: string[];
   preferredStagingDomain?: string;
+  actor?: StagingAuditActor;
+};
+
+type ActualSyncTestReadiness = {
+  ready: boolean;
+  tone: "healthy" | "degraded" | "error" | "unknown";
+  label: string;
+  summary: string;
+  blockers: string[];
+  checks: string[];
 };
 
 function formatAgo(iso: string): string {
@@ -225,6 +242,69 @@ function promoteOutcomeLabel(actionType: StagingPromoteOutcome["actionType"]): s
   return "Promotion triggered";
 }
 
+function getActualSyncTestReadiness(params: {
+  stagingConfigured: boolean;
+  siteType?: string;
+  preflightTone: "healthy" | "degraded" | "error" | "unknown";
+  preflightDetail: string;
+  hasDryRunTarget: boolean;
+  databaseBehavior?: string;
+  filesBehavior?: string;
+}): ActualSyncTestReadiness {
+  const checks = [
+    "Staging environment is configured and target is attached.",
+    "Production-to-staging preflight is healthy.",
+    "Dry-run plan reports target, database, and files behaviors.",
+    "Operational pass scope allows real production file+DB sync testing."
+  ];
+
+  const blockers: string[] = [];
+
+  if (!params.stagingConfigured) {
+    blockers.push("Staging is not fully configured.");
+  }
+
+  if (params.preflightTone !== "healthy") {
+    blockers.push(`Preflight is not healthy: ${params.preflightDetail}`);
+  }
+
+  if (!params.hasDryRunTarget) {
+    blockers.push("Dry-run plan has no staging target.");
+  }
+
+  if (params.databaseBehavior && params.databaseBehavior !== "snapshot-then-overwrite") {
+    blockers.push(`Unexpected database behavior: ${params.databaseBehavior}.`);
+  }
+
+  if (params.filesBehavior && params.filesBehavior !== "rsync-overwrite") {
+    blockers.push(`Unexpected files behavior: ${params.filesBehavior}.`);
+  }
+
+  if (params.siteType === "wordpress") {
+    blockers.push("WordPress file/media backup and restore coverage is out of scope in this operational pass.");
+  }
+
+  if (blockers.length > 0) {
+    return {
+      ready: false,
+      tone: "error",
+      label: "Not ready",
+      summary: "Do not run live production file+DB sync testing yet.",
+      blockers,
+      checks
+    };
+  }
+
+  return {
+    ready: true,
+    tone: "healthy",
+    label: "Ready",
+    summary: "Prerequisites are satisfied for a controlled production file+DB sync test.",
+    blockers: [],
+    checks
+  };
+}
+
 export default async function StagingPage({ params, searchParams }: Params) {
   const { siteId } = await params;
   const resolvedSearchParams = (await searchParams) ?? {};
@@ -274,12 +354,9 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const preferredStagingDomain = appUuid
     ? await deriveCoolifyStagingDomainFromProduction(appUuid)
     : undefined;
-  const reportedStagingDomains = parseDomainValues(stagingCapability?.fqdn);
-  const stagingDomainsInput = (reportedStagingDomains.length > 0
-    ? reportedStagingDomains
-    : parseDomainValues(preferredStagingDomain)
-  ).join(", ");
-  const stagingAuditLogs: StagingAuditEntry[] = workspace.organizationId
+  const reportedStagingDomains = parseDomainValues(stagingCapability?.fqdn ?? stagingCapability?.stagingUrl);
+  const stagingDomainsInput = reportedStagingDomains.join(", ");
+  const stagingAuditLogs: (StagingAuditEntry & { actor?: { id: string; fullName?: string | null; email?: string | null; avatarUrl?: string | null } | null })[] = workspace.organizationId
     ? await db.auditLog.findMany({
         where: {
           organizationId: workspace.organizationId,
@@ -288,7 +365,17 @@ export default async function StagingPage({ params, searchParams }: Params) {
           action: "site_updated"
         },
         orderBy: { createdAt: "desc" },
-        take: 25
+        take: 25,
+        include: {
+          actor: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              avatarUrl: true
+            }
+          }
+        }
       })
     : [];
   const stagingAuditItems: StagingAuditHistoryItem[] = stagingAuditLogs.map((entry) => {
@@ -314,7 +401,8 @@ export default async function StagingPage({ params, searchParams }: Params) {
       promoteAttemptId,
       message,
       domains,
-      preferredStagingDomain
+      preferredStagingDomain,
+      actor: entry.actor ?? undefined
     };
   });
   const latestDomainSyncEntry = getLatestDomainSyncEntry(stagingAuditLogs);
@@ -324,6 +412,15 @@ export default async function StagingPage({ params, searchParams }: Params) {
     stagingConfigured && appUuid && stagingCapability
       ? await buildStagingSyncDryRunPlan(appUuid, workspace?.name ?? siteId, stagingCapability)
       : null;
+  const actualSyncTestReadiness = getActualSyncTestReadiness({
+    stagingConfigured,
+    siteType: workspace?.siteType,
+    preflightTone: prodToStagingPreflight.tone,
+    preflightDetail: prodToStagingPreflight.detail,
+    hasDryRunTarget: Boolean(dryRunPlan?.target),
+    databaseBehavior: dryRunPlan?.databaseBehavior,
+    filesBehavior: dryRunPlan?.filesBehavior
+  });
 
   return (
     <div className="page-stack">
@@ -336,7 +433,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
               {stagingConfigured
                 ? (stagingTargetRunning
                   ? "Staging is active. Validate changes here before promoting to production."
-                  : "Staging target is attached but not running/deployed in Coolify yet.")
+                  : "Staging target is attached and starting up. Refresh in a moment.")
                 : stagingEnvironmentReady
                   ? "Staging environment exists, but no staging target is attached yet."
                   : "Staging is not configured for this site."}
@@ -361,7 +458,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
         </div>
         {!stagingConfigured && (
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to trigger Jongo&apos;s auto-provision attempt in Coolify. If unsupported, provision staging manually in Coolify and return here.
+            Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to trigger Jongo&apos;s auto-provision attempt. If unsupported, provision staging manually in your infrastructure panel and return here.
           </p>
         )}
       </article>
@@ -465,6 +562,35 @@ export default async function StagingPage({ params, searchParams }: Params) {
             </div>
           </article>
 
+          <article className="card">
+            <h3 className="card-title">Actual File+DB Sync Test Readiness (Production)</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+              <span className={`status-chip ${actualSyncTestReadiness.tone}`}>{actualSyncTestReadiness.label}</span>
+              <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{actualSyncTestReadiness.summary}</span>
+            </div>
+            <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.45rem" }}>
+              <p style={{ margin: 0, fontSize: "0.84rem", fontWeight: 600 }}>Required checks</p>
+              <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.2rem" }}>
+                {actualSyncTestReadiness.checks.map((check) => (
+                  <li key={check} style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{check}</li>
+                ))}
+              </ul>
+            </div>
+            {actualSyncTestReadiness.blockers.length > 0 ? (
+              <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.45rem" }}>
+                <p style={{ margin: 0, fontSize: "0.84rem", fontWeight: 600 }}>Current blockers</p>
+                <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.2rem" }}>
+                  {actualSyncTestReadiness.blockers.map((blocker) => (
+                    <li key={blocker} style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{blocker}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.82rem" }}>
+              Follow the production readiness workflow in <code>docs/workflows/staging-sync-prod-readiness.md</code> before any live test.
+            </p>
+          </article>
+
           {stagingConfigured ? (
             <>
           {/* Coolify Staging Capability */}
@@ -472,7 +598,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
             <h3 className="card-title">Staging Capability</h3>
             {!appUuid ? (
               <p className="card-muted" style={{ marginBottom: 0 }}>
-                No Coolify resource linked. Link a Coolify UUID in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to detect staging resources.
+                No infrastructure resource linked. Link a service UUID in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to detect staging resources.
               </p>
             ) : !stagingCapability ? (
               <p className="card-muted" style={{ marginBottom: 0 }}>Staging capability could not be determined.</p>
@@ -485,11 +611,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
                   )}
                 </div>
                 {stagingCapability.applicationName && (
-                  <p style={{ margin: 0 }}>Application: <code>{stagingCapability.applicationName}</code></p>
+                  <p style={{ margin: 0 }}>Staging resource: <code>{stagingCapability.applicationName}</code></p>
                 )}
-                {reportedStagingDomains.length > 0 && (
+                  {reportedStagingDomains.length > 0 && (
                   <div style={{ margin: 0 }}>
-                    <p style={{ margin: 0 }}>Reported by Coolify:</p>
+                    <p style={{ margin: 0 }}>Actual URL from staging:</p>
                     <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1rem", display: "grid", gap: "0.15rem" }}>
                       {reportedStagingDomains.map((domain) => (
                         <li key={domain} style={{ fontSize: "0.86rem" }}>
@@ -501,11 +627,6 @@ export default async function StagingPage({ params, searchParams }: Params) {
                     </ul>
                   </div>
                 )}
-                {preferredStagingDomain && preferredStagingDomain !== reportedStagingDomains[0] ? (
-                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                    Preferred staging domain: <code>{preferredStagingDomain}</code>
-                  </p>
-                ) : null}
                 {stagingCapability.status && (
                   <p style={{ margin: 0 }}>
                     Status: <span className={`status-chip ${stagingCapability.status}`}>{stagingCapability.status}</span>
@@ -618,8 +739,20 @@ export default async function StagingPage({ params, searchParams }: Params) {
                   </div>
                 )}
 
+                <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.9rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                    <button type="button" className="button button-secondary" disabled>
+                      Sync from Production (coming soon)
+                    </button>
+                    <span className={`status-chip ${prodToStagingPreflight.tone}`}>{prodToStagingPreflight.label}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                    Production-to-staging execution is intentionally disabled in this pass. Use the dry-run plan and follow your infrastructure sync workflow.
+                  </p>
+                </div>
+
                 <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.82rem" }}>
-                  Sync execution is not available in this interface. Contact your platform administrator to perform a sync via Coolify.
+                  Sync execution is not available in this interface. Contact your platform administrator to run the sync from your infrastructure panel.
                 </p>
               </article>
 
@@ -659,7 +792,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
         <article className="card">
           <h3 className="card-title">Staging Not Configured</h3>
           <p className="card-muted" style={{ marginBottom: 0 }}>
-                Coolify does not currently report a usable staging environment for this app. Sync and promote controls stay hidden until staging is detected.
+              The infrastructure API does not currently report a usable staging environment for this app. Sync and promote controls stay hidden until staging is detected.
           </p>
               <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
                 Next step: configure staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link>, then return here for dry-run preflight and workflow previews.

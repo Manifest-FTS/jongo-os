@@ -404,7 +404,7 @@ export default function PromoteToProductionCard({
         >
           <p style={{ margin: 0, fontSize: "0.87rem", fontWeight: 600 }}>Confirm production promotion</p>
           <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-            This triggers a production deployment in Coolify. Type <strong>PROMOTE</strong> to continue.
+            This triggers a production deployment. Type <strong>PROMOTE</strong> to continue.
           </p>
           <input
             type="text"

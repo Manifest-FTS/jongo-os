@@ -145,6 +145,8 @@ export type SiteDirectoryRecord = {
   coolifyServiceUuid?: string;
   coolifyProjectId?: string;
   coolifyProjectName?: string;
+  coolifyEnvironmentId?: string;
+  coolifyEnvironmentName?: string;
   description?: string;
     resourceType?: string;
 };
@@ -230,6 +232,44 @@ function getClientForCoolifySite(siteId: string, mode: "live" | "mock") {
 
 function normalizedKey(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
+}
+
+function isLikelyStagingEnvironmentName(name?: string): boolean {
+  const normalized = normalizedKey(name);
+  if (!normalized) {
+    return false;
+  }
+
+  return normalized.includes("stag") || normalized.includes("preview") || normalized === "dev";
+}
+
+function stripStagingAffixes(name: string): string {
+  return normalizedKey(name)
+    .replace(/^staging[.\-_\s]+/, "")
+    .replace(/[.\-_\s]+staging$/, "")
+    .trim();
+}
+
+function shouldSuppressStagingSiblingRecord(
+  site: { name: string; coolifyEnvironmentName?: string; coolifyProjectId?: string },
+  dbMappedProjectIds: Set<string>,
+  dbNameKeys: Set<string>
+): boolean {
+  if (!isLikelyStagingEnvironmentName(site.coolifyEnvironmentName)) {
+    return false;
+  }
+
+  const projectMatched = Boolean(site.coolifyProjectId && dbMappedProjectIds.has(site.coolifyProjectId));
+  if (projectMatched) {
+    return true;
+  }
+
+  const strippedName = stripStagingAffixes(site.name);
+  if (!strippedName) {
+    return false;
+  }
+
+  return dbNameKeys.has(strippedName);
 }
 
 type OwnershipOrgRecord = {
@@ -1474,11 +1514,19 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
         };
       });
 
+      const dbMappedProjectIds = new Set(
+        dbRecords
+          .map((record) => record.coolifyProjectId)
+          .filter((value): value is string => Boolean(value))
+      );
+      const dbNameKeys = new Set(dbRecords.map((record) => normalizedKey(record.name)).filter(Boolean));
+
       // --- Coolify-only sites (not linked to any DB record) ---
       const coolifyOnlyRecords: SiteDirectoryRecord[] = scopeApplied
         ? []
         : resolvedOverview.sites
             .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
+            .filter((cs) => !shouldSuppressStagingSiblingRecord(cs, dbMappedProjectIds, dbNameKeys))
             .map((site) => {
               const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode, ownershipIndex);
               return {

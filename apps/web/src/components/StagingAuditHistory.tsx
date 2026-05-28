@@ -10,6 +10,12 @@ type StagingAuditHistoryItem = {
   message: string;
   domains: string[];
   preferredStagingDomain?: string;
+  actor?: {
+    id: string;
+    fullName?: string | null;
+    email?: string | null;
+    avatarUrl?: string | null;
+  };
 };
 
 type Props = {
@@ -1361,18 +1367,44 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
                   const attemptStatus = endpointStatus ?? fallbackStatusInfo;
 
                   return (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
-                  <div>
-                    <div style={{ display: "flex", gap: "0.45rem", alignItems: "center", flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(item.actionType)}</strong>
-                      {attemptStatus && isPromoteAction(item.actionType) ? (
-                        <span className={`status-chip ${attemptStatus.tone}`}>{attemptStatus.label}</span>
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ display: "flex", gap: "0.45rem", alignItems: "center", flexWrap: "wrap" }}>
+                            <strong style={{ fontSize: "0.9rem" }}>{formatActionLabel(item.actionType)}</strong>
+                            {attemptStatus && isPromoteAction(item.actionType) ? (
+                              <span className={`status-chip ${attemptStatus.tone}`}>{attemptStatus.label}</span>
+                            ) : null}
+                          </div>
+                          <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>{item.message}</p>
+                        </div>
+                        <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{formatAuditAgo(item.createdAt)}</span>
+                      </div>
+                      {item.actor ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
+                          {item.actor.avatarUrl ? (
+                            <img
+                              src={item.actor.avatarUrl}
+                              alt=""
+                              className="user-avatar"
+                              style={{ objectFit: "cover" }}
+                            />
+                          ) : (
+                            <span className="user-avatar">
+                              {(item.actor.fullName ?? item.actor.email ?? "U").trim().charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                          <div style={{ display: "grid" }}>
+                            <span style={{ fontSize: "0.82rem", fontWeight: 600 }}>
+                              {item.actor.fullName ?? item.actor.email ?? "Unknown user"}
+                            </span>
+                            {item.actor.email ? (
+                              <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{item.actor.email}</span>
+                            ) : null}
+                          </div>
+                        </div>
                       ) : null}
-                    </div>
-                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>{item.message}</p>
-                  </div>
-                  <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>{formatAuditAgo(item.createdAt)}</span>
-                </div>
+                    </>
                   );
                 })()}
                 {item.domains.length > 0 ? (

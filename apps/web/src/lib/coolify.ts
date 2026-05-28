@@ -97,20 +97,30 @@ function statusFromRaw(value: unknown): SiteOverview["status"] {
   if (typeof value !== "string") return "unknown";
   const normalized = value.toLowerCase();
 
+  // Prioritize explicit failure/degraded signals before healthy checks.
+  if (
+    normalized.includes("failed") ||
+    normalized.includes("error") ||
+    normalized.includes("crash") ||
+    normalized.includes("unhealthy")
+  ) {
+    return "error";
+  }
+
+  if (
+    normalized.includes("degraded") ||
+    normalized.includes("building") ||
+    normalized.includes("pending") ||
+    normalized.includes("warning") ||
+    normalized.includes("stopped") ||
+    normalized.includes("exited") ||
+    normalized.includes("sleep")
+  ) {
+    return "degraded";
+  }
+
   if (normalized.includes("running") || normalized.includes("success") || normalized.includes("healthy")) {
     return "healthy";
-  }
-
-  if (normalized.includes("building") || normalized.includes("pending") || normalized.includes("warning")) {
-    return "degraded";
-  }
-
-  if (normalized.includes("stopped") || normalized.includes("exited") || normalized.includes("sleep")) {
-    return "degraded";
-  }
-
-  if (normalized.includes("failed") || normalized.includes("error") || normalized.includes("crash")) {
-    return "error";
   }
 
   // restarting / unknown / empty raw status → unknown
@@ -1231,13 +1241,32 @@ function extractCoolifyDomainCandidates(value: unknown): string[] {
 }
 
 function extractStagingDomainList(target: Record<string, unknown>): string[] {
+  const nestedChildren = [
+    ...ensureArray(target.applications ?? []),
+    ...ensureArray(target.databases ?? []),
+    ...ensureArray(target.services ?? [])
+  ];
+
+  const nestedCandidates = nestedChildren.flatMap((entry) => {
+    const record = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+    return [
+      ...extractCoolifyDomainCandidates(record.fqdn),
+      ...extractCoolifyDomainCandidates(record.staging_fqdn),
+      ...extractCoolifyDomainCandidates(record.domain),
+      ...extractCoolifyDomainCandidates(record.domains),
+      ...extractCoolifyDomainCandidates(record.url),
+      ...extractCoolifyDomainCandidates(record.urls)
+    ];
+  });
+
   const candidates = [
     ...extractCoolifyDomainCandidates(target.fqdn),
     ...extractCoolifyDomainCandidates(target.staging_fqdn),
     ...extractCoolifyDomainCandidates(target.domain),
     ...extractCoolifyDomainCandidates(target.domains),
     ...extractCoolifyDomainCandidates(target.url),
-    ...extractCoolifyDomainCandidates(target.urls)
+    ...extractCoolifyDomainCandidates(target.urls),
+    ...nestedCandidates
   ];
 
   return normalizeCoolifyDomains(candidates);
@@ -1876,7 +1905,7 @@ export async function provisionCoolifyStagingFromProduction(
       return {
         mode: "live",
         ok: true,
-        message: "Staging service target created from production service settings. Runtime files/database content is not auto-cloned on this fallback path.",
+        message: "Staging target created in Coolify.",
         reason: "service_created"
       };
     }
@@ -2150,6 +2179,7 @@ export type StagingCapabilityRecord = {
   environmentName?: string;
   applicationUuid?: string;
   applicationName?: string;
+  stagingUrl?: string;
   fqdn?: string;
   status?: "healthy" | "degraded" | "error" | "unknown";
   note?: string;
@@ -2861,6 +2891,7 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
 
     const stagingDomains = extractStagingDomainList(detailedStagingTarget);
     const fqdn = stagingDomains.join(",") || undefined;
+    const stagingUrl = stagingDomains[0] || undefined;
     const status = statusFromRaw(
       detailedStagingTarget.status ??
       detailedStagingTarget.current_status ??
@@ -2875,6 +2906,7 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
       environmentName: stagingEnvName,
       applicationUuid: stagingAppUuid || undefined,
       applicationName: stagingAppName || undefined,
+      stagingUrl,
       fqdn,
       status,
       note: "full_staging_detected",

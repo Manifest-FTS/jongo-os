@@ -115,6 +115,11 @@ This pass is focused on read-only operational correctness before any new automat
 - Staging workspace polls and surfaces latest production deployment status after promote trigger.
 - Promote UI disables trigger/confirm while production deployment is in progress and explains lock reason.
 - Promotion lifecycle outcomes (in progress/succeeded/failed) are persisted to staging audit history.
+- Staging workspace surfaces a visible production→staging sync action state. When execution is unavailable in this pass, show a disabled "coming soon" control with deterministic reason text and keep dry-run plan visible.
+- Staging user-facing messaging avoids provider-internal jargon and uses neutral infrastructure wording, while keeping diagnostics/provider terms in admin/developer contexts.
+- Staging workspace exposes an explicit go/no-go gate for actual production file+DB sync testing, including required checks and current blockers.
+- `GET /api/sites/{siteId}/staging` exposes `actualSyncTestReadiness` (ready/label/summary/checks/blockers) so go/no-go can be validated by automation and runbooks.
+- Actual production file+DB sync go/no-go has an executable smoke command (`npm run smoke:staging-sync-readiness`) that asserts readiness fields and preflight tone.
 - Core staging-to-production behavior has an executable smoke script (`npm run smoke:staging-promote`) that validates blocked schema, idempotency replay, and promote-attempt status lookup (auth via `OWNERSHIP_SYNC_TOKEN` or `SESSION_COOKIE`, with optional local fallback `ALLOW_NO_AUTH_LOCAL=true` under intentional dev auth bypass).
 - Strict smoke blocker matrix output is captured in `docs/workflows/staging-promote-smoke-latest.md` and drives preflight remediation before trigger-path testing.
 - Staging workspace shows a terminal-state banner for the latest promotion outcome.
@@ -706,6 +711,11 @@ Immediate next actions:
 3. Re-run diagnostics probe in production and verify endpoint success for inventory calls.
 4. Confirm Apps inventory is non-empty from live Coolify feed when DB Sites are zero.
 5. Capture final verification in runbook docs before additional feature work.
+
+Execution workflow for the above actions:
+
+- Runbook: `docs/workflows/coolify-api-diagnostics-runbook.md`
+- Latest evidence artifact: `docs/workflows/coolify-api-diagnostics-latest.md`
 
 ## Next Implementation Phases
 

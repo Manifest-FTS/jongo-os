@@ -129,7 +129,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
 
       const disableCleanupFailed = !nextEnabled && burnExisting && payload?.destroyed === false;
       if (disableCleanupFailed) {
-        setActionHint((previous) => previous ?? "Staging was disabled in Jongo, but resource cleanup failed in Coolify. Resolve cleanup manually before running another destructive toggle.");
+        setActionHint((previous) => previous ?? "Staging was disabled in Jongo, but resource cleanup failed in the infrastructure panel. Resolve cleanup manually before running another destructive toggle.");
       }
 
       const shouldFinalize = nextEnabled && !Boolean(payload?.manualProvisionRequired);
@@ -137,7 +137,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
         setFinalizing(true);
         const settleResult = await waitForLifecycleCompletion(nextEnabled, burnExisting, Boolean(payload?.manualProvisionRequired));
         if (!settleResult.completed) {
-          setActionHint((previous) => previous ?? "Background staging operation is still settling in Coolify. Wait a moment before running another toggle.");
+          setActionHint((previous) => previous ?? "Background staging operation is still settling. Wait a moment before running another toggle.");
         }
         setFinalizing(false);
       }
@@ -275,8 +275,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
               <>
                 <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
                   {isEnableAction
-                    ? "Jongo will try to provision staging in Coolify and use a staging.<production-domain> URL when possible."
-                    : "Disable staging in Jongo. By default, existing staging resources in Coolify are removed."}
+                    ? "Jongo will provision staging when possible. Check the Staging tab in a few minutes."
+                    : "Disable staging in Jongo. By default, existing staging resources are removed."}
                 </p>
 
                 {isDisableAction && hasDetectedStaging ? (
@@ -287,7 +287,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                       onChange={(event) => setBurnOnDisable(event.target.checked)}
                       disabled={loading}
                     />
-                    Remove existing staging resources in Coolify (destructive)
+                    Remove existing staging resources (destructive)
                   </label>
                 ) : null}
 
@@ -329,12 +329,12 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                 ) : null}
                 {manualProvisionRequired ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
-                    {actionHint ?? "Manual provisioning in Coolify is required before staging will be detected."}
+                    {actionHint ?? "Manual provisioning in the infrastructure panel is required before staging will be detected."}
                   </p>
                 ) : null}
                 {waitingForManualStagingSetup && !manualProvisionRequired ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
-                    Staging is enabled in Jongo, but no staging app is detected in Coolify yet. Create or attach staging in Coolify, then refresh.
+                    Staging is enabled in Jongo, but no staging target is detected yet. Check the Staging tab in Coolify and refresh in a few minutes.
                   </p>
                 ) : null}
                 {finalizing ? (
