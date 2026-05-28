@@ -49,6 +49,19 @@ function hasValue(value?: string | null): boolean {
   return Boolean(value && value.trim().length > 0);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetryForWarmup(result: { code: number | null; stdout: string; stderr: string; timedOut: boolean }): boolean {
+  if (result.timedOut || result.code === 0) {
+    return false;
+  }
+
+  const combined = `${result.stdout}\n${result.stderr}`.toLowerCase();
+  return combined.includes("preflight containers not ready") || combined.includes("missing:wordpress-") || combined.includes("missing:mariadb-");
+}
+
 async function runSyncApply(scriptPath: string, payload: Required<Pick<AutomationPayload, "siteId" | "productionServiceUuid" | "stagingServiceUuid" | "stagingUrl">>) {
   const args = [
     scriptPath,
@@ -157,12 +170,27 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await runSyncApply(scriptPath, {
+  const maxAttempts = Number(process.env.STAGING_SYNC_AUTOMATION_MAX_ATTEMPTS || "4");
+  const retryDelayMs = Number(process.env.STAGING_SYNC_AUTOMATION_RETRY_DELAY_MS || "12000");
+
+  let result = await runSyncApply(scriptPath, {
     siteId: payload.siteId,
     productionServiceUuid: payload.productionServiceUuid,
     stagingServiceUuid: payload.stagingServiceUuid,
     stagingUrl: payload.stagingUrl
   });
+
+  let attempts = 1;
+  while (attempts < maxAttempts && shouldRetryForWarmup(result)) {
+    attempts += 1;
+    await sleep(retryDelayMs);
+    result = await runSyncApply(scriptPath, {
+      siteId: payload.siteId,
+      productionServiceUuid: payload.productionServiceUuid,
+      stagingServiceUuid: payload.stagingServiceUuid,
+      stagingUrl: payload.stagingUrl
+    });
+  }
 
   const stdoutTail = trimTail(result.stdout, 20);
   const stderrTail = trimTail(result.stderr, 20);
@@ -173,6 +201,7 @@ export async function POST(request: Request) {
         ok: false,
         reason: "timed_out",
         message: "Automation apply timed out",
+        attempts,
         stdoutTail,
         stderrTail
       },
@@ -186,6 +215,7 @@ export async function POST(request: Request) {
         ok: false,
         reason: "command_failed",
         message: "Automation apply failed",
+        attempts,
         exitCode: result.code,
         stdoutTail,
         stderrTail
@@ -198,6 +228,7 @@ export async function POST(request: Request) {
     ok: true,
     reason: "completed",
     message: "Automation apply completed",
+    attempts,
     exitCode: result.code,
     stdoutTail,
     stderrTail

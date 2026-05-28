@@ -29,6 +29,12 @@ Integration point:
   - If missing, first-party endpoint returns `412` with `reason: "missing_config"`.
 - `APP_BASE_URL` (optional fallback)
   - Used when request origin cannot be derived.
+- `STAGING_SYNC_AUTOMATION_MAX_ATTEMPTS` (optional)
+  - Default: `4`
+  - Number of apply retries when staging containers are not ready yet.
+- `STAGING_SYNC_AUTOMATION_RETRY_DELAY_MS` (optional)
+  - Default: `12000`
+  - Delay between warm-up retries.
 
 ## Request Contract
 
@@ -79,6 +85,7 @@ First-party endpoint behavior (`/api/ops/staging-sync-automation`):
 - Missing required runtime config: HTTP `412` with `reason: "missing_config"`
 - Failure: HTTP `502` with command tails
 - Timeout: HTTP `504` after 10 minutes
+- Response includes `attempts` to show how many retries were used.
 
 The route captures the last response lines into `autoContentSync.responseTail` for diagnostics when available.
 

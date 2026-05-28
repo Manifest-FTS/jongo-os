@@ -83,7 +83,7 @@ async function runAutoContentSync(params: {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45_000);
+  const timeout = setTimeout(() => controller.abort(), 120_000);
   const baseUrl = params.requestBaseUrl?.trim() || process.env.APP_BASE_URL || "http://localhost:3000";
 
   try {
