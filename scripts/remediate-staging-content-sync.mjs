@@ -40,6 +40,8 @@ const baseUrl = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\
 const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
 const sshHost = (process.env.STAGING_SYNC_SSH_HOST || process.env.COOLIFY_SSH_HOST || "").trim();
 const sshUser = (process.env.STAGING_SYNC_SSH_USER || "root").trim();
+const sshStrictHostKeyChecking = (process.env.STAGING_SYNC_SSH_STRICT_HOST_KEY_CHECKING || "accept-new").trim();
+const sshUserKnownHostsFile = (process.env.STAGING_SYNC_SSH_USER_KNOWN_HOSTS_FILE || "").trim();
 const urlRewriteModeRaw = (process.env.STAGING_SYNC_URL_REWRITE_MODE || "strict").trim().toLowerCase();
 const strictUrlRewrite = urlRewriteModeRaw !== "best-effort";
 const rawArgs = process.argv.slice(2);
@@ -164,7 +166,16 @@ function shQuote(value) {
 }
 
 function runSshScript(script) {
-  const result = spawnSync("ssh", [`${sshUser}@${sshHost}`, "bash", "-s"], {
+  const sshArgs = [];
+  if (sshStrictHostKeyChecking) {
+    sshArgs.push("-o", `StrictHostKeyChecking=${sshStrictHostKeyChecking}`);
+  }
+  if (sshUserKnownHostsFile) {
+    sshArgs.push("-o", `UserKnownHostsFile=${sshUserKnownHostsFile}`);
+  }
+  sshArgs.push(`${sshUser}@${sshHost}`, "bash", "-s");
+
+  const result = spawnSync("ssh", sshArgs, {
     input: script,
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"]
