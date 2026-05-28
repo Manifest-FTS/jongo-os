@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -42,6 +43,9 @@ const sshHost = (process.env.STAGING_SYNC_SSH_HOST || process.env.COOLIFY_SSH_HO
 const sshUser = (process.env.STAGING_SYNC_SSH_USER || "root").trim();
 const sshStrictHostKeyChecking = (process.env.STAGING_SYNC_SSH_STRICT_HOST_KEY_CHECKING || "accept-new").trim();
 const sshUserKnownHostsFile = (process.env.STAGING_SYNC_SSH_USER_KNOWN_HOSTS_FILE || "").trim();
+const sshPrivateKeyPathEnv = (process.env.STAGING_SYNC_SSH_PRIVATE_KEY_PATH || "").trim();
+const sshPrivateKeyRaw = (process.env.STAGING_SYNC_SSH_PRIVATE_KEY || "").trim();
+const sshPrivateKeyB64 = (process.env.STAGING_SYNC_SSH_PRIVATE_KEY_B64 || "").trim();
 const urlRewriteModeRaw = (process.env.STAGING_SYNC_URL_REWRITE_MODE || "strict").trim().toLowerCase();
 const strictUrlRewrite = urlRewriteModeRaw !== "best-effort";
 const rawArgs = process.argv.slice(2);
@@ -117,6 +121,19 @@ if (!sshHost) {
   process.exit(1);
 }
 
+let resolvedSshPrivateKeyPath = sshPrivateKeyPathEnv;
+if (!resolvedSshPrivateKeyPath && (sshPrivateKeyRaw || sshPrivateKeyB64)) {
+  const decoded = sshPrivateKeyB64
+    ? Buffer.from(sshPrivateKeyB64, "base64").toString("utf8")
+    : sshPrivateKeyRaw.replace(/\\n/g, "\n");
+
+  const keyDir = fs.mkdtempSync(path.join(os.tmpdir(), "staging-sync-key-"));
+  const keyPath = path.join(keyDir, "id_ed25519");
+  fs.writeFileSync(keyPath, decoded, { encoding: "utf8", mode: 0o600 });
+  fs.chmodSync(keyPath, 0o600);
+  resolvedSshPrivateKeyPath = keyPath;
+}
+
 function authHeaders() {
   return {
     Accept: "application/json",
@@ -167,6 +184,9 @@ function shQuote(value) {
 
 function runSshScript(script) {
   const sshArgs = [];
+  if (resolvedSshPrivateKeyPath) {
+    sshArgs.push("-i", resolvedSshPrivateKeyPath, "-o", "IdentitiesOnly=yes");
+  }
   if (sshStrictHostKeyChecking) {
     sshArgs.push("-o", `StrictHostKeyChecking=${sshStrictHostKeyChecking}`);
   }

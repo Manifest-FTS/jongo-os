@@ -27,6 +27,14 @@ Integration point:
 - `STAGING_SYNC_SSH_HOST` or `COOLIFY_SSH_HOST`
   - Required by `remediate-staging-content-sync.mjs` for remote execution.
   - If missing, first-party endpoint returns `412` with `reason: "missing_config"`.
+- One SSH authentication option must be available in runtime:
+  - Existing default SSH identity in runtime user context, or
+  - `STAGING_SYNC_SSH_PRIVATE_KEY_PATH` (path to private key file), or
+  - `STAGING_SYNC_SSH_PRIVATE_KEY` (raw key; `\\n` supported), or
+  - `STAGING_SYNC_SSH_PRIVATE_KEY_B64` (base64-encoded key).
+- Optional trust controls:
+  - `STAGING_SYNC_SSH_STRICT_HOST_KEY_CHECKING` (default: `accept-new`)
+  - `STAGING_SYNC_SSH_USER_KNOWN_HOSTS_FILE`
 - `APP_BASE_URL` (optional fallback)
   - Used when request origin cannot be derived.
 - `STAGING_SYNC_AUTOMATION_MAX_ATTEMPTS` (optional)
