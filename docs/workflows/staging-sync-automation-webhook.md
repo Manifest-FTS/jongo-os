@@ -24,6 +24,9 @@ Integration point:
 - `OWNERSHIP_SYNC_TOKEN` (recommended)
   - Added as `Authorization: Bearer <token>` when present.
   - Reuse the same shared token policy as ops scripts.
+- `STAGING_SYNC_SSH_HOST` or `COOLIFY_SSH_HOST`
+  - Required by `remediate-staging-content-sync.mjs` for remote execution.
+  - If missing, first-party endpoint returns `412` with `reason: "missing_config"`.
 - `APP_BASE_URL` (optional fallback)
   - Used when request origin cannot be derived.
 
@@ -73,6 +76,7 @@ First-party endpoint behavior (`/api/ops/staging-sync-automation`):
 - Mode: only `apply` is supported
 - Executes: `scripts/remediate-staging-content-sync.mjs --apply` with explicit UUID and URL overrides
 - Success: HTTP `200` with `ok: true`
+- Missing required runtime config: HTTP `412` with `reason: "missing_config"`
 - Failure: HTTP `502` with command tails
 - Timeout: HTTP `504` after 10 minutes
 

@@ -45,6 +45,10 @@ function trimTail(value: string, lines = 20): string {
     .join("\n");
 }
 
+function hasValue(value?: string | null): boolean {
+  return Boolean(value && value.trim().length > 0);
+}
+
 async function runSyncApply(scriptPath: string, payload: Required<Pick<AutomationPayload, "siteId" | "productionServiceUuid" | "stagingServiceUuid" | "stagingUrl">>) {
   const args = [
     scriptPath,
@@ -139,6 +143,18 @@ export async function POST(request: Request) {
   const scriptPath = resolveRemediationScriptPath();
   if (!scriptPath) {
     return NextResponse.json({ error: "Remediation script not found" }, { status: 500 });
+  }
+
+  const hasSshHost = hasValue(process.env.STAGING_SYNC_SSH_HOST) || hasValue(process.env.COOLIFY_SSH_HOST);
+  if (!hasSshHost) {
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "missing_config",
+        message: "Missing STAGING_SYNC_SSH_HOST (or COOLIFY_SSH_HOST)."
+      },
+      { status: 412 }
+    );
   }
 
   const result = await runSyncApply(scriptPath, {
