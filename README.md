@@ -59,6 +59,7 @@ For Coolify/Nixpacks deployments, this repository includes `nixpacks.toml` to en
 - `npm run prisma:generate`
 - `npm run build`
 - start with `npm run start`
+- Node.js 20 runtime parity with the Docker image
 
 Startup behavior:
 
