@@ -1,15 +1,15 @@
 # Staging Remediation Next Batch
 
-Generated: 2026-05-26T15:54:59.353Z
+Generated: 2026-05-27T12:29:14.849Z
 Source queue: docs/workflows/staging-remediation-queue-latest.md
 Batch size: 3
 
 ## Current Blocker Snapshot
 
-- Missing staging detection: 8
-- Application targets missing staging: 4
-- Missing staging only (no backup blocker): 3
-- Missing staging + backup blocker: 5
+- Missing staging detection: 13
+- Application targets missing staging: 0
+- Missing staging only (no backup blocker): 0
+- Missing staging + backup blocker: 13
 - Preferred trigger-path smoke target: waterfallkeepersofnc-org
 
 ## Trigger-Path Policy
@@ -19,12 +19,12 @@ Batch size: 3
 
 ## Recommended Next Manual Batch
 
-Selection rule: prioritize application resources first, even when backup blockers remain, because service-linked targets are less likely to support direct staging promotion.
-Preferred trigger target included in this batch: no
+Selection rule: all remaining apps include backup blockers, so this batch minimizes count only.
+Preferred trigger target included in this batch: yes
 
-- millenion-fitness (application; service=c2mqv1xjksrkg2wn6eglw3u6, project=sndclvrx7rwe3zii9sm1fdt2, envs=production)
-- daniel-kane (application; service=f12mcnqyxf3gtlb04zjsil0u, project=ank4te9xzy8nz96ivyot1aoj, envs=production)
-- a3th9r (application; service=dbv03lhfksfllfs2vk62p1dt, project=ank4te9xzy8nz96ivyot1aoj, envs=production)
+- waterfallkeepersofnc-org (unknown; service=oqcc7xm49tb98otptx9ymtx7, project=cx7ldowl163oc24u2tqsbzuq, envs=-)
+- jongo-open-source (unknown; service=dt0v391xre5rgtp50062tunm, project=ip1hwipx8sn24rd0dni67lb0, envs=-)
+- millenion-fitness (unknown; service=c2mqv1xjksrkg2wn6eglw3u6, project=sndclvrx7rwe3zii9sm1fdt2, envs=-)
 
 ## Manual Steps
 
