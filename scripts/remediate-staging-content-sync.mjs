@@ -333,7 +333,7 @@ docker exec "$SRC_DB" sh -lc "mariadb-dump --single-transaction -u$SRC_DB_USER -
 echo "DB clone done"
 
 echo "Files clone start"
-docker exec "$SRC_WP" sh -lc "cd /var/www/html; tar -cf - --exclude=wp-config.php ." | docker exec -i "$TARGET_WP" sh -lc "cd /var/www/html; tar -xf -"
+docker exec "$SRC_WP" sh -lc "cd /var/www/html; tar -cf - --exclude=wp-config.php .; TAR_EXIT=$?; [ $TAR_EXIT -eq 0 ] || [ $TAR_EXIT -eq 1 ]" | docker exec -i "$TARGET_WP" sh -lc "cd /var/www/html; tar -xf -"
 echo "Files clone done"
 
 UPDATED_TABLE=""
