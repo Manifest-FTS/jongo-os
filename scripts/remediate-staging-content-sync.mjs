@@ -64,11 +64,14 @@ const urlRewriteModeRaw = (process.env.STAGING_SYNC_URL_REWRITE_MODE || "strict"
 const strictUrlRewrite = urlRewriteModeRaw !== "best-effort";
 const rawArgs = process.argv.slice(2);
 const apply = rawArgs.includes("--apply");
+const validDirections = new Set(["production-to-staging", "staging-to-production"]);
 
 let overrideProdServiceUuid = "";
 let overrideStagingServiceUuid = "";
 let overrideStagingUrl = "";
+let overrideProductionUrl = "";
 let overrideSiteId = "";
+let direction = (process.env.STAGING_SYNC_DIRECTION || "production-to-staging").trim().toLowerCase();
 const cliIds = [];
 
 for (let index = 0; index < rawArgs.length; index += 1) {
@@ -91,8 +94,18 @@ for (let index = 0; index < rawArgs.length; index += 1) {
     index += 1;
     continue;
   }
+  if (arg === "--production-url") {
+    overrideProductionUrl = (rawArgs[index + 1] || "").trim();
+    index += 1;
+    continue;
+  }
   if (arg === "--site-id") {
     overrideSiteId = (rawArgs[index + 1] || "").trim();
+    index += 1;
+    continue;
+  }
+  if (arg === "--direction") {
+    direction = (rawArgs[index + 1] || "").trim().toLowerCase();
     index += 1;
     continue;
   }
@@ -110,6 +123,7 @@ const envIds = (process.env.STAGING_SITE_IDS || "")
 const envOverrideProdServiceUuid = (process.env.STAGING_SYNC_PROD_SERVICE_UUID || "").trim();
 const envOverrideStagingServiceUuid = (process.env.STAGING_SYNC_STAGING_SERVICE_UUID || "").trim();
 const envOverrideStagingUrl = (process.env.STAGING_SYNC_STAGING_URL || "").trim();
+const envOverrideProductionUrl = (process.env.STAGING_SYNC_PRODUCTION_URL || "").trim();
 const envOverrideSiteId = (process.env.STAGING_SYNC_SITE_ID || "").trim();
 
 if (!overrideProdServiceUuid) {
@@ -121,8 +135,16 @@ if (!overrideStagingServiceUuid) {
 if (!overrideStagingUrl) {
   overrideStagingUrl = envOverrideStagingUrl;
 }
+if (!overrideProductionUrl) {
+  overrideProductionUrl = envOverrideProductionUrl;
+}
 if (!overrideSiteId) {
   overrideSiteId = envOverrideSiteId;
+}
+
+if (!validDirections.has(direction)) {
+  console.error(`Unsupported direction: ${direction}`);
+  process.exit(1);
 }
 
 if (!token) {
@@ -257,24 +279,33 @@ function buildCloneScript(params) {
     prodServiceUuid,
     stagingServiceUuid,
     stagingUrl,
-    strictRewrite
+    productionUrl,
+    strictRewrite,
+    syncDirection
   } = params;
 
-  return `set -euo pipefail
-PROD_WP=wordpress-${prodServiceUuid}
-PROD_DB=mariadb-${prodServiceUuid}
-STG_WP=wordpress-${stagingServiceUuid}
-STG_DB=mariadb-${stagingServiceUuid}
-STG_URL=${shQuote(stagingUrl)}
+  const sourceIsProduction = syncDirection === "production-to-staging";
+  const sourceWp = sourceIsProduction ? `wordpress-${prodServiceUuid}` : `wordpress-${stagingServiceUuid}`;
+  const sourceDb = sourceIsProduction ? `mariadb-${prodServiceUuid}` : `mariadb-${stagingServiceUuid}`;
+  const targetWp = sourceIsProduction ? `wordpress-${stagingServiceUuid}` : `wordpress-${prodServiceUuid}`;
+  const targetDb = sourceIsProduction ? `mariadb-${stagingServiceUuid}` : `mariadb-${prodServiceUuid}`;
+  const targetUrl = sourceIsProduction ? stagingUrl : productionUrl;
 
-for name in "$PROD_WP" "$PROD_DB" "$STG_WP" "$STG_DB"; do
+  return `set -euo pipefail
+SRC_WP=${shQuote(sourceWp)}
+SRC_DB=${shQuote(sourceDb)}
+TARGET_WP=${shQuote(targetWp)}
+TARGET_DB=${shQuote(targetDb)}
+TARGET_URL=${shQuote(targetUrl)}
+
+for name in "$SRC_WP" "$SRC_DB" "$TARGET_WP" "$TARGET_DB"; do
   docker ps --format '{{.Names}}' | grep -Fx "$name" >/dev/null || { echo "Missing container: $name"; exit 1; }
 done
 
 command -v docker >/dev/null
 
-docker exec "$PROD_DB" sh -lc 'command -v mariadb-dump >/dev/null'
-docker exec "$STG_DB" sh -lc 'command -v mariadb >/dev/null'
+docker exec "$SRC_DB" sh -lc 'command -v mariadb-dump >/dev/null'
+docker exec "$TARGET_DB" sh -lc 'command -v mariadb >/dev/null'
 
 read_env() {
   local wp_container="$1"
@@ -282,33 +313,33 @@ read_env() {
   docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$wp_container" | awk -F= -v k="$key" '$1==k{print substr($0,index($0,"=")+1)}' | tail -n 1
 }
 
-PROD_DB_HOST=$(read_env "$PROD_WP" WORDPRESS_DB_HOST)
-PROD_DB_NAME=$(read_env "$PROD_WP" WORDPRESS_DB_NAME)
-PROD_DB_USER=$(read_env "$PROD_WP" WORDPRESS_DB_USER)
-PROD_DB_PASSWORD=$(read_env "$PROD_WP" WORDPRESS_DB_PASSWORD)
+SRC_DB_HOST=$(read_env "$SRC_WP" WORDPRESS_DB_HOST)
+SRC_DB_NAME=$(read_env "$SRC_WP" WORDPRESS_DB_NAME)
+SRC_DB_USER=$(read_env "$SRC_WP" WORDPRESS_DB_USER)
+SRC_DB_PASSWORD=$(read_env "$SRC_WP" WORDPRESS_DB_PASSWORD)
 
-STG_DB_HOST=$(read_env "$STG_WP" WORDPRESS_DB_HOST)
-STG_DB_NAME=$(read_env "$STG_WP" WORDPRESS_DB_NAME)
-STG_DB_USER=$(read_env "$STG_WP" WORDPRESS_DB_USER)
-STG_DB_PASSWORD=$(read_env "$STG_WP" WORDPRESS_DB_PASSWORD)
+TARGET_DB_HOST=$(read_env "$TARGET_WP" WORDPRESS_DB_HOST)
+TARGET_DB_NAME=$(read_env "$TARGET_WP" WORDPRESS_DB_NAME)
+TARGET_DB_USER=$(read_env "$TARGET_WP" WORDPRESS_DB_USER)
+TARGET_DB_PASSWORD=$(read_env "$TARGET_WP" WORDPRESS_DB_PASSWORD)
 
-for required in PROD_DB_NAME PROD_DB_USER PROD_DB_PASSWORD STG_DB_NAME STG_DB_USER STG_DB_PASSWORD; do
+for required in SRC_DB_NAME SRC_DB_USER SRC_DB_PASSWORD TARGET_DB_NAME TARGET_DB_USER TARGET_DB_PASSWORD TARGET_URL; do
   value="\${!required}"
   [ -n "$value" ] || { echo "Missing DB credential: $required"; exit 1; }
 done
 
 echo "DB clone start"
-docker exec "$PROD_DB" sh -lc "mariadb-dump --single-transaction -u$PROD_DB_USER -p$PROD_DB_PASSWORD $PROD_DB_NAME" | docker exec -i "$STG_DB" sh -lc "mariadb -u$STG_DB_USER -p$STG_DB_PASSWORD $STG_DB_NAME"
+docker exec "$SRC_DB" sh -lc "mariadb-dump --single-transaction -u$SRC_DB_USER -p$SRC_DB_PASSWORD $SRC_DB_NAME" | docker exec -i "$TARGET_DB" sh -lc "mariadb -u$TARGET_DB_USER -p$TARGET_DB_PASSWORD $TARGET_DB_NAME"
 echo "DB clone done"
 
 echo "Files clone start"
-docker exec "$PROD_WP" sh -lc "cd /var/www/html; tar -cf - --exclude=wp-config.php ." | docker exec -i "$STG_WP" sh -lc "cd /var/www/html; tar -xf -"
+docker exec "$SRC_WP" sh -lc "cd /var/www/html; tar -cf - --exclude=wp-config.php ." | docker exec -i "$TARGET_WP" sh -lc "cd /var/www/html; tar -xf -"
 echo "Files clone done"
 
 UPDATED_TABLE=""
 for candidate in wp_options options; do
-  SQL="UPDATE \${candidate} SET option_value='\${STG_URL}' WHERE option_name IN ('siteurl','home');"
-  if docker exec "$STG_DB" mariadb -u"$STG_DB_USER" -p"$STG_DB_PASSWORD" "$STG_DB_NAME" -e "$SQL" >/dev/null 2>&1; then
+  SQL="UPDATE \${candidate} SET option_value='\${TARGET_URL}' WHERE option_name IN ('siteurl','home');"
+  if docker exec "$TARGET_DB" mariadb -u"$TARGET_DB_USER" -p"$TARGET_DB_PASSWORD" "$TARGET_DB_NAME" -e "$SQL" >/dev/null 2>&1; then
     UPDATED_TABLE="$candidate"
     break
   fi
@@ -322,7 +353,8 @@ else
 fi
 
 docker restart "$STG_WP" >/dev/null
-echo "Staging WP restarted"
+docker restart "$TARGET_WP" >/dev/null
+echo "Target WP restarted"
 `;
 }
 
@@ -367,6 +399,7 @@ async function run() {
 
   console.log(`Targets: ${siteIds.length}`);
   console.log(`Mode: ${apply ? "apply" : "dry-run"}`);
+  console.log(`Direction: ${direction}`);
   console.log(`SSH: ${sshUser}@${sshHost}`);
   console.log(`SSH auth mode: ${sshAuthMode}`);
   console.log(`URL rewrite mode: ${strictUrlRewrite ? "strict" : "best-effort"}`);
@@ -439,11 +472,14 @@ async function run() {
       continue;
     }
 
+    const productionUrl = overrideProductionUrl;
     const clone = runSshScript(buildCloneScript({
       prodServiceUuid,
       stagingServiceUuid,
       stagingUrl,
-      strictRewrite: strictUrlRewrite
+      productionUrl,
+      strictRewrite: strictUrlRewrite,
+      syncDirection: direction
     }));
 
     if (!clone.ok) {

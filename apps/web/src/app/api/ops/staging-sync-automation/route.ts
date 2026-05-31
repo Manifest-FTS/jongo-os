@@ -10,6 +10,8 @@ type AutomationPayload = {
   productionServiceUuid?: string;
   stagingServiceUuid?: string;
   stagingUrl?: string;
+  productionUrl?: string;
+  direction?: string;
   mode?: string;
 };
 
@@ -66,10 +68,15 @@ function shouldRetryForWarmup(result: { code: number | null; stdout: string; std
   return combined.includes("preflight containers not ready") || combined.includes("missing:wordpress-") || combined.includes("missing:mariadb-");
 }
 
-async function runSyncApply(scriptPath: string, payload: Required<Pick<AutomationPayload, "siteId" | "productionServiceUuid" | "stagingServiceUuid" | "stagingUrl">>) {
+async function runSyncApply(
+  scriptPath: string,
+  payload: Required<Pick<AutomationPayload, "siteId" | "productionServiceUuid" | "stagingServiceUuid" | "stagingUrl" | "direction">> & Pick<AutomationPayload, "productionUrl">
+) {
   const args = [
     scriptPath,
     "--apply",
+    "--direction",
+    payload.direction,
     "--site-id",
     payload.siteId,
     "--prod-service-uuid",
@@ -79,6 +86,10 @@ async function runSyncApply(scriptPath: string, payload: Required<Pick<Automatio
     "--staging-url",
     payload.stagingUrl
   ];
+
+  if (payload.productionUrl) {
+    args.push("--production-url", payload.productionUrl);
+  }
 
   return await new Promise<{ code: number | null; stdout: string; stderr: string; timedOut: boolean }>((resolve) => {
     const child = spawn(process.execPath, args, {
@@ -147,11 +158,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unsupported mode" }, { status: 400 });
   }
 
+  const direction = (payload.direction || "production-to-staging").trim().toLowerCase();
+  if (direction !== "production-to-staging" && direction !== "staging-to-production") {
+    return NextResponse.json({ error: "Unsupported direction" }, { status: 400 });
+  }
+
   if (!payload.siteId || !payload.productionServiceUuid || !payload.stagingServiceUuid || !payload.stagingUrl) {
     return NextResponse.json(
       {
         error: "Missing required fields",
         required: ["siteId", "productionServiceUuid", "stagingServiceUuid", "stagingUrl"]
+      },
+      { status: 400 }
+    );
+  }
+
+  if (direction === "staging-to-production" && !payload.productionUrl) {
+    return NextResponse.json(
+      {
+        error: "Missing required fields",
+        required: ["siteId", "productionServiceUuid", "stagingServiceUuid", "stagingUrl", "productionUrl"]
       },
       { status: 400 }
     );
@@ -204,7 +230,9 @@ export async function POST(request: Request) {
     siteId: payload.siteId,
     productionServiceUuid: payload.productionServiceUuid,
     stagingServiceUuid: payload.stagingServiceUuid,
-    stagingUrl: payload.stagingUrl
+    stagingUrl: payload.stagingUrl,
+    productionUrl: payload.productionUrl,
+    direction
   });
 
   let attempts = 1;
@@ -215,7 +243,9 @@ export async function POST(request: Request) {
       siteId: payload.siteId,
       productionServiceUuid: payload.productionServiceUuid,
       stagingServiceUuid: payload.stagingServiceUuid,
-      stagingUrl: payload.stagingUrl
+      stagingUrl: payload.stagingUrl,
+      productionUrl: payload.productionUrl,
+      direction
     });
   }
 
@@ -241,7 +271,7 @@ export async function POST(request: Request) {
       {
         ok: false,
         reason: "command_failed",
-        message: "Automation apply failed",
+        message: `Automation apply failed (${direction})`,
         attempts,
         exitCode: result.code,
         stdoutTail,
@@ -254,7 +284,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     reason: "completed",
-    message: "Automation apply completed",
+    message: `Automation apply completed (${direction})`,
     attempts,
     exitCode: result.code,
     stdoutTail,

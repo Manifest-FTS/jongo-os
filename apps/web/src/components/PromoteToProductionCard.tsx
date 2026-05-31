@@ -68,7 +68,7 @@ type PromoteResponse = {
 };
 
 function formatPromoteError(payload: PromoteResponse): string {
-  const base = payload.error ?? "Unable to trigger production deployment.";
+  const base = payload.error ?? "Unable to promote staging to production.";
 
   if (payload.blockingReason === "promote_cooldown") {
     const retrySuffix = (payload.retryAfterSeconds ?? 0) > 0
@@ -325,8 +325,8 @@ export default function PromoteToProductionCard({
       setConfirmationPhrase("");
       setPromoteIdempotencyKey("");
       const defaultMessage = payload?.deploymentId
-        ? `Production deploy triggered (${payload.deploymentId}).`
-        : "Production deploy triggered.";
+        ? `Production promotion triggered (${payload.deploymentId}).`
+        : "Production promotion triggered.";
       const attemptSuffix = payload?.promoteAttemptId ? ` Attempt ${payload.promoteAttemptId}.` : "";
       const replaySuffix = payload?.replayed ? " (replayed request)" : "";
       setMessage(`${payload?.message ?? defaultMessage}${attemptSuffix}${replaySuffix}`.trim());
@@ -338,7 +338,7 @@ export default function PromoteToProductionCard({
       router.refresh();
     } catch {
       setStatus("error");
-      setMessage("Network error while triggering production deployment.");
+      setMessage("Network error while promoting staging to production.");
     }
   }
 
@@ -367,8 +367,12 @@ export default function PromoteToProductionCard({
     <div style={{ display: "grid", gap: "0.6rem" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span className={`status-chip ${preflightTone}`}>{preflightLabel}</span>
-        <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>Preflight status</span>
+        <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>Production promotion preflight</span>
       </div>
+
+      <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+        This action copies staging WordPress files and database content into production, then triggers a production deployment.
+      </p>
 
       <button
         type="button"
@@ -376,7 +380,7 @@ export default function PromoteToProductionCard({
         onClick={openConfirmPanel}
         disabled={isPromoteLocked}
       >
-        {status === "pending" ? "Triggering production deploy..." : "Promote staging to production"}
+        {status === "pending" ? "Promoting staging to production..." : "Promote to production"}
       </button>
 
       {isPromoteLocked && promoteLockReason ? (
@@ -404,7 +408,7 @@ export default function PromoteToProductionCard({
         >
           <p style={{ margin: 0, fontSize: "0.87rem", fontWeight: 600 }}>Confirm production promotion</p>
           <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-            This triggers a production deployment. Type <strong>PROMOTE</strong> to continue.
+            Type <strong>PROMOTE</strong> to copy staging WordPress content and files into production, then trigger the production deployment.
           </p>
           <input
             type="text"
@@ -437,7 +441,7 @@ export default function PromoteToProductionCard({
               onClick={submitPromote}
               disabled={isPromoteLocked || confirmationPhrase.trim().toUpperCase() !== "PROMOTE"}
             >
-              Confirm promote
+              Confirm promotion
             </button>
           </div>
         </div>

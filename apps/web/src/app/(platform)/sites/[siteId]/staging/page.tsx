@@ -733,20 +733,28 @@ export default async function StagingPage({ params, searchParams }: Params) {
                   </div>
                 )}
 
-                <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.9rem" }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "0.45rem",
+                    marginTop: "0.9rem",
+                    border: "1px solid var(--border)",
+                    borderRadius: "10px",
+                    background: "var(--surface-alt)",
+                    padding: "0.75rem"
+                  }}
+                >
                   <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-                    <button type="button" className="button button-secondary" disabled>
-                      Sync from Production (coming soon)
-                    </button>
+                    <strong style={{ fontSize: "0.88rem" }}>Production to staging content sync</strong>
                     <span className={`status-chip ${prodToStagingPreflight.tone}`}>{prodToStagingPreflight.label}</span>
                   </div>
                   <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
-                    Production-to-staging execution is intentionally disabled in this pass. Use the dry-run plan and follow your infrastructure sync workflow.
+                    This page shows the dry-run plan only. Actual file and database sync runs from infrastructure automation, not from the button flow in Jongo.
                   </p>
                 </div>
 
                 <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.82rem" }}>
-                  Sync execution is not available in this interface. Contact your platform administrator to run the sync from your infrastructure panel.
+                  Use this section to review what sync would overwrite. Run the real sync from infrastructure automation before testing staging content.
                 </p>
               </article>
 
@@ -758,7 +766,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
           <article className="card">
             <h3 className="card-title">Promote to Production</h3>
             <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-              After validating in staging, promote to production once backup readiness is healthy.
+              Use this one-way action when staging is the artifact you want live. It copies staging posts, uploads, theme edits, and database content into production, then triggers the production deployment.
             </p>
             <PromoteToProductionCard
               siteId={siteId}

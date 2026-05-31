@@ -29,7 +29,71 @@ type BlockingDeploymentPayload = {
 
 const PROMOTE_BLOCK_COOLDOWN_MS = 30_000;
 const IDEMPOTENCY_KEY_RE = /^[a-zA-Z0-9:_-]{8,128}$/;
-const PROMOTE_SEMANTICS_NOTE = "Promote triggers a production deployment; it does not copy staging files/database into production.";
+const PROMOTE_SEMANTICS_NOTE = "Promote copies staging files/database into production, then triggers a production deployment.";
+
+function normalizePublicUrl(value?: string | null): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(withProtocol).toString().replace(/\/+$/, "");
+  } catch {
+    return undefined;
+  }
+}
+
+async function runPromoteContentSync(params: {
+  req: Request;
+  siteId: string;
+  productionServiceUuid: string;
+  stagingServiceUuid: string;
+  stagingUrl: string;
+  productionUrl: string;
+}) {
+  const configuredAutomationUrl = (process.env.STAGING_SYNC_AUTOMATION_URL || "").trim();
+  const automationUrl = configuredAutomationUrl || new URL("/api/ops/staging-sync-automation", params.req.url).toString();
+  const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+
+  try {
+    const response = await fetch(automationUrl, {
+      method: "POST",
+      signal: controller.signal,
+      redirect: "manual",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        siteId: params.siteId,
+        productionServiceUuid: params.productionServiceUuid,
+        stagingServiceUuid: params.stagingServiceUuid,
+        stagingUrl: params.stagingUrl,
+        productionUrl: params.productionUrl,
+        direction: "staging-to-production",
+        mode: "apply"
+      })
+    });
+
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`Staging-to-production content sync failed (${response.status}): ${responseText.slice(0, 500)}`);
+    }
+
+    return responseText;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Staging-to-production content sync timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -445,6 +509,8 @@ export async function POST(req: Request, { params }: Params) {
   const stagingConfigured = Boolean(site.stagingEnabled && stagingCapability.detected && stagingCapability.applicationUuid);
   const backupReadiness = getBackupReadiness(backupInventory, appUuid);
   const preflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
+  const stagingUrl = normalizePublicUrl(stagingCapability.stagingUrl ?? stagingCapability.fqdn);
+  const productionUrl = normalizePublicUrl(site.name) ?? normalizePublicUrl(site.slug);
 
   if (preflight.tone === "error") {
     await recordStagingAuditLog({
@@ -473,7 +539,42 @@ export async function POST(req: Request, { params }: Params) {
     });
   }
 
+  if (!stagingUrl || !productionUrl || !stagingCapability.applicationUuid) {
+    const message = "Staging-to-production sync requires both staging and production URLs plus an attached staging target.";
+
+    await recordStagingAuditLog({
+      organizationId: site.organizationId,
+      actorId,
+      actionType: "staging_promote_failed",
+      resourceId: site.id,
+      details: {
+        promoteAttemptId,
+        idempotencyKey,
+        appUuid,
+        preflight,
+        message
+      },
+      req
+    });
+
+    return NextResponse.json({
+      error: message,
+      promoteAttemptId,
+      idempotencyKey,
+      preflight
+    }, { status: 409 });
+  }
+
   try {
+    await runPromoteContentSync({
+      req,
+      siteId,
+      productionServiceUuid: appUuid,
+      stagingServiceUuid: stagingCapability.applicationUuid,
+      stagingUrl,
+      productionUrl
+    });
+
     const result = await triggerCoolifyDeploy(appUuid, "production");
 
     await recordStagingAuditLog({
