@@ -37,15 +37,29 @@ function loadEnvFile(filePath) {
 loadEnvFile(path.resolve(process.cwd(), ".env.local"));
 loadEnvFile(path.resolve(process.cwd(), "apps/web/.env.local"));
 
+function firstEnvValue(keys) {
+  for (const key of keys) {
+    const value = (process.env[key] || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function normalizePrivateKey(value) {
+  return value.replace(/\r\n/g, "\n").replace(/\\n/g, "\n").trim();
+}
+
 const baseUrl = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
 const sshHost = (process.env.STAGING_SYNC_SSH_HOST || process.env.COOLIFY_SSH_HOST || "").trim();
 const sshUser = (process.env.STAGING_SYNC_SSH_USER || "root").trim();
 const sshStrictHostKeyChecking = (process.env.STAGING_SYNC_SSH_STRICT_HOST_KEY_CHECKING || "accept-new").trim();
 const sshUserKnownHostsFile = (process.env.STAGING_SYNC_SSH_USER_KNOWN_HOSTS_FILE || "").trim();
-const sshPrivateKeyPathEnv = (process.env.STAGING_SYNC_SSH_PRIVATE_KEY_PATH || "").trim();
-const sshPrivateKeyRaw = (process.env.STAGING_SYNC_SSH_PRIVATE_KEY || "").trim();
-const sshPrivateKeyB64 = (process.env.STAGING_SYNC_SSH_PRIVATE_KEY_B64 || "").trim();
+const sshPrivateKeyPathEnv = firstEnvValue(["STAGING_SYNC_SSH_PRIVATE_KEY_PATH", "COOLIFY_SSH_PRIVATE_KEY_PATH"]);
+const sshPrivateKeyRaw = firstEnvValue(["STAGING_SYNC_SSH_PRIVATE_KEY", "COOLIFY_SSH_PRIVATE_KEY"]);
+const sshPrivateKeyB64 = firstEnvValue(["STAGING_SYNC_SSH_PRIVATE_KEY_B64", "COOLIFY_SSH_PRIVATE_KEY_B64", "COOLIFY_SSH_PRIVATE_KEY_BASE64"]);
 const urlRewriteModeRaw = (process.env.STAGING_SYNC_URL_REWRITE_MODE || "strict").trim().toLowerCase();
 const strictUrlRewrite = urlRewriteModeRaw !== "best-effort";
 const rawArgs = process.argv.slice(2);
@@ -122,16 +136,34 @@ if (!sshHost) {
 }
 
 let resolvedSshPrivateKeyPath = sshPrivateKeyPathEnv;
+let sshAuthMode = "default";
 if (!resolvedSshPrivateKeyPath && (sshPrivateKeyRaw || sshPrivateKeyB64)) {
-  const decoded = sshPrivateKeyB64
-    ? Buffer.from(sshPrivateKeyB64, "base64").toString("utf8")
-    : sshPrivateKeyRaw.replace(/\\n/g, "\n");
+  let decoded;
+  if (sshPrivateKeyB64) {
+    try {
+      decoded = Buffer.from(sshPrivateKeyB64, "base64").toString("utf8");
+    } catch {
+      console.error("Invalid STAGING_SYNC_SSH_PRIVATE_KEY_B64 / COOLIFY_SSH_PRIVATE_KEY_B64 value.");
+      process.exit(1);
+    }
+  } else {
+    decoded = sshPrivateKeyRaw;
+  }
+
+  const normalized = normalizePrivateKey(decoded);
+  if (!normalized) {
+    console.error("SSH private key value is empty after normalization.");
+    process.exit(1);
+  }
 
   const keyDir = fs.mkdtempSync(path.join(os.tmpdir(), "staging-sync-key-"));
   const keyPath = path.join(keyDir, "id_ed25519");
-  fs.writeFileSync(keyPath, decoded, { encoding: "utf8", mode: 0o600 });
+  fs.writeFileSync(keyPath, `${normalized}\n`, { encoding: "utf8", mode: 0o600 });
   fs.chmodSync(keyPath, 0o600);
   resolvedSshPrivateKeyPath = keyPath;
+  sshAuthMode = sshPrivateKeyB64 ? "env:b64" : "env:raw";
+} else if (resolvedSshPrivateKeyPath) {
+  sshAuthMode = "env:path";
 }
 
 function authHeaders() {
@@ -336,6 +368,7 @@ async function run() {
   console.log(`Targets: ${siteIds.length}`);
   console.log(`Mode: ${apply ? "apply" : "dry-run"}`);
   console.log(`SSH: ${sshUser}@${sshHost}`);
+  console.log(`SSH auth mode: ${sshAuthMode}`);
   console.log(`URL rewrite mode: ${strictUrlRewrite ? "strict" : "best-effort"}`);
   if (overrideEnabled) {
     console.log("Capability override mode: enabled");

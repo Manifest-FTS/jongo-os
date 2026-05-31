@@ -49,6 +49,10 @@ function hasValue(value?: string | null): boolean {
   return Boolean(value && value.trim().length > 0);
 }
 
+function hasAnyValue(keys: string[]): boolean {
+  return keys.some((key) => hasValue(process.env[key]));
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -165,6 +169,29 @@ export async function POST(request: Request) {
         ok: false,
         reason: "missing_config",
         message: "Missing STAGING_SYNC_SSH_HOST (or COOLIFY_SSH_HOST)."
+      },
+      { status: 412 }
+    );
+  }
+
+  const hasSshAuthConfig = hasAnyValue([
+    "STAGING_SYNC_SSH_PRIVATE_KEY_PATH",
+    "STAGING_SYNC_SSH_PRIVATE_KEY",
+    "STAGING_SYNC_SSH_PRIVATE_KEY_B64",
+    "COOLIFY_SSH_PRIVATE_KEY_PATH",
+    "COOLIFY_SSH_PRIVATE_KEY",
+    "COOLIFY_SSH_PRIVATE_KEY_B64",
+    "COOLIFY_SSH_PRIVATE_KEY_BASE64",
+    "SSH_AUTH_SOCK"
+  ]);
+
+  if (!hasSshAuthConfig) {
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "missing_config",
+        message:
+          "Missing SSH auth config. Set STAGING_SYNC_SSH_PRIVATE_KEY_B64 (or COOLIFY_SSH_PRIVATE_KEY_B64), a private key path/raw key, or provide SSH_AUTH_SOCK."
       },
       { status: 412 }
     );
