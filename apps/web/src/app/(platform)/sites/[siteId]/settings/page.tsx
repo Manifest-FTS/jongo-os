@@ -44,6 +44,7 @@ export default async function SiteSettingsPage({ params }: Params) {
     : null;
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
+  const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
 
   return (
     <div>
@@ -101,12 +102,14 @@ export default async function SiteSettingsPage({ params }: Params) {
           <SiteStagingToggle
             siteId={siteId}
             initialEnabled={Boolean(workspace.stagingEnabled)}
-            hasDetectedStaging={stagingEnvironmentReady}
+            hasDetectedStagingTarget={stagingTargetAttached}
           />
         </div>
-        <p style={{ margin: "0.85rem 0 0", fontSize: "0.88rem" }}>
-          <Link href={`/apps/${siteId}/staging`} className="action-link">Open Staging workspace</Link>
-        </p>
+        {stagingConfigured ? (
+          <p style={{ margin: "0.85rem 0 0", fontSize: "0.88rem" }}>
+            <Link href={`/apps/${siteId}/staging`} className="action-link">Open Staging workspace</Link>
+          </p>
+        ) : null}
       </article>
 
       {/* Developer Details (replaces standalone Advanced tab) */}

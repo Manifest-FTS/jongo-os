@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Props = {
   siteId: string;
   initialEnabled: boolean;
-  hasDetectedStaging: boolean;
+  hasDetectedStagingTarget: boolean;
 };
 
 type PendingAction = "enable" | "disable" | null;
@@ -26,6 +26,7 @@ type StagingStatusResponse = {
   stagingConfigured?: boolean;
   stagingCapability?: {
     detected?: boolean;
+    applicationUuid?: string;
   };
 };
 
@@ -36,9 +37,10 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedStaging }: Props) {
+export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedStagingTarget }: Props) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
+  const [detectedStagingTarget, setDetectedStagingTarget] = useState(hasDetectedStagingTarget);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -50,6 +52,32 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   const [modalMode, setModalMode] = useState<ModalMode>("confirm");
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeAttempt, setFinalizeAttempt] = useState(0);
+
+  useEffect(() => {
+    setDetectedStagingTarget(hasDetectedStagingTarget);
+  }, [hasDetectedStagingTarget]);
+
+  async function refreshStagingTargetStatus() {
+    try {
+      const response = await fetch(`/api/sites/${siteId}/staging`, { method: "GET" });
+      if (!response.ok) {
+        return;
+      }
+
+      const status = (await response.json()) as StagingStatusResponse;
+      setDetectedStagingTarget(Boolean(status?.stagingCapability?.applicationUuid));
+    } catch {
+      // Ignore best-effort status refresh failures.
+    }
+  }
+
+  useEffect(() => {
+    if (enabled) {
+      return;
+    }
+
+    void refreshStagingTargetStatus();
+  }, [enabled, siteId]);
 
   async function waitForLifecycleCompletion(nextEnabled: boolean, burnExisting: boolean, manualRequired: boolean) {
     // If manual provisioning is required, Jongo has completed what it can server-side.
@@ -65,7 +93,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
           const status = (await response.json()) as StagingStatusResponse;
           const stagingEnabled = Boolean(status?.stagingEnabled);
           const stagingConfigured = Boolean(status?.stagingConfigured);
-          const stagingDetected = Boolean(status?.stagingCapability?.detected);
+          const stagingDetected = Boolean(status?.stagingCapability?.applicationUuid);
+          setDetectedStagingTarget(stagingDetected);
 
           if (nextEnabled) {
             if (stagingEnabled && (stagingConfigured || stagingDetected)) {
@@ -144,6 +173,10 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
         setFinalizing(false);
       }
 
+      if (!nextEnabled) {
+        await refreshStagingTargetStatus();
+      }
+
       router.refresh();
     } catch {
       setError("Network error while updating staging.");
@@ -195,11 +228,11 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   }
 
   const interactionLocked = loading || finalizing;
-  const enableBlockedByResidualStaging = !enabled && hasDetectedStaging;
+  const enableBlockedByResidualStaging = !enabled && detectedStagingTarget;
   const toggleDisabled = interactionLocked || enableBlockedByResidualStaging;
   const isDisableAction = pendingAction === "disable";
   const isEnableAction = pendingAction === "enable";
-  const waitingForManualStagingSetup = enabled && !hasDetectedStaging;
+  const waitingForManualStagingSetup = enabled && !detectedStagingTarget;
   const showResultBody = modalMode === "result" || Boolean(error || message || actionHint || waitingForManualStagingSetup);
   const settleAttemptsRemaining = Math.max(0, STAGING_OPERATION_MAX_POLLS - finalizeAttempt);
   const settleSecondsRemaining = Math.ceil((settleAttemptsRemaining * STAGING_OPERATION_POLL_DELAY_MS) / 1000);
@@ -295,7 +328,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                     : "Disable staging in Jongo. By default, existing staging resources are removed."}
                 </p>
 
-                {isDisableAction && hasDetectedStaging ? (
+                {isDisableAction && detectedStagingTarget ? (
                   <label style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginTop: "0.8rem", fontSize: "0.82rem" }}>
                     <input
                       type="checkbox"

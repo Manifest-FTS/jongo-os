@@ -41,6 +41,18 @@ type AutoContentSyncResult = {
   responseTail?: string;
 };
 
+type CoolifyDomainSyncAttempt = {
+  method: "PATCH" | "POST";
+  path: string;
+  body: Record<string, unknown>;
+};
+
+type CoolifyDomainSyncResult = {
+  ok: boolean;
+  status?: number;
+  message: string;
+};
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -155,6 +167,146 @@ function hasOpsToken(req: Request): boolean {
   const authHeader = req.headers.get("authorization") ?? "";
   const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
   return Boolean(configured && provided && configured === provided);
+}
+
+async function runCoolifyDomainSyncAttempt(attempt: CoolifyDomainSyncAttempt): Promise<CoolifyDomainSyncResult> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL?.trim();
+  const token = process.env.COOLIFY_API_TOKEN?.trim();
+
+  if (!baseUrl || !token) {
+    return {
+      ok: false,
+      message: "Coolify API credentials are missing on this server."
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.COOLIFY_TIMEOUT_MS ?? 8000));
+
+  try {
+    const response = await fetch(`${baseUrl}${attempt.path}`, {
+      method: attempt.method,
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(attempt.body),
+      signal: controller.signal
+    });
+
+    if (response.ok) {
+      return {
+        ok: true,
+        status: response.status,
+        message: "Staging domains updated."
+      };
+    }
+
+    let bodyMessage = "";
+    try {
+      const payload = await response.json() as Record<string, unknown>;
+      const message = typeof payload.message === "string" ? payload.message : "";
+      const errors = payload.errors ? JSON.stringify(payload.errors) : "";
+      const conflicts = payload.conflicts ? JSON.stringify(payload.conflicts) : "";
+      bodyMessage = [message, errors, conflicts].filter(Boolean).join(" ").trim();
+    } catch {
+      try {
+        bodyMessage = (await response.text()).trim();
+      } catch {
+        bodyMessage = "";
+      }
+    }
+
+    return {
+      ok: false,
+      status: response.status,
+      message: bodyMessage || `Coolify returned HTTP ${response.status} while updating staging domains.`
+    };
+  } catch (error) {
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    return {
+      ok: false,
+      message: isTimeout
+        ? "Coolify API timed out while updating staging domains."
+        : "Could not reach the Coolify API while updating staging domains."
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function retryCoolifyDomainSyncWithDiagnostics(params: {
+  resourceKind?: string;
+  resourceUuid: string;
+  domains: string[];
+}): Promise<CoolifyDomainSyncResult> {
+  const normalizedDomains = params.domains
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => (/^https?:\/\//i.test(value) ? value : `https://${value}`));
+
+  if (normalizedDomains.length === 0) {
+    return {
+      ok: false,
+      message: "No valid domains were provided for sync."
+    };
+  }
+
+  const domainCsv = normalizedDomains.join(",");
+  const attempts: CoolifyDomainSyncAttempt[] = params.resourceKind === "service"
+    ? [
+        {
+          method: "PATCH",
+          path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
+          body: {
+            urls: normalizedDomains.map((url, index) => ({
+              name: index === 0 ? "default" : `domain-${index + 1}`,
+              url
+            })),
+            force_domain_override: true
+          }
+        },
+        {
+          method: "POST",
+          path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
+          body: {
+            urls: normalizedDomains.map((url, index) => ({
+              name: index === 0 ? "default" : `domain-${index + 1}`,
+              url
+            })),
+            force_domain_override: true
+          }
+        }
+      ]
+    : [
+        {
+          method: "PATCH",
+          path: `/api/v1/applications/${encodeURIComponent(params.resourceUuid)}`,
+          body: { domains: domainCsv }
+        },
+        {
+          method: "POST",
+          path: `/api/v1/applications/${encodeURIComponent(params.resourceUuid)}`,
+          body: { domains: domainCsv }
+        }
+      ];
+
+  let lastFailure: CoolifyDomainSyncResult = {
+    ok: false,
+    message: "Coolify rejected staging domain updates."
+  };
+
+  for (const attempt of attempts) {
+    const result = await runCoolifyDomainSyncAttempt(attempt);
+    if (result.ok) {
+      return result;
+    }
+    lastFailure = result;
+  }
+
+  return lastFailure;
 }
 
 function isUuid(value: string): boolean {
@@ -548,7 +700,7 @@ export async function POST(req: Request, { params }: Params) {
   if (body.enabled) {
     if (!site.stagingEnabled && appUuid) {
       const residualCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
-      if (residualCapability.detected) {
+      if (residualCapability.applicationUuid) {
         const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
         return NextResponse.json({
           error: "Staging re-enable is locked until existing staging resources are fully removed.",
@@ -1004,28 +1156,40 @@ export async function PATCH(req: Request, { params }: Params) {
     ? await applyCoolifyServiceDomains(capability.applicationUuid, requestedDomains)
     : await applyCoolifyApplicationDomains(capability.applicationUuid, requestedDomains);
 
+  const compatibilityRetry = !updated
+    ? await retryCoolifyDomainSyncWithDiagnostics({
+        resourceKind: capability.resourceKind,
+        resourceUuid: capability.applicationUuid,
+        domains: requestedDomains
+      })
+    : { ok: true, message: "Staging domains updated." };
+  const domainUpdateSucceeded = updated || compatibilityRetry.ok;
+  const domainUpdateMessage = domainUpdateSucceeded
+    ? (updated ? "Staging domains updated." : "Staging domains updated using compatibility mode.")
+    : compatibilityRetry.message;
+
   await recordStagingAuditLog({
     organizationId: site.organizationId,
     actorId: session.user.id,
-    actionType: updated ? "staging_domains_updated" : "staging_domains_update_failed",
+    actionType: domainUpdateSucceeded ? "staging_domains_updated" : "staging_domains_update_failed",
     resourceId: site.id,
     details: {
       domains: requestedDomains,
       stagingApplicationUuid: capability.applicationUuid,
-      updated,
-      message: updated
-        ? "Staging domains updated."
-        : "Staging domain update was rejected by Coolify API routes. Verify the staging resource state and retry."
+      updated: domainUpdateSucceeded,
+      compatibilityModeUsed: !updated && compatibilityRetry.ok,
+      coolifyStatus: compatibilityRetry.status ?? null,
+      message: domainUpdateMessage
     },
     req
   });
 
-  if (!updated) {
+  if (!domainUpdateSucceeded) {
     return NextResponse.json({
       ok: false,
       stagingApplicationUuid: capability.applicationUuid,
       requestedDomains,
-      message: "Staging domain update was rejected by Coolify API routes. Verify the staging resource state and retry."
+      message: domainUpdateMessage
     }, { status: 502 });
   }
 
@@ -1033,6 +1197,6 @@ export async function PATCH(req: Request, { params }: Params) {
     ok: true,
     stagingApplicationUuid: capability.applicationUuid,
     requestedDomains,
-    message: "Staging domains updated."
+    message: domainUpdateMessage
   });
 }

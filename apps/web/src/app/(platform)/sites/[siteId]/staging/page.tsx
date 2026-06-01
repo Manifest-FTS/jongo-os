@@ -495,6 +495,18 @@ export default async function StagingPage({ params, searchParams }: Params) {
         </article>
       ) : null}
 
+      {latestPromoteOutcome?.actionType === "staging_promote_succeeded" && stagingConfigured ? (
+        <article className="card">
+          <h3 className="card-title">Post-promotion suggestion</h3>
+          <p className="card-muted" style={{ marginBottom: "0.65rem" }}>
+            Promotion completed successfully. To conserve resources, you can disable and destroy staging until your next QA cycle.
+          </p>
+          <p style={{ margin: 0, fontSize: "0.88rem" }}>
+            <Link href={`/apps/${siteId}/settings`} className="action-link">Open Settings to disable staging now</Link>
+          </p>
+        </article>
+      ) : null}
+
       <>
           {stagingConfigured && debugViewEnabled ? (
             <>
