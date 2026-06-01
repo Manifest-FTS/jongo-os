@@ -1,6 +1,7 @@
 import {
   getCoolifyAppStagingCapability,
-  buildStagingSyncDryRunPlan
+  buildStagingSyncDryRunPlan,
+  deriveCoolifyStagingDomainFromProduction
 } from "@/lib/coolify";
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
@@ -282,6 +283,9 @@ export default async function StagingPage({ params, searchParams }: Params) {
       getCoolifyAppBackupInventory(appUuid)
     ])
     : [null, null];
+  const preferredStagingUrl = appUuid
+    ? await deriveCoolifyStagingDomainFromProduction(appUuid)
+    : undefined;
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingTargetRunning = stagingCapability?.status === "healthy";
@@ -299,7 +303,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const enableDebugHref = `/sites/${siteId}/staging?debug=1${initialAttemptId ? `&attemptId=${encodeURIComponent(initialAttemptId)}` : ""}`;
   const disableDebugHref = `/sites/${siteId}/staging${initialAttemptId ? `?attemptId=${encodeURIComponent(initialAttemptId)}` : ""}`;
   const reportedStagingDomains = parseDomainValues(stagingCapability?.fqdn ?? stagingCapability?.stagingUrl);
-  const stagingDomainsInput = reportedStagingDomains.join(", ");
+  const preferredDomainValue = preferredStagingUrl ? parseDomainValues(preferredStagingUrl)[0] : undefined;
+  const stagingDomainsInput = (reportedStagingDomains.length > 0
+    ? reportedStagingDomains
+    : (preferredDomainValue ? [preferredDomainValue] : [])
+  ).join(", ");
   const stagingAuditLogs: (StagingAuditEntry & { actor?: { id: string; fullName?: string | null; email?: string | null; avatarUrl?: string | null } | null })[] = workspace.organizationId
     ? await db.auditLog.findMany({
         where: {
@@ -568,6 +576,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
                 {stagingCapability.applicationName && (
                   <p style={{ margin: 0 }}>Staging resource: <code>{stagingCapability.applicationName}</code></p>
                 )}
+                {preferredStagingUrl ? (
+                  <p style={{ margin: 0 }}>
+                    Preferred staging URL: <a href={preferredStagingUrl} target="_blank" rel="noopener noreferrer" className="action-link">{preferredStagingUrl}</a>
+                  </p>
+                ) : null}
                   {reportedStagingDomains.length > 0 && (
                   <div style={{ margin: 0 }}>
                     <p style={{ margin: 0 }}>Actual URL from staging:</p>
@@ -725,21 +738,8 @@ export default async function StagingPage({ params, searchParams }: Params) {
             </>
           ) : null}
 
-
-          {stagingConfigured ? (
+          {!stagingConfigured ? (
             <article className="card">
-              <h3 className="card-title">Environment Status</h3>
-              <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.5rem", fontSize: "0.9rem" }}>
-                <p style={{ margin: 0 }}>
-                  Production: <span className={`status-chip ${workspace?.productionStatus ?? "unknown"}`}>{workspace?.productionStatus ?? "unknown"}</span>
-                </p>
-                <p style={{ margin: 0 }}>
-                  Staging: <span className={`status-chip ${workspace?.stagingStatus ?? "unknown"}`}>{workspace?.stagingStatus ?? "unknown"}</span>
-                </p>
-              </div>
-            </article>
-          ) : (
-        <article className="card">
           <h3 className="card-title">Staging Not Configured</h3>
           <p className="card-muted" style={{ marginBottom: 0 }}>
               The infrastructure API does not currently report a usable staging environment for this app. Sync and promote controls stay hidden until staging is detected.
@@ -747,8 +747,8 @@ export default async function StagingPage({ params, searchParams }: Params) {
               <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
                 Next step: configure staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link>, then return here for dry-run preflight and workflow previews.
               </p>
-        </article>
-      )}
+            </article>
+          ) : null}
       </>
     </div>
   );

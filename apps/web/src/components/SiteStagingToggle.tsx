@@ -18,6 +18,7 @@ type StagingToggleResponse = {
   actionHint?: string | null;
   manualProvisionRequired?: boolean;
   destroyed?: boolean;
+  enableLocked?: boolean;
 };
 
 type StagingStatusResponse = {
@@ -113,6 +114,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       const payload = (await response.json()) as StagingToggleResponse;
       if (!response.ok) {
         setError(payload?.error ?? "Unable to update staging state.");
+        setActionHint(payload?.actionHint ?? null);
         setModalMode("result");
         setModalOpen(true);
         return;
@@ -193,6 +195,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   }
 
   const interactionLocked = loading || finalizing;
+  const enableBlockedByResidualStaging = !enabled && hasDetectedStaging;
+  const toggleDisabled = interactionLocked || enableBlockedByResidualStaging;
   const isDisableAction = pendingAction === "disable";
   const isEnableAction = pendingAction === "enable";
   const waitingForManualStagingSetup = enabled && !hasDetectedStaging;
@@ -207,7 +211,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
         onClick={requestToggle}
         aria-label={`Turn staging ${enabled ? "off" : "on"}`}
         aria-pressed={enabled}
-        disabled={interactionLocked}
+        disabled={toggleDisabled}
         style={{
           width: "58px",
           height: "32px",
@@ -215,7 +219,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
           border: `1px solid ${enabled ? "var(--accent)" : "var(--border)"}`,
           background: enabled ? "var(--accent)" : "var(--surface-alt)",
           position: "relative",
-          cursor: interactionLocked ? "not-allowed" : "pointer",
+          cursor: toggleDisabled ? "not-allowed" : "pointer",
           transition: "background 0.2s ease, border-color 0.2s ease"
         }}
       >
@@ -236,8 +240,20 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       </button>
 
       <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
-        {interactionLocked ? "Updating..." : enabled ? "On" : "Off"}
+        {interactionLocked
+          ? "Updating..."
+          : enableBlockedByResidualStaging
+            ? "Locked until staging is fully deleted"
+            : enabled
+              ? "On"
+              : "Off"}
       </p>
+
+      {enableBlockedByResidualStaging ? (
+        <p style={{ margin: 0, fontSize: "0.78rem", color: "#a15c00", maxWidth: "320px", textAlign: "right" }}>
+          Re-enable is blocked while staging resources still exist. Finish unprovisioning in Coolify first.
+        </p>
+      ) : null}
 
       {modalOpen ? (
         <div
@@ -330,6 +346,11 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                 {manualProvisionRequired ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
                     {actionHint ?? "Manual provisioning in the infrastructure panel is required before staging will be detected."}
+                  </p>
+                ) : null}
+                {error && actionHint && !manualProvisionRequired ? (
+                  <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
+                    {actionHint}
                   </p>
                 ) : null}
                 {waitingForManualStagingSetup && !manualProvisionRequired ? (

@@ -1370,6 +1370,10 @@ export async function applyCoolifyApplicationDomains(appUuid: string, input: str
       if (patchOk) {
         return true;
       }
+      const putOk = await coolifyMutate(path, "PUT", body);
+      if (putOk) {
+        return true;
+      }
       const postOk = await coolifyMutate(path, "POST", body);
       if (postOk) {
         return true;
@@ -1437,6 +1441,11 @@ export async function applyCoolifyServiceDomains(serviceUuid: string, input: str
     for (const body of requestBodies) {
       const patchOk = await coolifyMutate(path, "PATCH", body);
       if (patchOk) {
+        return true;
+      }
+
+      const putOk = await coolifyMutate(path, "PUT", body);
+      if (putOk) {
         return true;
       }
 

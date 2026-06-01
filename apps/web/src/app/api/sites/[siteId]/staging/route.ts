@@ -546,6 +546,17 @@ export async function POST(req: Request, { params }: Params) {
   const projectId = site.coolifyProjectId?.trim() || undefined;
 
   if (body.enabled) {
+    if (!site.stagingEnabled && appUuid) {
+      const residualCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+      if (residualCapability.detected) {
+        const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
+        return NextResponse.json({
+          error: "Staging re-enable is locked until existing staging resources are fully removed.",
+          actionHint: `Existing staging ${targetLabel} resources are still detected. Finish unprovision/deletion in Coolify, then re-enable staging.`
+        }, { status: 409 });
+      }
+    }
+
     await db.site.update({
       where: { id: site.id },
       data: { stagingEnabled: true }
@@ -614,9 +625,9 @@ export async function POST(req: Request, { params }: Params) {
         }
       })();
       const derivedStagingUrl = (
+        preferredStagingDomain ||
         capabilityAfterExistingCheck.stagingUrl ||
         capabilityAfterExistingCheck.fqdn?.split(",")[0]?.trim() ||
-        preferredStagingDomain ||
         ""
       ).trim();
       const freshProbe = derivedStagingUrl
@@ -666,6 +677,7 @@ export async function POST(req: Request, { params }: Params) {
         stagingCreationRequestAccepted: false,
         stagingTargetResolved: true,
         preferredStagingDomain,
+        preferredStagingUrl: preferredStagingDomain,
         stagingDomainApplied,
         stagingDeployTriggered,
         stagingRunning: currentStagingRunning,
@@ -746,9 +758,9 @@ export async function POST(req: Request, { params }: Params) {
       }
     })();
     const derivedStagingUrl = (
+      preferredStagingDomain ||
       capabilityAfterProvision.stagingUrl ||
       capabilityAfterProvision.fqdn?.split(",")[0]?.trim() ||
-      preferredStagingDomain ||
       ""
     ).trim();
 
@@ -839,6 +851,7 @@ export async function POST(req: Request, { params }: Params) {
       provisioningReason: provisionResult.reason ?? null,
       actionHint,
       preferredStagingDomain,
+      preferredStagingUrl: preferredStagingDomain,
       stagingDomainApplied,
       stagingDeployTriggered,
       stagingRunning,
@@ -1002,7 +1015,7 @@ export async function PATCH(req: Request, { params }: Params) {
       updated,
       message: updated
         ? "Staging domains updated."
-        : "Unable to update staging domains through the current API routes."
+        : "Staging domain update was rejected by Coolify API routes. Verify the staging resource state and retry."
     },
     req
   });
@@ -1012,7 +1025,7 @@ export async function PATCH(req: Request, { params }: Params) {
       ok: false,
       stagingApplicationUuid: capability.applicationUuid,
       requestedDomains,
-      message: "Unable to update staging domains through the current API routes."
+      message: "Staging domain update was rejected by Coolify API routes. Verify the staging resource state and retry."
     }, { status: 502 });
   }
 
