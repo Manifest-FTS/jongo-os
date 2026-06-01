@@ -1,7 +1,6 @@
 import {
   getCoolifyAppStagingCapability,
-  buildStagingSyncDryRunPlan,
-  deriveCoolifyStagingDomainFromProduction
+  buildStagingSyncDryRunPlan
 } from "@/lib/coolify";
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
@@ -73,58 +72,6 @@ function formatAgo(iso: string): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function getStagingModelCopy(siteType?: string): { title: string; body: string; bullets: string[] } {
-  if (siteType === "wordpress") {
-    return {
-      title: "WordPress staging model (future)",
-      body: "WordPress staging will follow a clone-style workflow similar to Flywheel, focused on safe content and update testing.",
-      bullets: [
-        "Create Staging from Production",
-        "Sync Production to Staging",
-        "Push Staging to Production",
-        "Selective DB/media pull (later)",
-        "Execution gated by backup readiness and admin/operator controls"
-      ]
-    };
-  }
-
-  if (siteType === "database") {
-    return {
-      title: "Database resource model",
-      body: "Database resources do not use website-style staging workflows.",
-      bullets: [
-        "Focus on backup readiness",
-        "Restore validation and recovery runbooks",
-        "Operational safety checks before destructive actions"
-      ]
-    };
-  }
-
-  if (siteType === "service") {
-    return {
-      title: "Service resource model",
-      body: "Service resources prioritize runtime health and recoverability over clone-style staging.",
-      bullets: [
-        "Service health and restart readiness",
-        "Log and runtime diagnostics",
-        "Backup/readiness signals for stateful services"
-      ]
-    };
-  }
-
-  return {
-    title: "Web app staging model (future)",
-    body: "Web app staging should behave like preview deployments rather than clone-style site staging.",
-    bullets: [
-      "Branch/PR preview environments",
-      "Temporary preview URLs",
-      "Pre-merge validation before main deployment",
-      "Prefer Coolify preview/staging by git branch when supported",
-      "Execution gated by backup readiness and admin/operator controls"
-    ]
-  };
 }
 
 function parseDomainValues(raw?: string): string[] {
@@ -304,9 +251,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const { siteId } = await params;
   const resolvedSearchParams = (await searchParams) ?? {};
   const searchAttemptIdRaw = resolvedSearchParams.attemptId;
+  const searchDebugRaw = resolvedSearchParams.debug;
   const initialAttemptId = Array.isArray(searchAttemptIdRaw)
     ? searchAttemptIdRaw[0]?.trim() ?? ""
     : searchAttemptIdRaw?.trim() ?? "";
+  const debugRequested = (Array.isArray(searchDebugRaw) ? searchDebugRaw[0] : searchDebugRaw) === "1";
   const session = await auth();
   const workspace = await getSiteWorkspace(siteId, {
     userId: session?.user?.id,
@@ -345,10 +294,10 @@ export default async function StagingPage({ params, searchParams }: Params) {
     : stagingToProdPreflight.tone === "error"
       ? stagingToProdPreflight.detail
       : undefined;
-  const stagingModelCopy = getStagingModelCopy(workspace?.siteType);
-  const preferredStagingDomain = appUuid
-    ? await deriveCoolifyStagingDomainFromProduction(appUuid)
-    : undefined;
+  const debugDefaultEnabled = (process.env.STAGING_UI_DEBUG_DEFAULT || "false").toLowerCase() === "true";
+  const debugViewEnabled = canManageDomains && (debugRequested || debugDefaultEnabled);
+  const enableDebugHref = `/sites/${siteId}/staging?debug=1${initialAttemptId ? `&attemptId=${encodeURIComponent(initialAttemptId)}` : ""}`;
+  const disableDebugHref = `/sites/${siteId}/staging${initialAttemptId ? `?attemptId=${encodeURIComponent(initialAttemptId)}` : ""}`;
   const reportedStagingDomains = parseDomainValues(stagingCapability?.fqdn ?? stagingCapability?.stagingUrl);
   const stagingDomainsInput = reportedStagingDomains.join(", ");
   const stagingAuditLogs: (StagingAuditEntry & { actor?: { id: string; fullName?: string | null; email?: string | null; avatarUrl?: string | null } | null })[] = workspace.organizationId
@@ -455,7 +404,29 @@ export default async function StagingPage({ params, searchParams }: Params) {
             Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to trigger Jongo&apos;s auto-provision attempt. If unsupported, provision staging manually in your infrastructure panel and return here.
           </p>
         )}
+
+        {canManageDomains ? (
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+            Admin view: {debugViewEnabled ? "Debug mode is on." : "Debug mode is off."} {debugViewEnabled ? <Link href={disableDebugHref} className="action-link">Hide diagnostics</Link> : <Link href={enableDebugHref} className="action-link">Show diagnostics</Link>}
+          </p>
+        ) : null}
       </article>
+
+      {stagingConfigured ? (
+        <article className="card">
+          <h3 className="card-title">Go Live!</h3>
+          <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+            Move staging changes to production (live site).
+          </p>
+          <PromoteToProductionCard
+            siteId={siteId}
+            disabled={Boolean(promoteLockedReason)}
+            disabledReason={promoteLockedReason}
+            preflightLabel={stagingToProdPreflight.label}
+            preflightTone={stagingToProdPreflight.tone}
+          />
+        </article>
+      ) : null}
 
       {latestPromoteOutcome && latestPromoteOutcome.actionType !== "staging_promote_triggered" && latestPromoteOutcome.actionType !== "staging_promote_in_progress" ? (
         <article className="card">
@@ -517,16 +488,8 @@ export default async function StagingPage({ params, searchParams }: Params) {
       ) : null}
 
       <>
-          <article className="card">
-            <h3 className="card-title">{stagingModelCopy.title}</h3>
-            <p className="card-muted" style={{ marginBottom: "0.65rem" }}>{stagingModelCopy.body}</p>
-            <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.25rem" }}>
-              {stagingModelCopy.bullets.map((item) => (
-                <li key={item} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{item}</li>
-              ))}
-            </ul>
-          </article>
-
+          {stagingConfigured && debugViewEnabled ? (
+            <>
           <article className="card">
             <h3 className="card-title">Pre-flight Status</h3>
             <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
@@ -761,35 +724,21 @@ export default async function StagingPage({ params, searchParams }: Params) {
               <StagingAuditHistory siteId={siteId} items={stagingAuditItems} initialAttemptId={initialAttemptId} />
             </>
           )}
-
-          {/* Go Live */}
-          <article className="card">
-            <h3 className="card-title">Promote to Production</h3>
-            <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-              Use this one-way action when staging is the artifact you want live. It copies staging posts, uploads, theme edits, and database content into production, then triggers the production deployment.
-            </p>
-            <PromoteToProductionCard
-              siteId={siteId}
-              disabled={Boolean(promoteLockedReason)}
-              disabledReason={promoteLockedReason}
-              preflightLabel={stagingToProdPreflight.label}
-              preflightTone={stagingToProdPreflight.tone}
-            />
-          </article>
-
-          {/* Environment status */}
-          <article className="card">
-            <h3 className="card-title">Environment Status</h3>
-            <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.5rem", fontSize: "0.9rem" }}>
-              <p style={{ margin: 0 }}>
-                Production: <span className={`status-chip ${workspace?.productionStatus ?? "unknown"}`}>{workspace?.productionStatus ?? "unknown"}</span>
-              </p>
-              <p style={{ margin: 0 }}>
-                Staging: <span className={`status-chip ${workspace?.stagingStatus ?? "unknown"}`}>{workspace?.stagingStatus ?? "unknown"}</span>
-              </p>
-            </div>
-          </article>
             </>
+          ) : null}
+
+          {stagingConfigured ? (
+            <article className="card">
+              <h3 className="card-title">Environment Status</h3>
+              <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.5rem", fontSize: "0.9rem" }}>
+                <p style={{ margin: 0 }}>
+                  Production: <span className={`status-chip ${workspace?.productionStatus ?? "unknown"}`}>{workspace?.productionStatus ?? "unknown"}</span>
+                </p>
+                <p style={{ margin: 0 }}>
+                  Staging: <span className={`status-chip ${workspace?.stagingStatus ?? "unknown"}`}>{workspace?.stagingStatus ?? "unknown"}</span>
+                </p>
+              </div>
+            </article>
           ) : (
         <article className="card">
           <h3 className="card-title">Staging Not Configured</h3>

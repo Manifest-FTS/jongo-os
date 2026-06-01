@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { deriveCoolifyStagingDomainFromProduction, getCoolifyAppStagingCapability } from "@/lib/coolify";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 
 type Params = { params: Promise<{ siteId: string }> };
@@ -31,12 +32,38 @@ export default async function SiteWorkspaceLayout({
     await isClientAdmin(site.organizationId, session.user.id)
   );
 
+  const appUuid = site.coolifyServiceUuid?.trim() || "";
+  const stagingCapability = (site.stagingEnabled && appUuid)
+    ? await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined)
+    : null;
+
+  const preferredStagingDomain = (site.stagingEnabled && appUuid)
+    ? await deriveCoolifyStagingDomainFromProduction(appUuid)
+    : undefined;
+
+  const normalizedActualStagingHost = (stagingCapability?.fqdn ?? stagingCapability?.stagingUrl ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .find(Boolean)
+    ?.replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+
+  const normalizedPreferredStagingHost = preferredStagingDomain
+    ?.replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+
+  const stagingTargetReady = Boolean(stagingCapability?.detected && stagingCapability?.applicationUuid);
+  const preferredStagingHostReady = normalizedPreferredStagingHost
+    ? normalizedActualStagingHost === normalizedPreferredStagingHost
+    : true;
+  const showStagingTab = Boolean(site.stagingEnabled && stagingTargetReady && preferredStagingHostReady);
+
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
     { name: "Deployments", href: `/apps/${siteId}/deployments` },
     { name: "Integrations", href: `/apps/${siteId}/integrations` },
     ...(site?.siteType === "wordpress" ? [{ name: "Plugins", href: `/apps/${siteId}/plugins` } as WorkspaceTab] : []),
-    ...(site?.stagingEnabled ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
+    ...(showStagingTab ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
     { name: "Backups", href: `/apps/${siteId}/backups` },
     { name: "Analytics", href: `/apps/${siteId}/analytics` },
     { name: "Team", href: `/apps/${siteId}/team` },
