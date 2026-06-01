@@ -409,6 +409,67 @@ async function probeStagingContent(stagingUrl?: string): Promise<StagingContentP
   };
 }
 
+function buildStagingProbeCandidates(params: {
+  preferredStagingDomain?: string;
+  stagingUrl?: string;
+  fqdn?: string;
+}): string[] {
+  const candidates = [
+    params.stagingUrl,
+    ...(params.fqdn ? params.fqdn.split(",").map((value) => value.trim()) : []),
+    params.preferredStagingDomain
+  ]
+    .map((value) => value?.trim() ?? "")
+    .filter(Boolean);
+
+  return [...new Set(candidates)];
+}
+
+async function probeStagingContentAcrossCandidates(candidates: string[]): Promise<{
+  probe: StagingContentProbe;
+  checkedCandidates: string[];
+  matchedCandidate?: string;
+}> {
+  const checkedCandidates: string[] = [];
+  let firstCheckedProbe: StagingContentProbe | null = null;
+  let firstCheckedCandidate: string | undefined;
+
+  for (const candidate of candidates) {
+    checkedCandidates.push(candidate);
+    const probe = await probeStagingContent(candidate);
+
+    if (probe.checked && !firstCheckedProbe) {
+      firstCheckedProbe = probe;
+      firstCheckedCandidate = candidate;
+    }
+
+    if (probe.freshInstallDetected) {
+      return {
+        probe,
+        checkedCandidates,
+        matchedCandidate: candidate
+      };
+    }
+  }
+
+  if (firstCheckedProbe) {
+    return {
+      probe: firstCheckedProbe,
+      checkedCandidates,
+      matchedCandidate: firstCheckedCandidate
+    };
+  }
+
+  return {
+    probe: {
+      checked: false,
+      freshInstallDetected: false,
+      note: "probe_failed"
+    },
+    checkedCandidates
+  };
+}
+
 async function recordStagingAuditLog(params: {
   organizationId: string;
   actorId?: string;
@@ -776,23 +837,28 @@ export async function POST(req: Request, { params }: Params) {
           return process.env.APP_BASE_URL || "";
         }
       })();
-      const derivedStagingUrl = (
+      const probeCandidates = buildStagingProbeCandidates({
+        preferredStagingDomain,
+        stagingUrl: capabilityAfterExistingCheck.stagingUrl,
+        fqdn: capabilityAfterExistingCheck.fqdn
+      });
+      const probeResult = await probeStagingContentAcrossCandidates(probeCandidates);
+      const freshProbe = probeResult.probe;
+      const shouldSyncExistingFreshInstall = freshProbe.freshInstallDetected;
+      const autoSyncStagingUrl = (
         preferredStagingDomain ||
+        probeResult.matchedCandidate ||
         capabilityAfterExistingCheck.stagingUrl ||
         capabilityAfterExistingCheck.fqdn?.split(",")[0]?.trim() ||
         ""
       ).trim();
-      const freshProbe = derivedStagingUrl
-        ? await probeStagingContent(derivedStagingUrl)
-        : { checked: false, freshInstallDetected: false };
-      const shouldSyncExistingFreshInstall = freshProbe.freshInstallDetected;
 
       const autoContentSync = shouldSyncExistingFreshInstall
         ? await runAutoContentSync({
             siteId: site.slug || site.id,
             productionServiceUuid: appUuid,
             stagingServiceUuid: capabilityAfterExistingCheck.applicationUuid || "",
-            stagingUrl: derivedStagingUrl,
+            stagingUrl: autoSyncStagingUrl,
             requestBaseUrl,
             direction: "production-to-staging"
           })
@@ -814,6 +880,8 @@ export async function POST(req: Request, { params }: Params) {
           preferredStagingDomain: preferredStagingDomain ?? null,
           stagingDomainApplied,
           stagingDeployTriggered,
+          probeCandidates,
+          probeMatchedCandidate: probeResult.matchedCandidate ?? null,
           freshInstallDetected: freshProbe.freshInstallDetected,
           autoContentSync,
           capability: capabilityAfterExistingCheck
@@ -909,17 +977,23 @@ export async function POST(req: Request, { params }: Params) {
         return process.env.APP_BASE_URL || "";
       }
     })();
+    const probeCandidates = buildStagingProbeCandidates({
+      preferredStagingDomain,
+      stagingUrl: capabilityAfterProvision.stagingUrl,
+      fqdn: capabilityAfterProvision.fqdn
+    });
+    const probeResult = await probeStagingContentAcrossCandidates(probeCandidates);
     const derivedStagingUrl = (
       preferredStagingDomain ||
+      probeResult.matchedCandidate ||
       capabilityAfterProvision.stagingUrl ||
       capabilityAfterProvision.fqdn?.split(",")[0]?.trim() ||
       ""
     ).trim();
 
     let freshInstallDetected = false;
-    if (stagingTargetResolved && derivedStagingUrl) {
-      const freshProbe = await probeStagingContent(derivedStagingUrl);
-      freshInstallDetected = freshProbe.freshInstallDetected;
+    if (stagingTargetResolved) {
+      freshInstallDetected = probeResult.probe.freshInstallDetected;
     }
 
     const requiresContentSync = createdNewService || freshInstallDetected;
@@ -957,6 +1031,8 @@ export async function POST(req: Request, { params }: Params) {
         preferredStagingDomain: preferredStagingDomain ?? null,
         stagingDomainApplied,
         stagingDeployTriggered,
+        probeCandidates,
+        probeMatchedCandidate: probeResult.matchedCandidate ?? null,
         capability: capabilityAfterProvision,
         provisioningMessage: provisionResult.message,
         contentSyncReason,
