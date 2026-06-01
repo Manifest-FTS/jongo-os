@@ -60,6 +60,7 @@ async function runAutoContentSync(params: {
   stagingServiceUuid: string;
   stagingUrl: string;
   requestBaseUrl?: string;
+  direction?: "production-to-staging" | "staging-to-production";
 }): Promise<AutoContentSyncResult> {
   const automationUrl = (process.env.STAGING_SYNC_AUTOMATION_URL || "").trim();
   const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
@@ -100,6 +101,7 @@ async function runAutoContentSync(params: {
         productionServiceUuid: params.productionServiceUuid,
         stagingServiceUuid: params.stagingServiceUuid,
         stagingUrl: params.stagingUrl,
+        direction: params.direction ?? "production-to-staging",
         appBaseUrl: baseUrl,
         mode: "apply"
       })
@@ -628,7 +630,8 @@ export async function POST(req: Request, { params }: Params) {
             productionServiceUuid: appUuid,
             stagingServiceUuid: capabilityAfterExistingCheck.applicationUuid || "",
             stagingUrl: derivedStagingUrl,
-            requestBaseUrl
+            requestBaseUrl,
+            direction: "production-to-staging"
           })
         : {
             attempted: false,
@@ -733,7 +736,7 @@ export async function POST(req: Request, { params }: Params) {
     const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
     const manualProvisionRequired = !stagingTargetResolved;
     const stagingRunning = capabilityAfterProvision.status === "healthy";
-    const createdNewService = provisionResult.reason === "service_created";
+    const createdNewService = provisionResult.reason === "service_created" || provisionResult.reason === "request_sent";
     const environmentOnlyProvisioned = provisionResult.reason === "environment_created";
     const requestBaseUrl = (() => {
       try {
@@ -766,7 +769,8 @@ export async function POST(req: Request, { params }: Params) {
           productionServiceUuid: appUuid,
           stagingServiceUuid: capabilityAfterProvision.applicationUuid || "",
           stagingUrl: derivedStagingUrl,
-          requestBaseUrl
+          requestBaseUrl,
+          direction: "production-to-staging"
         })
       : {
           attempted: false,

@@ -14,7 +14,7 @@ type Props = {
 };
 
 export default function WorkspaceNav({ items }: Props) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   return (
     <nav className="workspace-nav">
@@ -22,7 +22,7 @@ export default function WorkspaceNav({ items }: Props) {
         {items.map((item) => {
           const isActive =
             pathname === item.href ||
-            (item.href !== "/" && pathname?.startsWith(item.href));
+            (item.href !== "/" && pathname.startsWith(item.href));
 
           return (
             <Link

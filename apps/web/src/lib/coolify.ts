@@ -1275,14 +1275,14 @@ function extractStagingDomainList(target: Record<string, unknown>): string[] {
 function buildStagingResourceName(sourceName: string): string {
   const trimmed = sourceName.trim();
   if (!trimmed) {
-    return "staging.service";
+    return "staging-service";
   }
 
-  if (/^staging\./i.test(trimmed)) {
+  if (/^staging[-.]/i.test(trimmed)) {
     return trimmed;
   }
 
-  return `staging.${trimmed}`;
+  return `staging-${trimmed}`;
 }
 
 function buildStagingDomainFromProductionUrl(productionRaw: string): string | undefined {
@@ -1297,11 +1297,11 @@ function buildStagingDomainFromProductionUrl(productionRaw: string): string | un
   }
 
   const hostname = new URL(productionUrl).hostname;
-  if (!hostname || hostname.startsWith("staging.")) {
+  if (!hostname || hostname.startsWith("staging-") || hostname.startsWith("staging.")) {
     return undefined;
   }
 
-  return `https://staging.${hostname}`;
+  return `https://staging-${hostname}`;
 }
 
 export async function deriveCoolifyStagingDomainFromProduction(appUuid: string): Promise<string | undefined> {

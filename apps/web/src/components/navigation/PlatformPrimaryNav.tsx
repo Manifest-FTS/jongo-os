@@ -28,7 +28,7 @@ function isItemActive(pathname: string, item: NavItem) {
 }
 
 export default function PlatformPrimaryNav() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   return (
     <nav className="app-nav card" aria-label="Primary navigation">

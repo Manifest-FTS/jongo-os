@@ -20,7 +20,7 @@ function tabIsActive(pathname: string, tab: WorkspaceTab) {
 }
 
 export default function WorkspaceTabs({ tabs }: { tabs: WorkspaceTab[] }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   return (
     <div className="tab-rail" role="tablist" aria-label="Workspace sections">
