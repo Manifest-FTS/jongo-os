@@ -7,6 +7,7 @@ import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import PromoteToProductionCard from "@/components/PromoteToProductionCard";
+import PageAutoRefresh from "@/components/PageAutoRefresh";
 import StagingDomainForm from "@/components/StagingDomainForm";
 import StagingAuditHistory from "@/components/StagingAuditHistory";
 import CopyTextButton from "@/components/CopyTextButton";
@@ -375,6 +376,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
 
   return (
     <div className="page-stack">
+      <PageAutoRefresh intervalMs={12000} />
       {/* Status header */}
       <article className="card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>

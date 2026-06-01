@@ -2,6 +2,7 @@ type Params = { params: Promise<{ siteId: string }> };
 
 import SiteInfoForm from "@/components/SiteInfoForm";
 import SiteStagingToggle from "@/components/SiteStagingToggle";
+import PageAutoRefresh from "@/components/PageAutoRefresh";
 import Link from "next/link";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyAppStagingCapability, getCoolifyOverview } from "@/lib/coolify";
@@ -48,6 +49,7 @@ export default async function SiteSettingsPage({ params }: Params) {
 
   return (
     <div>
+      <PageAutoRefresh intervalMs={12000} />
       <div className="card" style={{ marginBottom: "1rem" }}>
         <p className="card-muted" style={{ marginBottom: "0.35rem" }}>
           {workspace?.clientName ?? "Unassigned client"} / {workspace?.name ?? siteId}

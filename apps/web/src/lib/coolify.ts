@@ -1388,11 +1388,32 @@ export async function applyCoolifyApplicationDomain(appUuid: string, fqdn: strin
   return applyCoolifyApplicationDomains(appUuid, fqdn);
 }
 
+async function resolveCoolifyServiceApplicationNames(serviceUuid: string): Promise<string[]> {
+  try {
+    const payload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}`);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return [];
+    }
+
+    const service = payload as Record<string, unknown>;
+    const applications = ensureArray(service.applications ?? []);
+    const names = applications
+      .map((application) => stringValue(application, ["name", "service_name", "human_name"], "").trim())
+      .filter((value) => value.length > 0);
+
+    return [...new Set(names)];
+  } catch {
+    return [];
+  }
+}
+
 export async function applyCoolifyServiceDomains(serviceUuid: string, input: string | string[]): Promise<boolean> {
   const normalizedDomains = normalizeCoolifyDomains(input);
   if (normalizedDomains.length === 0) {
     return false;
   }
+
+  const serviceApplicationNames = await resolveCoolifyServiceApplicationNames(serviceUuid);
 
   const hostDomains = normalizedDomains
     .map((value) => {
@@ -1405,8 +1426,32 @@ export async function applyCoolifyServiceDomains(serviceUuid: string, input: str
     .filter((value) => value.length > 0);
 
   const hostDomainCsv = hostDomains.join(",");
+  const namedServiceUrls = serviceApplicationNames.length > 0
+    ? [{
+        name: serviceApplicationNames[0],
+        url: normalizedDomains.join(",")
+      }]
+    : [];
+  const namedServiceHostUrls = serviceApplicationNames.length > 0
+    ? [{
+        name: serviceApplicationNames[0],
+        url: hostDomainCsv
+      }]
+    : [];
 
   const requestBodies: Record<string, unknown>[] = [
+    ...(namedServiceUrls.length > 0
+      ? [{
+          urls: namedServiceUrls,
+          force_domain_override: true
+        }]
+      : []),
+    ...(namedServiceHostUrls.length > 0
+      ? [{
+          urls: namedServiceHostUrls,
+          force_domain_override: true
+        }]
+      : []),
     {
       urls: normalizedDomains.map((url, index) => ({
         name: index === 0 ? "default" : `domain-${index + 1}`,

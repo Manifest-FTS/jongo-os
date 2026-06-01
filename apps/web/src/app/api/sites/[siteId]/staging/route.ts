@@ -237,6 +237,51 @@ async function runCoolifyDomainSyncAttempt(attempt: CoolifyDomainSyncAttempt): P
   }
 }
 
+async function resolveCoolifyServiceApplicationNames(serviceUuid: string): Promise<string[]> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL?.trim();
+  const token = process.env.COOLIFY_API_TOKEN?.trim();
+
+  if (!baseUrl || !token) {
+    return [];
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.COOLIFY_TIMEOUT_MS ?? 8000));
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/services/${encodeURIComponent(serviceUuid)}`, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const applications = Array.isArray(payload.applications)
+      ? payload.applications.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+      : [];
+    const names = applications
+      .map((application) => {
+        const candidate = application.name;
+        return typeof candidate === "string" ? candidate.trim() : "";
+      })
+      .filter((value) => value.length > 0);
+
+    return [...new Set(names)];
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function retryCoolifyDomainSyncWithDiagnostics(params: {
   resourceKind?: string;
   resourceUuid: string;
@@ -255,8 +300,37 @@ async function retryCoolifyDomainSyncWithDiagnostics(params: {
   }
 
   const domainCsv = normalizedDomains.join(",");
+  const serviceApplicationNames = params.resourceKind === "service"
+    ? await resolveCoolifyServiceApplicationNames(params.resourceUuid)
+    : [];
+  const namedServiceUrls = serviceApplicationNames.length > 0
+    ? [{
+        name: serviceApplicationNames[0],
+        url: normalizedDomains.join(",")
+      }]
+    : [];
   const attempts: CoolifyDomainSyncAttempt[] = params.resourceKind === "service"
     ? [
+        ...(namedServiceUrls.length > 0
+          ? [{
+              method: "PATCH" as const,
+              path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
+              body: {
+                urls: namedServiceUrls,
+                force_domain_override: true
+              }
+            }]
+          : []),
+        ...(namedServiceUrls.length > 0
+          ? [{
+              method: "POST" as const,
+              path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
+              body: {
+                urls: namedServiceUrls,
+                force_domain_override: true
+              }
+            }]
+          : []),
         {
           method: "PATCH",
           path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
