@@ -548,8 +548,6 @@ export default async function StagingPage({ params, searchParams }: Params) {
             </p>
           </article>
 
-          {stagingConfigured ? (
-            <>
           {/* Coolify Staging Capability */}
           <article className="card">
             <h3 className="card-title">Staging Capability</h3>
@@ -726,6 +724,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
           )}
             </>
           ) : null}
+
 
           {stagingConfigured ? (
             <article className="card">
