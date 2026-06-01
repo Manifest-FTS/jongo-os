@@ -305,6 +305,9 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const disableDebugHref = `/sites/${siteId}/staging${initialAttemptId ? `?attemptId=${encodeURIComponent(initialAttemptId)}` : ""}`;
   const reportedStagingDomains = parseDomainValues(stagingCapability?.fqdn ?? stagingCapability?.stagingUrl);
   const preferredDomainValue = preferredStagingUrl ? parseDomainValues(preferredStagingUrl)[0] : undefined;
+  const preferredDomainConverged = preferredDomainValue
+    ? reportedStagingDomains.some((domain) => domain.toLowerCase() === preferredDomainValue.toLowerCase())
+    : true;
   const stagingDomainsInput = (reportedStagingDomains.length > 0
     ? reportedStagingDomains
     : (preferredDomainValue ? [preferredDomainValue] : [])
@@ -593,6 +596,11 @@ export default async function StagingPage({ params, searchParams }: Params) {
                 {preferredStagingUrl ? (
                   <p style={{ margin: 0 }}>
                     Preferred staging URL: <a href={preferredStagingUrl} target="_blank" rel="noopener noreferrer" className="action-link">{preferredStagingUrl}</a>
+                  </p>
+                ) : null}
+                {preferredStagingUrl && !preferredDomainConverged ? (
+                  <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "#a15c00" }}>
+                    Preferred staging URL is not active yet. Coolify is still serving {reportedStagingDomains[0] ? `https://${reportedStagingDomains[0]}` : "a generated staging host"}. Routing and cert propagation may still be settling.
                   </p>
                 ) : null}
                   {reportedStagingDomains.length > 0 && (

@@ -499,6 +499,71 @@ function buildStagingProbeCandidates(params: {
   return [...new Set(candidates)];
 }
 
+function toHostname(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(withProtocol);
+    return parsed.hostname.trim().toLowerCase() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractHostList(raw?: string): string[] {
+  if (!raw) {
+    return [];
+  }
+
+  const hosts = raw
+    .split(",")
+    .map((entry) => toHostname(entry))
+    .filter((entry): entry is string => Boolean(entry));
+
+  return [...new Set(hosts)];
+}
+
+function buildPreferredDomainConvergence(params: {
+  preferredStagingDomain?: string;
+  capabilityFqdn?: string;
+  capabilityStagingUrl?: string;
+}): {
+  preferredHost?: string;
+  reportedHosts: string[];
+  converged: boolean;
+} {
+  const preferredHost = toHostname(params.preferredStagingDomain);
+  const reportedHosts = [...new Set([
+    ...extractHostList(params.capabilityFqdn),
+    ...extractHostList(params.capabilityStagingUrl)
+  ])];
+
+  return {
+    preferredHost,
+    reportedHosts,
+    converged: preferredHost ? reportedHosts.includes(preferredHost) : true
+  };
+}
+
+function mergeActionHints(primary?: string | null, secondary?: string | null): string | null {
+  const first = primary?.trim();
+  const second = secondary?.trim();
+
+  if (first && second) {
+    return `${first} ${second}`;
+  }
+
+  return first ?? second ?? null;
+}
+
 async function probeStagingContentAcrossCandidates(candidates: string[]): Promise<{
   probe: StagingContentProbe;
   checkedCandidates: string[];
@@ -919,6 +984,14 @@ export async function POST(req: Request, { params }: Params) {
       const probeResult = await probeStagingContentAcrossCandidates(probeCandidates);
       const freshProbe = probeResult.probe;
       const shouldSyncExistingFreshInstall = freshProbe.freshInstallDetected;
+      const domainConvergence = buildPreferredDomainConvergence({
+        preferredStagingDomain,
+        capabilityFqdn: capabilityAfterExistingCheck.fqdn,
+        capabilityStagingUrl: capabilityAfterExistingCheck.stagingUrl
+      });
+      const preferredDomainPendingHint = preferredStagingDomain && !domainConvergence.converged
+        ? `Preferred staging URL ${preferredStagingDomain} is not active yet. Coolify is still serving ${domainConvergence.reportedHosts[0] ? `https://${domainConvergence.reportedHosts[0]}` : "a generated staging host"}.`
+        : null;
       const autoSyncStagingUrl = (
         preferredStagingDomain ||
         probeResult.matchedCandidate ||
@@ -956,6 +1029,9 @@ export async function POST(req: Request, { params }: Params) {
           stagingDeployTriggered,
           probeCandidates,
           probeMatchedCandidate: probeResult.matchedCandidate ?? null,
+          preferredStagingHost: domainConvergence.preferredHost ?? null,
+          reportedStagingHosts: domainConvergence.reportedHosts,
+          preferredStagingDomainConverged: domainConvergence.converged,
           freshInstallDetected: freshProbe.freshInstallDetected,
           autoContentSync,
           capability: capabilityAfterExistingCheck
@@ -972,16 +1048,21 @@ export async function POST(req: Request, { params }: Params) {
         stagingTargetResolved: true,
         preferredStagingDomain,
         preferredStagingUrl: preferredStagingDomain,
+        preferredStagingDomainConverged: domainConvergence.converged,
+        reportedStagingHosts: domainConvergence.reportedHosts,
         stagingDomainApplied,
         stagingDeployTriggered,
         stagingRunning: currentStagingRunning,
-        actionHint: shouldSyncExistingFreshInstall
+        actionHint: mergeActionHints(
+          shouldSyncExistingFreshInstall
           ? (autoContentSync.ok
             ? "Existing staging target looked like a fresh install and was synced automatically. Refresh in a moment."
             : "Existing staging target looked like a fresh install, but automatic content sync did not complete. Retry content sync from Operations.")
           : currentStagingRunning
           ? null
           : `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`,
+          preferredDomainPendingHint
+        ),
         message: shouldSyncExistingFreshInstall && autoContentSync.ok
           ? "Staging was detected and content sync completed automatically."
           : currentStagingRunning
@@ -1057,6 +1138,14 @@ export async function POST(req: Request, { params }: Params) {
       fqdn: capabilityAfterProvision.fqdn
     });
     const probeResult = await probeStagingContentAcrossCandidates(probeCandidates);
+    const domainConvergence = buildPreferredDomainConvergence({
+      preferredStagingDomain,
+      capabilityFqdn: capabilityAfterProvision.fqdn,
+      capabilityStagingUrl: capabilityAfterProvision.stagingUrl
+    });
+    const preferredDomainPendingHint = preferredStagingDomain && !domainConvergence.converged
+      ? `Preferred staging URL ${preferredStagingDomain} is not active yet. Coolify is still serving ${domainConvergence.reportedHosts[0] ? `https://${domainConvergence.reportedHosts[0]}` : "a generated staging host"}.`
+      : null;
     const derivedStagingUrl = (
       preferredStagingDomain ||
       probeResult.matchedCandidate ||
@@ -1107,6 +1196,9 @@ export async function POST(req: Request, { params }: Params) {
         stagingDeployTriggered,
         probeCandidates,
         probeMatchedCandidate: probeResult.matchedCandidate ?? null,
+        preferredStagingHost: domainConvergence.preferredHost ?? null,
+        reportedStagingHosts: domainConvergence.reportedHosts,
+        preferredStagingDomainConverged: domainConvergence.converged,
         capability: capabilityAfterProvision,
         provisioningMessage: provisionResult.message,
         contentSyncReason,
@@ -1115,7 +1207,8 @@ export async function POST(req: Request, { params }: Params) {
       req
     });
 
-    const actionHint = manualProvisionRequired
+    const actionHint = mergeActionHints(
+      manualProvisionRequired
       ? (provisionResult.ok
         ? (environmentOnlyProvisioned
           ? "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes."
@@ -1127,7 +1220,9 @@ export async function POST(req: Request, { params }: Params) {
           : "Staging appears as a fresh install. Automatic content sync did not complete. Retry content sync from Operations.")
       : !stagingRunning
         ? `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`
-      : null;
+      : null,
+      preferredDomainPendingHint
+    );
     const enableMessage = manualProvisionRequired
       ? (provisionResult.ok
         ? (environmentOnlyProvisioned
@@ -1154,6 +1249,8 @@ export async function POST(req: Request, { params }: Params) {
       actionHint,
       preferredStagingDomain,
       preferredStagingUrl: preferredStagingDomain,
+      preferredStagingDomainConverged: domainConvergence.converged,
+      reportedStagingHosts: domainConvergence.reportedHosts,
       stagingDomainApplied,
       stagingDeployTriggered,
       stagingRunning,
