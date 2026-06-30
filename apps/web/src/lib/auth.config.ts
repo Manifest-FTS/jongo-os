@@ -94,7 +94,11 @@ export const authConfig = {
               email: {
                 equals: normalizedEmail,
                 mode: "insensitive"
-              }
+              },
+              deletedAt: null
+            },
+            orderBy: {
+              createdAt: "desc"
             }
           });
 
