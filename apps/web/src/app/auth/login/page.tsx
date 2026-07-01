@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import BrandLogo from "@/components/BrandLogo";
+import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
 
 function LoginForm() {
   const router = useRouter();
@@ -13,6 +14,7 @@ function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -51,14 +53,41 @@ function LoginForm() {
       </div>
       <div className="auth-field">
         <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+          <input
+            id="password"
+            type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{ width: "100%", paddingRight: "40px", boxSizing: "border-box" }}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            style={{
+              position: "absolute",
+              right: "10px",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "inherit",
+              opacity: 0.6,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0
+            }}
+          >
+            {showPassword ? (
+              <EyeOffIcon style={{ width: "20px", height: "20px" }} />
+            ) : (
+              <EyeIcon style={{ width: "20px", height: "20px" }} />
+            )}
+          </button>
+        </div>
       </div>
       {error && <p className="auth-error">{error}</p>}
       <button type="submit" className="auth-submit" disabled={loading}>
@@ -77,7 +106,7 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <div className="auth-page">
-      <div className="auth-card auth-panel card">
+      <div className="auth-card auth-panel">
         <div className="auth-brand-block">
           <Link href="/" className="auth-logo-link" aria-label="Go to home">
             <BrandLogo
