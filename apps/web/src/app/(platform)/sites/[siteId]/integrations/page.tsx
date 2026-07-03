@@ -175,23 +175,25 @@ export default async function IntegrationsPage({ params }: Params) {
         ) : null}
       </article>
 
-      <article className="card">
-        <h3 className="card-title">Hosting Connection</h3>
-        <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.55rem" }}>
-          <p style={{ margin: 0 }}>
-            Deployment provider: <span className="tag">{deploymentSource}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Hosting connection: <span className="tag">{workspace?.coolifyServiceUuid || coolifySite?.id ? "connected" : "not linked"}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Environment: <span className="tag">{workspace?.coolifyEnvironmentName ?? coolifySite?.coolifyEnvironmentName ?? "default"}</span>
-          </p>
-        </div>
-      </article>
+      {canViewInternalMetadata && (
+        <article className="card">
+          <h3 className="card-title">Hosting Connection</h3>
+          <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.55rem" }}>
+            <p style={{ margin: 0 }}>
+              Deployment provider: <span className="tag">{deploymentSource}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Hosting connection: <span className="tag">{workspace?.coolifyServiceUuid || coolifySite?.id ? "connected" : "not linked"}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Environment: <span className="tag">{workspace?.coolifyEnvironmentName ?? coolifySite?.coolifyEnvironmentName ?? "default"}</span>
+            </p>
+          </div>
+        </article>
+      )}
 
       {isWordPress ? (
         <article className="card">

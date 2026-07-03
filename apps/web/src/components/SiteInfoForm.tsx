@@ -90,12 +90,12 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
         />
       </div>
       <div>
-        <label className="form-label">Coolify Service UUID</label>
+        <label className="form-label">Infrastructure Service ID</label>
         <input
           type="text"
           value={coolifyUuid}
           onChange={(e) => { setCoolifyUuid(e.target.value); setSuccess(false); }}
-          placeholder="Links this site to a Coolify application"
+          placeholder="Links this site to an infrastructure application"
           className="form-input mono-input"
         />
       </div>
@@ -110,12 +110,12 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
         />
       </div>
       <div>
-        <label className="form-label">Coolify Project ID</label>
+        <label className="form-label">Provider Project ID</label>
         <input
           type="text"
           value={coolifyProjectId}
           onChange={(e) => { setCoolifyProjectId(e.target.value); setSuccess(false); }}
-          placeholder="Project UUID/ID from Coolify"
+          placeholder="Project UUID/ID from the provider"
           className="form-input mono-input"
         />
       </div>

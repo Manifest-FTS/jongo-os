@@ -80,7 +80,7 @@ export default async function SiteSettingsPage({ params }: Params) {
 
       {canViewInternalMetadata && workspace?.ownershipState !== "mapped" && (
         <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
-          <strong>Ownership mapping needs attention.</strong> Map a Coolify Project ID in Site Information to avoid orphaned resources.
+          <strong>Ownership mapping needs attention.</strong> Map a Provider Project ID in Site Information to avoid orphaned resources.
         </div>
       )}
 
@@ -90,7 +90,7 @@ export default async function SiteSettingsPage({ params }: Params) {
           <div>
             <h3 className="card-title" style={{ margin: 0 }}>Staging Environment</h3>
             <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-              Turn on staging for this site. Check the Staging tab in Coolify and give it a few minutes to provision.
+              Turn on staging for this site. Check the platform Staging tab and give it a few minutes to provision.
             </p>
             <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", marginTop: "0.55rem", flexWrap: "wrap" }}>
               <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>

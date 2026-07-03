@@ -1,5 +1,5 @@
 import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
-import { getSiteWorkspace } from "@/lib/repositories";
+import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
@@ -81,6 +81,12 @@ export default async function BackupsPage({ params }: Params) {
     notFound();
   }
 
+  const canViewInternalMetadata = Boolean(
+    session?.user?.id &&
+    workspace.organizationId &&
+    await isClientAdmin(workspace.organizationId, session.user.id)
+  );
+
   const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
   const backupReadiness = getBackupReadiness(inventory, appUuid);
@@ -158,36 +164,36 @@ export default async function BackupsPage({ params }: Params) {
     schedules: enabledSchedules
   });
 
-      const diagnosisItems = [
-        {
-          label: "Backups configured",
-          tone: isConfigured ? "healthy" : "error",
-          detail: isConfigured
-            ? "Automated schedules are configured."
-            : "No active backup schedules are configured."
-        },
-        {
-          label: "Successful backup",
-          tone: lastSuccessfulBackup ? "healthy" : "error",
-          detail: lastSuccessfulBackup
-            ? `Last successful backup: ${lastSuccessfulBackup.relativeTime}`
-            : "No successful backup found."
-        },
-        {
-          label: "Backup telemetry",
-          tone: hasLiveData ? "healthy" : "unknown",
-          detail: hasLiveData
-            ? "Live backup telemetry available."
-            : "Backup telemetry unavailable."
-        },
-        {
-          label: "Backup freshness",
-          tone: backupReadiness.code === "backup_stale" ? "error" : backupReadiness.locked ? "degraded" : "healthy",
-          detail: backupReadiness.code === "backup_stale"
-            ? `Backup stale. Last success exceeds ${BACKUP_STALE_AFTER_HOURS}h.`
-            : `Warning threshold: ${BACKUP_WARN_AFTER_HOURS}h · lock threshold: ${BACKUP_STALE_AFTER_HOURS}h`
-        }
-      ];
+  const diagnosisItems = [
+    {
+      label: "Backups configured",
+      tone: isConfigured ? "healthy" : "error",
+      detail: isConfigured
+        ? "Automated schedules are configured."
+        : "No active backup schedules are configured."
+    },
+    {
+      label: "Successful backup",
+      tone: lastSuccessfulBackup ? "healthy" : "error",
+      detail: lastSuccessfulBackup
+        ? `Last successful backup: ${lastSuccessfulBackup.relativeTime}`
+        : "No successful backup found."
+    },
+    {
+      label: "Backup telemetry",
+      tone: hasLiveData ? "healthy" : "unknown",
+      detail: hasLiveData
+        ? "Live backup telemetry available."
+        : "Backup telemetry unavailable."
+    },
+    {
+      label: "Backup freshness",
+      tone: backupReadiness.code === "backup_stale" ? "error" : backupReadiness.locked ? "degraded" : "healthy",
+      detail: backupReadiness.code === "backup_stale"
+        ? `Backup stale. Last success exceeds ${BACKUP_STALE_AFTER_HOURS}h.`
+        : `Warning threshold: ${BACKUP_WARN_AFTER_HOURS}h · lock threshold: ${BACKUP_STALE_AFTER_HOURS}h`
+    }
+  ];
 
   return (
     <div className="page-stack">
@@ -198,9 +204,9 @@ export default async function BackupsPage({ params }: Params) {
             <p className="card-muted" style={{ margin: 0 }}>
               Automated database backup schedules and execution history for this app&apos;s databases only.
             </p>
-            {inventory && (
+            {canViewInternalMetadata && inventory && (
               <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-                Coolify · checked {formatRelativeTime(inventory.checkedAt)}
+                Platform · checked {formatRelativeTime(inventory.checkedAt)}
                 {inventory.source === "unavailable" && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}
               </p>
             )}
@@ -213,9 +219,9 @@ export default async function BackupsPage({ params }: Params) {
 
       {!appUuid ? (
         <article className="card">
-          <h3 className="card-title">No Coolify resource linked</h3>
+          <h3 className="card-title">No infrastructure resource linked</h3>
           <p className="card-muted" style={{ marginBottom: 0 }}>
-            Link a Coolify application UUID in Settings to view backup status.
+            Link an infrastructure resource in Settings to view backup status.
           </p>
         </article>
       ) : !hasLiveData ? (
@@ -224,9 +230,11 @@ export default async function BackupsPage({ params }: Params) {
           <p className="card-muted">
             {getBackupUnavailableMessage(inventory?.note)}
           </p>
-          <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
-            <Link href="/settings" className="action-link">Open platform settings to verify Coolify configuration</Link>
-          </p>
+          {canViewInternalMetadata && (
+            <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
+              <Link href="/settings" className="action-link">Open platform settings to verify infrastructure configuration</Link>
+            </p>
+          )}
         </article>
       ) : !isConfigured ? (
         <article className="card">
@@ -239,12 +247,14 @@ export default async function BackupsPage({ params }: Params) {
           ) : null}
           <p className="card-muted" style={{ marginBottom: 0 }}>
             {inventory?.note === "no_databases_in_environment"
-              ? "No databases were detected in this application's Coolify environment."
-              : "Contact your platform administrator to configure automated database backups via Coolify."}
+              ? "No databases were detected in this application's environment."
+              : "Contact your platform administrator to configure automated database backups."}
           </p>
-          <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
-            <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings to verify resource mapping</Link>
-          </p>
+          {canViewInternalMetadata && (
+            <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
+              <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings to verify resource mapping</Link>
+            </p>
+          )}
         </article>
       ) : null}
 
@@ -266,28 +276,32 @@ export default async function BackupsPage({ params }: Params) {
             <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Local status</p>
             <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.localStatus}</p>
           </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
-              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Offsite status</p>
-              <span className={`status-chip ${readModel.offsite.tone}`}>{readModel.offsite.label}</span>
-            </div>
-            <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>{readModel.offsite.detail}</p>
-          </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore scope</p>
-            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.restoreScope}</p>
-          </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Staging safety</p>
-            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.stagingSafety}</p>
-            <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-              {readModel.stagingSafetyDetail}
-            </p>
-          </div>
+          {canViewInternalMetadata && (
+            <>
+              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Offsite status</p>
+                  <span className={`status-chip ${readModel.offsite.tone}`}>{readModel.offsite.label}</span>
+                </div>
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>{readModel.offsite.detail}</p>
+              </div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore scope</p>
+                <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.restoreScope}</p>
+              </div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Staging safety</p>
+                <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.stagingSafety}</p>
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                  {readModel.stagingSafetyDetail}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </article>
 
-      {databaseCoverage.length > 0 ? (
+      {canViewInternalMetadata && databaseCoverage.length > 0 ? (
         <article className="card">
           <h3 className="card-title">Database Coverage</h3>
           <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
@@ -330,13 +344,15 @@ export default async function BackupsPage({ params }: Params) {
               </p>
             </div>
           </div>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-            Freshness thresholds: warn after {BACKUP_WARN_AFTER_HOURS}h, lock after {BACKUP_STALE_AFTER_HOURS}h.
-          </p>
+          {canViewInternalMetadata && (
+            <p style={{ margin: "0.35rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+              Freshness thresholds: warn after {BACKUP_WARN_AFTER_HOURS}h, lock after {BACKUP_STALE_AFTER_HOURS}h.
+            </p>
+          )}
           {failureChain && (
             <div style={{ padding: "0.6rem 0.75rem", background: "var(--error, #c0392b)", borderRadius: "4px", marginTop: "0.5rem" }}>
               <p style={{ margin: 0, fontSize: "0.82rem", color: "white", fontWeight: 500 }}>
-                ⚠ Last 3 backups failed. Check Coolify for errors.
+                ⚠ Last 3 backups failed. Check platform logs for errors.
               </p>
             </div>
           )}
@@ -350,28 +366,30 @@ export default async function BackupsPage({ params }: Params) {
         </article>
       ) : null}
 
-      <article className="card">
-        <h3 className="card-title">Readiness Diagnosis</h3>
-        <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-          Use this to identify whether deploy/sync locks are caused by configuration, failed backups, telemetry outage, or stale backups.
-        </p>
-        <div style={{ display: "grid", gap: "0.6rem" }}>
-          {diagnosisItems.map((item) => (
-            <div key={item.label} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-                <strong style={{ fontSize: "0.88rem" }}>{item.label}</strong>
-                <span className={`status-chip ${item.tone}`}>{item.tone === "healthy" ? "OK" : item.tone === "error" ? "Action needed" : "Check"}</span>
-              </div>
-              <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{item.detail}</p>
-            </div>
-          ))}
-        </div>
-        {backupReadiness.nextStep ? (
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem" }}>
-            <strong>Next step:</strong> {backupReadiness.nextStep}
+      {canViewInternalMetadata && (
+        <article className="card">
+          <h3 className="card-title">Readiness Diagnosis</h3>
+          <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+            Use this to identify whether deploy/sync locks are caused by configuration, failed backups, telemetry outage, or stale backups.
           </p>
-        ) : null}
-      </article>
+          <div style={{ display: "grid", gap: "0.6rem" }}>
+            {diagnosisItems.map((item) => (
+              <div key={item.label} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                  <strong style={{ fontSize: "0.88rem" }}>{item.label}</strong>
+                  <span className={`status-chip ${item.tone}`}>{item.tone === "healthy" ? "OK" : item.tone === "error" ? "Action needed" : "Check"}</span>
+                </div>
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{item.detail}</p>
+              </div>
+            ))}
+          </div>
+          {backupReadiness.nextStep ? (
+            <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem" }}>
+              <strong>Next step:</strong> {backupReadiness.nextStep}
+            </p>
+          ) : null}
+        </article>
+      )}
 
       {databaseNames.length > 0 ? (
         <article className="card">
@@ -391,7 +409,7 @@ export default async function BackupsPage({ params }: Params) {
                     </div>
                     <span className="status-chip healthy">enabled</span>
                   </div>
-                  {latestExecution ? (
+                  {canViewInternalMetadata && latestExecution ? (
                     <p style={{ margin: "0 0 0.4rem", fontSize: "0.8rem", color: "var(--muted)" }}>
                       Latest execution: {formatRelativeTime(latestExecution.finishedAt ?? latestExecution.startedAt ?? inventory?.checkedAt ?? new Date().toISOString())}
                     </p>
@@ -434,7 +452,7 @@ export default async function BackupsPage({ params }: Params) {
                           ? formatRelativeTime(exec.startedAt)
                           : "unknown time"}
                     </p>
-                    {exec.filename ? (
+                    {canViewInternalMetadata && exec.filename ? (
                       <p style={{ margin: "0.1rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>{exec.filename}</p>
                     ) : null}
                     {exec.sizeBytes ? (
@@ -442,9 +460,11 @@ export default async function BackupsPage({ params }: Params) {
                         Size: {(exec.sizeBytes / (1024 * 1024)).toFixed(2)} MB
                       </p>
                     ) : null}
-                    <p style={{ margin: "0.18rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-                      Download and restore actions are not exposed in Jongo in this pass.
-                    </p>
+                    {canViewInternalMetadata && (
+                      <p style={{ margin: "0.18rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                        Download and restore actions are not exposed in Jongo in this pass.
+                      </p>
+                    )}
                   </div>
                   <span className={`status-chip ${exec.status === "success" ? "healthy" : exec.status === "failed" ? "error" : exec.status === "running" ? "unknown" : "unknown"}`}>
                     {exec.status}
@@ -454,7 +474,7 @@ export default async function BackupsPage({ params }: Params) {
             </div>
           )}
           <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.82rem" }}>
-            Restore operations must be performed via the Coolify dashboard by a platform administrator.
+            Restore operations must be performed via the platform dashboard by an administrator.
           </p>
         </article>
       ) : null}
@@ -462,7 +482,7 @@ export default async function BackupsPage({ params }: Params) {
       <article className="card">
         <h3 className="card-title">Backup Policy</h3>
         <p className="card-muted" style={{ marginBottom: 0 }}>
-          Backup configuration and restoration are managed through Coolify for database backups only. WordPress files, media, and staging sync workflows are not covered by this pass. Contact your platform administrator to change schedules, retention policies, or to initiate a recovery.
+          Backup configuration and restoration are managed through the platform for database backups only. WordPress files, media, and staging sync workflows are not covered by this pass. Contact your platform administrator to change schedules, retention policies, or to initiate a recovery.
         </p>
       </article>
     </div>
