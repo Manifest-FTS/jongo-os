@@ -945,7 +945,6 @@ export async function POST(req: Request, { params }: Params) {
       let stagingDeployTriggered = false;
 
       let stagingDomainApplied = false;
-      let stagingDeployTriggered = false;
 
       const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
 
@@ -1032,18 +1031,12 @@ export async function POST(req: Request, { params }: Params) {
         stagingDeployTriggered,
         stagingRunning: currentStagingRunning,
         actionHint: mergeActionHints(
-          shouldSyncExistingFreshInstall
-          ? (autoContentSync.ok
-            ? "Existing staging target looked like a fresh install and was synced automatically. Refresh in a moment."
-            : "Existing staging target looked like a fresh install, but automatic content sync did not complete. Retry content sync from Operations.")
-          : currentStagingRunning
+          currentStagingRunning
           ? null
           : `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`,
           preferredDomainPendingHint
         ),
-        message: shouldSyncExistingFreshInstall && autoContentSync.ok
-          ? "Staging was detected and content sync completed automatically."
-          : currentStagingRunning
+        message: currentStagingRunning
           ? `Staging ${targetLabel} is already detected.`
           : `Staging ${targetLabel} is detected and still coming online. Refresh in a moment.`,
         autoContentSync,
