@@ -478,7 +478,7 @@ function normalizeDeploymentRecords(input: unknown, fallbackSiteName = "Unknown 
   });
 }
 
-async function coolifyFetch(path: string): Promise<unknown> {
+export async function coolifyFetch(path: string): Promise<unknown> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
   const timeoutMs = Number(process.env.COOLIFY_TIMEOUT_MS ?? 8000);
@@ -1116,7 +1116,7 @@ type StagingEnvironmentResolution = {
   created: boolean;
 };
 
-async function coolifyMutate(
+export async function coolifyMutate(
   path: string,
   method: "POST" | "DELETE" | "PATCH" | "PUT",
   body?: Record<string, unknown>
@@ -1388,7 +1388,7 @@ export async function applyCoolifyApplicationDomain(appUuid: string, fqdn: strin
   return applyCoolifyApplicationDomains(appUuid, fqdn);
 }
 
-async function resolveCoolifyServiceApplicationNames(serviceUuid: string): Promise<string[]> {
+export async function resolveCoolifyServiceApplicationNames(serviceUuid: string): Promise<string[]> {
   try {
     const payload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}`);
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {

@@ -76,12 +76,12 @@ export class StagingProvisioningPipeline {
     for (let i = 0; i < this.maxRetries; i++) {
       try {
         // 1. Verify FQDN is assigned
-        const servicePayload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}`);
+        const servicePayload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}`) as any;
         const applications = servicePayload?.applications || [];
         const fqdnMatch = applications.some((app: any) => app.fqdn && app.fqdn.includes(desiredDomain));
 
         // 2. Verify env vars are assigned
-        const envsPayload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}/envs`);
+        const envsPayload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}/envs`) as any;
         const envsList = Array.isArray(envsPayload) ? envsPayload : (envsPayload?.data || []);
         const envMatch = envsList.some((env: any) => env.value && env.value.includes(desiredDomain));
 
@@ -105,7 +105,7 @@ export class StagingProvisioningPipeline {
 
   private async triggerDeploy(): Promise<boolean> {
     const { serviceUuid } = this.context;
-    return await coolifyMutate(`/api/v1/services/${encodeURIComponent(serviceUuid)}/start`, "POST");
+    return (await coolifyMutate(`/api/v1/services/${encodeURIComponent(serviceUuid)}/start`, "POST")) as boolean;
   }
 
   private async confirmDeploymentStatus(): Promise<boolean> {
@@ -114,7 +114,7 @@ export class StagingProvisioningPipeline {
     // Deployment takes longer, increase retries for this phase
     for (let i = 0; i < this.maxRetries * 3; i++) {
       try {
-        const servicePayload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}`);
+        const servicePayload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}`) as any;
         if (servicePayload?.status === "healthy" || servicePayload?.status === "running") {
           return true;
         }
