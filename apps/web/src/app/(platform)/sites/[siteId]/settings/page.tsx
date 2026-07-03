@@ -80,7 +80,7 @@ export default async function SiteSettingsPage({ params }: Params) {
 
       {canViewInternalMetadata && workspace?.ownershipState !== "mapped" && (
         <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
-          <strong>Ownership mapping needs attention.</strong> Map a Provider Project ID in Site Information to avoid orphaned resources.
+          <strong>Ownership mapping needs attention.</strong> Map a Project ID in Site Information to avoid orphaned resources.
         </div>
       )}
 

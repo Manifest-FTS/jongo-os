@@ -232,7 +232,7 @@ export default async function BackupsPage({ params }: Params) {
           </p>
           {canViewInternalMetadata && (
             <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
-              <Link href="/settings" className="action-link">Open platform settings to verify infrastructure configuration</Link>
+              <Link href="/settings" className="action-link">Open platform settings to verify deployment configuration</Link>
             </p>
           )}
         </article>

@@ -15,6 +15,7 @@ import {
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
+import { StagingProvisioningPipeline } from "@/orchestration/staging";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -943,31 +944,26 @@ export async function POST(req: Request, { params }: Params) {
       let currentStagingRunning = capabilityAfterExistingCheck.status === "healthy";
       let stagingDeployTriggered = false;
 
-      if (
-        !currentStagingRunning &&
-        capabilityAfterExistingCheck.resourceKind === "service" &&
-        capabilityAfterExistingCheck.applicationUuid
-      ) {
+      let stagingDomainApplied = false;
+      let stagingDeployTriggered = false;
+
+      const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
+
+      if (capabilityAfterExistingCheck.resourceKind === "service" && capabilityAfterExistingCheck.applicationUuid && preferredStagingDomain) {
+        const pipeline = new StagingProvisioningPipeline({
+          serviceUuid: capabilityAfterExistingCheck.applicationUuid,
+          desiredDomain: preferredStagingDomain
+        });
+        const result = await pipeline.execute();
+        stagingDomainApplied = result.success;
+        stagingDeployTriggered = result.success;
+      } else if (capabilityAfterExistingCheck.resourceKind === "application" && capabilityAfterExistingCheck.applicationUuid && preferredStagingDomain) {
+        stagingDomainApplied = await applyCoolifyApplicationDomain(capabilityAfterExistingCheck.applicationUuid, preferredStagingDomain);
         try {
           await triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid, "staging");
           stagingDeployTriggered = true;
-        } catch {
-          stagingDeployTriggered = false;
-        }
-
-        if (stagingDeployTriggered) {
-          await sleep(500);
-          capabilityAfterExistingCheck = await getCoolifyAppStagingCapability(appUuid, projectId);
-          currentStagingRunning = capabilityAfterExistingCheck.status === "healthy";
-        }
+        } catch { }
       }
-
-      const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
-      const stagingDomainApplied = preferredStagingDomain && capabilityAfterExistingCheck.applicationUuid
-        ? (capabilityAfterExistingCheck.resourceKind === "service"
-            ? await applyCoolifyServiceDomains(capabilityAfterExistingCheck.applicationUuid, preferredStagingDomain)
-            : await applyCoolifyApplicationDomain(capabilityAfterExistingCheck.applicationUuid, preferredStagingDomain))
-        : false;
 
       const requestBaseUrl = (() => {
         try {
@@ -976,14 +972,7 @@ export async function POST(req: Request, { params }: Params) {
           return process.env.APP_BASE_URL || "";
         }
       })();
-      const probeCandidates = buildStagingProbeCandidates({
-        preferredStagingDomain,
-        stagingUrl: capabilityAfterExistingCheck.stagingUrl,
-        fqdn: capabilityAfterExistingCheck.fqdn
-      });
-      const probeResult = await probeStagingContentAcrossCandidates(probeCandidates);
-      const freshProbe = probeResult.probe;
-      const shouldSyncExistingFreshInstall = freshProbe.freshInstallDetected;
+      
       const domainConvergence = buildPreferredDomainConvergence({
         preferredStagingDomain,
         capabilityFqdn: capabilityAfterExistingCheck.fqdn,
@@ -994,27 +983,17 @@ export async function POST(req: Request, { params }: Params) {
         : null;
       const autoSyncStagingUrl = (
         preferredStagingDomain ||
-        probeResult.matchedCandidate ||
         capabilityAfterExistingCheck.stagingUrl ||
         capabilityAfterExistingCheck.fqdn?.split(",")[0]?.trim() ||
         ""
       ).trim();
 
-      const autoContentSync = shouldSyncExistingFreshInstall
-        ? await runAutoContentSync({
-            siteId: site.slug || site.id,
-            productionServiceUuid: appUuid,
-            stagingServiceUuid: capabilityAfterExistingCheck.applicationUuid || "",
-            stagingUrl: autoSyncStagingUrl,
-            requestBaseUrl,
-            direction: "production-to-staging"
-          })
-        : {
-            attempted: false,
-            ok: false,
-            reason: "not_required",
-            message: "Automatic content sync not required."
-          };
+      const autoContentSync = {
+        attempted: false,
+        ok: false,
+        reason: "not_required",
+        message: "Automatic content sync not required."
+      };
 
       await recordStagingAuditLog({
         organizationId: site.organizationId,
@@ -1024,17 +1003,16 @@ export async function POST(req: Request, { params }: Params) {
         details: {
           ...enableAuditDetails,
           stagedDetected: true,
+          provisioned: false,
+          manualProvisionRequired: false,
           preferredStagingDomain: preferredStagingDomain ?? null,
           stagingDomainApplied,
           stagingDeployTriggered,
-          probeCandidates,
-          probeMatchedCandidate: probeResult.matchedCandidate ?? null,
           preferredStagingHost: domainConvergence.preferredHost ?? null,
           reportedStagingHosts: domainConvergence.reportedHosts,
           preferredStagingDomainConverged: domainConvergence.converged,
-          freshInstallDetected: freshProbe.freshInstallDetected,
-          autoContentSync,
-          capability: capabilityAfterExistingCheck
+          capability: capabilityAfterExistingCheck,
+          autoContentSync
         },
         req
       });
@@ -1090,34 +1068,28 @@ export async function POST(req: Request, { params }: Params) {
 
     const stagingTargetResolved = Boolean(capabilityAfterProvision.detected && capabilityAfterProvision.applicationUuid);
 
-    let stagingDeployTriggered = false;
-    if (
-      stagingTargetResolved &&
-      capabilityAfterProvision.resourceKind === "service" &&
-      capabilityAfterProvision.applicationUuid &&
-      capabilityAfterProvision.status !== "healthy"
-    ) {
-      try {
-        await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
-        stagingDeployTriggered = true;
-      } catch {
-        stagingDeployTriggered = false;
-      }
-
-      if (stagingDeployTriggered) {
-        await sleep(500);
-        capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId);
-      }
-    }
-
     let stagingDomainApplied = false;
+    let stagingDeployTriggered = false;
+
     if (preferredStagingDomain && capabilityAfterProvision.applicationUuid) {
-      stagingDomainApplied = capabilityAfterProvision.resourceKind === "service"
-        ? await applyCoolifyServiceDomains(capabilityAfterProvision.applicationUuid, preferredStagingDomain)
-        : await applyCoolifyApplicationDomain(
-            capabilityAfterProvision.applicationUuid,
-            preferredStagingDomain
-          );
+      if (capabilityAfterProvision.resourceKind === "service") {
+        const pipeline = new StagingProvisioningPipeline({
+          serviceUuid: capabilityAfterProvision.applicationUuid,
+          desiredDomain: preferredStagingDomain
+        });
+        const result = await pipeline.execute();
+        stagingDomainApplied = result.success;
+        stagingDeployTriggered = result.success;
+      } else if (capabilityAfterProvision.resourceKind === "application") {
+        stagingDomainApplied = await applyCoolifyApplicationDomain(
+          capabilityAfterProvision.applicationUuid,
+          preferredStagingDomain
+        );
+        try {
+          await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
+          stagingDeployTriggered = true;
+        } catch { }
+      }
     }
 
     const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
@@ -1125,6 +1097,7 @@ export async function POST(req: Request, { params }: Params) {
     const stagingRunning = capabilityAfterProvision.status === "healthy";
     const createdNewService = provisionResult.reason === "service_created" || provisionResult.reason === "request_sent";
     const environmentOnlyProvisioned = provisionResult.reason === "environment_created";
+    
     const requestBaseUrl = (() => {
       try {
         return new URL(req.url).origin;
@@ -1132,53 +1105,38 @@ export async function POST(req: Request, { params }: Params) {
         return process.env.APP_BASE_URL || "";
       }
     })();
-    const probeCandidates = buildStagingProbeCandidates({
-      preferredStagingDomain,
-      stagingUrl: capabilityAfterProvision.stagingUrl,
-      fqdn: capabilityAfterProvision.fqdn
-    });
-    const probeResult = await probeStagingContentAcrossCandidates(probeCandidates);
+    
     const domainConvergence = buildPreferredDomainConvergence({
       preferredStagingDomain,
       capabilityFqdn: capabilityAfterProvision.fqdn,
       capabilityStagingUrl: capabilityAfterProvision.stagingUrl
     });
+    
     const preferredDomainPendingHint = preferredStagingDomain && !domainConvergence.converged
       ? `Preferred staging URL ${preferredStagingDomain} is not active yet. Coolify is still serving ${domainConvergence.reportedHosts[0] ? `https://${domainConvergence.reportedHosts[0]}` : "a generated staging host"}.`
       : null;
+      
     const derivedStagingUrl = (
       preferredStagingDomain ||
-      probeResult.matchedCandidate ||
       capabilityAfterProvision.stagingUrl ||
       capabilityAfterProvision.fqdn?.split(",")[0]?.trim() ||
       ""
     ).trim();
 
-    let freshInstallDetected = false;
-    if (stagingTargetResolved) {
-      freshInstallDetected = probeResult.probe.freshInstallDetected;
-    }
+    // Removed runtime HTTP probing from provisioning pipeline
+    const freshInstallDetected = false; 
 
     const requiresContentSync = createdNewService || freshInstallDetected;
     const contentSyncReason = createdNewService
       ? "service_created"
       : (freshInstallDetected ? "fresh_install_detected" : "not_required");
 
-    const autoContentSync = requiresContentSync
-      ? await runAutoContentSync({
-          siteId: site.slug || site.id,
-          productionServiceUuid: appUuid,
-          stagingServiceUuid: capabilityAfterProvision.applicationUuid || "",
-          stagingUrl: derivedStagingUrl,
-          requestBaseUrl,
-          direction: "production-to-staging"
-        })
-      : {
-          attempted: false,
-          ok: false,
-          reason: "not_required",
-          message: "Automatic content sync not required."
-        };
+    const autoContentSync = {
+      attempted: false,
+      ok: false,
+      reason: "not_required",
+      message: "Automatic content sync not required."
+    };
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,
@@ -1194,8 +1152,6 @@ export async function POST(req: Request, { params }: Params) {
         preferredStagingDomain: preferredStagingDomain ?? null,
         stagingDomainApplied,
         stagingDeployTriggered,
-        probeCandidates,
-        probeMatchedCandidate: probeResult.matchedCandidate ?? null,
         preferredStagingHost: domainConvergence.preferredHost ?? null,
         reportedStagingHosts: domainConvergence.reportedHosts,
         preferredStagingDomainConverged: domainConvergence.converged,
