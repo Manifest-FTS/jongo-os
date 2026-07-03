@@ -1853,8 +1853,8 @@ export async function provisionCoolifyStagingFromProduction(
     }
 
     if (normalizedPreferredDomain) {
-      baseBody.urls = [{ name: "default", url: normalizedPreferredDomain }];
-      baseBody.force_domain_override = true;
+      // Intentionally omitting urls during creation.
+      // Domain assignment is orchestrated separately to ensure deterministic convergence.
     }
 
     const candidateBodies: Record<string, unknown>[] = [];

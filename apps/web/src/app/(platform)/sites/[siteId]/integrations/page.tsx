@@ -58,22 +58,24 @@ export default async function IntegrationsPage({ params }: Params) {
     email: session?.user?.email
   };
 
-  const [workspace, overview, deployments, activity] = await Promise.all([
-    getSiteWorkspace(siteId, viewer),
-    getCoolifyOverview(),
-    listSiteDeployments(siteId, viewer),
-    getSiteActivityFeed(siteId, 4, viewer)
-  ]);
-
+  const workspace = await getSiteWorkspace(siteId, viewer);
   if (!workspace) {
     notFound();
   }
-  let canManageTelemetry = false;
+
   const canViewInternalMetadata = Boolean(
     session?.user?.id &&
     workspace.organizationId &&
     await isClientAdmin(workspace.organizationId, session.user.id)
   );
+
+  const [overview, deployments, activity] = await Promise.all([
+    canViewInternalMetadata ? getCoolifyOverview() : Promise.resolve(null),
+    listSiteDeployments(siteId, viewer),
+    getSiteActivityFeed(siteId, 4, viewer)
+  ]);
+
+  let canManageTelemetry = false;
   if (session?.user?.id) {
     const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session.user.email);
     const db = await getDb();
@@ -146,9 +148,9 @@ export default async function IntegrationsPage({ params }: Params) {
   }
 
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
-  const coolifySite = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
+  const coolifySite = overview?.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const isWordPress = workspace?.siteType === "wordpress" || workspace?.resourceType === "WordPress";
-  const deploymentSource = deployments[0]?.source ?? overview.mode;
+  const deploymentSource = deployments[0]?.source ?? overview?.mode ?? "unknown";
   const resolvedSiteId = workspace?.slug ?? workspace?.id ?? siteId;
   const wpTelemetrySnapshot = await getWordPressTelemetrySnapshotForRequest({
     siteId: resolvedSiteId,
@@ -175,23 +177,25 @@ export default async function IntegrationsPage({ params }: Params) {
         ) : null}
       </article>
 
-      <article className="card">
-        <h3 className="card-title">Hosting Connection</h3>
-        <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.55rem" }}>
-          <p style={{ margin: 0 }}>
-            Deployment provider: <span className="tag">{deploymentSource}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Hosting connection: <span className="tag">{workspace?.coolifyServiceUuid || coolifySite?.id ? "connected" : "not linked"}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>
-          </p>
-          <p style={{ margin: 0 }}>
-            Environment: <span className="tag">{workspace?.coolifyEnvironmentName ?? coolifySite?.coolifyEnvironmentName ?? "default"}</span>
-          </p>
-        </div>
-      </article>
+      {canViewInternalMetadata && (
+        <article className="card">
+          <h3 className="card-title">Hosting Connection</h3>
+          <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.55rem" }}>
+            <p style={{ margin: 0 }}>
+              Deployment provider: <span className="tag">{deploymentSource}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Hosting connection: <span className="tag">{workspace?.coolifyServiceUuid || coolifySite?.id ? "connected" : "not linked"}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Project: <span className="tag">{workspace?.coolifyProjectName ?? workspace?.coolifyProjectId ?? coolifySite?.coolifyProjectName ?? "not linked"}</span>
+            </p>
+            <p style={{ margin: 0 }}>
+              Environment: <span className="tag">{workspace?.coolifyEnvironmentName ?? coolifySite?.coolifyEnvironmentName ?? "default"}</span>
+            </p>
+          </div>
+        </article>
+      )}
 
       {isWordPress ? (
         <article className="card">

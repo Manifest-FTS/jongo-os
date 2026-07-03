@@ -1,7 +1,7 @@
 import DeployButton from "@/components/DeployButton";
 import { getCoolifyOverview, getCoolifyAppBackupInventory, getCoolifyAppStagingCapability } from "@/lib/coolify";
 import { getBackupReadiness } from "@/lib/deploy-guards";
-import { getSiteWorkspace, listSiteDeployments } from "@/lib/repositories";
+import { getSiteWorkspace, listSiteDeployments, isClientAdmin } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 
@@ -97,6 +97,13 @@ export default async function DeploymentsPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+  
+  const canViewInternalMetadata = Boolean(
+    session?.user?.id &&
+    workspace.organizationId &&
+    await isClientAdmin(workspace.organizationId, session.user.id)
+  );
+  
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const stagingCapability = workspace?.coolifyServiceUuid
@@ -192,7 +199,7 @@ export default async function DeploymentsPage({ params }: Params) {
           ) : (
             <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
               {workspace?.stagingEnabled && stagingEnvironmentReady
-                ? "Staging environment exists, but target attachment is incomplete. Attach a staging target in Coolify to unlock sync and promote controls."
+                ? "Staging environment exists, but target attachment is incomplete. Attach a staging environment to unlock sync and promote controls."
                 : "Staging is not configured. Sync and promote controls appear here after staging is detected."}
             </p>
           )}
@@ -213,7 +220,9 @@ export default async function DeploymentsPage({ params }: Params) {
       <article className="card">
         <div className="panel-header">
           <h3 className="card-title" style={{ margin: 0 }}>Deployment History</h3>
-          <span className="tag">{deployments[0]?.source ?? overview.mode}</span>
+          {canViewInternalMetadata && (
+            <span className="tag">{deployments[0]?.source ?? overview.mode}</span>
+          )}
         </div>
 
         {deployments.length === 0 ? (

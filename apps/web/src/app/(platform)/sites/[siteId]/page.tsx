@@ -1,4 +1,4 @@
-﻿import { getCoolifyOverview } from "@/lib/coolify";
+import { getCoolifyOverview } from "@/lib/coolify";
 import { getCoolifyAppBackupInventory, getCoolifyAppStagingCapability, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import { getBackupReadiness } from "@/lib/deploy-guards";
@@ -9,6 +9,7 @@ import Link from "next/link";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
+import InfrastructureDiagnostics from "@/components/InfrastructureDiagnostics";
 
 export const dynamic = "force-dynamic";
 
@@ -52,23 +53,9 @@ function isRecentBackup(iso: string, maxAgeDays = 7): boolean {
   return ageMs <= maxAgeDays * 24 * 60 * 60 * 1000;
 }
 
-function chipClassForReadiness(state: ReadinessState): string {
-  if (state === "ready") return "healthy";
-  if (state === "attention") return "degraded";
-  if (state === "not_configured") return "error";
-  return "unknown";
-}
-
-function labelForReadiness(state: ReadinessState): string {
-  if (state === "ready") return "Ready";
-  if (state === "attention") return "Needs attention";
-  if (state === "not_configured") return "Not configured";
-  return "Unknown";
-}
-
 function summarizeReadiness(checks: ReadinessCheck[]): { state: ReadinessState; detail: string } {
   if (checks.some((check) => check.state === "not_configured")) {
-    return { state: "not_configured", detail: "Core Jongo configuration still needs setup." };
+    return { state: "not_configured", detail: "Core platform configuration still needs setup." };
   }
   if (checks.some((check) => check.state === "attention")) {
     return { state: "attention", detail: "A maintenance checkpoint needs follow-up." };
@@ -77,9 +64,8 @@ function summarizeReadiness(checks: ReadinessCheck[]): { state: ReadinessState; 
     return { state: "unknown", detail: "Maintenance telemetry is unavailable, so readiness cannot be confirmed." };
   }
   if (checks.every((check) => check.state === "ready" || check.state === "unknown")) {
-    return { state: "ready", detail: "Core Jongo-managed checkpoints are in a healthy state." };
+    return { state: "ready", detail: "Core managed checkpoints are in a healthy state." };
   }
-
   return { state: "unknown", detail: "Checkpoint status is mixed and inconclusive." };
 }
 
@@ -96,7 +82,6 @@ function getResourceWorkflowModel(siteType?: string): { title: string; body: str
       ]
     };
   }
-
   if (siteType === "database") {
     return {
       title: "Database readiness model",
@@ -108,7 +93,6 @@ function getResourceWorkflowModel(siteType?: string): { title: string; body: str
       ]
     };
   }
-
   if (siteType === "service") {
     return {
       title: "Service operations model",
@@ -120,7 +104,6 @@ function getResourceWorkflowModel(siteType?: string): { title: string; body: str
       ]
     };
   }
-
   return {
     title: "Web app preview-style staging (future)",
     body: "Web app workflows should behave like preview deployments tied to branches/PRs, not clone-style WordPress staging.",
@@ -141,132 +124,145 @@ export default async function SiteOverviewPage({ params }: Params) {
     email: session?.user?.email
   };
 
-  const [overview, workspace, siteActivity] = await Promise.all([
-    getCoolifyOverview(),
-    getSiteWorkspace(siteId, viewer),
-    getSiteActivityFeed(siteId, 6, viewer)
-  ]);
-
+  const workspace = await getSiteWorkspace(siteId, viewer);
   if (!workspace) {
     notFound();
   }
+
   const canViewInternalMetadata = Boolean(
     session?.user?.id &&
     workspace.organizationId &&
     await isClientAdmin(workspace.organizationId, session.user.id)
   );
+
+  const [overview, siteActivity] = await Promise.all([
+    getCoolifyOverview(),
+    getSiteActivityFeed(siteId, 6, viewer)
+  ]);
+
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
+  
   const backupInventory = workspace?.coolifyServiceUuid
     ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
     : null;
+    
   const stagingCapability = workspace?.coolifyServiceUuid
     ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace?.coolifyProjectId ?? undefined)
     : null;
+
   const backupReadiness = getBackupReadiness(backupInventory, workspace?.coolifyServiceUuid);
   const backupLockReason = backupReadiness.locked
     ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
     : "Dry-run mode: execution remains disabled in this interface.";
+  
   const lastSuccessfulBackup = getLastSuccessfulBackupTime(backupInventory);
   const recentBackupHealthy = lastSuccessfulBackup ? isRecentBackup(lastSuccessfulBackup, 7) : false;
+  
   const backupLocalStatus = backupInventory?.source !== "live"
     ? "Status unknown"
     : backupInventory.configured
       ? (recentBackupHealthy ? "Protected (recent)" : "Protected (stale)")
       : "Not protected";
+
   const backupReadModel = buildBackupReadModelSnapshot({
     ownership: `${workspace.clientName} / ${workspace.name}`,
     localStatus: backupLocalStatus,
     schedules: backupInventory?.schedules.filter((schedule) => schedule.enabled)
   });
+
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace?.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
   const workflowModel = getResourceWorkflowModel(workspace?.siteType);
 
-  const readinessChecks: ReadinessCheck[] = [
-    {
-      key: "backup-configured",
-      label: "Backups configured",
-      state: !workspace?.coolifyServiceUuid
-        ? "not_configured"
-        : backupInventory?.source !== "live"
+  let readinessChecks: ReadinessCheck[] = [];
+  let readinessSummary = { state: "unknown" as ReadinessState, detail: "" };
+
+  if (canViewInternalMetadata) {
+    readinessChecks = [
+      {
+        key: "backup-configured",
+        label: "Backups configured",
+        state: !workspace?.coolifyServiceUuid
+          ? "not_configured"
+          : backupInventory?.source !== "live"
+            ? "unknown"
+            : backupInventory?.configured
+              ? "ready"
+              : "not_configured",
+        detail: !workspace?.coolifyServiceUuid
+          ? "No infrastructure app UUID is linked to this app."
+          : backupInventory?.source !== "live"
+            ? "Could not reach live backup inventory from platform."
+            : backupInventory?.configured
+              ? "At least one active database backup schedule is present."
+              : "No active backup schedules were found.",
+        nextStep: "Open Backups and configure recurring schedules in the platform."
+      },
+      {
+        key: "recent-backup",
+        label: "Recent backup",
+        state: backupInventory?.source !== "live"
           ? "unknown"
-          : backupInventory?.configured
-            ? "ready"
-            : "not_configured",
-      detail: !workspace?.coolifyServiceUuid
-        ? "No Coolify app UUID is linked to this app."
-        : backupInventory?.source !== "live"
-          ? "Could not reach live backup inventory from Coolify."
-          : backupInventory?.configured
-            ? "At least one active database backup schedule is present."
-            : "No active backup schedules were found.",
-      nextStep: "Open Backups and configure recurring schedules in Coolify."
-    },
-    {
-      key: "recent-backup",
-      label: "Recent backup",
-      state: backupInventory?.source !== "live"
-        ? "unknown"
-        : !lastSuccessfulBackup
-          ? "attention"
-          : recentBackupHealthy
-            ? "ready"
-            : "attention",
-      detail: backupInventory?.source !== "live"
-        ? "Recent execution history is unavailable."
-        : !lastSuccessfulBackup
-          ? "No successful backup was found in recent execution history."
-          : recentBackupHealthy
-            ? `Last successful backup was ${formatAgo(lastSuccessfulBackup)}.`
-            : `Last successful backup was ${formatAgo(lastSuccessfulBackup)}, which exceeds 7 days.`,
-      nextStep: "Investigate backup failures and run a fresh successful backup."
-    },
-    {
-      key: "offsite-replication",
-      label: "Offsite replication",
-      state: backupReadModel.offsite.tone === "healthy"
-        ? "ready"
-        : backupReadModel.offsite.tone === "degraded"
-          ? "attention"
-          : "unknown",
-      detail: backupReadModel.offsite.detail,
-      nextStep: "Enable and verify offsite replication policy for protected backups."
-    },
-    {
-      key: "staging",
-      label: "Staging configured",
-      state: stagingConfigured ? "ready" : workspace?.stagingEnabled ? "attention" : "not_configured",
-      detail: stagingConfigured
-        ? "Staging environment and target are both attached."
-        : workspace?.stagingEnabled && stagingEnvironmentReady
-          ? "Staging environment exists but no staging target is attached yet."
-          : workspace?.stagingEnabled
-            ? "Staging is enabled but no staging environment is detected in Coolify."
-          : "Staging is not configured for this app.",
-      nextStep: "Configure staging environment mapping in app settings."
-    },
-    {
-      key: "coolify-api",
-      label: "Coolify API reachable",
-      state: overview.mode === "live" ? (overview.fetchError ? "attention" : "ready") : "unknown",
-      detail:
-        overview.mode === "live"
-          ? overview.fetchError
-            ? "Coolify API is configured but recent fetch returned errors."
-            : "Coolify API is configured and telemetry is updating."
-          : "Coolify API is not configured (mock mode).",
-      nextStep: "Verify COOLIFY_API_BASE_URL and COOLIFY_API_TOKEN runtime env values."
-    }
-  ];
-  const readinessSummary = summarizeReadiness(readinessChecks);
+          : !lastSuccessfulBackup
+            ? "attention"
+            : recentBackupHealthy
+              ? "ready"
+              : "attention",
+        detail: backupInventory?.source !== "live"
+          ? "Recent execution history is unavailable."
+          : !lastSuccessfulBackup
+            ? "No successful backup was found in recent execution history."
+            : recentBackupHealthy
+              ? `Last successful backup was ${formatAgo(lastSuccessfulBackup)}.`
+              : `Last successful backup was ${formatAgo(lastSuccessfulBackup)}, which exceeds 7 days.`,
+        nextStep: "Investigate backup failures and run a fresh successful backup."
+      },
+      {
+        key: "offsite-replication",
+        label: "Offsite replication",
+        state: backupReadModel.offsite.tone === "healthy"
+          ? "ready"
+          : backupReadModel.offsite.tone === "degraded"
+            ? "attention"
+            : "unknown",
+        detail: backupReadModel.offsite.detail,
+        nextStep: "Enable and verify offsite replication policy for protected backups."
+      },
+      {
+        key: "staging",
+        label: "Staging configured",
+        state: stagingConfigured ? "ready" : workspace?.stagingEnabled ? "attention" : "not_configured",
+        detail: stagingConfigured
+          ? "Staging environment and target are both attached."
+          : workspace?.stagingEnabled && stagingEnvironmentReady
+            ? "Staging environment exists but no staging target is attached yet."
+            : workspace?.stagingEnabled
+              ? "Staging is enabled but no staging environment is detected in the platform."
+            : "Staging is not configured for this app.",
+        nextStep: "Configure staging environment mapping in app settings."
+      },
+      {
+        key: "platform-api",
+        label: "Platform API reachable",
+        state: overview.mode === "live" ? (overview.fetchError ? "attention" : "ready") : "unknown",
+        detail:
+          overview.mode === "live"
+            ? overview.fetchError
+              ? "Platform API is configured but recent fetch returned errors."
+              : "Platform API is configured and telemetry is updating."
+            : "Platform API is not configured (mock mode).",
+        nextStep: "Verify platform API tokens and base URL runtime env values."
+      }
+    ];
+    readinessSummary = summarizeReadiness(readinessChecks);
+  }
 
   return (
     <div>
       <div className="grid" style={{ marginBottom: "1rem" }}>
         
-
         {/* Site Health */}
         <article className="card">
           <h3 className="card-title">Site Health</h3>
@@ -316,15 +312,18 @@ export default async function SiteOverviewPage({ params }: Params) {
           ) : (
             <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
               {workspace?.stagingEnabled && stagingEnvironmentReady
-                ? "Staging environment exists, but no target is attached yet. Attach a staging target in Coolify, then refresh this page."
+                ? "Staging environment exists, but no target is attached yet. Attach a staging environment, then refresh this page."
                 : "Staging controls are hidden until a staging environment is configured. Configure staging in Settings."}
             </p>
           )}
-          <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-            {overview.mode === "live"
-              ? <>Live telemetry · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
-              : "Demo mode — live telemetry requires provider config"}
-          </p>
+          
+          {canViewInternalMetadata ? (
+            <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+              {overview.mode === "live"
+                ? <>Live telemetry · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
+                : "Demo mode — live telemetry requires provider config"}
+            </p>
+          ) : null}
         </article>
 
         {/* Publishing */}
@@ -345,7 +344,7 @@ export default async function SiteOverviewPage({ params }: Params) {
           ) : (
             <p className="card-muted">
               {workspace?.stagingEnabled && stagingEnvironmentReady
-                ? "Staging environment exists but target attachment is incomplete. Complete target attachment in Coolify, then continue in Staging."
+                ? "Staging environment exists but target attachment is incomplete. Complete target attachment, then continue in Staging."
                 : "Staging is not configured yet. Configure it in Settings to unlock staging workflows."}
             </p>
           )}
@@ -373,48 +372,15 @@ export default async function SiteOverviewPage({ params }: Params) {
         </article>
       </div>
 
-      <article className="card" style={{ gridColumn: "1 / -1" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-          <div>
-            <h3 className="card-title" style={{ marginTop: 0 }}>Operational Readiness</h3>
-            <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-              Read-only Jongo checkpoints for backup, staging, and provider readiness. No actions here trigger deployments.
-            </p>
-          </div>
-          <span className={`status-chip ${chipClassForReadiness(readinessSummary.state)}`}>
-            {labelForReadiness(readinessSummary.state)}
-          </span>
-        </div>
+      {canViewInternalMetadata && (
+        <InfrastructureDiagnostics 
+          readinessChecks={readinessChecks} 
+          readinessSummary={readinessSummary} 
+          siteId={siteId} 
+        />
+      )}
 
-        <p style={{ margin: "0.6rem 0 0", fontSize: "0.88rem", color: "var(--muted)" }}>
-          {readinessSummary.detail}
-        </p>
-
-        <div style={{ display: "grid", gap: "0.7rem", marginTop: "0.85rem" }}>
-          {readinessChecks.map((check) => (
-            <div key={check.key} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.65rem 0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                <strong style={{ fontSize: "0.9rem" }}>{check.label}</strong>
-                <span className={`status-chip ${chipClassForReadiness(check.state)}`}>{labelForReadiness(check.state)}</span>
-              </div>
-              <p style={{ margin: "0.35rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{check.detail}</p>
-              {check.state !== "ready" && check.nextStep ? (
-                <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem" }}>
-                  <strong>Next step:</strong> {check.nextStep}
-                </p>
-              ) : null}
-            </div>
-          ))}
-        </div>
-
-        {canViewInternalMetadata ? (
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>
-            Need deeper troubleshooting? Open app settings for maintenance details or platform diagnostics.
-          </p>
-        ) : null}
-      </article>
-
-      <div style={{ display: "grid", gap: "1rem", marginBottom: "1rem" }}>
+      <div style={{ display: "grid", gap: "1rem", marginBottom: "1rem", marginTop: "1rem" }}>
         <article className="card">
           <h3 className="card-title">Activity Feed</h3>
           {siteActivity.length === 0 ? (
@@ -471,13 +437,17 @@ export default async function SiteOverviewPage({ params }: Params) {
               <p style={{ margin: 0, fontSize: "0.86rem" }}>Offsite:</p>
               <span className={`status-chip ${backupReadModel.offsite.tone}`}>{backupReadModel.offsite.label}</span>
             </div>
-            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>{backupReadModel.offsite.detail}</p>
+            {canViewInternalMetadata ? (
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>{backupReadModel.offsite.detail}</p>
+            ) : null}
             <p style={{ margin: 0, fontSize: "0.86rem" }}>
               Restore scope: <strong>{backupReadModel.restoreScope}</strong>
             </p>
-            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
-              Staging safety: {backupReadModel.stagingSafety}. {backupReadModel.stagingSafetyDetail}
-            </p>
+            {canViewInternalMetadata ? (
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                Staging safety: {backupReadModel.stagingSafety}. {backupReadModel.stagingSafetyDetail}
+              </p>
+            ) : null}
           </div>
           <p style={{ margin: "0.7rem 0 0", fontSize: "0.9rem" }}>
             <Link href={`/apps/${siteId}/backups`} className="action-link">
@@ -527,21 +497,6 @@ export default async function SiteOverviewPage({ params }: Params) {
           </p>
         </article>
       </div>
-
-      {canViewInternalMetadata ? (
-        <article className="card" style={{ marginTop: "1rem" }}>
-          <h3 className="card-title">Need Maintenance Details?</h3>
-          <p className="card-muted" style={{ marginBottom: "0.6rem" }}>
-            Use settings for mapping and provider linkage checks.
-          </p>
-          <p style={{ margin: 0, fontSize: "0.9rem" }}>
-            <Link href={`/apps/${siteId}/settings`} className="action-link">
-              Open app settings <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
-        </article>
-      ) : null}
     </div>
   );
 }
-

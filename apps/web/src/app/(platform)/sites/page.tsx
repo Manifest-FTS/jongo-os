@@ -247,7 +247,7 @@ export default async function SitesPage() {
 
           {(emptyReason === "coolify_api_unavailable" || emptyReason === "mock_fallback_active") ? (
             <p style={{ margin: "0 0 0.75rem", fontSize: "0.88rem" }}>
-              <Link href="/settings" className="action-link">Open platform settings to verify Coolify configuration <ArrowRightIcon className="btn-icon" /></Link>
+              <Link href="/settings" className="action-link">Open platform settings to verify deployment configuration <ArrowRightIcon className="btn-icon" /></Link>
             </p>
           ) : null}
 

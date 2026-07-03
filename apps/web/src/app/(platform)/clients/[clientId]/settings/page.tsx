@@ -34,13 +34,13 @@ export default async function ClientSettingsPage({ params }: Params) {
 
       {isAdmin ? (
         <article className="card">
-          <h3 className="card-title">Coolify Project Mapping</h3>
+          <h3 className="card-title">Project Mapping</h3>
           <p className="card-muted" style={{ marginBottom: "1rem" }}>
-            Link one or more Coolify projects to this client workspace. Project links are explicit and never auto-renamed.
+            Link one or more projects to this client workspace. Project links are explicit and never auto-renamed.
           </p>
           {linkedProjects.length === 0 ? (
             <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
-              <strong>No linked Coolify project.</strong> Link at least one project so this client's apps map cleanly in Jongo.
+              <strong>No linked project.</strong> Link at least one project so this client's apps map cleanly in Jongo.
             </div>
           ) : null}
           {client.dbId ? (
@@ -56,7 +56,7 @@ export default async function ClientSettingsPage({ params }: Params) {
       ) : (
         <article className="card">
           <h3 className="card-title">Admin-only Settings</h3>
-          <p className="card-muted">Coolify ownership mapping is restricted to admin users.</p>
+          <p className="card-muted">Project mapping is restricted to admin users.</p>
         </article>
       )}
     </div>
