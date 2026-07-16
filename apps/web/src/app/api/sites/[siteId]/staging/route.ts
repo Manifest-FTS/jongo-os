@@ -964,7 +964,10 @@ export async function POST(req: Request, { params }: Params) {
 
       let stagingDomainApplied = false;
 
-      const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
+      const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
+        siteSlug: site.slug ?? site.id,
+        siteName: site.name
+      });
 
       if (capabilityAfterExistingCheck.resourceKind === "service" && capabilityAfterExistingCheck.applicationUuid && preferredStagingDomain) {
         const pipeline = new StagingProvisioningPipeline({
@@ -1062,7 +1065,10 @@ export async function POST(req: Request, { params }: Params) {
       });
     }
 
-    const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid);
+    const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
+      siteSlug: site.slug ?? site.id,
+      siteName: site.name
+    });
     const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
 
     let capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId);

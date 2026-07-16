@@ -38,7 +38,10 @@ export default async function SiteWorkspaceLayout({
     : null;
 
   const preferredStagingDomain = (site.stagingEnabled && appUuid)
-    ? await deriveCoolifyStagingDomainFromProduction(appUuid)
+    ? await deriveCoolifyStagingDomainFromProduction(appUuid, {
+      siteSlug: site.slug ?? site.id,
+      siteName: site.name
+    })
     : undefined;
 
   const normalizedActualStagingHost = (stagingCapability?.fqdn ?? stagingCapability?.stagingUrl ?? "")
