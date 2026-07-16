@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { getClientWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
 import CoolifyProjectMappingForm from "@/components/CoolifyProjectMappingForm";
+import DeleteClientButton from "@/components/DeleteClientButton";
 
 type Params = { params: Promise<{ clientId: string }> };
 
@@ -52,6 +53,9 @@ export default async function ClientSettingsPage({ params }: Params) {
           ) : (
             <p className="card-muted">Database-backed organization record is required to update mapping.</p>
           )}
+          <div style={{ marginTop: "1rem" }}>
+            <DeleteClientButton organizationId={client.dbId ?? client.id} />
+          </div>
         </article>
       ) : (
         <article className="card">
