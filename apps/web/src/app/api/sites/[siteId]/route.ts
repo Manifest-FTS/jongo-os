@@ -44,6 +44,21 @@ function buildSiteIdentityWhere(siteId: string) {
   };
 }
 
+function isPrismaSchemaMismatchError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { code?: string; message?: string; meta?: { message?: string } };
+  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
+
+  return (
+    e.code === "P2022" ||
+    (message.includes("column") && message.includes("does not exist")) ||
+    (message.includes("the column") && message.includes("does not exist"))
+  );
+}
+
 async function getSiteForUser(siteId: string, userId: string) {
   const { db } = await import("@/lib/db");
 
@@ -231,7 +246,17 @@ export async function PUT(req: Request, { params }: Params) {
       updates.temporaryDomainSuffix = resolveTemporaryDomainSuffix(body.temporaryDomainSuffix);
     }
 
-    const updated = await db.site.update({ where: { id: site.id }, data: updates });
+    let updated;
+    try {
+      updated = await db.site.update({ where: { id: site.id }, data: updates });
+    } catch (error) {
+      if (!isPrismaSchemaMismatchError(error)) {
+        throw error;
+      }
+
+      const { temporaryDomainSlug: _tmpSlug, temporaryDomainSuffix: _tmpSuffix, ...safeUpdates } = updates;
+      updated = await db.site.update({ where: { id: site.id }, data: safeUpdates });
+    }
 
     return NextResponse.json({ id: updated.id, slug: updated.slug, name: updated.name });
   } catch (err) {

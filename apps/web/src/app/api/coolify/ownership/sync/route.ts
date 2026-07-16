@@ -7,6 +7,16 @@ function normalized(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
 }
 
+function isPrismaUnknownFieldError(error: unknown, fieldName: string): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { message?: string; meta?: { message?: string } };
+  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
+  return message.includes("unknown field") && message.includes(fieldName.toLowerCase());
+}
+
 /**
  * POST /api/coolify/ownership/sync
  *
@@ -56,7 +66,11 @@ export async function POST(request: Request) {
 
     const dbSites: any[] = await db.site.findMany({
       where: { deletedAt: null },
-      include: {
+      select: {
+        id: true,
+        organizationId: true,
+        coolifyServiceUuid: true,
+        coolifyProjectId: true,
         organization: {
           select: {
             id: true,

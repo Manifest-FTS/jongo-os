@@ -9,6 +9,30 @@ import {
 
 type Params = { params: Promise<{ organizationId: string }> };
 
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { code?: string };
+  return e.code === "P2002";
+}
+
+function isPrismaSchemaMismatchError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { code?: string; message?: string; meta?: { message?: string } };
+  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
+
+  return (
+    e.code === "P2022" ||
+    (message.includes("column") && message.includes("does not exist")) ||
+    (message.includes("the column") && message.includes("does not exist"))
+  );
+}
+
 /**
  * GET /api/organizations/[organizationId]/sites
  * Returns all sites in an organization the user has access to.
@@ -42,9 +66,19 @@ export async function GET(_req: Request, { params }: Params) {
 
     const sites = await db.site.findMany({
       where: { organizationId, deletedAt: null },
-      include: {
-        environments: { select: { id: true, name: true, isProductionLike: true } },
-        _count: { select: { collaborators: true } }
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        coolifyServiceId: true,
+        coolifyServiceUuid: true,
+        coolifyProjectId: true,
+        gitRepositoryUrl: true,
+        stagingEnabled: true,
+        organizationId: true,
+        createdAt: true,
+        environments: { select: { id: true, name: true, isProductionLike: true } }
       },
       orderBy: { name: "asc" }
     });
@@ -154,37 +188,77 @@ export async function POST(req: Request, { params }: Params) {
       coolifyProjectName = matched?.coolifyProjectName ?? null;
 
       if (coolifyProjectId && !org.coolifyProjectId) {
-        await db.organization.update({
-          where: { id: organizationId },
-          data: {
-            coolifyProjectId,
-            coolifyProjectName: coolifyProjectName ?? undefined
+        try {
+          await db.organization.update({
+            where: { id: organizationId },
+            data: {
+              coolifyProjectId,
+              coolifyProjectName: coolifyProjectName ?? undefined
+            }
+          });
+        } catch (error) {
+          if (!isPrismaUniqueConstraintError(error)) {
+            throw error;
           }
-        });
+
+          console.warn(
+            "POST /api/organizations/[id]/sites: organization project backfill skipped due to uniqueness conflict.",
+            organizationId,
+            coolifyProjectId
+          );
+        }
       }
     }
 
-    const site = await db.site.create({
-      data: {
-        organizationId,
-        slug,
-        name,
-        description: body.description?.trim() || null,
-        coolifyServiceUuid,
-        coolifyProjectId,
-        stagingEnabled: false,
-        gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
-        temporaryDomainSlug: pinnedTemporarySlug,
-        temporaryDomainSuffix: pinnedTemporarySuffix,
-        environments: {
-          create: [
-            { name: "production", isProductionLike: true },
-            { name: "staging", isProductionLike: false }
-          ]
-        }
-      },
-      include: { environments: { select: { id: true, name: true, isProductionLike: true } } }
-    });
+    let site: any;
+    try {
+      site = await db.site.create({
+        data: {
+          organizationId,
+          slug,
+          name,
+          description: body.description?.trim() || null,
+          coolifyServiceUuid,
+          coolifyProjectId,
+          stagingEnabled: false,
+          gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
+          temporaryDomainSlug: pinnedTemporarySlug,
+          temporaryDomainSuffix: pinnedTemporarySuffix,
+          environments: {
+            create: [
+              { name: "production", isProductionLike: true },
+              { name: "staging", isProductionLike: false }
+            ]
+          }
+        },
+        include: { environments: { select: { id: true, name: true, isProductionLike: true } } }
+      });
+    } catch (error) {
+      if (!isPrismaSchemaMismatchError(error)) {
+        throw error;
+      }
+
+      // Compatibility fallback when DB is missing temporary-domain columns.
+      site = await db.site.create({
+        data: {
+          organizationId,
+          slug,
+          name,
+          description: body.description?.trim() || null,
+          coolifyServiceUuid,
+          coolifyProjectId,
+          stagingEnabled: false,
+          gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
+          environments: {
+            create: [
+              { name: "production", isProductionLike: true },
+              { name: "staging", isProductionLike: false }
+            ]
+          }
+        },
+        include: { environments: { select: { id: true, name: true, isProductionLike: true } } }
+      });
+    }
 
     let backupReconciliation: Awaited<ReturnType<typeof ensureCoolifyAppBackupSchedules>> | null = null;
     if (coolifyServiceUuid) {
