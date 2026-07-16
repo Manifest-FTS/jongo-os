@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
 import { getClientWorkspace, getSiteWorkspace, isClientAdmin, listSiteDirectory } from "@/lib/repositories";
 import CreateSiteForm from "@/components/CreateSiteForm";
+import DeleteAppButton from "@/components/DeleteAppButton";
 import ResourceTypePill from "@/components/ResourceTypePill";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import type { ResourceType } from "@/lib/resource-types";
@@ -83,6 +84,7 @@ export default async function ClientAppsPage({ params }: Params) {
                   {canViewInternalMetadata && app.ownershipState !== "mapped" ? (
                     <span className="tag tag-warning" style={{ fontSize: "0.75rem" }}>mapping needs review</span>
                   ) : null}
+                  {canViewInternalMetadata ? <DeleteAppButton siteId={app.id} /> : null}
                 </div>
               </div>
             ))}

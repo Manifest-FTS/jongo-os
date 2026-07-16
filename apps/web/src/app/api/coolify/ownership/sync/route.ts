@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getCoolifyOverview } from "@/lib/coolify";
+import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 
 function normalized(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -151,10 +152,28 @@ export async function POST(request: Request) {
 
     const orphaned = diagnostics.filter((d) => d.status !== "mapped");
 
+    let importedSites = 0;
+    let importLinkedProjectCount = 0;
+    for (const organization of organizations) {
+      try {
+        const importResult = await importLinkedCoolifyProjectSites(organization.id);
+        importedSites += importResult.createdSites;
+        importLinkedProjectCount += importResult.linkedProjectCount;
+      } catch (error) {
+        console.error(
+          "POST /api/coolify/ownership/sync: auto-import of linked Coolify apps failed for organization.",
+          organization.id,
+          error
+        );
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       updatedSites,
       backfilledOrganizations,
+      importedSites,
+      importLinkedProjectCount,
       orphanedCount: orphaned.length,
       orphaned,
       diagnostics
