@@ -1392,6 +1392,12 @@ function extractProductionDomainSlug(productionRaw: string): string | undefined 
     return undefined;
   }
 
+  // Ignore staging hostnames like <slug>.staging.example.com when deriving
+  // the production slug, otherwise we can lock in a previously wrong slug.
+  if (labels.includes("staging")) {
+    return undefined;
+  }
+
   const leading = labels[0] === "www" ? labels[1] ?? "" : labels[0];
   return normalizeDomainSlug(leading) || undefined;
 }
@@ -1499,6 +1505,12 @@ export async function deriveCoolifyStagingDomainFromProduction(
 
         for (const domainCandidate of extractCoolifyDomainCandidates(resource.urls)) {
           candidates.push(domainCandidate);
+        }
+
+        // Service payloads often carry production domains inside nested
+        // applications/services arrays rather than top-level fields.
+        for (const nestedDomain of extractStagingDomainList(resource)) {
+          candidates.push(nestedDomain);
         }
       } catch {
         // Continue to next endpoint.
@@ -2697,6 +2709,12 @@ async function tryApplyDatabaseBackupSchedule(
   databaseId: string,
   defaults: { cron: string; retentionAmount: number; retentionDays: number }
 ): Promise<boolean> {
+  const payloadBackupsCreate = {
+    frequency: defaults.cron,
+    enabled: true,
+    save_s3: false
+  };
+
   const payloadPrimary = {
     database_backup_enabled: true,
     database_backup_cron: defaults.cron,
@@ -2718,6 +2736,7 @@ async function tryApplyDatabaseBackupSchedule(
     method: "POST" | "PATCH" | "PUT";
     body: Record<string, unknown>;
   }> = [
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/backups`, method: "POST", body: payloadBackupsCreate },
     { path: `/api/v1/databases/${encodeURIComponent(databaseId)}`, method: "PATCH", body: payloadPrimary },
     { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/settings`, method: "PATCH", body: payloadPrimary },
     { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/backups`, method: "POST", body: payloadPrimary },
