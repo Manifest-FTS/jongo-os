@@ -1108,7 +1108,11 @@ export type CoolifyActionResult = {
     | "environment_deleted"
     | "service_created"
     | "resource_deleted"
-    | "resource_already_absent";
+    | "resource_already_absent"
+    | "forbidden"
+    | "environment_create_failed";
+  /** HTTP status from Coolify, when the failure came from a rejected request. */
+  status?: number;
 };
 
 type StagingEnvironmentResolution = {
@@ -1615,13 +1619,13 @@ export async function ensureCoolifyStagingEnvironment(projectId: string): Promis
       };
     }
 
-    const created = await coolifyMutate(
+    const created = await coolifyMutateWithResponse(
       `/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments`,
       "POST",
       { name: "staging" }
     );
 
-    if (created) {
+    if (created.ok) {
       return {
         mode: "live",
         ok: true,
@@ -1629,16 +1633,33 @@ export async function ensureCoolifyStagingEnvironment(projectId: string): Promis
         reason: "environment_created"
       };
     }
-  } catch {
-    // Fall through to unsupported result.
-  }
 
-  return {
-    mode: "live",
-    ok: false,
-    message: "Automatic staging environment creation is unavailable for this project via current Coolify API routes.",
-    reason: "auto_provision_unsupported"
-  };
+    // POST /projects/{uuid}/environments exists and requires api.ability:write.
+    // Reporting every failure as "unsupported" hides the actual cause (403 for a
+    // read-only token, 403 from the instance allowed_ips list, 422 for payload).
+    const detail = (() => {
+      const body = created.body as Record<string, unknown> | undefined;
+      if (body?.errors && typeof body.errors === "object") {
+        return JSON.stringify(body.errors);
+      }
+      return typeof body?.message === "string" ? body.message : created.error;
+    })();
+
+    return {
+      mode: "live",
+      ok: false,
+      message: `Coolify rejected staging environment creation (HTTP ${created.status ?? "n/a"})${detail ? `: ${detail}` : "."}`,
+      reason: created.status === 403 ? "forbidden" : "environment_create_failed",
+      status: created.status
+    };
+  } catch (error) {
+    return {
+      mode: "live",
+      ok: false,
+      message: `Staging environment creation failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      reason: "environment_create_failed"
+    };
+  }
 }
 
 export async function deleteCoolifyStagingEnvironment(projectId: string): Promise<CoolifyActionResult> {
