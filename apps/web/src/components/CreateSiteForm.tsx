@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon } from "@/components/JongoIcons";
 import type { CoolifyAppPickerOption } from "@/lib/coolify-app-picker";
+import {
+  DEFAULT_TEMPORARY_DOMAIN_SUFFIX,
+  TEMPORARY_DOMAIN_SUFFIX_OPTIONS,
+  buildTemporaryProductionDomain,
+  normalizeTemporaryDomainSlug
+} from "@/lib/temporary-domains";
 
 type Props = {
   organizationId: string;
@@ -16,6 +22,8 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
   const [description, setDescription] = useState("");
   const [coolifyUuid, setCoolifyUuid] = useState("");
   const [gitUrl, setGitUrl] = useState("");
+  const [temporaryDomainSlug, setTemporaryDomainSlug] = useState("");
+  const [temporaryDomainSuffix, setTemporaryDomainSuffix] = useState<string>(DEFAULT_TEMPORARY_DOMAIN_SUFFIX);
   const [selectedAppId, setSelectedAppId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -53,9 +61,18 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
     setDescription("");
     setCoolifyUuid("");
     setGitUrl("");
+    setTemporaryDomainSlug("");
+    setTemporaryDomainSuffix(DEFAULT_TEMPORARY_DOMAIN_SUFFIX);
     setSelectedAppId("");
     setError(null);
   }
+
+  const derivedTemporarySlug = normalizeTemporaryDomainSlug(name);
+  const effectiveTemporarySlug = normalizeTemporaryDomainSlug(temporaryDomainSlug) || derivedTemporarySlug;
+  const temporaryDomainPreview = buildTemporaryProductionDomain({
+    slug: effectiveTemporarySlug,
+    suffix: temporaryDomainSuffix
+  });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,7 +87,9 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
           name: name.trim(),
           description: description.trim() || undefined,
           coolifyServiceUuid: coolifyUuid.trim() || undefined,
-          gitRepositoryUrl: gitUrl.trim() || undefined
+          gitRepositoryUrl: gitUrl.trim() || undefined,
+          temporaryDomainSlug: normalizeTemporaryDomainSlug(temporaryDomainSlug) || undefined,
+          temporaryDomainSuffix
         })
       });
 
@@ -178,6 +197,31 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
             placeholder="https://github.com/org/repo"
             className="form-input"
           />
+        </div>
+        <div>
+          <label className="form-label">Temporary Domain Slug</label>
+          <input
+            type="text"
+            value={temporaryDomainSlug}
+            onChange={(e) => setTemporaryDomainSlug(e.target.value)}
+            placeholder={derivedTemporarySlug || "my-site"}
+            className="form-input mono-input"
+          />
+        </div>
+        <div>
+          <label className="form-label">Temporary Domain Suffix</label>
+          <select
+            className="form-input"
+            value={temporaryDomainSuffix}
+            onChange={(e) => setTemporaryDomainSuffix(e.target.value)}
+          >
+            {TEMPORARY_DOMAIN_SUFFIX_OPTIONS.map((suffix) => (
+              <option key={suffix} value={suffix}>{suffix}</option>
+            ))}
+          </select>
+          <p className="form-help">
+            {temporaryDomainPreview ? `Temporary production URL: https://${temporaryDomainPreview}` : "Temporary production URL preview unavailable"}
+          </p>
         </div>
         {error && <p className="form-error">{error}</p>}
         <div className="form-row">

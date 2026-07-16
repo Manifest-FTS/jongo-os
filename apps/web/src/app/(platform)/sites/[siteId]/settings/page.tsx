@@ -72,7 +72,9 @@ export default async function SiteSettingsPage({ params }: Params) {
               description: workspace.description,
               coolifyServiceUuid: workspace.coolifyServiceUuid,
               coolifyProjectId: workspace.coolifyProjectId,
-              gitRepositoryUrl: workspace.gitRepositoryUrl
+              gitRepositoryUrl: workspace.gitRepositoryUrl,
+              temporaryDomainSlug: workspace.temporaryDomainSlug,
+              temporaryDomainSuffix: workspace.temporaryDomainSuffix
             }}
           />
         </article>

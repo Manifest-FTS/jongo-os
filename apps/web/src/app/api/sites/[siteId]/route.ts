@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isAdminRole } from "@/lib/roles";
+import {
+  normalizeTemporaryDomainSlug,
+  resolveTemporaryDomainSuffix
+} from "@/lib/temporary-domains";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -118,6 +122,8 @@ export async function GET(_req: Request, { params }: Params) {
       coolifyProjectId: site.coolifyProjectId,
       gitRepositoryUrl: site.gitRepositoryUrl,
       stagingEnabled: site.stagingEnabled,
+      temporaryDomainSlug: site.temporaryDomainSlug,
+      temporaryDomainSuffix: site.temporaryDomainSuffix,
       organizationId: site.organizationId,
       organization: site.organization,
       environments: site.environments,
@@ -156,6 +162,8 @@ export async function PUT(req: Request, { params }: Params) {
     coolifyProjectId?: string;
     gitRepositoryUrl?: string;
     stagingEnabled?: boolean;
+    temporaryDomainSlug?: string;
+    temporaryDomainSuffix?: string;
   };
   try {
     body = await req.json();
@@ -200,6 +208,8 @@ export async function PUT(req: Request, { params }: Params) {
       coolifyProjectId?: string | null;
       gitRepositoryUrl?: string | null;
       stagingEnabled?: boolean;
+      temporaryDomainSlug?: string | null;
+      temporaryDomainSuffix?: string | null;
     } = {};
     if (name) {
       updates.name = name;
@@ -214,6 +224,12 @@ export async function PUT(req: Request, { params }: Params) {
     if ("coolifyProjectId" in body) updates.coolifyProjectId = body.coolifyProjectId?.trim() || null;
     if ("gitRepositoryUrl" in body) updates.gitRepositoryUrl = body.gitRepositoryUrl?.trim() || null;
     if ("stagingEnabled" in body && typeof body.stagingEnabled === "boolean") updates.stagingEnabled = body.stagingEnabled;
+    if ("temporaryDomainSlug" in body) {
+      updates.temporaryDomainSlug = normalizeTemporaryDomainSlug(body.temporaryDomainSlug) || null;
+    }
+    if ("temporaryDomainSuffix" in body) {
+      updates.temporaryDomainSuffix = resolveTemporaryDomainSuffix(body.temporaryDomainSuffix);
+    }
 
     const updated = await db.site.update({ where: { id: site.id }, data: updates });
 

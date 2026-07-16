@@ -286,7 +286,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
     : [null, null];
   const preferredStagingUrl = appUuid
     ? await deriveCoolifyStagingDomainFromProduction(appUuid, {
-      siteSlug: workspace.slug ?? workspace.id,
+      siteSlug: workspace.temporaryDomainSlug ?? workspace.slug ?? workspace.id,
       siteName: workspace.name
     })
     : undefined;

@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, getCoolifyOverview } from "@/lib/coolify";
 import { isAdminRole } from "@/lib/roles";
+import {
+  normalizeTemporaryDomainSlug,
+  resolveTemporaryDomainSuffix
+} from "@/lib/temporary-domains";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -56,6 +60,8 @@ export async function GET(_req: Request, { params }: Params) {
         coolifyProjectId: site.coolifyProjectId,
         gitRepositoryUrl: site.gitRepositoryUrl,
         stagingEnabled: site.stagingEnabled,
+        temporaryDomainSlug: site.temporaryDomainSlug,
+        temporaryDomainSuffix: site.temporaryDomainSuffix,
         organizationId: site.organizationId,
         environments: site.environments,
         createdAt: site.createdAt
@@ -85,6 +91,8 @@ export async function POST(req: Request, { params }: Params) {
     description?: string;
     coolifyServiceUuid?: string;
     gitRepositoryUrl?: string;
+    temporaryDomainSlug?: string;
+    temporaryDomainSuffix?: string;
   };
   try {
     body = await req.json();
@@ -102,6 +110,8 @@ export async function POST(req: Request, { params }: Params) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 60);
+  const pinnedTemporarySlug = normalizeTemporaryDomainSlug(body.temporaryDomainSlug) || slug;
+  const pinnedTemporarySuffix = resolveTemporaryDomainSuffix(body.temporaryDomainSuffix);
 
   try {
     const { db } = await import("@/lib/db");
@@ -164,6 +174,8 @@ export async function POST(req: Request, { params }: Params) {
         coolifyProjectId,
         stagingEnabled: false,
         gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
+        temporaryDomainSlug: pinnedTemporarySlug,
+        temporaryDomainSuffix: pinnedTemporarySuffix,
         environments: {
           create: [
             { name: "production", isProductionLike: true },
@@ -193,6 +205,8 @@ export async function POST(req: Request, { params }: Params) {
         coolifyProjectId: site.coolifyProjectId,
         stagingEnabled: site.stagingEnabled,
         gitRepositoryUrl: site.gitRepositoryUrl,
+        temporaryDomainSlug: site.temporaryDomainSlug,
+        temporaryDomainSuffix: site.temporaryDomainSuffix,
         organizationId: site.organizationId,
         environments: site.environments,
         createdAt: site.createdAt,

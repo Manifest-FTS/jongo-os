@@ -1439,6 +1439,7 @@ function deriveStagingDomainFromTemplate(options: {
   appUuid: string;
   siteSlug?: string | null;
   siteName?: string | null;
+  domainSuffix?: string | null;
 }): string | undefined {
   const slugFromSite = normalizeDomainSlug(options.siteSlug);
   const slugFromName = normalizeDomainSlug(options.siteName);
@@ -1455,7 +1456,7 @@ function deriveStagingDomainFromTemplate(options: {
     return toHttpsUrl(fromTemplate);
   }
 
-  const suffix = normalizeDomainSuffix(process.env.STAGING_DOMAIN_SUFFIX);
+  const suffix = normalizeDomainSuffix(options.domainSuffix ?? process.env.STAGING_DOMAIN_SUFFIX);
   if (!suffix) {
     return undefined;
   }
@@ -1465,7 +1466,7 @@ function deriveStagingDomainFromTemplate(options: {
 
 export async function deriveCoolifyStagingDomainFromProduction(
   appUuid: string,
-  options?: { siteSlug?: string | null; siteName?: string | null }
+  options?: { siteSlug?: string | null; siteName?: string | null; domainSuffix?: string | null }
 ): Promise<string | undefined> {
   try {
     const candidates: string[] = [];
@@ -1526,7 +1527,8 @@ export async function deriveCoolifyStagingDomainFromProduction(
       const deterministicFromProduction = deriveStagingDomainFromTemplate({
         appUuid,
         siteSlug: productionSlug,
-        siteName: options?.siteName
+        siteName: options?.siteName,
+        domainSuffix: options?.domainSuffix
       });
       if (deterministicFromProduction) {
         return deterministicFromProduction;
@@ -1543,7 +1545,8 @@ export async function deriveCoolifyStagingDomainFromProduction(
     const deterministicDomain = deriveStagingDomainFromTemplate({
       appUuid,
       siteSlug: options?.siteSlug,
-      siteName: options?.siteName
+      siteName: options?.siteName,
+      domainSuffix: options?.domainSuffix
     });
     if (deterministicDomain) {
       return deterministicDomain;

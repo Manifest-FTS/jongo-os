@@ -694,7 +694,9 @@ export async function GET(_req: Request, { params }: Params) {
       name: true,
       stagingEnabled: true,
       coolifyServiceUuid: true,
-      coolifyProjectId: true
+      coolifyProjectId: true,
+      temporaryDomainSlug: true,
+      temporaryDomainSuffix: true
     }
   });
 
@@ -836,7 +838,9 @@ export async function GET(_req: Request, { params }: Params) {
       slug: site.slug,
       name: site.name,
       coolifyServiceUuid: site.coolifyServiceUuid,
-      coolifyProjectId: site.coolifyProjectId
+      coolifyProjectId: site.coolifyProjectId,
+      temporaryDomainSlug: site.temporaryDomainSlug,
+      temporaryDomainSuffix: site.temporaryDomainSuffix
     },
     generatedAt: new Date().toISOString(),
     stagingEnabled: site.stagingEnabled,
@@ -977,7 +981,7 @@ export async function POST(req: Request, { params }: Params) {
       let stagingDomainApplied = false;
 
       const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
-        siteSlug: site.slug ?? site.id,
+        siteSlug: site.temporaryDomainSlug ?? site.slug ?? site.id,
         siteName: site.name
       });
 

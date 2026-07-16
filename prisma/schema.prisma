@@ -127,6 +127,8 @@ model Site {
   coolifyProjectName String?
   gitRepositoryUrl   String?
   stagingEnabled     Boolean @default(false)
+  temporaryDomainSlug   String?
+  temporaryDomainSuffix String?
   // Note: Site is referred to as "App" in UI/UX language
 
   // Relations
