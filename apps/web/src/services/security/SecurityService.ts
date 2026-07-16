@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { NotificationService } from "../notifications/NotificationService";
-import { SecurityFindingSeverity } from "@prisma/client";
+
+type SecurityFindingSeverity = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export interface ScanReportPayload {
   resourceId: string;

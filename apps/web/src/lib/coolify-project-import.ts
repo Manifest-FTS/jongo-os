@@ -215,10 +215,10 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
     }
   });
 
-  const appUuids = [...new Set(
+  const appUuids: string[] = [...new Set<string>(
     reconciledCandidates
-      .map((site) => site.coolifyServiceUuid?.trim())
-      .filter((value): value is string => Boolean(value))
+      .map((site: { coolifyServiceUuid: string | null }) => site.coolifyServiceUuid?.trim())
+      .filter((value: string | undefined): value is string => Boolean(value))
   )];
 
   let backupsAlreadyConfigured = 0;
