@@ -1,0 +1,14 @@
+[Unit]
+Description=Coolify WordPress Auto-Ops Sync
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Ensure flock is used to prevent overlapping runs if a run takes too long
+# Note: Adjust /data/coolify path if the script is located elsewhere
+ExecStart=/usr/bin/flock -n /run/lock/coolify-wp-sync.lock /data/coolify/run-all-reconciliations.sh
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
