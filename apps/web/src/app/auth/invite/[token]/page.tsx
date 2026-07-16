@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import BrandLogo from "@/components/BrandLogo";
+import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
 
 type InvitePayload = {
   valid: boolean;
@@ -93,6 +94,11 @@ export default function AcceptInvitePage() {
       });
 
       if (signInResult?.error) {
+        if (signInResult.error !== "CredentialsSignin") {
+          setError(getCredentialSignInErrorMessage(signInResult.error));
+          return;
+        }
+
         const callbackUrl = data.redirectTo || invite?.invite?.redirectTo || "/dashboard";
         router.push(`/auth/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
         return;

@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 
+const AUTH_DB_UNAVAILABLE_CODE = "AUTH_DB_UNAVAILABLE";
+
 function isUuid(value?: string | null): boolean {
   if (!value) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -10,6 +12,46 @@ function isUuid(value?: string | null): boolean {
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isLikelyDatabaseUnavailableError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const err = error as { code?: string; message?: string; meta?: { message?: string } };
+  const code = (err.code ?? "").toUpperCase();
+  const message = `${err.message ?? ""} ${err.meta?.message ?? ""}`.toLowerCase();
+
+  return (
+    code === "P1000" ||
+    code === "P1001" ||
+    code === "P1002" ||
+    message.includes("authentication failed against database server") ||
+    message.includes("provided database credentials") ||
+    message.includes("can't reach database server") ||
+    message.includes("timed out") ||
+    message.includes("econnrefused")
+  );
+}
+
+function getDatabaseHost(): string {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    return "(DATABASE_URL missing)";
+  }
+
+  try {
+    return new URL(databaseUrl).host;
+  } catch {
+    return "(DATABASE_URL invalid)";
+  }
 }
 
 declare module "next-auth" {
@@ -89,18 +131,38 @@ export const authConfig = {
         // Credentials auth continues with normal DB password validation.
         try {
           const { db } = await import("./db");
-          const user = await db.user.findFirst({
-            where: {
-              email: {
-                equals: normalizedEmail,
-                mode: "insensitive"
-              },
-              deletedAt: null
-            },
-            orderBy: {
-              createdAt: "desc"
+          let user: any = null;
+          let lastError: unknown;
+
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+              user = await db.user.findFirst({
+                where: {
+                  email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive"
+                  },
+                  deletedAt: null
+                },
+                orderBy: {
+                  createdAt: "desc"
+                }
+              });
+              lastError = undefined;
+              break;
+            } catch (error) {
+              lastError = error;
+              if (attempt === 0 && isLikelyDatabaseUnavailableError(error)) {
+                await delay(120);
+                continue;
+              }
+              break;
             }
-          });
+          }
+
+          if (lastError) {
+            throw lastError;
+          }
 
           if (!user?.passwordHash) {
             return null;
@@ -117,9 +179,17 @@ export const authConfig = {
             email: normalizeEmail(user.email),
             name: user.fullName ?? undefined
           };
-        } catch {
-          console.warn("Authentication is waiting on a configured database.");
-          return null;
+        } catch (error) {
+          if (isLikelyDatabaseUnavailableError(error)) {
+            console.error(
+              `[auth] Credentials sign-in failed because the database is unavailable at ${getDatabaseHost()}.`,
+              error
+            );
+            throw new Error(AUTH_DB_UNAVAILABLE_CODE);
+          }
+
+          console.error("[auth] Credentials sign-in failed due to an unexpected error.", error);
+          throw new Error("AUTH_UNEXPECTED_ERROR");
         }
       }
     })

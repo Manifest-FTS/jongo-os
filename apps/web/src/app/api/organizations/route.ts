@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 
 function normalize(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -205,6 +206,14 @@ export async function POST(req: Request) {
       }
     }
 
+    if (org.coolifyProjectId) {
+      try {
+        await importLinkedCoolifyProjectSites(org.id);
+      } catch (error) {
+        console.error("[jongo] Failed to auto-import Coolify apps for new organization.", error);
+      }
+    }
+
     return NextResponse.json(
       {
         id: org.id,
@@ -228,7 +237,6 @@ export async function POST(req: Request) {
               }
             ]
           : [],
-        ownerId: org.ownerId,
         siteCount: 0,
         memberCount: 1,
         createdAt: org.createdAt

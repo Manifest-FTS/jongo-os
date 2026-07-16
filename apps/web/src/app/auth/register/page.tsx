@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import BrandLogo from "@/components/BrandLogo";
 import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
+import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -54,7 +55,12 @@ export default function RegisterPage() {
       setLoading(false);
 
       if (result?.error) {
-        router.push("/auth/login");
+        if (result.error === "CredentialsSignin") {
+          router.push("/auth/login");
+          return;
+        }
+
+        setError(getCredentialSignInErrorMessage(result.error));
         return;
       }
 

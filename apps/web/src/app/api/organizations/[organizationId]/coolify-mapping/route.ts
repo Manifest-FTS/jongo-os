@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { db } from "@/lib/db";
+import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { isAdminRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ organizationId: string }> };
@@ -231,6 +232,12 @@ export async function POST(request: Request, { params }: Params) {
       });
     }
 
+    try {
+      await importLinkedCoolifyProjectSites(organizationId);
+    } catch (error) {
+      console.error("[jongo] Failed to resync Coolify apps after unlink.", error);
+    }
+
     return NextResponse.json(await buildMappingResponse(org));
   }
 
@@ -300,6 +307,12 @@ export async function POST(request: Request, { params }: Params) {
         coolifyProjectName: coolifyProjectName ?? null
       }
     });
+  }
+
+  try {
+    await importLinkedCoolifyProjectSites(organizationId);
+  } catch (error) {
+    console.error("[jongo] Failed to auto-import Coolify apps after mapping update.", error);
   }
 
   return NextResponse.json(await buildMappingResponse(org));

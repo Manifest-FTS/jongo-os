@@ -7,6 +7,8 @@ import ResourceTypePill from "@/components/ResourceTypePill";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import type { ResourceType } from "@/lib/resource-types";
 import { RESOURCE_TYPES } from "@/lib/resource-types";
+import { getCoolifyOverview } from "@/lib/coolify";
+import { buildAvailableCoolifyAppOptions } from "@/lib/coolify-app-picker";
 
 type Params = { params: Promise<{ clientId: string }> };
 
@@ -33,6 +35,19 @@ export default async function ClientAppsPage({ params }: Params) {
     : (await Promise.all(client.siteIds.map((siteId) => getSiteWorkspace(siteId, viewer)))).filter(
         (site): site is NonNullable<typeof site> => Boolean(site)
       );
+  const linkedProjectIds = new Set((client.linkedCoolifyProjects ?? []).map((project) => project.coolifyProjectId));
+  const overview = client.dbId ? await getCoolifyOverview() : null;
+  const availableApps = overview
+    ? buildAvailableCoolifyAppOptions(
+        overview,
+        linkedProjectIds,
+        apps.map((app) => ({
+          coolifyServiceUuid: app.coolifyServiceUuid,
+          deployTargetId: app.deployTargetId,
+          name: app.name
+        }))
+      )
+    : [];
   const canViewInternalMetadata = Boolean(session?.user?.id && client.dbId && await isClientAdmin(client.dbId, session.user.id));
 
   return (
@@ -42,7 +57,7 @@ export default async function ClientAppsPage({ params }: Params) {
           <h2 style={{ margin: 0 }}>Apps</h2>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>All apps mapped to this client workspace.</p>
         </div>
-        {client.dbId ? <CreateSiteForm organizationId={client.dbId} /> : null}
+        {client.dbId ? <CreateSiteForm organizationId={client.dbId} availableApps={availableApps} /> : null}
       </div>
 
       <article className="card">
