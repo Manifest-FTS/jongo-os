@@ -311,17 +311,32 @@ function buildCloneScript(params) {
 
   const sourceIsProduction = syncDirection === "production-to-staging";
   const sourceWp = sourceIsProduction ? `wordpress-${prodServiceUuid}` : `wordpress-${stagingServiceUuid}`;
-  const sourceDb = sourceIsProduction ? `mariadb-${prodServiceUuid}` : `mariadb-${stagingServiceUuid}`;
+  const sourceDbServiceUuid = sourceIsProduction ? prodServiceUuid : stagingServiceUuid;
   const targetWp = sourceIsProduction ? `wordpress-${stagingServiceUuid}` : `wordpress-${prodServiceUuid}`;
-  const targetDb = sourceIsProduction ? `mariadb-${stagingServiceUuid}` : `mariadb-${prodServiceUuid}`;
+  const targetDbServiceUuid = sourceIsProduction ? stagingServiceUuid : prodServiceUuid;
   const targetUrl = sourceIsProduction ? stagingUrl : productionUrl;
 
   return `set -euo pipefail
 SRC_WP=${shQuote(sourceWp)}
-SRC_DB=${shQuote(sourceDb)}
+SRC_DB_SERVICE_UUID=${shQuote(sourceDbServiceUuid)}
 TARGET_WP=${shQuote(targetWp)}
-TARGET_DB=${shQuote(targetDb)}
+TARGET_DB_SERVICE_UUID=${shQuote(targetDbServiceUuid)}
 TARGET_URL=${shQuote(targetUrl)}
+
+resolve_db_container() {
+  local service_uuid="$1"
+  for prefix in mariadb mysql; do
+    local candidate="${prefix}-${service_uuid}"
+    if docker ps --format '{{.Names}}' | grep -Fx "$candidate" >/dev/null; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+SRC_DB=$(resolve_db_container "$SRC_DB_SERVICE_UUID") || { echo "Missing DB container for service: $SRC_DB_SERVICE_UUID"; exit 1; }
+TARGET_DB=$(resolve_db_container "$TARGET_DB_SERVICE_UUID") || { echo "Missing DB container for service: $TARGET_DB_SERVICE_UUID"; exit 1; }
 
 for name in "$SRC_WP" "$SRC_DB" "$TARGET_WP" "$TARGET_DB"; do
   docker ps --format '{{.Names}}' | grep -Fx "$name" >/dev/null || { echo "Missing container: $name"; exit 1; }
@@ -390,9 +405,24 @@ function buildPreflightScript(params) {
 
   return `set -euo pipefail
 PROD_WP=wordpress-${prodServiceUuid}
-PROD_DB=mariadb-${prodServiceUuid}
+PROD_DB_SERVICE_UUID=${prodServiceUuid}
 STG_WP=wordpress-${stagingServiceUuid}
-STG_DB=mariadb-${stagingServiceUuid}
+STG_DB_SERVICE_UUID=${stagingServiceUuid}
+
+resolve_db_container() {
+  local service_uuid="$1"
+  for prefix in mariadb mysql; do
+    local candidate="${prefix}-${service_uuid}"
+    if docker ps --format '{{.Names}}' | grep -Fx "$candidate" >/dev/null; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PROD_DB=$(resolve_db_container "$PROD_DB_SERVICE_UUID") || { echo "MISSING_DB_FOR_SERVICE:$PROD_DB_SERVICE_UUID"; exit 1; }
+STG_DB=$(resolve_db_container "$STG_DB_SERVICE_UUID") || { echo "MISSING_DB_FOR_SERVICE:$STG_DB_SERVICE_UUID"; exit 1; }
 for name in "$PROD_WP" "$PROD_DB" "$STG_WP" "$STG_DB"; do
   docker ps --format '{{.Names}}' | grep -Fx "$name" >/dev/null || { echo "MISSING:$name"; exit 1; }
 done
