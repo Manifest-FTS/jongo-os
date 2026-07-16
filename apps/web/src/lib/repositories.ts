@@ -1447,7 +1447,16 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
     try {
       const dbSites: any[] = await prisma.site.findMany({
         where: siteWhere,
-        include: { organization: { select: { id: true, slug: true, name: true } } },
+        select: {
+          id: true,
+          organizationId: true,
+          slug: true,
+          name: true,
+          description: true,
+          coolifyServiceUuid: true,
+          coolifyProjectId: true,
+          organization: { select: { id: true, slug: true, name: true } }
+        },
         orderBy: { name: "asc" }
       });
 
@@ -1742,7 +1751,16 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
         try {
           dbSite = await prisma.site.findFirst({
             where,
-            include: {
+            select: {
+              id: true,
+              organizationId: true,
+              slug: true,
+              name: true,
+              description: true,
+              coolifyServiceUuid: true,
+              coolifyProjectId: true,
+              stagingEnabled: true,
+              gitRepositoryUrl: true,
               organization: {
                 select: {
                   id: true,
@@ -1766,7 +1784,16 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
 
           dbSite = await prisma.site.findFirst({
             where,
-            include: {
+            select: {
+              id: true,
+              organizationId: true,
+              slug: true,
+              name: true,
+              description: true,
+              coolifyServiceUuid: true,
+              coolifyProjectId: true,
+              stagingEnabled: true,
+              gitRepositoryUrl: true,
               organization: {
                 select: {
                   id: true,
@@ -1787,6 +1814,24 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
       }
 
       if (dbSite) {
+        let temporaryDomainSlug: string | undefined;
+        let temporaryDomainSuffix: string | undefined;
+        try {
+          const temporaryDomainValues = await prisma.site.findUnique({
+            where: { id: dbSite.id },
+            select: {
+              temporaryDomainSlug: true,
+              temporaryDomainSuffix: true
+            }
+          });
+          temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? undefined;
+          temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? undefined;
+        } catch (error) {
+          if (!isPrismaSchemaMismatchError(error)) {
+            throw error;
+          }
+        }
+
         // Enrich with Coolify data if UUID is stored
         const coolifyMatch = dbSite.coolifyServiceUuid
           ? overview.sites.find(
@@ -1834,8 +1879,8 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
           coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
           coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
           gitRepositoryUrl: dbSite.gitRepositoryUrl ?? undefined,
-          temporaryDomainSlug: dbSite.temporaryDomainSlug ?? undefined,
-          temporaryDomainSuffix: dbSite.temporaryDomainSuffix ?? undefined,
+          temporaryDomainSlug,
+          temporaryDomainSuffix,
           organizationId: dbSite.organizationId,
           ownershipState: "mapped",
           ownershipDiagnostic: `Client: ${dbSite.organization.name}`,
