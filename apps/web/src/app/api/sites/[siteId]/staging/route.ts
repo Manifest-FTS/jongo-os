@@ -11,6 +11,9 @@ import {
   getCoolifyAppBackupInventory,
   destroyCoolifyApplication,
   getCoolifyAppStagingCapability,
+  isGeneratedCoolifyHost,
+  readCoolifyServiceDomains,
+  restartCoolifyService,
   triggerCoolifyDeploy,
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
@@ -56,6 +59,15 @@ type CoolifyDomainSyncResult = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeHostForCompare(value: string): string {
+  try {
+    const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+    return url.hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return "";
+  }
 }
 
 function tailLines(value: string, count = 12): string {
@@ -1348,9 +1360,28 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No valid domains provided." }, { status: 400 });
   }
 
-  const updated = capability.resourceKind === "service"
+  const generatedRequests = requestedDomains.filter((domain) =>
+    isGeneratedCoolifyHost(domain, capability.applicationUuid)
+  );
+  if (generatedRequests.length > 0) {
+    return NextResponse.json({
+      error: "Refusing to set a Coolify-generated host as a preferred domain. "
+        + "It would be written into WordPress siteurl/home on the next content sync and pin the site to it.",
+      domains: generatedRequests
+    }, { status: 400 });
+  }
+
+  const isService = capability.resourceKind === "service";
+  const serviceResult = isService
     ? await applyCoolifyServiceDomains(capability.applicationUuid, requestedDomains)
-    : await applyCoolifyApplicationDomains(capability.applicationUuid, requestedDomains);
+    : null;
+
+  // Non-service resources still use the legacy boolean path.
+  const applicationUpdated = !isService
+    ? await applyCoolifyApplicationDomains(capability.applicationUuid, requestedDomains)
+    : false;
+
+  const updated = isService ? Boolean(serviceResult?.ok) : applicationUpdated;
 
   const compatibilityRetry = !updated
     ? await retryCoolifyDomainSyncWithDiagnostics({
@@ -1362,7 +1393,31 @@ export async function PATCH(req: Request, { params }: Params) {
   const domainUpdateSucceeded = updated || compatibilityRetry.ok;
   const domainUpdateMessage = domainUpdateSucceeded
     ? (updated ? "Staging domains updated." : "Staging domains updated using compatibility mode.")
-    : compatibilityRetry.message;
+    : (serviceResult && !serviceResult.ok ? serviceResult.message : compatibilityRetry.message);
+
+  // A domain change is inert at the edge until Coolify regenerates Traefik
+  // labels, which only happens on deploy – restarting the WordPress container
+  // directly does not do it.
+  //
+  // The restart is queued by Coolify, so the read-back below confirms only that
+  // Coolify stored the preferred fqdn, not that Traefik is already serving it.
+  // That is enough to gate content sync, which is what pins the wrong host.
+  let restarted = false;
+  let convergedDomains: string[] = [];
+  let preferredDomainConverged = false;
+
+  if (domainUpdateSucceeded && isService) {
+    const restartResponse = await restartCoolifyService(capability.applicationUuid);
+    restarted = restartResponse.ok;
+
+    convergedDomains = await readCoolifyServiceDomains(capability.applicationUuid);
+    const convergedHosts = new Set(
+      convergedDomains.map((domain) => normalizeHostForCompare(domain)).filter(Boolean)
+    );
+    preferredDomainConverged = requestedDomains.every((domain) =>
+      convergedHosts.has(normalizeHostForCompare(domain))
+    );
+  }
 
   await recordStagingAuditLog({
     organizationId: site.organizationId,
@@ -1374,7 +1429,11 @@ export async function PATCH(req: Request, { params }: Params) {
       stagingApplicationUuid: capability.applicationUuid,
       updated: domainUpdateSucceeded,
       compatibilityModeUsed: !updated && compatibilityRetry.ok,
-      coolifyStatus: compatibilityRetry.status ?? null,
+      coolifyStatus: serviceResult?.status ?? compatibilityRetry.status ?? null,
+      coolifyConflicts: serviceResult?.conflicts ?? null,
+      restarted,
+      reportedStagingHosts: convergedDomains,
+      preferredStagingDomainConverged: preferredDomainConverged,
       message: domainUpdateMessage
     },
     req
@@ -1385,6 +1444,8 @@ export async function PATCH(req: Request, { params }: Params) {
       ok: false,
       stagingApplicationUuid: capability.applicationUuid,
       requestedDomains,
+      coolifyStatus: serviceResult?.status ?? compatibilityRetry.status ?? null,
+      conflicts: serviceResult?.conflicts ?? null,
       message: domainUpdateMessage
     }, { status: 502 });
   }
@@ -1393,6 +1454,13 @@ export async function PATCH(req: Request, { params }: Params) {
     ok: true,
     stagingApplicationUuid: capability.applicationUuid,
     requestedDomains,
-    message: domainUpdateMessage
+    restarted,
+    reportedStagingHosts: convergedDomains,
+    preferredStagingDomainConverged: preferredDomainConverged,
+    message: preferredDomainConverged
+      ? domainUpdateMessage
+      : `${domainUpdateMessage} Coolify has not reported the preferred host yet; `
+        + "do not run a content sync until it converges or the generated host will be written into WordPress.",
+    warning: preferredDomainConverged ? undefined : "preferred_domain_not_converged"
   });
 }
