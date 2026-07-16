@@ -65,7 +65,12 @@ function shouldRetryForWarmup(result: { code: number | null; stdout: string; std
   }
 
   const combined = `${result.stdout}\n${result.stderr}`.toLowerCase();
-  return combined.includes("preflight containers not ready") || combined.includes("missing:wordpress-") || combined.includes("missing:mariadb-");
+  return (
+    combined.includes("preflight containers not ready") ||
+    combined.includes("missing:wordpress-") ||
+    combined.includes("missing:mariadb-") ||
+    combined.includes("missing:mysql-")
+  );
 }
 
 async function runSyncApply(

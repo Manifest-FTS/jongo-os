@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getCoolifyOverview, type SiteOverview } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, getCoolifyOverview, type SiteOverview } from "@/lib/coolify";
 
 type LinkedProjectRecord = {
   coolifyProjectId: string;
@@ -11,6 +11,10 @@ export type CoolifyProjectImportResult = {
   matchedCoolifySites: number;
   createdSites: number;
   skippedSites: number;
+  backupReconciledSites: number;
+  backupsAlreadyConfigured: number;
+  backupsAutoProvisioned: number;
+  backupsProvisionFailures: number;
 };
 
 function normalized(value?: string | null): string {
@@ -101,7 +105,11 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
       linkedProjectCount: 0,
       matchedCoolifySites: 0,
       createdSites: 0,
-      skippedSites: 0
+      skippedSites: 0,
+      backupReconciledSites: 0,
+      backupsAlreadyConfigured: 0,
+      backupsAutoProvisioned: 0,
+      backupsProvisionFailures: 0
     };
   }
 
@@ -111,7 +119,11 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
       linkedProjectCount: linkedProjects.length,
       matchedCoolifySites: 0,
       createdSites: 0,
-      skippedSites: 0
+      skippedSites: 0,
+      backupReconciledSites: 0,
+      backupsAlreadyConfigured: 0,
+      backupsAutoProvisioned: 0,
+      backupsProvisionFailures: 0
     };
   }
 
@@ -192,10 +204,50 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
     createdSites += 1;
   }
 
+  const reconciledCandidates = await db.site.findMany({
+    where: {
+      organizationId,
+      deletedAt: null,
+      NOT: [{ coolifyServiceUuid: null }]
+    },
+    select: {
+      coolifyServiceUuid: true
+    }
+  });
+
+  const appUuids = [...new Set(
+    reconciledCandidates
+      .map((site) => site.coolifyServiceUuid?.trim())
+      .filter((value): value is string => Boolean(value))
+  )];
+
+  let backupsAlreadyConfigured = 0;
+  let backupsAutoProvisioned = 0;
+  let backupsProvisionFailures = 0;
+
+  for (const appUuid of appUuids) {
+    try {
+      const reconciliation = await ensureCoolifyAppBackupSchedules(appUuid);
+      if (reconciliation.note === "already_configured") {
+        backupsAlreadyConfigured += 1;
+      } else if (reconciliation.configuredAfter) {
+        backupsAutoProvisioned += 1;
+      } else {
+        backupsProvisionFailures += 1;
+      }
+    } catch {
+      backupsProvisionFailures += 1;
+    }
+  }
+
   return {
     linkedProjectCount: linkedProjects.length,
     matchedCoolifySites: coolifySites.length,
     createdSites,
-    skippedSites
+    skippedSites,
+    backupReconciledSites: appUuids.length,
+    backupsAlreadyConfigured,
+    backupsAutoProvisioned,
+    backupsProvisionFailures
   };
 }

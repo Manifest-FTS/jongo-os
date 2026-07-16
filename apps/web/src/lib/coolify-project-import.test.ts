@@ -21,7 +21,11 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/coolify", () => ({
-  getCoolifyOverview: vi.fn()
+  getCoolifyOverview: vi.fn(),
+  ensureCoolifyAppBackupSchedules: vi.fn().mockResolvedValue({
+    configuredAfter: true,
+    note: "already_configured"
+  })
 }));
 
 import { getCoolifyOverview } from "@/lib/coolify";
@@ -94,7 +98,11 @@ describe("importLinkedCoolifyProjectSites", () => {
       linkedProjectCount: 1,
       matchedCoolifySites: 2,
       createdSites: 1,
-      skippedSites: 1
+      skippedSites: 1,
+      backupReconciledSites: 1,
+      backupsAlreadyConfigured: 1,
+      backupsAutoProvisioned: 0,
+      backupsProvisionFailures: 0
     });
     expect(dbMocks.siteCreate).toHaveBeenCalledTimes(1);
     expect(dbMocks.siteCreate).toHaveBeenCalledWith(

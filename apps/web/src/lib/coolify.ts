@@ -1371,6 +1371,31 @@ function buildStagingDomainFromProductionUrl(productionRaw: string): string | un
   return `https://staging-${hostname}`;
 }
 
+function extractProductionDomainSlug(productionRaw: string): string | undefined {
+  const first = extractFirstHostLikeValue(productionRaw);
+  if (!first) {
+    return undefined;
+  }
+
+  const productionUrl = toHttpsUrl(first);
+  if (!productionUrl) {
+    return undefined;
+  }
+
+  const hostname = new URL(productionUrl).hostname.toLowerCase();
+  if (!hostname || hostname.startsWith("staging-") || hostname.startsWith("staging.")) {
+    return undefined;
+  }
+
+  const labels = hostname.split(".").filter(Boolean);
+  if (labels.length === 0) {
+    return undefined;
+  }
+
+  const leading = labels[0] === "www" ? labels[1] ?? "" : labels[0];
+  return normalizeDomainSlug(leading) || undefined;
+}
+
 function normalizeDomainSlug(value?: string | null): string {
   if (!value) {
     return "";
@@ -1437,15 +1462,6 @@ export async function deriveCoolifyStagingDomainFromProduction(
   options?: { siteSlug?: string | null; siteName?: string | null }
 ): Promise<string | undefined> {
   try {
-    const deterministicDomain = deriveStagingDomainFromTemplate({
-      appUuid,
-      siteSlug: options?.siteSlug,
-      siteName: options?.siteName
-    });
-    if (deterministicDomain) {
-      return deterministicDomain;
-    }
-
     const candidates: string[] = [];
 
     const payloadLookups = [
@@ -1458,9 +1474,28 @@ export async function deriveCoolifyStagingDomainFromProduction(
         const payload = await coolifyFetch(path);
         const resource = (typeof payload === "object" && payload !== null ? payload : {}) as Record<string, unknown>;
 
-        candidates.push(
-          stringValue(resource, ["fqdn", "url", "domain", "domains", "preview_url", "production_url"], "")
-        );
+        const directValues = [
+          stringValue(resource, ["fqdn", "url", "domain", "domains", "preview_url", "production_url"], ""),
+          ...extractCoolifyDomainCandidates(resource.fqdn),
+          ...extractCoolifyDomainCandidates(resource.domain),
+          ...extractCoolifyDomainCandidates(resource.domains),
+          ...extractCoolifyDomainCandidates(resource.url),
+          ...extractCoolifyDomainCandidates(resource.urls),
+          ...extractCoolifyDomainCandidates(resource.production_url),
+          ...extractCoolifyDomainCandidates(resource.preview_url)
+        ];
+
+        for (const value of directValues) {
+          const domains = extractCoolifyDomainCandidates(value);
+          if (domains.length > 0) {
+            candidates.push(...domains);
+            continue;
+          }
+
+          if (typeof value === "string" && value.trim().length > 0) {
+            candidates.push(value.trim());
+          }
+        }
 
         for (const domainCandidate of extractCoolifyDomainCandidates(resource.urls)) {
           candidates.push(domainCandidate);
@@ -1471,10 +1506,35 @@ export async function deriveCoolifyStagingDomainFromProduction(
     }
 
     for (const candidate of candidates) {
+      const productionSlug = extractProductionDomainSlug(candidate);
+      if (!productionSlug) {
+        continue;
+      }
+
+      const deterministicFromProduction = deriveStagingDomainFromTemplate({
+        appUuid,
+        siteSlug: productionSlug,
+        siteName: options?.siteName
+      });
+      if (deterministicFromProduction) {
+        return deterministicFromProduction;
+      }
+    }
+
+    for (const candidate of candidates) {
       const derived = buildStagingDomainFromProductionUrl(candidate);
       if (derived) {
         return derived;
       }
+    }
+
+    const deterministicDomain = deriveStagingDomainFromTemplate({
+      appUuid,
+      siteSlug: options?.siteSlug,
+      siteName: options?.siteName
+    });
+    if (deterministicDomain) {
+      return deterministicDomain;
     }
 
     return undefined;
@@ -2403,6 +2463,25 @@ export type AppBackupInventory = {
   checkedAt: string;
 };
 
+export type BackupScheduleProvisionResult = {
+  appUuid: string;
+  checkedAt: string;
+  attempted: boolean;
+  configuredBefore: boolean;
+  configuredAfter: boolean;
+  targetDatabases: string[];
+  updatedDatabases: string[];
+  failedDatabases: string[];
+  note?:
+    | "missing_credentials"
+    | "inventory_unavailable"
+    | "already_configured"
+    | "no_databases_detected"
+    | "no_addressable_databases"
+    | "provision_attempted"
+    | "provision_failed";
+};
+
 // ─── Staging Capability Types ─────────────────────────────────────────────────
 
 export type StagingCapabilityRecord = {
@@ -2602,6 +2681,176 @@ async function collectDatabaseBackupTelemetry(
   }
 }
 
+function backupProvisionDefaults(): { cron: string; retentionAmount: number; retentionDays: number } {
+  const cron = (process.env.COOLIFY_DEFAULT_BACKUP_CRON || "0 2 * * *").trim() || "0 2 * * *";
+  const retentionAmountRaw = Number(process.env.COOLIFY_DEFAULT_BACKUP_RETENTION_AMOUNT || 7);
+  const retentionDaysRaw = Number(process.env.COOLIFY_DEFAULT_BACKUP_RETENTION_DAYS || 7);
+
+  return {
+    cron,
+    retentionAmount: Number.isFinite(retentionAmountRaw) && retentionAmountRaw > 0 ? Math.floor(retentionAmountRaw) : 7,
+    retentionDays: Number.isFinite(retentionDaysRaw) && retentionDaysRaw > 0 ? Math.floor(retentionDaysRaw) : 7
+  };
+}
+
+async function tryApplyDatabaseBackupSchedule(
+  databaseId: string,
+  defaults: { cron: string; retentionAmount: number; retentionDays: number }
+): Promise<boolean> {
+  const payloadPrimary = {
+    database_backup_enabled: true,
+    database_backup_cron: defaults.cron,
+    database_backup_retention_amount_locally: defaults.retentionAmount,
+    database_backup_retention_days_locally: defaults.retentionDays
+  };
+
+  const payloadFallback = {
+    backup_enabled: true,
+    enabled: true,
+    cron: defaults.cron,
+    schedule: defaults.cron,
+    retention_amount: defaults.retentionAmount,
+    retention_days: defaults.retentionDays
+  };
+
+  const attempts: Array<{
+    path: string;
+    method: "POST" | "PATCH" | "PUT";
+    body: Record<string, unknown>;
+  }> = [
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}`, method: "PATCH", body: payloadPrimary },
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/settings`, method: "PATCH", body: payloadPrimary },
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/backups`, method: "POST", body: payloadPrimary },
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/backups`, method: "PATCH", body: payloadPrimary },
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/backups`, method: "PUT", body: payloadPrimary },
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}`, method: "PATCH", body: payloadFallback },
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/settings`, method: "PATCH", body: payloadFallback },
+    { path: `/api/v1/databases/${encodeURIComponent(databaseId)}/backups`, method: "POST", body: payloadFallback }
+  ];
+
+  for (const attempt of attempts) {
+    const response = await coolifyMutateWithResponse(attempt.path, attempt.method, attempt.body);
+    if (response.ok) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export async function ensureCoolifyAppBackupSchedules(appUuid: string): Promise<BackupScheduleProvisionResult> {
+  const checkedAt = new Date().toISOString();
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+  if (!baseUrl || !token) {
+    return {
+      appUuid,
+      checkedAt,
+      attempted: false,
+      configuredBefore: false,
+      configuredAfter: false,
+      targetDatabases: [],
+      updatedDatabases: [],
+      failedDatabases: [],
+      note: "missing_credentials"
+    };
+  }
+
+  const inventoryBefore = await getCoolifyAppBackupInventory(appUuid);
+  if (inventoryBefore.source !== "live") {
+    return {
+      appUuid,
+      checkedAt,
+      attempted: false,
+      configuredBefore: inventoryBefore.configured,
+      configuredAfter: inventoryBefore.configured,
+      targetDatabases: [],
+      updatedDatabases: [],
+      failedDatabases: [],
+      note: "inventory_unavailable"
+    };
+  }
+
+  const missingCoverage = inventoryBefore.databaseCoverage.filter((item) => !item.hasSchedule);
+  const configuredBefore = inventoryBefore.configured && missingCoverage.length === 0;
+  if (configuredBefore) {
+    return {
+      appUuid,
+      checkedAt,
+      attempted: false,
+      configuredBefore: true,
+      configuredAfter: true,
+      targetDatabases: [],
+      updatedDatabases: [],
+      failedDatabases: [],
+      note: "already_configured"
+    };
+  }
+
+  if (inventoryBefore.databaseCoverage.length === 0) {
+    return {
+      appUuid,
+      checkedAt,
+      attempted: false,
+      configuredBefore: false,
+      configuredAfter: inventoryBefore.configured,
+      targetDatabases: [],
+      updatedDatabases: [],
+      failedDatabases: [],
+      note: "no_databases_detected"
+    };
+  }
+
+  const databaseIds = [...new Set(
+    missingCoverage
+      .map((item) => item.resourceId)
+      .filter((value) => value && !value.startsWith("service:"))
+  )];
+
+  if (databaseIds.length === 0) {
+    return {
+      appUuid,
+      checkedAt,
+      attempted: false,
+      configuredBefore: inventoryBefore.configured,
+      configuredAfter: inventoryBefore.configured,
+      targetDatabases: [],
+      updatedDatabases: [],
+      failedDatabases: [],
+      note: "no_addressable_databases"
+    };
+  }
+
+  const defaults = backupProvisionDefaults();
+  const updatedDatabases: string[] = [];
+  const failedDatabases: string[] = [];
+
+  for (const databaseId of databaseIds) {
+    const ok = await tryApplyDatabaseBackupSchedule(databaseId, defaults);
+    if (ok) {
+      updatedDatabases.push(databaseId);
+    } else {
+      failedDatabases.push(databaseId);
+    }
+  }
+
+  const inventoryAfter = await getCoolifyAppBackupInventory(appUuid);
+  const missingAfter = inventoryAfter.databaseCoverage.filter((item) => !item.hasSchedule);
+  const configuredAfter = inventoryAfter.configured && missingAfter.length === 0;
+
+  return {
+    appUuid,
+    checkedAt,
+    attempted: true,
+    configuredBefore,
+    configuredAfter,
+    targetDatabases: databaseIds,
+    updatedDatabases,
+    failedDatabases,
+    note: configuredAfter ? "provision_attempted" : "provision_failed"
+  };
+}
+
 function normalizeDatabaseEngine(raw: Record<string, unknown>): DatabaseBackupCoverageRecord["engine"] {
   const engineRaw = stringValue(raw, ["database_type", "engine", "type", "resource_type", "service_type", "custom_type", "image", "name"], "").toLowerCase();
   if (engineRaw.includes("postgres")) return "postgresql";
@@ -2621,6 +2870,13 @@ function detectEmbeddedDatabaseFromService(service: Record<string, unknown>): {
     return {
       engine: "mariadb",
       note: "WordPress with embedded MariaDB service. No standalone database schedule detected."
+    };
+  }
+
+  if (serviceType.includes("wordpress-with-mysql")) {
+    return {
+      engine: "mysql",
+      note: "WordPress with embedded MySQL service. No standalone database schedule detected."
     };
   }
 
