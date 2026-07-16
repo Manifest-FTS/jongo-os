@@ -2873,6 +2873,13 @@ function detectEmbeddedDatabaseFromService(service: Record<string, unknown>): {
     };
   }
 
+  if (serviceType.includes("wordpress-with-mysql")) {
+    return {
+      engine: "mysql",
+      note: "WordPress with embedded MySQL service. No standalone database schedule detected."
+    };
+  }
+
   if (composeRaw.includes("image: mariadb") || composeRaw.includes(" mariadb:")) {
     return {
       engine: "mariadb",
