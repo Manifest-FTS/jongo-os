@@ -1030,7 +1030,8 @@ export async function POST(req: Request, { params }: Params) {
       });
       const stagingProbeResult = await probeStagingContentAcrossCandidates(probeCandidates);
       const freshInstallDetected = stagingProbeResult.probe.freshInstallDetected;
-      const requiresContentSync = freshInstallDetected;
+      const probeUnavailable = !stagingProbeResult.probe.checked;
+      const requiresContentSync = freshInstallDetected || probeUnavailable;
       const autoSyncStagingUrl = (
         stagingProbeResult.matchedCandidate ||
         preferredStagingDomain ||
@@ -1076,7 +1077,9 @@ export async function POST(req: Request, { params }: Params) {
           probeCandidates,
           checkedProbeCandidates: stagingProbeResult.checkedCandidates,
           stagingContentProbe: stagingProbeResult.probe,
-          contentSyncReason: requiresContentSync ? "fresh_install_detected" : "not_required",
+          contentSyncReason: freshInstallDetected
+            ? "fresh_install_detected"
+            : (probeUnavailable ? "probe_failed" : "not_required"),
           capability: capabilityAfterExistingCheck,
           autoContentSync
         },
@@ -1100,7 +1103,9 @@ export async function POST(req: Request, { params }: Params) {
         stagingContentProbe: stagingProbeResult.probe,
         actionHint: mergeActionHints(
           requiresContentSync && !autoContentSync.ok
-          ? "Staging appears to be a fresh install. Automatic content sync did not complete. Retry content sync from Operations."
+          ? (freshInstallDetected
+            ? "Staging appears to be a fresh install. Automatic content sync did not complete. Retry content sync from Operations."
+            : "Staging content could not be verified, so Jongo attempted a conservative sync fallback. Retry content sync from Operations if redirects persist.")
           : currentStagingRunning
             ? null
             : `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`,
@@ -1198,10 +1203,11 @@ export async function POST(req: Request, { params }: Params) {
     });
     const stagingProbeResult = await probeStagingContentAcrossCandidates(probeCandidates);
     const freshInstallDetected = stagingProbeResult.probe.freshInstallDetected;
-    const requiresContentSync = createdNewService || freshInstallDetected;
+    const probeUnavailable = !stagingProbeResult.probe.checked;
+    const requiresContentSync = createdNewService || freshInstallDetected || probeUnavailable;
     const contentSyncReason = createdNewService
       ? "service_created"
-      : (freshInstallDetected ? "fresh_install_detected" : "not_required");
+      : (freshInstallDetected ? "fresh_install_detected" : (probeUnavailable ? "probe_failed" : "not_required"));
 
     const autoSyncStagingUrl = (
       stagingProbeResult.matchedCandidate ||
@@ -1267,7 +1273,9 @@ export async function POST(req: Request, { params }: Params) {
       : requiresContentSync
         ? (autoContentSync.ok
           ? "Staging content sync completed automatically. Refresh in a moment."
-          : "Staging appears as a fresh install. Automatic content sync did not complete. Retry content sync from Operations.")
+          : freshInstallDetected
+            ? "Staging appears as a fresh install. Automatic content sync did not complete. Retry content sync from Operations."
+            : "Staging content could not be verified. Automatic content sync did not complete. Retry content sync from Operations.")
       : !stagingRunning
         ? `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`
       : null,
