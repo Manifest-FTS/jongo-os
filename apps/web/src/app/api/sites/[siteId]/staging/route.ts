@@ -389,15 +389,33 @@ function isUuid(value: string): boolean {
 }
 
 function buildSiteIdentityWhere(siteId: string) {
-  if (isUuid(siteId)) {
+  const normalizedSiteId = decodeURIComponent(siteId).trim();
+
+  if (!normalizedSiteId) {
     return {
-      OR: [{ id: siteId }, { slug: siteId }],
+      slug: siteId,
+      deletedAt: null
+    };
+  }
+
+  if (isUuid(normalizedSiteId)) {
+    return {
+      OR: [
+        { id: normalizedSiteId },
+        { slug: normalizedSiteId },
+        { coolifyServiceUuid: normalizedSiteId },
+        { coolifyServiceId: normalizedSiteId }
+      ],
       deletedAt: null
     };
   }
 
   return {
-    slug: siteId,
+    OR: [
+      { slug: normalizedSiteId },
+      { coolifyServiceUuid: normalizedSiteId },
+      { coolifyServiceId: normalizedSiteId }
+    ],
     deletedAt: null
   };
 }
