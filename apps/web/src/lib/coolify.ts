@@ -1304,8 +1304,75 @@ function buildStagingDomainFromProductionUrl(productionRaw: string): string | un
   return `https://staging-${hostname}`;
 }
 
-export async function deriveCoolifyStagingDomainFromProduction(appUuid: string): Promise<string | undefined> {
+function normalizeDomainSlug(value?: string | null): string {
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return normalized;
+}
+
+function normalizeDomainSuffix(value?: string): string {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .replace(/^\.+/, "")
+    .replace(/\.+$/, "")
+    .toLowerCase();
+}
+
+function deriveStagingDomainFromTemplate(options: {
+  appUuid: string;
+  siteSlug?: string | null;
+  siteName?: string | null;
+}): string | undefined {
+  const slug = normalizeDomainSlug(options.siteSlug) || normalizeDomainSlug(options.siteName);
+  if (!slug) {
+    return undefined;
+  }
+
+  const template = (process.env.STAGING_DOMAIN_TEMPLATE || "").trim();
+  if (template) {
+    const fromTemplate = template
+      .replace(/\{\s*slug\s*\}/gi, slug)
+      .replace(/\{\s*appUuid\s*\}/gi, options.appUuid);
+    return toHttpsUrl(fromTemplate);
+  }
+
+  const suffix = normalizeDomainSuffix(process.env.STAGING_DOMAIN_SUFFIX);
+  if (!suffix) {
+    return undefined;
+  }
+
+  return toHttpsUrl(`${slug}.${suffix}`);
+}
+
+export async function deriveCoolifyStagingDomainFromProduction(
+  appUuid: string,
+  options?: { siteSlug?: string | null; siteName?: string | null }
+): Promise<string | undefined> {
   try {
+    const deterministicDomain = deriveStagingDomainFromTemplate({
+      appUuid,
+      siteSlug: options?.siteSlug,
+      siteName: options?.siteName
+    });
+    if (deterministicDomain) {
+      return deterministicDomain;
+    }
+
     const candidates: string[] = [];
 
     const payloadLookups = [
