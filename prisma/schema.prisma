@@ -29,15 +29,15 @@ enum SiteCollaboratorRole {
 // ============================================================
 
 model User {
-  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email                String    @unique
-  emailVerified        Boolean   @default(false)
-  emailVerifiedAt      DateTime?
-  passwordHash         String?
-  fullName             String?
-  avatarUrl            String?
-  authProvider         String? // 'local', 'github', 'google', etc.
-  authProviderId       String? // external provider ID
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email           String    @unique
+  emailVerified   Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  passwordHash    String?
+  fullName        String?
+  avatarUrl       String?
+  authProvider    String? // 'local', 'github', 'google', etc.
+  authProviderId  String? // external provider ID
 
   // Relations
   organizations        Organization[]
@@ -45,15 +45,15 @@ model User {
   siteCollaborations   SiteCollaborator[]
   apiTokens            ApiToken[]
   auditLogs            AuditLog[]
-  deploymentsTriggered Deployment[] @relation("TriggeredBy")
-  collaboratorsGranted Collaborator[] @relation("GrantedBy")
-  invitationsSent      Invitation[]   @relation("InvitationInvitedBy")
-  invitationsAccepted  Invitation[]   @relation("InvitationAcceptedBy")
+  deploymentsTriggered Deployment[]         @relation("TriggeredBy")
+  collaboratorsGranted Collaborator[]       @relation("GrantedBy")
+  invitationsSent      Invitation[]         @relation("InvitationInvitedBy")
+  invitationsAccepted  Invitation[]         @relation("InvitationAcceptedBy")
   passwordResetTokens  PasswordResetToken[]
 
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  deletedAt            DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([email])
   @@index([authProviderId])
@@ -64,28 +64,29 @@ model User {
 // ============================================================
 
 model Organization {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  slug             String    @unique
-  name             String
-  description      String?
-  logoUrl          String?
-  ownerId          String    @db.Uuid
-  coolifyApiUrl    String?   // optional per-org override
-  coolifyProjectId String?   @unique
+  id                 String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug               String  @unique
+  name               String
+  description        String?
+  logoUrl            String?
+  ownerId            String  @db.Uuid
+  coolifyApiUrl      String? // optional per-org override
+  coolifyProjectId   String? @unique
   coolifyProjectName String?
 
   // Relations
-  owner            User      @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  sites            Site[]
+  owner               User                             @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  sites               Site[]
   coolifyProjectLinks OrganizationCoolifyProjectLink[]
-  collaborators    Collaborator[]
-  invitations     Invitation[]
-  apiTokens        ApiToken[]
-  auditLogs        AuditLog[]
+  collaborators       Collaborator[]
+  invitations         Invitation[]
+  apiTokens           ApiToken[]
+  auditLogs           AuditLog[]
 
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  deletedAt        DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  deletedAt           DateTime?
+  NotificationChannel NotificationChannel[]
 
   @@index([ownerId])
   @@index([slug])
@@ -93,16 +94,16 @@ model Organization {
 }
 
 model OrganizationCoolifyProjectLink {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId    String    @db.Uuid
-  coolifyProjectId  String
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String    @db.Uuid
+  coolifyProjectId   String
   coolifyProjectName String?
-  isPrimary         Boolean   @default(false)
-  deletedAt         DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  isPrimary          Boolean   @default(false)
+  deletedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, coolifyProjectId])
   @@index([organizationId])
@@ -115,29 +116,29 @@ model OrganizationCoolifyProjectLink {
 // ============================================================
 
 model Site {
-  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId      String    @db.Uuid
-  slug                String
-  name                String
-  description         String?
-  coolifyServiceId    String?   // external Coolify service ID
-  coolifyServiceUuid  String?   // Coolify service UUID
-  coolifyProjectId    String?   // Coolify project UUID/ID for ownership mapping
-  coolifyProjectName  String?
-  gitRepositoryUrl    String?
-  stagingEnabled      Boolean   @default(false)
+  id                 String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String  @db.Uuid
+  slug               String
+  name               String
+  description        String?
+  coolifyServiceId   String? // external Coolify service ID
+  coolifyServiceUuid String? // Coolify service UUID
+  coolifyProjectId   String? // Coolify project UUID/ID for ownership mapping
+  coolifyProjectName String?
+  gitRepositoryUrl   String?
+  stagingEnabled     Boolean @default(false)
   // Note: Site is referred to as "App" in UI/UX language
 
   // Relations
-  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  environments        Environment[]
-  collaborators       SiteCollaborator[]
-  invitations         Invitation[]
+  organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  environments             Environment[]
+  collaborators            SiteCollaborator[]
+  invitations              Invitation[]
   wordpressTelemetryConfig WordPressTelemetryConfig?
 
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  deletedAt           DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -147,18 +148,18 @@ model Site {
 }
 
 model WordPressTelemetryConfig {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  siteId             String   @unique @db.Uuid
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId             String    @unique @db.Uuid
   siteUrl            String
   username           String
   passwordCiphertext String
   lastTestedAt       DateTime?
   lastTestStatus     String?
   lastError          String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  site               Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@index([siteId])
 }
@@ -168,18 +169,18 @@ model WordPressTelemetryConfig {
 // ============================================================
 
 model Environment {
-  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  siteId                  String    @db.Uuid
-  name                    String    // 'production', 'staging', 'development'
-  coolifyEnvironmentName  String?   // maps to Coolify branch/environment
-  isProductionLike        Boolean   @default(false)
+  id                     String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId                 String  @db.Uuid
+  name                   String // 'production', 'staging', 'development'
+  coolifyEnvironmentName String? // maps to Coolify branch/environment
+  isProductionLike       Boolean @default(false)
 
   // Relations
-  site                    Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  deployments             Deployment[]
+  site        Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  deployments Deployment[]
 
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([siteId, name])
   @@index([siteId])
@@ -190,24 +191,24 @@ model Environment {
 // ============================================================
 
 model Deployment {
-  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  environmentId         String    @db.Uuid
-  coolifyDeploymentId   String?   // external Coolify ID
-  status                String    // 'success', 'failed', 'in_progress', 'pending'
-  triggeredById         String?   @db.Uuid
-  triggeredAt           DateTime  @default(now())
-  startedAt             DateTime?
-  finishedAt            DateTime?
-  commitSha             String?
-  commitMessage         String?
-  logsUrl               String?
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  environmentId       String    @db.Uuid
+  coolifyDeploymentId String? // external Coolify ID
+  status              String // 'success', 'failed', 'in_progress', 'pending'
+  triggeredById       String?   @db.Uuid
+  triggeredAt         DateTime  @default(now())
+  startedAt           DateTime?
+  finishedAt          DateTime?
+  commitSha           String?
+  commitMessage       String?
+  logsUrl             String?
 
   // Relations
-  environment           Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  triggeredBy           User?       @relation("TriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  triggeredBy User?       @relation("TriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
 
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([environmentId])
   @@index([status])
@@ -219,21 +220,21 @@ model Deployment {
 // ============================================================
 
 model Collaborator {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String @db.Uuid
-  userId      String    @db.Uuid
-  role        CollaboratorRole @default(collaborator) // 'admin' or 'collaborator'
-  grantedById String?   @db.Uuid
-  grantedAt   DateTime  @default(now())
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @db.Uuid
+  userId         String           @db.Uuid
+  role           CollaboratorRole @default(collaborator) // 'admin' or 'collaborator'
+  grantedById    String?          @db.Uuid
+  grantedAt      DateTime         @default(now())
 
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   grantedBy    User?        @relation("GrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@unique([organizationId, userId])
   @@index([organizationId])
@@ -241,18 +242,18 @@ model Collaborator {
 }
 
 model SiteCollaborator {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  siteId      String    @db.Uuid
-  userId      String    @db.Uuid
-  role        SiteCollaboratorRole @default(collaborator) // 'admin' or 'collaborator' (team management at app level)
+  id     String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId String               @db.Uuid
+  userId String               @db.Uuid
+  role   SiteCollaboratorRole @default(collaborator) // 'admin' or 'collaborator' (team management at app level)
 
   // Relations
-  site        Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@unique([siteId, userId])
   @@index([siteId])
@@ -264,20 +265,20 @@ model SiteCollaborator {
 // ============================================================
 
 model ApiToken {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId          String    @db.Uuid
-  organizationId  String?   @db.Uuid
-  tokenHash       String    @unique
-  name            String?
-  lastUsedAt      DateTime?
-  expiresAt       DateTime?
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @db.Uuid
+  organizationId String?   @db.Uuid
+  tokenHash      String    @unique
+  name           String?
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
 
   // Relations
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  createdAt       DateTime  @default(now())
-  revokedAt       DateTime?
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
 
   @@index([userId])
   @@index([organizationId])
@@ -288,21 +289,21 @@ model ApiToken {
 // ============================================================
 
 model AuditLog {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId  String    @db.Uuid
-  actorId         String?   @db.Uuid
-  action          String    // 'deploy_triggered', 'site_created', etc.
-  resourceType    String?
-  resourceId      String?
-  details         Json?
-  ipAddress       String?
-  userAgent       String?
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String  @db.Uuid
+  actorId        String? @db.Uuid
+  action         String // 'deploy_triggered', 'site_created', etc.
+  resourceType   String?
+  resourceId     String?
+  details        Json?
+  ipAddress      String?
+  userAgent      String?
 
   // Relations
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  actor           User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
-  createdAt       DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([organizationId])
   @@index([createdAt])
@@ -315,12 +316,12 @@ model AuditLog {
 model PasswordResetToken {
   id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String    @db.Uuid
-  tokenHash String    @unique  // SHA-256 of the raw token sent in the email
+  tokenHash String    @unique // SHA-256 of the raw token sent in the email
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -337,7 +338,7 @@ model Invitation {
   email            String
   role             String
   tokenHash        String    @unique
-  inviteType       String    // 'organization' | 'site'
+  inviteType       String // 'organization' | 'site'
   invitedById      String?   @db.Uuid
   acceptedByUserId String?   @db.Uuid
   acceptedAt       DateTime?
@@ -347,13 +348,13 @@ model Invitation {
   sentAt           DateTime?
   revokedAt        DateTime?
 
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  site             Site?        @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  invitedBy        User?        @relation("InvitationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
-  acceptedByUser   User?        @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site           Site?        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  invitedBy      User?        @relation("InvitationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedByUser User?        @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
 
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@index([siteId])
@@ -362,4 +363,53 @@ model Invitation {
   @@index([expiresAt])
   @@index([acceptedAt])
   @@index([revokedAt])
+}
+
+// ============================================================
+// Security & Notifications (Jongo OS Malware Monitoring)
+// ============================================================
+
+enum SecurityFindingSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model SecurityScanResult {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId   String   @db.Uuid // Site or Server ID
+  resourceType String   @default("site") // 'site', 'server', 'database'
+  jobId        String? // Reference to Coolify task ID
+  environment  String
+  scanner      String // 'lmd-clamav', 'yara', 'fim'
+  scannerMeta  Json? // { version: "1.0", signatures: "..." }
+  scanType     String // 'malware', 'integrity'
+  startTime    DateTime
+  endTime      DateTime
+  durationMs   Int
+  filesScanned Int
+  findings     Json // Array of { path, signature, severity: SecurityFindingSeverity, actionTaken }
+  status       String // 'COMPLETED', 'FAILED'
+  errorDetails String?
+  createdAt    DateTime @default(now())
+
+  @@index([resourceId, createdAt])
+  @@index([status])
+}
+
+model NotificationChannel {
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String                  @db.Uuid
+  provider        String // 'slack', 'email'
+  config          Json // { webhookUrl: "..." } or { email: "..." }
+  enabled         Boolean                 @default(true)
+  minimumSeverity SecurityFindingSeverity @default(MEDIUM)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
 }
