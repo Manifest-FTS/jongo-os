@@ -1,6 +1,8 @@
 import { recordCoolifyEndpointCall, recordCoolifyInventoryResult } from "@/lib/diagnostics";
 import { detectResourceType } from "./resource-types";
 
+export { isGeneratedCoolifyHost } from "./coolify-host";
+
 export type DeploymentRecord = {
   id: string;
   siteName: string;
@@ -1153,6 +1155,62 @@ export async function coolifyMutate(
   }
 }
 
+export type CoolifyMutateResponse = {
+  ok: boolean;
+  status?: number;
+  body?: unknown;
+  error?: string;
+};
+
+/**
+ * Same as coolifyMutate, but preserves status and response body.
+ * Coolify answers 422 for a bad payload shape and 409 for a domain conflict;
+ * both are indistinguishable from a transport failure through a bare boolean.
+ */
+export async function coolifyMutateWithResponse(
+  path: string,
+  method: "POST" | "DELETE" | "PATCH" | "PUT",
+  body?: Record<string, unknown>
+): Promise<CoolifyMutateResponse> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+  const timeoutMs = Number(process.env.COOLIFY_TIMEOUT_MS ?? 8000);
+
+  if (!baseUrl || !token) {
+    return { ok: false, error: "credentials_missing" };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      parsed = undefined;
+    }
+
+    return { ok: response.ok, status: response.status, body: parsed };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "request_failed" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function extractFirstHostLikeValue(raw: string): string | undefined {
   const tokens = raw
     .split(/[\s,;]+/)
@@ -1485,101 +1543,114 @@ export async function resolveCoolifyServiceApplicationNames(serviceUuid: string)
   }
 }
 
-export async function applyCoolifyServiceDomains(serviceUuid: string, input: string | string[]): Promise<boolean> {
+export type CoolifyServiceDomainResult = {
+  ok: boolean;
+  status?: number;
+  message: string;
+  /** Populated on 409 – Coolify reports which resource already claims the domain. */
+  conflicts?: unknown;
+  reason?: "credentials_missing" | "no_domains" | "no_application" | "conflict" | "rejected" | "transport";
+};
+
+/**
+ * Set a single preferred domain on a service's container.
+ *
+ * `urls[].name` must be the compose service key (e.g. `wordpress`), not the
+ * domain and not the Coolify service name; `url` must carry an http/https
+ * scheme or Coolify's FILTER_VALIDATE_URL check rejects it. Any key outside
+ * Coolify's allowlist fails the whole request with 422, so this sends exactly
+ * the supported shape rather than probing variants.
+ */
+export async function applyCoolifyServiceDomains(
+  serviceUuid: string,
+  input: string | string[]
+): Promise<CoolifyServiceDomainResult> {
   const normalizedDomains = normalizeCoolifyDomains(input);
   if (normalizedDomains.length === 0) {
-    return false;
+    return { ok: false, message: "No valid domains provided.", reason: "no_domains" };
   }
 
   const serviceApplicationNames = await resolveCoolifyServiceApplicationNames(serviceUuid);
-
-  const hostDomains = normalizedDomains
-    .map((value) => {
-      try {
-        return new URL(value).hostname;
-      } catch {
-        return "";
-      }
-    })
-    .filter((value) => value.length > 0);
-
-  const hostDomainCsv = hostDomains.join(",");
-  const namedServiceUrls = serviceApplicationNames.length > 0
-    ? [{
-        name: serviceApplicationNames[0],
-        url: normalizedDomains.join(",")
-      }]
-    : [];
-  const namedServiceHostUrls = serviceApplicationNames.length > 0
-    ? [{
-        name: serviceApplicationNames[0],
-        url: hostDomainCsv
-      }]
-    : [];
-
-  const requestBodies: Record<string, unknown>[] = [
-    ...(namedServiceUrls.length > 0
-      ? [{
-          urls: namedServiceUrls,
-          force_domain_override: true
-        }]
-      : []),
-    ...(namedServiceHostUrls.length > 0
-      ? [{
-          urls: namedServiceHostUrls,
-          force_domain_override: true
-        }]
-      : []),
-    {
-      urls: normalizedDomains.map((url, index) => ({
-        name: index === 0 ? "default" : `domain-${index + 1}`,
-        url
-      })),
-      force_domain_override: true
-    },
-    {
-      urls: hostDomains.map((url, index) => ({
-        name: index === 0 ? "default" : `domain-${index + 1}`,
-        url
-      })),
-      force_domain_override: true
-    },
-    { urls: normalizedDomains },
-    { urls: hostDomains },
-    { domains: hostDomains },
-    { domains: hostDomainCsv },
-    { domain: hostDomainCsv },
-    { fqdn: hostDomainCsv },
-    { fqdn: normalizedDomains.join(",") },
-    { domain: normalizedDomains.join(",") }
-  ];
-
-  const paths = [
-    `/api/v1/services/${encodeURIComponent(serviceUuid)}`,
-    `/api/v1/services/${encodeURIComponent(serviceUuid)}/settings`,
-    `/api/v1/services/${encodeURIComponent(serviceUuid)}/domains`
-  ];
-
-  for (const path of paths) {
-    for (const body of requestBodies) {
-      const patchOk = await coolifyMutate(path, "PATCH", body);
-      if (patchOk) {
-        return true;
-      }
-
-      const putOk = await coolifyMutate(path, "PUT", body);
-      if (putOk) {
-        return true;
-      }
-
-      const postOk = await coolifyMutate(path, "POST", body);
-      if (postOk) {
-        return true;
-      }
-    }
+  const applicationName = serviceApplicationNames[0];
+  if (!applicationName) {
+    return {
+      ok: false,
+      message: "Could not resolve the service container name from Coolify. The service may not be parsed yet.",
+      reason: "no_application"
+    };
   }
 
-  return false;
+  const response = await coolifyMutateWithResponse(
+    `/api/v1/services/${encodeURIComponent(serviceUuid)}`,
+    "PATCH",
+    {
+      urls: [{ name: applicationName, url: normalizedDomains.join(",") }],
+      force_domain_override: true
+    }
+  );
+
+  if (response.ok) {
+    return { ok: true, status: response.status, message: "Staging domains updated." };
+  }
+
+  if (response.error === "credentials_missing") {
+    return { ok: false, message: "Coolify credentials missing.", reason: "credentials_missing" };
+  }
+
+  if (response.status === 409) {
+    const conflicts = (response.body as Record<string, unknown> | undefined)?.conflicts;
+    return {
+      ok: false,
+      status: 409,
+      message: "Domain is already claimed by another Coolify resource.",
+      conflicts,
+      reason: "conflict"
+    };
+  }
+
+  const detail = (() => {
+    const body = response.body as Record<string, unknown> | undefined;
+    const errors = body?.errors;
+    if (errors && typeof errors === "object") {
+      return JSON.stringify(errors);
+    }
+    return typeof body?.message === "string" ? body.message : response.error;
+  })();
+
+  return {
+    ok: false,
+    status: response.status,
+    message: `Coolify rejected the domain update${detail ? `: ${detail}` : "."}`,
+    reason: response.status ? "rejected" : "transport"
+  };
+}
+
+/**
+ * Traefik labels are regenerated by Coolify from `application.fqdn` at deploy
+ * time, so a domain change is inert at the edge until the service restarts.
+ * Restarting the WordPress container directly does not do this.
+ */
+export async function restartCoolifyService(serviceUuid: string): Promise<CoolifyMutateResponse> {
+  return coolifyMutateWithResponse(
+    `/api/v1/services/${encodeURIComponent(serviceUuid)}/restart`,
+    "POST"
+  );
+}
+
+/**
+ * Re-read the service and report the domains Coolify considers authoritative.
+ * Callers should confirm convergence here rather than assuming the PATCH took.
+ */
+export async function readCoolifyServiceDomains(serviceUuid: string): Promise<string[]> {
+  try {
+    const payload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(serviceUuid)}`);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return [];
+    }
+    return extractStagingDomainList(payload as Record<string, unknown>);
+  } catch {
+    return [];
+  }
 }
 
 function isLikelyStagingEnvironmentName(name: string): boolean {

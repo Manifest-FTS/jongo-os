@@ -64,7 +64,32 @@ const urlRewriteModeRaw = (process.env.STAGING_SYNC_URL_REWRITE_MODE || "strict"
 const strictUrlRewrite = urlRewriteModeRaw !== "best-effort";
 const rawArgs = process.argv.slice(2);
 const apply = rawArgs.includes("--apply");
+const allowGeneratedHost = rawArgs.includes("--allow-generated-host");
 const validDirections = new Set(["production-to-staging", "staging-to-production"]);
+
+/**
+ * Coolify mints `{composeServiceName}-{serviceUuid}.{wildcard}` for one-click
+ * services. TARGET_URL is written straight into wp_options siteurl/home, so
+ * syncing while Coolify still reports the generated host makes the site
+ * self-identify as that host and re-pins it on every subsequent sync.
+ * Mirrors isGeneratedCoolifyHost() in apps/web/src/lib/coolify.ts.
+ */
+function isGeneratedCoolifyHost(value, serviceUuid) {
+  let host = "";
+  try {
+    host = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const label = host.split(".")[0] ?? "";
+  if (!label) {
+    return false;
+  }
+  if (serviceUuid) {
+    return label.endsWith(`-${String(serviceUuid).trim().toLowerCase()}`);
+  }
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*-[a-z][a-z0-9]{23}$/.test(label);
+}
 
 let overrideProdServiceUuid = "";
 let overrideStagingServiceUuid = "";
@@ -466,12 +491,28 @@ async function run() {
       continue;
     }
 
-    if (!apply) {
-      console.log(`[${siteId}] dry-run eligible resource=service healthy=${targetHealthy} stagingUrl=${stagingUrl}`);
+    const productionUrl = overrideProductionUrl;
+    const effectiveTargetUrl = direction === "production-to-staging" ? stagingUrl : productionUrl;
+
+    // TARGET_URL lands in wp_options siteurl/home. Writing a generated host
+    // there is what makes a site permanently self-identify as wordpress-<uuid>,
+    // so refuse rather than cement it.
+    const targetServiceUuid = direction === "production-to-staging" ? stagingServiceUuid : prodServiceUuid;
+
+    if (effectiveTargetUrl && isGeneratedCoolifyHost(effectiveTargetUrl, targetServiceUuid) && !allowGeneratedHost) {
+      skipped += 1;
+      console.log(
+        `[${siteId}] skip target URL is a Coolify-generated host (${effectiveTargetUrl}). `
+        + "Converge the preferred domain first, or pass --allow-generated-host to override."
+      );
       continue;
     }
 
-    const productionUrl = overrideProductionUrl;
+    if (!apply) {
+      console.log(`[${siteId}] dry-run eligible resource=service healthy=${targetHealthy} stagingUrl=${stagingUrl} targetUrl=${effectiveTargetUrl}`);
+      continue;
+    }
+
     const clone = runSshScript(buildCloneScript({
       prodServiceUuid,
       stagingServiceUuid,
