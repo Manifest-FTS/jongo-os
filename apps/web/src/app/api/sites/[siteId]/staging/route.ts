@@ -985,6 +985,16 @@ export async function POST(req: Request, { params }: Params) {
         } catch { }
       }
 
+      if (capabilityAfterExistingCheck.applicationUuid && !currentStagingRunning && !stagingDeployTriggered) {
+        try {
+          await triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid, "staging");
+          stagingDeployTriggered = true;
+          const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+          capabilityAfterExistingCheck = refreshedCapability;
+          currentStagingRunning = refreshedCapability.status === "healthy";
+        } catch { }
+      }
+
       const requestBaseUrl = (() => {
         try {
           return new URL(req.url).origin;
@@ -1001,19 +1011,39 @@ export async function POST(req: Request, { params }: Params) {
       const preferredDomainPendingHint = preferredStagingDomain && !domainConvergence.converged
         ? `Preferred staging URL ${preferredStagingDomain} is not active yet. Coolify is still serving ${domainConvergence.reportedHosts[0] ? `https://${domainConvergence.reportedHosts[0]}` : "a generated staging host"}.`
         : null;
+      const probeCandidates = buildStagingProbeCandidates({
+        preferredStagingDomain,
+        stagingUrl: capabilityAfterExistingCheck.stagingUrl,
+        fqdn: capabilityAfterExistingCheck.fqdn
+      });
+      const stagingProbeResult = await probeStagingContentAcrossCandidates(probeCandidates);
+      const freshInstallDetected = stagingProbeResult.probe.freshInstallDetected;
+      const requiresContentSync = freshInstallDetected;
       const autoSyncStagingUrl = (
+        stagingProbeResult.matchedCandidate ||
         preferredStagingDomain ||
         capabilityAfterExistingCheck.stagingUrl ||
         capabilityAfterExistingCheck.fqdn?.split(",")[0]?.trim() ||
         ""
       ).trim();
 
-      const autoContentSync = {
+      let autoContentSync: AutoContentSyncResult = {
         attempted: false,
         ok: false,
         reason: "not_required",
         message: "Automatic content sync not required."
       };
+
+      if (requiresContentSync && capabilityAfterExistingCheck.applicationUuid) {
+        autoContentSync = await runAutoContentSync({
+          siteId: site.id,
+          productionServiceUuid: appUuid,
+          stagingServiceUuid: capabilityAfterExistingCheck.applicationUuid,
+          stagingUrl: autoSyncStagingUrl,
+          requestBaseUrl,
+          direction: "production-to-staging"
+        });
+      }
 
       await recordStagingAuditLog({
         organizationId: site.organizationId,
@@ -1031,6 +1061,10 @@ export async function POST(req: Request, { params }: Params) {
           preferredStagingHost: domainConvergence.preferredHost ?? null,
           reportedStagingHosts: domainConvergence.reportedHosts,
           preferredStagingDomainConverged: domainConvergence.converged,
+          probeCandidates,
+          checkedProbeCandidates: stagingProbeResult.checkedCandidates,
+          stagingContentProbe: stagingProbeResult.probe,
+          contentSyncReason: requiresContentSync ? "fresh_install_detected" : "not_required",
           capability: capabilityAfterExistingCheck,
           autoContentSync
         },
@@ -1051,10 +1085,13 @@ export async function POST(req: Request, { params }: Params) {
         stagingDomainApplied,
         stagingDeployTriggered,
         stagingRunning: currentStagingRunning,
+        stagingContentProbe: stagingProbeResult.probe,
         actionHint: mergeActionHints(
-          currentStagingRunning
-          ? null
-          : `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`,
+          requiresContentSync && !autoContentSync.ok
+          ? "Staging appears to be a fresh install. Automatic content sync did not complete. Retry content sync from Operations."
+          : currentStagingRunning
+            ? null
+            : `Staging ${targetLabel} is attached and still coming online. Refresh in a moment.`,
           preferredDomainPendingHint
         ),
         message: currentStagingRunning
@@ -1109,6 +1146,15 @@ export async function POST(req: Request, { params }: Params) {
       }
     }
 
+    if (capabilityAfterProvision.applicationUuid && capabilityAfterProvision.status !== "healthy" && !stagingDeployTriggered) {
+      try {
+        await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
+        stagingDeployTriggered = true;
+        const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+        capabilityAfterProvision = refreshedCapability;
+      } catch { }
+    }
+
     const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
     const manualProvisionRequired = !stagingTargetResolved;
     const stagingRunning = capabilityAfterProvision.status === "healthy";
@@ -1133,27 +1179,43 @@ export async function POST(req: Request, { params }: Params) {
       ? `Preferred staging URL ${preferredStagingDomain} is not active yet. Coolify is still serving ${domainConvergence.reportedHosts[0] ? `https://${domainConvergence.reportedHosts[0]}` : "a generated staging host"}.`
       : null;
       
-    const derivedStagingUrl = (
+    const probeCandidates = buildStagingProbeCandidates({
+      preferredStagingDomain,
+      stagingUrl: capabilityAfterProvision.stagingUrl,
+      fqdn: capabilityAfterProvision.fqdn
+    });
+    const stagingProbeResult = await probeStagingContentAcrossCandidates(probeCandidates);
+    const freshInstallDetected = stagingProbeResult.probe.freshInstallDetected;
+    const requiresContentSync = createdNewService || freshInstallDetected;
+    const contentSyncReason = createdNewService
+      ? "service_created"
+      : (freshInstallDetected ? "fresh_install_detected" : "not_required");
+
+    const autoSyncStagingUrl = (
+      stagingProbeResult.matchedCandidate ||
       preferredStagingDomain ||
       capabilityAfterProvision.stagingUrl ||
       capabilityAfterProvision.fqdn?.split(",")[0]?.trim() ||
       ""
     ).trim();
 
-    // Removed runtime HTTP probing from provisioning pipeline
-    const freshInstallDetected = false; 
-
-    const requiresContentSync = createdNewService || freshInstallDetected;
-    const contentSyncReason = createdNewService
-      ? "service_created"
-      : (freshInstallDetected ? "fresh_install_detected" : "not_required");
-
-    const autoContentSync = {
+    let autoContentSync: AutoContentSyncResult = {
       attempted: false,
       ok: false,
       reason: "not_required",
       message: "Automatic content sync not required."
     };
+
+    if (requiresContentSync && capabilityAfterProvision.applicationUuid) {
+      autoContentSync = await runAutoContentSync({
+        siteId: site.id,
+        productionServiceUuid: appUuid,
+        stagingServiceUuid: capabilityAfterProvision.applicationUuid,
+        stagingUrl: autoSyncStagingUrl,
+        requestBaseUrl,
+        direction: "production-to-staging"
+      });
+    }
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,
@@ -1172,6 +1234,9 @@ export async function POST(req: Request, { params }: Params) {
         preferredStagingHost: domainConvergence.preferredHost ?? null,
         reportedStagingHosts: domainConvergence.reportedHosts,
         preferredStagingDomainConverged: domainConvergence.converged,
+        probeCandidates,
+        checkedProbeCandidates: stagingProbeResult.checkedCandidates,
+        stagingContentProbe: stagingProbeResult.probe,
         capability: capabilityAfterProvision,
         provisioningMessage: provisionResult.message,
         contentSyncReason,
@@ -1227,6 +1292,7 @@ export async function POST(req: Request, { params }: Params) {
       stagingDomainApplied,
       stagingDeployTriggered,
       stagingRunning,
+      stagingContentProbe: stagingProbeResult.probe,
       autoContentSync,
       message: enableMessage,
       capability: capabilityAfterProvision
