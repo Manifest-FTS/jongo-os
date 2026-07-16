@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type DirectoryBackupPosture,
   getCachedDirectoryBackupPosture,
   resetDirectoryBackupPostureCache
 } from "./directory-backup-posture-cache";
@@ -15,7 +16,7 @@ describe("getCachedDirectoryBackupPosture", () => {
     vi.setSystemTime(new Date("2026-05-22T12:00:00.000Z"));
 
     const loader = vi
-      .fn()
+      .fn<() => Promise<DirectoryBackupPosture>>()
       .mockResolvedValue({
         localStatus: "Protected (recent)",
         offsiteLabel: "Local only",
@@ -36,7 +37,7 @@ describe("getCachedDirectoryBackupPosture", () => {
     vi.setSystemTime(new Date("2026-05-22T12:00:00.000Z"));
 
     const loader = vi
-      .fn()
+      .fn<() => Promise<DirectoryBackupPosture>>()
       .mockResolvedValueOnce({
         localStatus: "Protected (recent)",
         offsiteLabel: "Local only",
@@ -59,9 +60,9 @@ describe("getCachedDirectoryBackupPosture", () => {
   });
 
   it("dedupes concurrent in-flight loads", async () => {
-    const loader = vi.fn(
+    const loader = vi.fn<() => Promise<DirectoryBackupPosture>>(
       async () =>
-        await new Promise((resolve) =>
+        await new Promise<DirectoryBackupPosture>((resolve) =>
           setTimeout(
             () =>
               resolve({
