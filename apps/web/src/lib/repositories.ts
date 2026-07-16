@@ -174,6 +174,8 @@ export type SiteWorkspaceRecord = {
   coolifyEnvironmentId?: string;
   coolifyEnvironmentName?: string;
   gitRepositoryUrl?: string;
+  temporaryDomainSlug?: string;
+  temporaryDomainSuffix?: string;
   organizationId?: string;
   ownershipState: "mapped" | "orphaned" | "unavailable";
   ownershipDiagnostic: string;
@@ -1832,6 +1834,8 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
           coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
           coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
           gitRepositoryUrl: dbSite.gitRepositoryUrl ?? undefined,
+          temporaryDomainSlug: dbSite.temporaryDomainSlug ?? undefined,
+          temporaryDomainSuffix: dbSite.temporaryDomainSuffix ?? undefined,
           organizationId: dbSite.organizationId,
           ownershipState: "mapped",
           ownershipDiagnostic: `Client: ${dbSite.organization.name}`,

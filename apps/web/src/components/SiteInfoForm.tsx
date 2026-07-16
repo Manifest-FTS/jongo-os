@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  DEFAULT_TEMPORARY_DOMAIN_SUFFIX,
+  TEMPORARY_DOMAIN_SUFFIX_OPTIONS,
+  buildTemporaryProductionDomain,
+  normalizeTemporaryDomainSlug
+} from "@/lib/temporary-domains";
 
 type Props = {
   siteId: string;
@@ -11,6 +17,8 @@ type Props = {
     coolifyServiceUuid?: string;
     coolifyProjectId?: string;
     gitRepositoryUrl?: string;
+    temporaryDomainSlug?: string;
+    temporaryDomainSuffix?: string;
   };
 };
 
@@ -21,9 +29,19 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
   const [coolifyUuid, setCoolifyUuid] = useState(initial.coolifyServiceUuid ?? "");
   const [coolifyProjectId, setCoolifyProjectId] = useState(initial.coolifyProjectId ?? "");
   const [gitUrl, setGitUrl] = useState(initial.gitRepositoryUrl ?? "");
+  const [temporaryDomainSlug, setTemporaryDomainSlug] = useState(initial.temporaryDomainSlug ?? "");
+  const [temporaryDomainSuffix, setTemporaryDomainSuffix] = useState<string>(
+    initial.temporaryDomainSuffix ?? DEFAULT_TEMPORARY_DOMAIN_SUFFIX
+  );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const derivedTemporarySlug = normalizeTemporaryDomainSlug(name) || normalizeTemporaryDomainSlug(initial.name);
+  const effectiveTemporarySlug = normalizeTemporaryDomainSlug(temporaryDomainSlug) || derivedTemporarySlug;
+  const temporaryDomainPreview = buildTemporaryProductionDomain({
+    slug: effectiveTemporarySlug,
+    suffix: temporaryDomainSuffix
+  });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,7 +58,9 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
           description: description.trim() || undefined,
           coolifyServiceUuid: coolifyUuid.trim() || undefined,
           coolifyProjectId: coolifyProjectId.trim() || undefined,
-          gitRepositoryUrl: gitUrl.trim() || undefined
+          gitRepositoryUrl: gitUrl.trim() || undefined,
+          temporaryDomainSlug: normalizeTemporaryDomainSlug(temporaryDomainSlug) || undefined,
+          temporaryDomainSuffix
         })
       });
 
@@ -118,6 +138,31 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
           placeholder="Project UUID/ID from the provider"
           className="form-input mono-input"
         />
+      </div>
+      <div>
+        <label className="form-label">Temporary Domain Slug</label>
+        <input
+          type="text"
+          value={temporaryDomainSlug}
+          onChange={(e) => { setTemporaryDomainSlug(e.target.value); setSuccess(false); }}
+          placeholder={derivedTemporarySlug || "my-site"}
+          className="form-input mono-input"
+        />
+      </div>
+      <div>
+        <label className="form-label">Temporary Domain Suffix</label>
+        <select
+          value={temporaryDomainSuffix}
+          onChange={(e) => { setTemporaryDomainSuffix(e.target.value); setSuccess(false); }}
+          className="form-input"
+        >
+          {TEMPORARY_DOMAIN_SUFFIX_OPTIONS.map((suffix) => (
+            <option key={suffix} value={suffix}>{suffix}</option>
+          ))}
+        </select>
+        <p className="form-help">
+          {temporaryDomainPreview ? `Temporary production URL: https://${temporaryDomainPreview}` : "Temporary production URL preview unavailable"}
+        </p>
       </div>
       {error && <p className="form-error">{error}</p>}
       {success && <p className="form-success">Saved successfully</p>}

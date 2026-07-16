@@ -87,6 +87,8 @@ export type Site = {
   coolifyProjectName?: string;
   gitRepositoryUrl?: string;
   stagingEnabled: boolean;
+  temporaryDomainSlug?: string;
+  temporaryDomainSuffix?: string;
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date;
@@ -102,6 +104,8 @@ export type SiteCreateInput = {
   coolifyProjectName?: string;
   gitRepositoryUrl?: string;
   stagingEnabled?: boolean;
+  temporaryDomainSlug?: string;
+  temporaryDomainSuffix?: string;
 };
 
 export type SiteWithEnvironments = Site & {
