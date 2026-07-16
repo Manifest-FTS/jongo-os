@@ -1,20 +1,61 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon } from "@/components/JongoIcons";
+import type { CoolifyAppPickerOption } from "@/lib/coolify-app-picker";
 
-type Props = { organizationId: string };
+type Props = {
+  organizationId: string;
+  availableApps?: CoolifyAppPickerOption[];
+};
 
-export default function CreateSiteForm({ organizationId }: Props) {
+export default function CreateSiteForm({ organizationId, availableApps = [] }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [coolifyUuid, setCoolifyUuid] = useState("");
   const [gitUrl, setGitUrl] = useState("");
+  const [selectedAppId, setSelectedAppId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+
+  const selectedApp = useMemo(
+    () => availableApps.find((app) => app.id === selectedAppId),
+    [availableApps, selectedAppId]
+  );
+
+  useEffect(() => {
+    if (!selectedApp) {
+      return;
+    }
+
+    setName(selectedApp.name);
+    setCoolifyUuid(selectedApp.id);
+  }, [selectedApp]);
+
+  function handlePickApp(appId: string) {
+    setSelectedAppId(appId);
+    setError(null);
+
+    const picked = availableApps.find((app) => app.id === appId);
+    if (!picked) {
+      return;
+    }
+
+    setName(picked.name);
+    setCoolifyUuid(picked.id);
+  }
+
+  function resetForm() {
+    setName("");
+    setDescription("");
+    setCoolifyUuid("");
+    setGitUrl("");
+    setSelectedAppId("");
+    setError(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,10 +81,7 @@ export default function CreateSiteForm({ organizationId }: Props) {
         return;
       }
 
-      setName("");
-      setDescription("");
-      setCoolifyUuid("");
-      setGitUrl("");
+      resetForm();
       setOpen(false);
       router.refresh();
     } catch {
@@ -57,15 +95,44 @@ export default function CreateSiteForm({ organizationId }: Props) {
     return (
       <button className="btn" onClick={() => setOpen(true)}>
         <PlusIcon className="btn-icon" />
-        New App
+        Add App
       </button>
     );
   }
 
   return (
     <div className="card" style={{ marginBottom: "1rem" }}>
-      <h3 className="card-title" style={{ marginBottom: "0.75rem" }}>New App</h3>
+      <h3 className="card-title" style={{ marginBottom: "0.5rem" }}>Add App</h3>
+      {availableApps.length > 0 ? (
+        <p className="card-muted" style={{ marginBottom: "0.9rem" }}>
+          Pick an available Coolify app or enter details manually.
+        </p>
+      ) : (
+        <p className="card-muted" style={{ marginBottom: "0.9rem" }}>
+          No linked Coolify apps were found. Enter details manually or link a project in Settings first.
+        </p>
+      )}
       <form onSubmit={handleSubmit} className="form-stack">
+        {availableApps.length > 0 ? (
+          <div>
+            <label className="form-label">Coolify App Picker</label>
+            <select
+              className="form-input"
+              value={selectedAppId}
+              onChange={(event) => handlePickApp(event.target.value)}
+            >
+              <option value="">— Select a Coolify app —</option>
+              {availableApps.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.name} {app.projectName ? `· ${app.projectName}` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="form-help">
+              Choosing an app fills in the app name and Coolify service UUID for you.
+            </p>
+          </div>
+        ) : null}
         <div>
           <label className="form-label">
             Name <span style={{ color: "var(--error, #e55)" }}>*</span>
@@ -74,7 +141,7 @@ export default function CreateSiteForm({ organizationId }: Props) {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="my-wordpress-site"
+            placeholder={selectedApp ? selectedApp.name : "my-wordpress-site"}
             required
             autoFocus
             className="form-input"
@@ -98,7 +165,7 @@ export default function CreateSiteForm({ organizationId }: Props) {
             type="text"
             value={coolifyUuid}
             onChange={(e) => setCoolifyUuid(e.target.value)}
-            placeholder="e.g. dt0v391xre5rgtp50062tunm"
+            placeholder={selectedApp ? selectedApp.id : "e.g. dt0v391xre5rgtp50062tunm"}
             className="form-input mono-input"
           />
         </div>
@@ -120,7 +187,7 @@ export default function CreateSiteForm({ organizationId }: Props) {
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={() => { setOpen(false); setError(null); }}
+            onClick={() => { setOpen(false); resetForm(); }}
           >
             Cancel
           </button>

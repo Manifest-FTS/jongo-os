@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import BrandLogo from "@/components/BrandLogo";
 import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
+import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
 
 function LoginForm() {
   const router = useRouter();
@@ -32,9 +33,11 @@ function LoginForm() {
     setLoading(false);
 
     if (result?.error) {
-      setError("Invalid email or password.");
-    } else {
+      setError(getCredentialSignInErrorMessage(result.error));
+    } else if (result?.ok) {
       router.push(callbackUrl);
+    } else {
+      setError("Sign-in did not complete. Please try again.");
     }
   }
 

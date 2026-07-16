@@ -270,7 +270,7 @@ export default function CoolifyProjectMappingForm({
           </select>
         )}
         <p className="form-help">
-          Client-to-project mapping is a link layer. Names are not auto-synced or auto-renamed.
+          Linking a project will also auto-import any missing apps from that Coolify project. Names are not auto-synced or auto-renamed.
         </p>
       </div>
 

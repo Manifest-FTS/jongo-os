@@ -72,6 +72,7 @@
 - **Endpoints:**
   - `GET /api/organizations/[organizationId]/coolify-mapping` — loads linked projects
   - `POST /api/organizations/[organizationId]/coolify-mapping` — adds/updates link
+- **Behavior:** Linking a Coolify project also auto-imports missing Coolify apps into the client as Site records
 - **Target Storage:** Jongo DB (`OrganizationCoolifyProjectLink` table)
 - **Status:** ✅ Wired and working
 - **Action:** No fix needed
