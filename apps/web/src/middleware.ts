@@ -24,11 +24,16 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const ownershipSyncToken = process.env.OWNERSHIP_SYNC_TOKEN;
+  const backupReconcileToken = process.env.BACKUP_RECONCILE_TOKEN;
   const authHeader = req.headers.get("authorization") ?? "";
   const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-  const hasOpsToken = Boolean(
+  const hasOwnershipOpsToken = Boolean(
     ownershipSyncToken && providedToken && providedToken === ownershipSyncToken
   );
+  const hasBackupReconcileToken = Boolean(
+    backupReconcileToken && providedToken && providedToken === backupReconcileToken
+  );
+  const hasOpsToken = hasOwnershipOpsToken || hasBackupReconcileToken;
 
   // Allow public paths and static assets through
   if (
@@ -54,6 +59,10 @@ export async function middleware(req: NextRequest) {
   }
 
   if (pathname === "/api/ops/staging-sync-automation" && hasOpsToken) {
+    return NextResponse.next();
+  }
+
+  if (pathname === "/api/ops/backup-reconcile" && hasBackupReconcileToken) {
     return NextResponse.next();
   }
 
