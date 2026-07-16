@@ -33,6 +33,8 @@
     "ops:refresh-staging-remediation:strict": "node ./scripts/refresh-staging-remediation.mjs --with-smoke --strict-smoke",
     "ops:refresh-staging-remediation:with-content-sync": "node ./scripts/refresh-staging-remediation.mjs --with-content-sync",
     "ops:refresh-staging-remediation:with-content-sync-apply": "node ./scripts/refresh-staging-remediation.mjs --with-content-sync-apply",
+    "ops:backup-reconcile": "node ./scripts/backup-reconcile-scheduler.mjs --once",
+    "ops:backup-reconcile:scheduler": "node ./scripts/backup-reconcile-scheduler.mjs",
     "dev:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1 -Dev",
     "start:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1",
     "docker:up": "docker compose up --build -d",

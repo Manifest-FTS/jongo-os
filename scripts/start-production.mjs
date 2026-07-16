@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 
 const npmCommand = "npm";
 let activeChild = null;
+let backgroundChildren = [];
 
 function log(message) {
   console.log(`[startup] ${message}`);
@@ -11,6 +12,45 @@ function forwardSignal(signal) {
   if (activeChild && !activeChild.killed) {
     activeChild.kill(signal);
   }
+
+  for (const child of backgroundChildren) {
+    if (child && !child.killed) {
+      child.kill(signal);
+    }
+  }
+}
+
+function startBackgroundProcess(label, args, extraEnv = {}) {
+  log(`${label}...`);
+
+  const env = {
+    ...process.env,
+    ...extraEnv
+  };
+
+  const child = process.platform === "win32"
+    ? spawn(`${npmCommand} ${args.join(" ")}`, {
+        stdio: "inherit",
+        shell: true,
+        env
+      })
+    : spawn(npmCommand, args, {
+        stdio: "inherit",
+        env
+      });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      log(`${label} exited from signal ${signal}.`);
+      return;
+    }
+
+    if (code && code !== 0) {
+      console.error(`[startup] ${label} exited with code ${code}.`);
+    }
+  });
+
+  backgroundChildren.push(child);
 }
 
 async function runStep(label, args, extraEnv = {}) {
@@ -65,6 +105,11 @@ try {
   if (process.env.JONGO_SKIP_APP_START === "1") {
     log("Skipping web app start because JONGO_SKIP_APP_START=1.");
     process.exit(0);
+  }
+
+  const backupSchedulerEnabled = (process.env.BACKUP_RECONCILE_SCHEDULE_ENABLED || "false").trim().toLowerCase() === "true";
+  if (backupSchedulerEnabled) {
+    startBackgroundProcess("Starting backup reconcile scheduler", ["run", "ops:backup-reconcile:scheduler"]);
   }
 
   await runStep("Starting web application", ["run", "start:web"], {

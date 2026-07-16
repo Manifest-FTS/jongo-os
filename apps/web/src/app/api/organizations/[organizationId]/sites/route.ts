@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { getCoolifyOverview } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, getCoolifyOverview } from "@/lib/coolify";
 import { isAdminRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ organizationId: string }> };
@@ -174,6 +174,15 @@ export async function POST(req: Request, { params }: Params) {
       include: { environments: { select: { id: true, name: true, isProductionLike: true } } }
     });
 
+    let backupReconciliation: Awaited<ReturnType<typeof ensureCoolifyAppBackupSchedules>> | null = null;
+    if (coolifyServiceUuid) {
+      try {
+        backupReconciliation = await ensureCoolifyAppBackupSchedules(coolifyServiceUuid);
+      } catch (backupError) {
+        console.error("POST /api/organizations/[id]/sites backup auto-provision failed:", backupError);
+      }
+    }
+
     return NextResponse.json(
       {
         id: site.id,
@@ -186,7 +195,8 @@ export async function POST(req: Request, { params }: Params) {
         gitRepositoryUrl: site.gitRepositoryUrl,
         organizationId: site.organizationId,
         environments: site.environments,
-        createdAt: site.createdAt
+        createdAt: site.createdAt,
+        backupReconciliation
       },
       { status: 201 }
     );
