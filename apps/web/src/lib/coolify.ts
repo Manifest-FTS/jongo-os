@@ -1912,13 +1912,23 @@ export async function provisionCoolifyStagingFromProduction(
     const serviceType = stringValue(sourceService, ["service_type", "type"], "");
     const dockerComposeRaw = stringValue(sourceService, ["docker_compose_raw"], "");
     const sourceName = stringValue(sourceService, ["name"], "service");
+    const preferredServiceNameSeed = normalizedPreferredDomain
+      ? (() => {
+          try {
+            const host = new URL(normalizedPreferredDomain).hostname;
+            return host.split(".")[0] || "";
+          } catch {
+            return "";
+          }
+        })()
+      : "";
 
     if (!serverUuid || !resolvedProjectId) {
       return false;
     }
 
     const baseBody: Record<string, unknown> = {
-      name: buildStagingResourceName(sourceName),
+      name: buildStagingResourceName(preferredServiceNameSeed || sourceName),
       project_uuid: resolvedProjectId,
       environment_name: stagingEnvironment.stagingEnvironmentName,
       environment_uuid: stagingEnvironment.stagingEnvironmentId,
