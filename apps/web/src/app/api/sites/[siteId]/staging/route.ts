@@ -985,6 +985,16 @@ export async function POST(req: Request, { params }: Params) {
         } catch { }
       }
 
+      if (capabilityAfterExistingCheck.applicationUuid && !currentStagingRunning && !stagingDeployTriggered) {
+        try {
+          await triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid, "staging");
+          stagingDeployTriggered = true;
+          const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+          capabilityAfterExistingCheck = refreshedCapability;
+          currentStagingRunning = refreshedCapability.status === "healthy";
+        } catch { }
+      }
+
       const requestBaseUrl = (() => {
         try {
           return new URL(req.url).origin;
@@ -1107,6 +1117,15 @@ export async function POST(req: Request, { params }: Params) {
           stagingDeployTriggered = true;
         } catch { }
       }
+    }
+
+    if (capabilityAfterProvision.applicationUuid && capabilityAfterProvision.status !== "healthy" && !stagingDeployTriggered) {
+      try {
+        await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
+        stagingDeployTriggered = true;
+        const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+        capabilityAfterProvision = refreshedCapability;
+      } catch { }
     }
 
     const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
