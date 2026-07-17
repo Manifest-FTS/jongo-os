@@ -231,7 +231,19 @@ export async function POST(req: Request, { params }: Params) {
             ]
           }
         },
-        include: { environments: { select: { id: true, name: true, isProductionLike: true } } }
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          coolifyServiceUuid: true,
+          coolifyProjectId: true,
+          stagingEnabled: true,
+          gitRepositoryUrl: true,
+          organizationId: true,
+          createdAt: true,
+          environments: { select: { id: true, name: true, isProductionLike: true } }
+        }
       });
     } catch (error) {
       if (!isPrismaSchemaMismatchError(error)) {
@@ -256,7 +268,19 @@ export async function POST(req: Request, { params }: Params) {
             ]
           }
         },
-        include: { environments: { select: { id: true, name: true, isProductionLike: true } } }
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          coolifyServiceUuid: true,
+          coolifyProjectId: true,
+          stagingEnabled: true,
+          gitRepositoryUrl: true,
+          organizationId: true,
+          createdAt: true,
+          environments: { select: { id: true, name: true, isProductionLike: true } }
+        }
       });
     }
 

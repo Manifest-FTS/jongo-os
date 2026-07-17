@@ -1026,7 +1026,8 @@ export async function POST(req: Request, { params }: Params) {
 
     await db.site.update({
       where: { id: site.id },
-      data: { stagingEnabled: true }
+      data: { stagingEnabled: true },
+      select: { id: true }
     });
 
     const enableAuditDetails: Record<string, unknown> = {
@@ -1409,7 +1410,8 @@ export async function POST(req: Request, { params }: Params) {
 
   await db.site.update({
     where: { id: site.id },
-    data: { stagingEnabled: false }
+    data: { stagingEnabled: false },
+    select: { id: true }
   });
 
   if (appUuid) {
