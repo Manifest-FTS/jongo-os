@@ -146,7 +146,18 @@ export default async function SiteOverviewPage({ params }: Params) {
   const backupInventory = workspace?.coolifyServiceUuid
     ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
     : null;
-    
+
+  // Restore-test outcome recorded by scripts/verify-jongo-backup.mjs, keyed by
+  // this resource's Coolify UUID. Absent → the chip shows "Never verified".
+  const restoreVerificationRecord = workspace?.coolifyServiceUuid
+    ? await (async () => {
+        const { db } = await import("@/lib/db");
+        return db.backupRestoreVerification.findUnique({
+          where: { resourceUuid: workspace.coolifyServiceUuid! }
+        });
+      })()
+    : null;
+
   const stagingCapability = workspace?.coolifyServiceUuid
     ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace?.coolifyProjectId ?? undefined)
     : null;
@@ -168,7 +179,14 @@ export default async function SiteOverviewPage({ params }: Params) {
   const backupReadModel = buildBackupReadModelSnapshot({
     ownership: `${workspace.clientName} / ${workspace.name}`,
     localStatus: backupLocalStatus,
-    schedules: backupInventory?.schedules.filter((schedule) => schedule.enabled)
+    schedules: backupInventory?.schedules.filter((schedule) => schedule.enabled),
+    restoreVerification: restoreVerificationRecord
+      ? {
+          lastVerifiedAt: restoreVerificationRecord.lastVerifiedAt.toISOString(),
+          lastResult: restoreVerificationRecord.lastResult === "pass" ? "pass" : "fail",
+          rpoHours: restoreVerificationRecord.rpoHours
+        }
+      : undefined
   });
 
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
@@ -439,6 +457,17 @@ export default async function SiteOverviewPage({ params }: Params) {
             </div>
             {canViewInternalMetadata ? (
               <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>{backupReadModel.offsite.detail}</p>
+            ) : null}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+              <p style={{ margin: 0, fontSize: "0.86rem" }}>Restore verified:</p>
+              <span className={`status-chip ${backupReadModel.restoreVerification.tone}`}>
+                {backupReadModel.restoreVerification.label}
+              </span>
+            </div>
+            {canViewInternalMetadata ? (
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                {backupReadModel.restoreVerification.detail}
+              </p>
             ) : null}
             <p style={{ margin: 0, fontSize: "0.86rem" }}>
               Restore scope: <strong>{backupReadModel.restoreScope}</strong>

@@ -34,6 +34,8 @@
     "ops:refresh-staging-remediation:with-content-sync": "node ./scripts/refresh-staging-remediation.mjs --with-content-sync",
     "ops:refresh-staging-remediation:with-content-sync-apply": "node ./scripts/refresh-staging-remediation.mjs --with-content-sync-apply",
     "ops:backup-reconcile": "node ./scripts/backup-reconcile-scheduler.mjs --once",
+    "ops:verify-backup": "node ./scripts/verify-jongo-backup.mjs",
+    "ops:verify-backup:restore-test": "node ./scripts/verify-jongo-backup.mjs --restore-test",
     "ops:backup-reconcile:scheduler": "node ./scripts/backup-reconcile-scheduler.mjs",
     "dev:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1 -Dev",
     "start:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1",
