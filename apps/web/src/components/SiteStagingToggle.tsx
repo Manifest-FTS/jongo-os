@@ -140,7 +140,15 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
         })
       });
 
-      const payload = (await response.json()) as StagingToggleResponse;
+      let payload: StagingToggleResponse = {};
+      try {
+        payload = (await response.json()) as StagingToggleResponse;
+      } catch {
+        if (!response.ok) {
+          payload = { error: `Unable to update staging state (HTTP ${response.status}).` };
+        }
+      }
+
       if (!response.ok) {
         setError(payload?.error ?? "Unable to update staging state.");
         setActionHint(payload?.actionHint ?? null);

@@ -432,6 +432,21 @@ function buildSiteIdentityWhere(siteId: string) {
   };
 }
 
+function isPrismaSchemaMismatchError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { code?: string; message?: string; meta?: { message?: string } };
+  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
+
+  return (
+    e.code === "P2022" ||
+    (message.includes("column") && message.includes("does not exist")) ||
+    (message.includes("the column") && message.includes("does not exist"))
+  );
+}
+
 function stagingTargetLabel(resourceKind?: string): "application" | "service" {
   return resourceKind === "service" ? "service" : "application";
 }
@@ -694,11 +709,27 @@ export async function GET(_req: Request, { params }: Params) {
       name: true,
       stagingEnabled: true,
       coolifyServiceUuid: true,
-      coolifyProjectId: true,
-      temporaryDomainSlug: true,
-      temporaryDomainSuffix: true
+      coolifyProjectId: true
     }
   });
+  let temporaryDomainSlug: string | null = null;
+  let temporaryDomainSuffix: string | null = null;
+  try {
+    const temporaryDomainValues = await db.site.findUnique({
+      where: { id: site.id },
+      select: {
+        temporaryDomainSlug: true,
+        temporaryDomainSuffix: true
+      }
+    });
+    temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
+    temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? null;
+  } catch (error) {
+    if (!isPrismaSchemaMismatchError(error)) {
+      throw error;
+    }
+  }
+
 
   if (!site) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
@@ -839,8 +870,8 @@ export async function GET(_req: Request, { params }: Params) {
       name: site.name,
       coolifyServiceUuid: site.coolifyServiceUuid,
       coolifyProjectId: site.coolifyProjectId,
-      temporaryDomainSlug: site.temporaryDomainSlug,
-      temporaryDomainSuffix: site.temporaryDomainSuffix
+      temporaryDomainSlug,
+      temporaryDomainSuffix
     },
     generatedAt: new Date().toISOString(),
     stagingEnabled: site.stagingEnabled,
@@ -889,7 +920,14 @@ export async function POST(req: Request, { params }: Params) {
           where: {
             ...buildSiteIdentityWhere(siteId)
           },
-          include: {
+        select: {
+          id: true,
+          organizationId: true,
+          slug: true,
+          name: true,
+          stagingEnabled: true,
+          coolifyServiceUuid: true,
+          coolifyProjectId: true,
             organization: {
               select: {
                 id: true,
@@ -907,7 +945,14 @@ export async function POST(req: Request, { params }: Params) {
               OR: [{ ownerId: session!.user!.id }, { collaborators: { some: { userId: session!.user!.id } } }]
             }
           },
-          include: {
+          select: {
+            id: true,
+            organizationId: true,
+            slug: true,
+            name: true,
+            stagingEnabled: true,
+            coolifyServiceUuid: true,
+            coolifyProjectId: true,
             organization: {
               select: {
                 id: true,
@@ -931,6 +976,20 @@ export async function POST(req: Request, { params }: Params) {
 
   const appUuid = site.coolifyServiceUuid?.trim() || "";
   const projectId = site.coolifyProjectId?.trim() || undefined;
+  let temporaryDomainSlug: string | null = null;
+  try {
+    const temporaryDomainValues = await db.site.findUnique({
+      where: { id: site.id },
+      select: {
+        temporaryDomainSlug: true
+      }
+    });
+    temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
+  } catch (error) {
+    if (!isPrismaSchemaMismatchError(error)) {
+      throw error;
+    }
+  }
 
   if (body.enabled) {
     if (!site.stagingEnabled && appUuid) {
@@ -981,7 +1040,7 @@ export async function POST(req: Request, { params }: Params) {
       let stagingDomainApplied = false;
 
       const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
-        siteSlug: site.temporaryDomainSlug ?? site.slug ?? site.id,
+        siteSlug: temporaryDomainSlug ?? site.slug ?? site.id,
         siteName: site.name
       });
 

@@ -112,7 +112,19 @@ export async function GET(_req: Request, { params }: Params) {
           { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
         ]
       },
-      include: {
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        coolifyServiceId: true,
+        coolifyServiceUuid: true,
+        coolifyProjectId: true,
+        gitRepositoryUrl: true,
+        stagingEnabled: true,
+        organizationId: true,
+        createdAt: true,
+        updatedAt: true,
         environments: {
           include: {
             deployments: { orderBy: { triggeredAt: "desc" }, take: 5 }
@@ -127,6 +139,24 @@ export async function GET(_req: Request, { params }: Params) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    let temporaryDomainSlug: string | null = null;
+    let temporaryDomainSuffix: string | null = null;
+    try {
+      const temporaryDomainValues = await db.site.findUnique({
+        where: { id: site.id },
+        select: {
+          temporaryDomainSlug: true,
+          temporaryDomainSuffix: true
+        }
+      });
+      temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
+      temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? null;
+    } catch (error) {
+      if (!isPrismaSchemaMismatchError(error)) {
+        throw error;
+      }
+    }
+
     return NextResponse.json({
       id: site.id,
       slug: site.slug,
@@ -137,8 +167,8 @@ export async function GET(_req: Request, { params }: Params) {
       coolifyProjectId: site.coolifyProjectId,
       gitRepositoryUrl: site.gitRepositoryUrl,
       stagingEnabled: site.stagingEnabled,
-      temporaryDomainSlug: site.temporaryDomainSlug,
-      temporaryDomainSuffix: site.temporaryDomainSuffix,
+      temporaryDomainSlug,
+      temporaryDomainSuffix,
       organizationId: site.organizationId,
       organization: site.organization,
       environments: site.environments,
@@ -197,7 +227,8 @@ export async function PUT(req: Request, { params }: Params) {
           OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
         }
       },
-      include: {
+      select: {
+        id: true,
         organization: {
           select: { id: true, ownerId: true, collaborators: { where: { userId: session.user.id }, select: { role: true } } }
         }
@@ -288,7 +319,8 @@ export async function DELETE(_req: Request, { params }: Params) {
           OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
         }
       },
-      include: {
+      select: {
+        id: true,
         organization: {
           select: { id: true, ownerId: true, collaborators: { where: { userId: session.user.id }, select: { role: true } } }
         }
