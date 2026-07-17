@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
-import { deriveCoolifyStagingDomainFromProduction, getCoolifyAppStagingCapability } from "@/lib/coolify";
+import { getCoolifyAppStagingCapability } from "@/lib/coolify";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 
 type Params = { params: Promise<{ siteId: string }> };
@@ -37,29 +37,9 @@ export default async function SiteWorkspaceLayout({
     ? await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined)
     : null;
 
-  const preferredStagingDomain = (site.stagingEnabled && appUuid)
-    ? await deriveCoolifyStagingDomainFromProduction(appUuid, {
-      siteSlug: site.slug ?? site.id,
-      siteName: site.name
-    })
-    : undefined;
-
-  const normalizedActualStagingHost = (stagingCapability?.fqdn ?? stagingCapability?.stagingUrl ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .find(Boolean)
-    ?.replace(/^https?:\/\//i, "")
-    .replace(/\/+$/, "");
-
-  const normalizedPreferredStagingHost = preferredStagingDomain
-    ?.replace(/^https?:\/\//i, "")
-    .replace(/\/+$/, "");
-
-  const stagingTargetReady = Boolean(stagingCapability?.detected && stagingCapability?.applicationUuid);
-  const preferredStagingHostReady = normalizedPreferredStagingHost
-    ? normalizedActualStagingHost === normalizedPreferredStagingHost
-    : true;
-  const showStagingTab = Boolean(site.stagingEnabled && stagingTargetReady && preferredStagingHostReady);
+  const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
+  const stagingTargetReady = Boolean(stagingCapability?.applicationUuid);
+  const showStagingTab = Boolean(site.stagingEnabled && (stagingEnvironmentReady || stagingTargetReady));
 
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
