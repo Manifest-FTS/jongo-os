@@ -39,7 +39,7 @@ export default async function SiteWorkspaceLayout({
 
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetReady = Boolean(stagingCapability?.applicationUuid);
-  const showStagingTab = Boolean(site.stagingEnabled && (stagingEnvironmentReady || stagingTargetReady));
+  const showStagingTab = Boolean(site.stagingEnabled || stagingEnvironmentReady || stagingTargetReady);
 
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },

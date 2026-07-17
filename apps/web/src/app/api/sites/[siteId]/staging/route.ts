@@ -681,6 +681,25 @@ async function recordStagingAuditLog(params: {
   });
 }
 
+async function tryRecordStagingAuditLog(params: {
+  organizationId: string;
+  actorId?: string;
+  actionType: string;
+  resourceId: string;
+  details: Record<string, unknown>;
+  req: Request;
+}) {
+  try {
+    await recordStagingAuditLog(params);
+  } catch (error) {
+    console.error("[staging] Failed to write staging audit log", {
+      actionType: params.actionType,
+      resourceId: params.resourceId,
+      error
+    });
+  }
+}
+
 export async function GET(_req: Request, { params }: Params) {
   const authorizedByToken = hasOpsToken(_req);
   const session = await auth();
@@ -913,6 +932,8 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "'enabled' must be boolean" }, { status: 400 });
   }
 
+  try {
+
   const { db } = await import("@/lib/db");
   const site = await db.site.findFirst(
     authorizedByToken
@@ -1014,7 +1035,7 @@ export async function POST(req: Request, { params }: Params) {
     };
 
     if (!appUuid) {
-      await recordStagingAuditLog({
+      await tryRecordStagingAuditLog({
         organizationId: site.organizationId,
         actorId,
         actionType: "staging_enable_requested",
@@ -1121,7 +1142,7 @@ export async function POST(req: Request, { params }: Params) {
         });
       }
 
-      await recordStagingAuditLog({
+      await tryRecordStagingAuditLog({
         organizationId: site.organizationId,
         actorId,
         actionType: "staging_enable_existing",
@@ -1183,7 +1204,7 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
-      siteSlug: site.slug ?? site.id,
+      siteSlug: temporaryDomainSlug ?? site.slug ?? site.id,
       siteName: site.name
     });
     const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
@@ -1298,7 +1319,7 @@ export async function POST(req: Request, { params }: Params) {
       });
     }
 
-    await recordStagingAuditLog({
+    await tryRecordStagingAuditLog({
       organizationId: site.organizationId,
       actorId,
       actionType: "staging_enable_provision",
@@ -1386,31 +1407,55 @@ export async function POST(req: Request, { params }: Params) {
   let destroyEnvironmentResult: { ok: boolean; message: string; reason?: string } | null = null;
   let capability = null as Awaited<ReturnType<typeof getCoolifyAppStagingCapability>> | null;
 
-  if (appUuid) {
-    capability = await getCoolifyAppStagingCapability(appUuid, projectId);
-    const shouldDestroy = Boolean(body.burnExisting) && Boolean(capability.detected && capability.applicationUuid);
-    if (shouldDestroy && capability?.applicationUuid) {
-      const result = await destroyCoolifyApplication(capability.applicationUuid, capability.resourceKind);
-      destroyResult = { ok: result.ok, message: result.message };
+  await db.site.update({
+    where: { id: site.id },
+    data: { stagingEnabled: false }
+  });
 
-      if (!destroyResult.ok) {
-        const afterDestroyProbe = await getCoolifyAppStagingCapability(appUuid, projectId);
-        if (!afterDestroyProbe.applicationUuid) {
-          destroyResult = {
-            ok: true,
-            message: "Staging target is no longer attached in Coolify."
-          };
+  if (appUuid) {
+    try {
+      capability = await getCoolifyAppStagingCapability(appUuid, projectId);
+    } catch {
+      capability = null;
+    }
+    const shouldDestroy = Boolean(body.burnExisting) && Boolean(capability?.detected && capability?.applicationUuid);
+    if (shouldDestroy && capability?.applicationUuid) {
+      try {
+        const result = await destroyCoolifyApplication(capability.applicationUuid, capability.resourceKind);
+        destroyResult = { ok: result.ok, message: result.message };
+
+        if (!destroyResult.ok) {
+          const afterDestroyProbe = await getCoolifyAppStagingCapability(appUuid, projectId);
+          if (!afterDestroyProbe.applicationUuid) {
+            destroyResult = {
+              ok: true,
+              message: "Staging target is no longer attached in Coolify."
+            };
+          }
         }
+      } catch {
+        destroyResult = {
+          ok: false,
+          message: "Staging target cleanup could not be verified automatically."
+        };
       }
     }
 
     if (Boolean(body.burnExisting) && projectId) {
-      const environmentResult = await deleteCoolifyStagingEnvironment(projectId);
-      destroyEnvironmentResult = {
-        ok: environmentResult.ok,
-        message: environmentResult.message,
-        reason: environmentResult.reason
-      };
+      try {
+        const environmentResult = await deleteCoolifyStagingEnvironment(projectId);
+        destroyEnvironmentResult = {
+          ok: environmentResult.ok,
+          message: environmentResult.message,
+          reason: environmentResult.reason
+        };
+      } catch {
+        destroyEnvironmentResult = {
+          ok: false,
+          message: "Staging environment cleanup could not be verified automatically.",
+          reason: "auto_provision_unsupported"
+        };
+      }
     }
   }
 
@@ -1418,12 +1463,7 @@ export async function POST(req: Request, { params }: Params) {
   const destroyed = Boolean(destroyResult?.ok || environmentDestroyed);
   const destroyActionType = destroyed ? "staging_disable_destroy" : "staging_disable_requested";
 
-  await db.site.update({
-    where: { id: site.id },
-    data: { stagingEnabled: false }
-  });
-
-  await recordStagingAuditLog({
+  await tryRecordStagingAuditLog({
     organizationId: site.organizationId,
     actorId,
     actionType: destroyActionType,
@@ -1448,6 +1488,10 @@ export async function POST(req: Request, { params }: Params) {
       : null,
     message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
   });
+  } catch (error) {
+    console.error("POST /api/sites/[siteId]/staging error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: Request, { params }: Params) {
