@@ -279,14 +279,22 @@ export async function PUT(req: Request, { params }: Params) {
 
     let updated;
     try {
-      updated = await db.site.update({ where: { id: site.id }, data: updates });
+      updated = await db.site.update({
+        where: { id: site.id },
+        data: updates,
+        select: { id: true, slug: true, name: true }
+      });
     } catch (error) {
       if (!isPrismaSchemaMismatchError(error)) {
         throw error;
       }
 
       const { temporaryDomainSlug: _tmpSlug, temporaryDomainSuffix: _tmpSuffix, ...safeUpdates } = updates;
-      updated = await db.site.update({ where: { id: site.id }, data: safeUpdates });
+      updated = await db.site.update({
+        where: { id: site.id },
+        data: safeUpdates,
+        select: { id: true, slug: true, name: true }
+      });
     }
 
     return NextResponse.json({ id: updated.id, slug: updated.slug, name: updated.name });
