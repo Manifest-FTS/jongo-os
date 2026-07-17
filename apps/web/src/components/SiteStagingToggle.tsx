@@ -241,6 +241,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   const isDisableAction = pendingAction === "disable";
   const isEnableAction = pendingAction === "enable";
   const waitingForManualStagingSetup = enabled && !detectedStagingTarget;
+  const showPendingStagingHint = waitingForManualStagingSetup && !manualProvisionRequired && !error;
   const showResultBody = modalMode === "result" || Boolean(error || message || actionHint || waitingForManualStagingSetup);
   const settleAttemptsRemaining = Math.max(0, STAGING_OPERATION_MAX_POLLS - finalizeAttempt);
   const settleSecondsRemaining = Math.ceil((settleAttemptsRemaining * STAGING_OPERATION_POLL_DELAY_MS) / 1000);
@@ -394,7 +395,7 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                     {actionHint}
                   </p>
                 ) : null}
-                {waitingForManualStagingSetup && !manualProvisionRequired ? (
+                {showPendingStagingHint ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
                     Staging is enabled in Jongo, but no staging target is detected yet. Check the Staging tab in Coolify and refresh in a few minutes.
                   </p>
