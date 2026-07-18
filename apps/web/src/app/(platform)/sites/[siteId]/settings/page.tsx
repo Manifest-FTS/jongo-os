@@ -7,7 +7,6 @@ import Link from "next/link";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyAppStagingCapability, getCoolifyOverview } from "@/lib/coolify";
 import { auth } from "@/lib/auth.config";
-import { notFound } from "next/navigation";
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -33,7 +32,19 @@ export default async function SiteSettingsPage({ params }: Params) {
   ]);
 
   if (!workspace) {
-    notFound();
+    return (
+      <div>
+        <div className="card" style={{ marginBottom: "1rem" }}>
+          <h2 style={{ margin: 0 }}>Settings temporarily unavailable</h2>
+          <p className="card-muted" style={{ marginTop: "0.35rem" }}>
+            Jongo could not resolve this app record right now. Refresh in a moment and try again.
+          </p>
+          <p className="card-muted" style={{ marginTop: "0.35rem" }}>
+            If this persists, run Settings sync and verify the app mapping in Coolify.
+          </p>
+        </div>
+      </div>
+    );
   }
   const canViewInternalMetadata = Boolean(
     session?.user?.id &&
