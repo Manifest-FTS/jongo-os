@@ -1119,6 +1119,14 @@ export type CoolifyActionResult = {
     | "environment_create_failed";
   /** HTTP status from Coolify, when the failure came from a rejected request. */
   status?: number;
+  /** Provisioning attempt diagnostics for staged create/delete flows. */
+  attempts?: Array<{
+    path: string;
+    method: "POST" | "PATCH" | "PUT" | "DELETE";
+    ok: boolean;
+    status?: number;
+    error?: string;
+  }>;
 };
 
 type StagingEnvironmentResolution = {
@@ -1948,6 +1956,13 @@ export async function provisionCoolifyStagingFromProduction(
   }
 
   const normalizedPreferredDomain = preferredStagingDomain ? toHttpsUrl(preferredStagingDomain) : undefined;
+  const provisioningAttempts: Array<{
+    path: string;
+    method: "POST" | "PATCH" | "PUT" | "DELETE";
+    ok: boolean;
+    status?: number;
+    error?: string;
+  }> = [];
 
   const resolveProvisioningResource = async (): Promise<{
     kind: "service" | "application" | "unknown";
@@ -2037,13 +2052,20 @@ export async function provisionCoolifyStagingFromProduction(
 
       let created = false;
       if (!stagingEnvironment) {
-        const createOk = await coolifyMutate(
+        const createResult = await coolifyMutateWithResponse(
           `/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments`,
           "POST",
           { name: "staging" }
         );
+        provisioningAttempts.push({
+          path: `/api/v1/projects/${encodeURIComponent(projectEndpointId)}/environments`,
+          method: "POST",
+          ok: createResult.ok,
+          status: createResult.status,
+          error: createResult.error
+        });
 
-        if (createOk) {
+        if (createResult.ok) {
           created = true;
           const refreshedProjectPayload = await coolifyFetch(`/api/v1/projects/${projectEndpointId}`);
           const refreshedProjectObj = refreshedProjectPayload && typeof refreshedProjectPayload === "object" && !Array.isArray(refreshedProjectPayload)
@@ -2214,8 +2236,15 @@ export async function provisionCoolifyStagingFromProduction(
     }
 
     for (const body of candidateBodies) {
-      const created = await coolifyMutate("/api/v1/services", "POST", body);
-      if (!created) {
+      const createResult = await coolifyMutateWithResponse("/api/v1/services", "POST", body);
+      provisioningAttempts.push({
+        path: "/api/v1/services",
+        method: "POST",
+        ok: createResult.ok,
+        status: createResult.status,
+        error: createResult.error
+      });
+      if (!createResult.ok) {
         continue;
       }
 
@@ -2288,8 +2317,15 @@ export async function provisionCoolifyStagingFromProduction(
       : [...serviceCandidateRequests, ...applicationCandidateRequests, ...fallbackCandidateRequests];
 
   for (const request of candidateRequests) {
-    const ok = await coolifyMutate(request.path, "POST", request.body);
-    if (ok) {
+    const result = await coolifyMutateWithResponse(request.path, "POST", request.body);
+    provisioningAttempts.push({
+      path: request.path,
+      method: "POST",
+      ok: result.ok,
+      status: result.status,
+      error: result.error
+    });
+    if (result.ok) {
       const verified = await verifyStagingTarget();
       return {
         mode: "live",
@@ -2297,7 +2333,8 @@ export async function provisionCoolifyStagingFromProduction(
         message: verified
           ? "Staging provisioning request sent to Coolify."
           : "Staging provisioning request was accepted by Coolify and is still settling.",
-        reason: "request_sent"
+        reason: "request_sent",
+        attempts: provisioningAttempts
       };
     }
   }
@@ -2310,7 +2347,8 @@ export async function provisionCoolifyStagingFromProduction(
         mode: "live",
         ok: true,
         message: "Staging environment created in Coolify.",
-        reason: "environment_created"
+        reason: "environment_created",
+        attempts: provisioningAttempts
       };
     }
   }
@@ -2322,7 +2360,8 @@ export async function provisionCoolifyStagingFromProduction(
         mode: "live",
         ok: true,
         message: "Staging target created in Coolify.",
-        reason: "service_created"
+        reason: "service_created",
+        attempts: provisioningAttempts
       };
     }
   }
@@ -2338,7 +2377,8 @@ export async function provisionCoolifyStagingFromProduction(
     mode: "live",
     ok: false,
     message: "Automatic staging provisioning is unavailable for this app via current Coolify API routes. Provision staging manually in Coolify.",
-    reason: "auto_provision_unsupported"
+    reason: "auto_provision_unsupported",
+    attempts: provisioningAttempts
   };
 }
 

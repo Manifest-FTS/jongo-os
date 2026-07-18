@@ -1575,6 +1575,7 @@ export async function POST(req: Request, { params }: Params) {
         stagingContentProbe: stagingProbeResult.probe,
         capability: capabilityAfterProvision,
         provisioningMessage: provisionResult.message,
+        provisioningAttempts: provisionResult.attempts ?? [],
         contentSyncReason,
         autoContentSync
       },
@@ -1633,6 +1634,7 @@ export async function POST(req: Request, { params }: Params) {
       stagingContentProbe: stagingProbeResult.probe,
       autoContentSync,
       message: enableMessage,
+      provisioningAttempts: provisionResult.attempts ?? [],
       capability: capabilityAfterProvision
     });
   }
