@@ -2510,6 +2510,8 @@ export type StagingCapabilityRecord = {
   stagingUrl?: string;
   fqdn?: string;
   status?: "healthy" | "degraded" | "error" | "unknown";
+  stagingCandidateCount?: number;
+  stagingMatchedCandidateCount?: number;
   note?: string;
   /** ISO timestamp of when this probe ran. */
   checkedAt: string;
@@ -3212,6 +3214,65 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
   }
 
   try {
+    const normalizeStagingNameKey = (value: string): string =>
+      value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+
+    const stripStageHints = (value: string): string =>
+      value
+        .replace(/-(staging|stage|preview|dev|development|prod|production)$/g, "")
+        .replace(/-(staging|stage|preview|dev|development|prod|production)$/g, "")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+
+    const extractResourceName = (value: Record<string, unknown> | null | undefined): string =>
+      value ? stringValue(value, ["name", "application_name", "service_name"], "") : "";
+
+    const isLikelyStagingSibling = (candidate: Record<string, unknown>): boolean => {
+      const rootResourceKey = stripStageHints(normalizeStagingNameKey(extractResourceName(rootResource)));
+      const candidateKey = stripStageHints(normalizeStagingNameKey(extractResourceName(candidate)));
+
+      if (!candidateKey || !rootResourceKey) {
+        return true;
+      }
+
+      if (candidateKey === rootResourceKey) {
+        return true;
+      }
+
+      if (rootResourceKey.length >= 4 && candidateKey.includes(rootResourceKey)) {
+        return true;
+      }
+
+      if (candidateKey.length >= 4 && rootResourceKey.includes(candidateKey)) {
+        return true;
+      }
+
+      return false;
+    };
+
+    const pickBestStagingTarget = (candidates: Record<string, unknown>[]): {
+      selected?: Record<string, unknown>;
+      candidateCount: number;
+      matchedCount: number;
+    } => {
+      const sanitized = candidates.filter((candidate) => {
+        const candidateUuid = stringValue(candidate, ["uuid", "id"], "");
+        return candidateUuid.length > 0 && candidateUuid !== appUuid;
+      });
+
+      const matched = sanitized.filter((candidate) => isLikelyStagingSibling(candidate));
+      return {
+        selected: matched[0],
+        candidateCount: sanitized.length,
+        matchedCount: matched.length
+      };
+    };
+
     let resourceKind: StagingCapabilityRecord["resourceKind"] = "unknown";
     let rootResource: Record<string, unknown> | null = null;
 
@@ -3287,8 +3348,15 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
 
     // Look for an application in the staging environment
     const stagingApplications = ensureArray(stagingEnvObj.applications ?? []);
-    let stagingApp = stagingApplications[0] as Record<string, unknown> | undefined;
+    let stagingApp: Record<string, unknown> | undefined;
     let stagingService: Record<string, unknown> | undefined;
+    let stagingCandidateCount = 0;
+    let stagingMatchedCandidateCount = 0;
+
+    const initialAppPick = pickBestStagingTarget(stagingApplications);
+    stagingApp = initialAppPick.selected;
+    stagingCandidateCount = initialAppPick.candidateCount;
+    stagingMatchedCandidateCount = initialAppPick.matchedCount;
 
     // Some Coolify project payloads omit nested applications for environments.
     // Fall back to scanning the application inventory by environment ID/name.
@@ -3298,7 +3366,7 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
         const applications = ensureArray(applicationsPayload);
         const normalizedStagingEnvName = stagingEnvName.trim().toLowerCase();
 
-        stagingApp = applications.find((app) => {
+        const candidateApplications = applications.filter((app) => {
           const appEnvId = stringValue(app, ["environment_id", "environmentId", "environment_uuid"], "");
           const appEnvName = stringValue(app, ["environment_name", "environment"], "").trim().toLowerCase();
           const appProjectId = stringValue(app, ["project_uuid", "project_id", "project"], "");
@@ -3321,7 +3389,12 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
           }
 
           return projectIdCandidates.has(appProjectId);
-        }) as Record<string, unknown> | undefined;
+        });
+
+        const picked = pickBestStagingTarget(candidateApplications);
+        stagingApp = picked.selected;
+        stagingCandidateCount = Math.max(stagingCandidateCount, picked.candidateCount);
+        stagingMatchedCandidateCount = Math.max(stagingMatchedCandidateCount, picked.matchedCount);
       } catch {
         // Keep reporting environment-only staging if list endpoint cannot be fetched.
       }
@@ -3330,7 +3403,10 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     // Service resources can expose staging targets as services without a nested applications entry.
     if (!stagingApp && resourceKind === "service") {
       const stagingServices = ensureArray(stagingEnvObj.services ?? []);
-      stagingService = stagingServices[0] as Record<string, unknown> | undefined;
+      const initialServicePick = pickBestStagingTarget(stagingServices);
+      stagingService = initialServicePick.selected;
+      stagingCandidateCount = Math.max(stagingCandidateCount, initialServicePick.candidateCount);
+      stagingMatchedCandidateCount = Math.max(stagingMatchedCandidateCount, initialServicePick.matchedCount);
 
       if (!stagingService) {
         try {
@@ -3338,7 +3414,7 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
           const services = ensureArray(servicesPayload);
           const normalizedStagingEnvName = stagingEnvName.trim().toLowerCase();
 
-          stagingService = services.find((service) => {
+          const candidateServices = services.filter((service) => {
             const serviceEnvId = stringValue(service, ["environment_id", "environmentId", "environment_uuid"], "");
             const serviceEnvName = stringValue(service, ["environment_name", "environment"], "").trim().toLowerCase();
             const serviceProjectId = stringValue(service, ["project_uuid", "project_id", "project"], "");
@@ -3361,7 +3437,12 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
             }
 
             return projectIdCandidates.has(serviceProjectId);
-          }) as Record<string, unknown> | undefined;
+          });
+
+          const picked = pickBestStagingTarget(candidateServices);
+          stagingService = picked.selected;
+          stagingCandidateCount = Math.max(stagingCandidateCount, picked.candidateCount);
+          stagingMatchedCandidateCount = Math.max(stagingMatchedCandidateCount, picked.matchedCount);
         } catch {
           // Keep reporting environment-only staging if list endpoint cannot be fetched.
         }
@@ -3371,13 +3452,18 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
     const resolvedStagingTarget = stagingApp ?? stagingService;
 
     if (!resolvedStagingTarget) {
+      const note = stagingCandidateCount > 0 && stagingMatchedCandidateCount === 0
+        ? "staging_environment_exists_for_other_resource"
+        : "staging_environment_exists_no_application";
       return {
         detected: true,
         resourceKind,
         projectEnvNames,
         environmentId: stagingEnvId,
         environmentName: stagingEnvName,
-        note: "staging_environment_exists_no_application",
+        stagingCandidateCount,
+        stagingMatchedCandidateCount,
+        note,
         checkedAt
       };
     }
@@ -3421,6 +3507,8 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
       stagingUrl,
       fqdn,
       status,
+      stagingCandidateCount,
+      stagingMatchedCandidateCount,
       note: "full_staging_detected",
       checkedAt
     };
