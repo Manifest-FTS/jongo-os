@@ -1916,15 +1916,31 @@ export async function provisionCoolifyStagingFromProduction(
 
   const normalizedPreferredDomain = preferredStagingDomain ? toHttpsUrl(preferredStagingDomain) : undefined;
 
+  const existingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, {
+    relaxedTargetMatch: true
+  });
+  if (existingCapability.detected && existingCapability.applicationUuid) {
+    return {
+      mode: "live",
+      ok: true,
+      message: "Staging target already exists in Coolify.",
+      reason: "environment_ready"
+    };
+  }
+
   const verifyStagingTarget = async (): Promise<boolean> => {
-    const capability = await getCoolifyAppStagingCapability(appUuid, projectId);
+    const capability = await getCoolifyAppStagingCapability(appUuid, projectId, {
+      relaxedTargetMatch: true
+    });
     if (capability.detected && capability.applicationUuid) {
       return true;
     }
 
-    for (const retryDelayMs of [250, 500, 1000]) {
+    for (const retryDelayMs of [500, 1000, 2000, 4000]) {
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-      const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+      const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, {
+        relaxedTargetMatch: true
+      });
       if (retriedCapability.detected && retriedCapability.applicationUuid) {
         return true;
       }
@@ -2132,10 +2148,7 @@ export async function provisionCoolifyStagingFromProduction(
         continue;
       }
 
-      const verified = await verifyStagingTarget();
-      if (verified) {
-        return true;
-      }
+      return true;
     }
 
     return false;
@@ -2184,14 +2197,14 @@ export async function provisionCoolifyStagingFromProduction(
     const ok = await coolifyMutate(request.path, "POST", request.body);
     if (ok) {
       const verified = await verifyStagingTarget();
-      if (verified) {
-        return {
-          mode: "live",
-          ok: true,
-          message: "Staging provisioning request sent to Coolify.",
-          reason: "request_sent"
-        };
-      }
+      return {
+        mode: "live",
+        ok: true,
+        message: verified
+          ? "Staging provisioning request sent to Coolify."
+          : "Staging provisioning request was accepted by Coolify and is still settling.",
+        reason: "request_sent"
+      };
     }
   }
 

@@ -717,10 +717,18 @@ export async function GET(_req: Request, { params }: Params) {
         }
       : {
           ...buildSiteIdentityWhere(siteId),
-          organization: {
-            deletedAt: null,
-            OR: [{ ownerId: session!.user!.id }, { collaborators: { some: { userId: session!.user!.id } } }]
-          }
+          OR: [
+            {
+              organization: {
+                deletedAt: null,
+                OR: [
+                  { ownerId: session!.user!.id },
+                  { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
+                ]
+              }
+            },
+            { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
+          ]
         },
     select: {
       id: true,
@@ -961,10 +969,18 @@ export async function POST(req: Request, { params }: Params) {
       : {
           where: {
             ...buildSiteIdentityWhere(siteId),
-            organization: {
-              deletedAt: null,
-              OR: [{ ownerId: session!.user!.id }, { collaborators: { some: { userId: session!.user!.id } } }]
-            }
+            OR: [
+              {
+                organization: {
+                  deletedAt: null,
+                  OR: [
+                    { ownerId: session!.user!.id },
+                    { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
+                  ]
+                }
+              },
+              { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
+            ]
           },
           select: {
             id: true,
@@ -1407,6 +1423,7 @@ export async function POST(req: Request, { params }: Params) {
   let destroyResult: { ok: boolean; message: string } | null = null;
   let destroyEnvironmentResult: { ok: boolean; message: string; reason?: string } | null = null;
   let capability = null as Awaited<ReturnType<typeof getCoolifyAppStagingCapability>> | null;
+  let destroyedTargetCount = 0;
 
   await db.site.update({
     where: { id: site.id },
@@ -1427,21 +1444,57 @@ export async function POST(req: Request, { params }: Params) {
     const shouldDestroy = Boolean(body.burnExisting) && Boolean(capability?.detected && capability?.applicationUuid);
     if (shouldDestroy && capability?.applicationUuid) {
       try {
-        const result = await destroyCoolifyApplication(capability.applicationUuid, capability.resourceKind);
-        destroyResult = { ok: result.ok, message: result.message };
+        let lastDestroyMessage = "Staging target is no longer attached in Coolify.";
+        let cleanupFailed = false;
 
-        if (!destroyResult.ok) {
-          const afterDestroyProbe = await getCoolifyAppStagingCapability(
-            appUuid,
-            projectId,
-            { relaxedTargetMatch: Boolean(body.burnExisting) }
-          );
-          if (!afterDestroyProbe.applicationUuid) {
-            destroyResult = {
-              ok: true,
-              message: "Staging target is no longer attached in Coolify."
-            };
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const activeCapability = attempt === 0
+            ? capability
+            : await getCoolifyAppStagingCapability(
+                appUuid,
+                projectId,
+                { relaxedTargetMatch: Boolean(body.burnExisting) }
+              );
+
+          if (!activeCapability?.applicationUuid) {
+            break;
           }
+
+          const result = await destroyCoolifyApplication(activeCapability.applicationUuid, activeCapability.resourceKind);
+          lastDestroyMessage = result.message;
+
+          if (!result.ok) {
+            cleanupFailed = true;
+            break;
+          }
+
+          destroyedTargetCount += 1;
+          await sleep(500);
+        }
+
+        const afterDestroyProbe = await getCoolifyAppStagingCapability(
+          appUuid,
+          projectId,
+          { relaxedTargetMatch: Boolean(body.burnExisting) }
+        );
+
+        if (!afterDestroyProbe.applicationUuid) {
+          destroyResult = {
+            ok: true,
+            message: destroyedTargetCount > 1
+              ? `Removed ${destroyedTargetCount} staging targets in Coolify.`
+              : destroyedTargetCount === 1
+                ? "Staging target removed in Coolify."
+                : "Staging target is no longer attached in Coolify."
+          };
+        } else {
+          destroyResult = {
+            ok: false,
+            message: cleanupFailed
+              ? lastDestroyMessage
+              : "Some staging targets are still attached in Coolify and require manual cleanup."
+          };
+          capability = afterDestroyProbe;
         }
       } catch {
         destroyResult = {
@@ -1483,6 +1536,7 @@ export async function POST(req: Request, { params }: Params) {
       appUuid: appUuid || null,
       stagedDetected: Boolean(capability?.detected),
       destroyed,
+      destroyedTargetCount,
       burnExisting: Boolean(body.burnExisting),
       message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
     },
@@ -1527,10 +1581,18 @@ export async function PATCH(req: Request, { params }: Params) {
   const site = await db.site.findFirst({
     where: {
       ...buildSiteIdentityWhere(siteId),
-      organization: {
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      }
+      OR: [
+        {
+          organization: {
+            deletedAt: null,
+            OR: [
+              { ownerId: session.user.id },
+              { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+            ]
+          }
+        },
+        { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+      ]
     },
     include: {
       organization: {
