@@ -168,29 +168,35 @@ function partitionResourceInventory(resources: Record<string, unknown>[]): {
   const databases: Record<string, unknown>[] = [];
 
   for (const resource of resources) {
+    const detectedType = detectResourceType(resource).type;
     const type = stringValue(resource, ["resource_type", "type", "kind", "service_type"]).toLowerCase();
     const engine = stringValue(resource, ["database_type", "engine", "db_type"]).toLowerCase();
+    const image = stringValue(resource, ["image", "docker_image", "container_image", "name", "custom_type"]).toLowerCase();
     const hasCompose = typeof resource.docker_compose === "string" || typeof resource.docker_compose_raw === "string";
     const hasGitRepo = typeof resource.git_repository === "string";
 
     if (
+      detectedType === "Database" ||
       type.includes("database") ||
       type.includes("postgres") ||
       type.includes("mysql") ||
       type.includes("mariadb") ||
       type.includes("redis") ||
+      image.includes("postgres") ||
+      image.includes("mysql") ||
+      image.includes("mariadb") ||
       engine.length > 0
     ) {
       databases.push(resource);
       continue;
     }
 
-    if (type.includes("service") || hasCompose) {
+    if (detectedType === "Service" || type.includes("service") || hasCompose) {
       services.push(resource);
       continue;
     }
 
-    if (type.includes("application") || hasGitRepo) {
+    if (detectedType === "WordPress" || detectedType === "Web App" || type.includes("application") || hasGitRepo) {
       applications.push(resource);
       continue;
     }
@@ -3069,6 +3075,8 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
           appRaw.standalone_mariadbs ??
           appRaw.standalone_mysqls ??
           appRaw.postgresqls ??
+          appRaw.mariadbs ??
+          appRaw.mysqls ??
           appRaw.database ??
           appRaw.attached_databases ??
           []
@@ -3076,7 +3084,17 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
     }
 
     if (databases.length === 0 && serviceRaw) {
-      databases = ensureArray(serviceRaw.databases ?? serviceRaw.service_databases ?? []);
+      databases = ensureArray(
+        serviceRaw.databases ??
+          serviceRaw.service_databases ??
+          serviceRaw.standalone_postgresqls ??
+          serviceRaw.standalone_mariadbs ??
+          serviceRaw.standalone_mysqls ??
+          serviceRaw.postgresqls ??
+          serviceRaw.mariadbs ??
+          serviceRaw.mysqls ??
+          []
+      );
     }
 
     if (databases.length === 0 && projectId && environmentId) {
