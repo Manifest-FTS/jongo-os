@@ -1916,6 +1916,41 @@ export async function provisionCoolifyStagingFromProduction(
 
   const normalizedPreferredDomain = preferredStagingDomain ? toHttpsUrl(preferredStagingDomain) : undefined;
 
+  const resolveProvisioningResource = async (): Promise<{
+    kind: "service" | "application" | "unknown";
+    uuid: string;
+  }> => {
+    try {
+      const servicePayload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(appUuid)}`);
+      if (servicePayload && typeof servicePayload === "object" && !Array.isArray(servicePayload)) {
+        const service = servicePayload as Record<string, unknown>;
+        return {
+          kind: "service",
+          uuid: stringValue(service, ["uuid", "id"], "") || appUuid
+        };
+      }
+    } catch {
+      // Continue to application lookup.
+    }
+
+    try {
+      const applicationPayload = await coolifyFetch(`/api/v1/applications/${encodeURIComponent(appUuid)}`);
+      if (applicationPayload && typeof applicationPayload === "object" && !Array.isArray(applicationPayload)) {
+        const application = applicationPayload as Record<string, unknown>;
+        return {
+          kind: "application",
+          uuid: stringValue(application, ["uuid", "id"], "") || appUuid
+        };
+      }
+    } catch {
+      // Fall through.
+    }
+
+    return { kind: "unknown", uuid: appUuid };
+  };
+
+  const provisioningResource = await resolveProvisioningResource();
+
   const existingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, {
     relaxedTargetMatch: true
   });
@@ -2011,7 +2046,10 @@ export async function provisionCoolifyStagingFromProduction(
 
     let sourceService: Record<string, unknown> | null = null;
     try {
-      const payload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(appUuid)}`);
+      const sourceServiceUuid = provisioningResource.kind === "service"
+        ? provisioningResource.uuid
+        : appUuid;
+      const payload = await coolifyFetch(`/api/v1/services/${encodeURIComponent(sourceServiceUuid)}`);
       if (payload && typeof payload === "object" && !Array.isArray(payload)) {
         sourceService = payload as Record<string, unknown>;
       }
@@ -2154,44 +2192,67 @@ export async function provisionCoolifyStagingFromProduction(
     return false;
   };
 
-  const candidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = [
+  const resourceUuid = encodeURIComponent(provisioningResource.uuid || appUuid);
+  const serviceCandidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = [
     {
-      path: `/api/v1/services/${encodeURIComponent(appUuid)}/staging`,
+      path: `/api/v1/services/${resourceUuid}/staging`,
       body: normalizedPreferredDomain
         ? { fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
         : undefined
     },
     {
-      path: `/api/v1/services/${encodeURIComponent(appUuid)}/clone`,
+      path: `/api/v1/services/${resourceUuid}/clone`,
       body: normalizedPreferredDomain
         ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
         : { environment: "staging" }
     },
     {
-      path: `/api/v1/services/${encodeURIComponent(appUuid)}/duplicate`,
-      body: normalizedPreferredDomain
-        ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
-        : { environment: "staging" }
-    },
-    {
-      path: `/api/v1/applications/${encodeURIComponent(appUuid)}/staging`,
-      body: normalizedPreferredDomain
-        ? { fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
-        : undefined
-    },
-    {
-      path: `/api/v1/applications/${encodeURIComponent(appUuid)}/clone`,
-      body: normalizedPreferredDomain
-        ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
-        : { environment: "staging" }
-    },
-    {
-      path: `/api/v1/applications/${encodeURIComponent(appUuid)}/duplicate`,
+      path: `/api/v1/services/${resourceUuid}/duplicate`,
       body: normalizedPreferredDomain
         ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
         : { environment: "staging" }
     }
   ];
+  const applicationCandidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = [
+    {
+      path: `/api/v1/applications/${resourceUuid}/staging`,
+      body: normalizedPreferredDomain
+        ? { fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : undefined
+    },
+    {
+      path: `/api/v1/applications/${resourceUuid}/clone`,
+      body: normalizedPreferredDomain
+        ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : { environment: "staging" }
+    },
+    {
+      path: `/api/v1/applications/${resourceUuid}/duplicate`,
+      body: normalizedPreferredDomain
+        ? { environment: "staging", fqdn: normalizedPreferredDomain, domain: normalizedPreferredDomain }
+        : { environment: "staging" }
+    }
+  ];
+
+  const fallbackUuid = encodeURIComponent(appUuid);
+  const fallbackCandidateRequests = provisioningResource.uuid !== appUuid
+    ? [
+        ...serviceCandidateRequests.map((request) => ({
+          ...request,
+          path: request.path.replace(resourceUuid, fallbackUuid)
+        })),
+        ...applicationCandidateRequests.map((request) => ({
+          ...request,
+          path: request.path.replace(resourceUuid, fallbackUuid)
+        }))
+      ]
+    : [];
+
+  const candidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = provisioningResource.kind === "service"
+    ? [...serviceCandidateRequests, ...applicationCandidateRequests, ...fallbackCandidateRequests]
+    : provisioningResource.kind === "application"
+      ? [...applicationCandidateRequests, ...serviceCandidateRequests, ...fallbackCandidateRequests]
+      : [...serviceCandidateRequests, ...applicationCandidateRequests, ...fallbackCandidateRequests];
 
   for (const request of candidateRequests) {
     const ok = await coolifyMutate(request.path, "POST", request.body);
