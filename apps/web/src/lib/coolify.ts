@@ -1469,6 +1469,18 @@ export async function deriveCoolifyStagingDomainFromProduction(
   options?: { siteSlug?: string | null; siteName?: string | null; domainSuffix?: string | null }
 ): Promise<string | undefined> {
   try {
+    // Prefer deterministic site metadata first so retries do not drift across
+    // unrelated Coolify resource domains when API payloads contain noisy values.
+    const deterministicDomain = deriveStagingDomainFromTemplate({
+      appUuid,
+      siteSlug: options?.siteSlug,
+      siteName: options?.siteName,
+      domainSuffix: options?.domainSuffix
+    });
+    if (deterministicDomain) {
+      return deterministicDomain;
+    }
+
     const candidates: string[] = [];
 
     const payloadLookups = [
@@ -1540,16 +1552,6 @@ export async function deriveCoolifyStagingDomainFromProduction(
       if (derived) {
         return derived;
       }
-    }
-
-    const deterministicDomain = deriveStagingDomainFromTemplate({
-      appUuid,
-      siteSlug: options?.siteSlug,
-      siteName: options?.siteName,
-      domainSuffix: options?.domainSuffix
-    });
-    if (deterministicDomain) {
-      return deterministicDomain;
     }
 
     return undefined;
