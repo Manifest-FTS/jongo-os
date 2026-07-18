@@ -1586,7 +1586,7 @@ export async function POST(req: Request, { params }: Params) {
       manualProvisionRequired
       ? (provisionResult.ok
         ? (environmentOnlyProvisioned
-          ? "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes."
+          ? "Coolify created a staging environment, but no staging target was attached yet. This resource type may require manual clone/attach in Coolify."
           : "Check the Staging tab in Coolify and refresh in a few minutes.")
           : "Check the Staging tab in Coolify and refresh in a few minutes.")
       : requiresContentSync
