@@ -1533,33 +1533,32 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
       const dbNameKeys = new Set(dbRecords.map((record) => normalizedKey(record.name)).filter(Boolean));
 
       // --- Coolify-only sites (not linked to any DB record) ---
-      const coolifyOnlyRecords: SiteDirectoryRecord[] = scopeApplied
-        ? []
-        : resolvedOverview.sites
-            .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
-            .filter((cs) => !shouldSuppressStagingSiblingRecord(cs, dbMappedProjectIds, dbNameKeys))
-            .map((site) => {
-              const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode, ownershipIndex);
-              return {
-                id: site.id,
-                slug: toAppSlug(site.name, site.id),
-                name: site.name,
-                deployTargetId: site.deployTargetId,
-                clientId: ownership.clientId,
-                clientDbId: ownership.clientDbId,
-                clientName: ownership.clientName,
-                status: site.status,
-                ownershipState: ownership.ownershipState,
-                ownershipDiagnostic: ownership.ownershipDiagnostic,
-                source: "coolify" as const,
-                coolifyServiceUuid: site.id,
-                coolifyProjectId: site.coolifyProjectId,
-                coolifyProjectName: site.coolifyProjectName,
-                coolifyEnvironmentId: site.coolifyEnvironmentId,
-                coolifyEnvironmentName: site.coolifyEnvironmentName,
-                resourceType: site.resourceType
-              };
-            });
+      const coolifyOnlyRecords: SiteDirectoryRecord[] = resolvedOverview.sites
+        .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
+        .filter((cs) => !shouldSuppressStagingSiblingRecord(cs, dbMappedProjectIds, dbNameKeys))
+        .map((site) => {
+          const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode, ownershipIndex);
+          return {
+            id: site.id,
+            slug: toAppSlug(site.name, site.id),
+            name: site.name,
+            deployTargetId: site.deployTargetId,
+            clientId: ownership.clientId,
+            clientDbId: ownership.clientDbId,
+            clientName: ownership.clientName,
+            status: site.status,
+            ownershipState: ownership.ownershipState,
+            ownershipDiagnostic: ownership.ownershipDiagnostic,
+            source: "coolify" as const,
+            coolifyServiceUuid: site.id,
+            coolifyProjectId: site.coolifyProjectId,
+            coolifyProjectName: site.coolifyProjectName,
+            coolifyEnvironmentId: site.coolifyEnvironmentId,
+            coolifyEnvironmentName: site.coolifyEnvironmentName,
+            resourceType: site.resourceType
+          };
+        })
+        .filter((record) => !scopeApplied || record.ownershipState === "mapped");
 
       const mergedRecords = [...dbRecords, ...coolifyOnlyRecords];
       recordSiteDirectoryDiagnostics(mergedRecords, false, "db_plus_coolify_merge");

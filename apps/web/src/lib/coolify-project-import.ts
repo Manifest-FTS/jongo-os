@@ -194,7 +194,8 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
             { name: "staging", isProductionLike: false }
           ]
         }
-      }
+      },
+      select: { id: true }
     });
 
     existingNames.add(normalizedName);
