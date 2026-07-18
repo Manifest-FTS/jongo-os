@@ -157,11 +157,27 @@ export default async function BackupsPage({ params }: Params) {
           ? "Not protected"
           : "Status unknown";
 
+  // Restore-test outcome recorded by scripts/verify-jongo-backup.mjs, keyed by
+  // this resource's Coolify UUID. Absent → chip shows "Never verified".
+  const restoreVerificationRecord = appUuid
+    ? await (async () => {
+        const { db } = await import("@/lib/db");
+        return db.backupRestoreVerification.findUnique({ where: { resourceUuid: appUuid } });
+      })()
+    : null;
+
   const ownershipLabel = `${workspace.clientName} / ${workspace.name}`;
   const readModel = buildBackupReadModelSnapshot({
     ownership: ownershipLabel,
     localStatus: statusLabel,
-    schedules: enabledSchedules
+    schedules: enabledSchedules,
+    restoreVerification: restoreVerificationRecord
+      ? {
+          lastVerifiedAt: restoreVerificationRecord.lastVerifiedAt.toISOString(),
+          lastResult: restoreVerificationRecord.lastResult === "pass" ? "pass" : "fail",
+          rpoHours: restoreVerificationRecord.rpoHours
+        }
+      : undefined
   });
 
   const diagnosisItems = [
@@ -284,6 +300,17 @@ export default async function BackupsPage({ params }: Params) {
                   <span className={`status-chip ${readModel.offsite.tone}`}>{readModel.offsite.label}</span>
                 </div>
                 <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>{readModel.offsite.detail}</p>
+              </div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore verified</p>
+                  <span className={`status-chip ${readModel.restoreVerification.tone}`}>
+                    {readModel.restoreVerification.label}
+                  </span>
+                </div>
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                  {readModel.restoreVerification.detail}
+                </p>
               </div>
               <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
                 <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore scope</p>
