@@ -1,20 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { getCoolifyOverview } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, getCoolifyOverview } from "@/lib/coolify";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 
 function normalized(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
-}
-
-function isPrismaUnknownFieldError(error: unknown, fieldName: string): boolean {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-
-  const e = error as { message?: string; meta?: { message?: string } };
-  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
-  return message.includes("unknown field") && message.includes(fieldName.toLowerCase());
 }
 
 /**
@@ -100,7 +90,8 @@ export async function POST(request: Request) {
           data: {
             coolifyProjectId: coolifySite.coolifyProjectId,
             coolifyProjectName: coolifySite.coolifyProjectName ?? undefined
-          }
+          },
+          select: { id: true }
         });
         updatedSites += 1;
       }
@@ -166,6 +157,32 @@ export async function POST(request: Request) {
 
     const orphaned = diagnostics.filter((d) => d.status !== "mapped");
 
+    const mappedAppUuids = [...new Set(
+      diagnostics
+        .filter((d) => d.status === "mapped")
+        .map((d) => d.resourceId?.trim())
+        .filter((value): value is string => Boolean(value))
+    )];
+
+    let backupsAlreadyConfigured = 0;
+    let backupsAutoProvisioned = 0;
+    let backupsProvisionFailures = 0;
+
+    for (const appUuid of mappedAppUuids) {
+      try {
+        const reconciliation = await ensureCoolifyAppBackupSchedules(appUuid);
+        if (reconciliation.note === "already_configured") {
+          backupsAlreadyConfigured += 1;
+        } else if (reconciliation.configuredAfter) {
+          backupsAutoProvisioned += 1;
+        } else {
+          backupsProvisionFailures += 1;
+        }
+      } catch {
+        backupsProvisionFailures += 1;
+      }
+    }
+
     let importedSites = 0;
     let importLinkedProjectCount = 0;
     for (const organization of organizations) {
@@ -188,6 +205,10 @@ export async function POST(request: Request) {
       backfilledOrganizations,
       importedSites,
       importLinkedProjectCount,
+      backupReconciledSites: mappedAppUuids.length,
+      backupsAlreadyConfigured,
+      backupsAutoProvisioned,
+      backupsProvisionFailures,
       orphanedCount: orphaned.length,
       orphaned,
       diagnostics
