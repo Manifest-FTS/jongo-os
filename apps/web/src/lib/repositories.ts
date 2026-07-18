@@ -1753,87 +1753,104 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
     if (prisma) {
       let dbSite: any = null;
       try {
-        // Try DB lookup first (siteId may be a DB UUID)
-        const identityFilter = buildSiteIdentityWhere(siteId);
-
-        const where: any = { ...identityFilter };
-        if (scopeApplied && scopedUserId) {
-          where.AND = [
-            {
-              OR: [
-                {
-                  organization: {
-                    deletedAt: null,
-                    OR: [
-                      { ownerId: scopedUserId },
-                      { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
-                    ]
-                  }
-                },
-                { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
-              ]
-            }
-          ];
-        }
-
-        try {
-          dbSite = await prisma.site.findFirst({
-            where,
-            select: {
-              id: true,
-              organizationId: true,
-              slug: true,
-              name: true,
-              description: true,
-              coolifyServiceUuid: true,
-              coolifyProjectId: true,
-              stagingEnabled: true,
-              gitRepositoryUrl: true,
-              organization: {
-                select: {
-                  id: true,
-                  slug: true,
-                  name: true,
-                  coolifyProjectId: true,
-                  coolifyProjectName: true,
-                  coolifyProjectLinks: {
-                    select: { coolifyProjectId: true, coolifyProjectName: true, isPrimary: true },
-                    orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }]
-                  }
-                }
-              },
-              environments: { include: { deployments: { orderBy: { triggeredAt: "desc" }, take: 3 } } }
-            }
-          });
-        } catch (error) {
-          if (!isPrismaUnknownFieldError(error, "coolifyProjectLinks")) {
-            throw error;
+        const buildScopedWhere = (identity: string): any => {
+          const identityFilter = buildSiteIdentityWhere(identity);
+          const where: any = { ...identityFilter };
+          if (scopeApplied && scopedUserId) {
+            where.AND = [
+              {
+                OR: [
+                  {
+                    organization: {
+                      deletedAt: null,
+                      OR: [
+                        { ownerId: scopedUserId },
+                        { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
+                      ]
+                    }
+                  },
+                  { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
+                ]
+              }
+            ];
           }
 
-          dbSite = await prisma.site.findFirst({
-            where,
-            select: {
-              id: true,
-              organizationId: true,
-              slug: true,
-              name: true,
-              description: true,
-              coolifyServiceUuid: true,
-              coolifyProjectId: true,
-              stagingEnabled: true,
-              gitRepositoryUrl: true,
-              organization: {
-                select: {
-                  id: true,
-                  slug: true,
-                  name: true,
-                  coolifyProjectId: true,
-                  coolifyProjectName: true
-                }
-              },
-              environments: { include: { deployments: { orderBy: { triggeredAt: "desc" }, take: 3 } } }
+          return where;
+        };
+
+        const loadDbSite = async (where: any) => {
+          try {
+            return await prisma.site.findFirst({
+              where,
+              select: {
+                id: true,
+                organizationId: true,
+                slug: true,
+                name: true,
+                description: true,
+                coolifyServiceUuid: true,
+                coolifyProjectId: true,
+                stagingEnabled: true,
+                gitRepositoryUrl: true,
+                organization: {
+                  select: {
+                    id: true,
+                    slug: true,
+                    name: true,
+                    coolifyProjectId: true,
+                    coolifyProjectName: true,
+                    coolifyProjectLinks: {
+                      select: { coolifyProjectId: true, coolifyProjectName: true, isPrimary: true },
+                      orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }]
+                    }
+                  }
+                },
+                environments: { include: { deployments: { orderBy: { triggeredAt: "desc" }, take: 3 } } }
+              }
+            });
+          } catch (error) {
+            if (!isPrismaUnknownFieldError(error, "coolifyProjectLinks")) {
+              throw error;
             }
-          });
+
+            return prisma.site.findFirst({
+              where,
+              select: {
+                id: true,
+                organizationId: true,
+                slug: true,
+                name: true,
+                description: true,
+                coolifyServiceUuid: true,
+                coolifyProjectId: true,
+                stagingEnabled: true,
+                gitRepositoryUrl: true,
+                organization: {
+                  select: {
+                    id: true,
+                    slug: true,
+                    name: true,
+                    coolifyProjectId: true,
+                    coolifyProjectName: true
+                  }
+                },
+                environments: { include: { deployments: { orderBy: { triggeredAt: "desc" }, take: 3 } } }
+              }
+            });
+          }
+        };
+
+        dbSite = await loadDbSite(buildScopedWhere(siteId));
+
+        if (!dbSite) {
+          const coolifySiteMatch = overview.sites.find(
+            (item) => item.id === siteId || item.deployTargetId === siteId || toAppSlug(item.name, item.id) === siteId
+          );
+          const resolvedIdentity = coolifySiteMatch?.id?.trim() || coolifySiteMatch?.deployTargetId?.trim();
+
+          if (resolvedIdentity && resolvedIdentity !== siteId) {
+            dbSite = await loadDbSite(buildScopedWhere(resolvedIdentity));
+          }
         }
       } catch (error) {
         if (!isPrismaSchemaMismatchError(error)) {
