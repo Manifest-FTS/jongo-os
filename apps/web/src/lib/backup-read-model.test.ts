@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildBackupReadModelSnapshot, getBackupOffsiteStatus } from "./backup-read-model";
+import {
+  buildBackupReadModelSnapshot,
+  getBackupOffsiteStatus,
+  getBackupRestoreVerification
+} from "./backup-read-model";
 
 describe("getBackupOffsiteStatus", () => {
   it("returns unknown when offsite signal is not provided", () => {
@@ -58,6 +62,50 @@ describe("getBackupOffsiteStatus", () => {
   });
 });
 
+describe("getBackupRestoreVerification", () => {
+  const now = new Date("2026-07-18T00:00:00Z");
+
+  it("reports 'never' when no restore test is recorded", () => {
+    const v = getBackupRestoreVerification();
+    expect(v.status).toBe("never");
+    expect(v.tone).toBe("unknown");
+  });
+
+  it("reports 'verified' when the last test is within RPO", () => {
+    const v = getBackupRestoreVerification({
+      lastVerifiedAt: "2026-07-17T18:00:00Z", // 6h before now
+      lastResult: "pass",
+      rpoHours: 26,
+      now
+    });
+    expect(v.status).toBe("verified");
+    expect(v.tone).toBe("healthy");
+    expect(v.ageHours).toBe(6);
+  });
+
+  it("reports 'stale' when the last verified restore is older than RPO", () => {
+    const v = getBackupRestoreVerification({
+      lastVerifiedAt: "2026-07-16T00:00:00Z", // 48h before now
+      lastResult: "pass",
+      rpoHours: 26,
+      now
+    });
+    expect(v.status).toBe("stale");
+    expect(v.tone).toBe("degraded");
+    expect(v.ageHours).toBe(48);
+  });
+
+  it("reports 'failed' when the last restore test failed, regardless of age", () => {
+    const v = getBackupRestoreVerification({
+      lastVerifiedAt: "2026-07-17T23:00:00Z",
+      lastResult: "fail",
+      now
+    });
+    expect(v.status).toBe("failed");
+    expect(v.tone).toBe("degraded");
+  });
+});
+
 describe("buildBackupReadModelSnapshot", () => {
   it("builds a stable database-layer snapshot", () => {
     const snapshot = buildBackupReadModelSnapshot({
@@ -70,5 +118,14 @@ describe("buildBackupReadModelSnapshot", () => {
     expect(snapshot.restoreScope).toBe("Database data only");
     expect(snapshot.stagingSafety).toBe("Not full clone-safe");
     expect(snapshot.ownership).toContain("Manifest FTS");
+  });
+
+  it("defaults restore verification to 'never' when none is supplied", () => {
+    const snapshot = buildBackupReadModelSnapshot({
+      ownership: "Manifest FTS",
+      localStatus: "Not protected",
+      schedules: []
+    });
+    expect(snapshot.restoreVerification.status).toBe("never");
   });
 });
