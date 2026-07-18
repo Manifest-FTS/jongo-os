@@ -465,7 +465,7 @@ async function tryAutoImportMappedCoolifySite(params: {
   session: Awaited<ReturnType<typeof auth>>;
   bootstrapGlobalAccess: boolean;
   authorizedByToken: boolean;
-}): Promise<boolean> {
+}): Promise<{ imported: boolean; resolvedIdentity?: string }> {
   const sessionUserId = params.session?.user?.id;
   const viewer = {
     userId: sessionUserId,
@@ -474,12 +474,13 @@ async function tryAutoImportMappedCoolifySite(params: {
 
   const workspace = await getSiteWorkspace(params.siteId, viewer);
   if (!workspace || workspace.source !== "coolify") {
-    return false;
+    return { imported: false };
   }
 
+  const resolvedIdentity = workspace.coolifyServiceUuid?.trim() || workspace.id?.trim() || undefined;
   const coolifyProjectId = workspace.coolifyProjectId?.trim();
   if (!coolifyProjectId) {
-    return false;
+    return { imported: false, resolvedIdentity };
   }
 
   const candidateOrg = await params.db.organization.findFirst({
@@ -518,7 +519,7 @@ async function tryAutoImportMappedCoolifySite(params: {
   });
 
   if (!candidateOrg) {
-    return false;
+    return { imported: false, resolvedIdentity };
   }
 
   const allowedByOwnership = Boolean(
@@ -529,12 +530,12 @@ async function tryAutoImportMappedCoolifySite(params: {
   );
 
   if (!params.authorizedByToken && !params.bootstrapGlobalAccess && !allowedByOwnership) {
-    return false;
+    return { imported: false, resolvedIdentity };
   }
 
   try {
     await importLinkedCoolifyProjectSites(candidateOrg.id);
-    return true;
+    return { imported: true, resolvedIdentity };
   } catch (error) {
     console.error("[staging] automatic Coolify site import failed", {
       siteId: params.siteId,
@@ -542,7 +543,7 @@ async function tryAutoImportMappedCoolifySite(params: {
       organizationId: candidateOrg.id,
       error
     });
-    return false;
+    return { imported: false, resolvedIdentity };
   }
 }
 
@@ -874,7 +875,7 @@ export async function GET(_req: Request, { params }: Params) {
   });
 
   if (!site) {
-    const imported = await tryAutoImportMappedCoolifySite({
+    const importResult = await tryAutoImportMappedCoolifySite({
       db,
       siteId,
       session,
@@ -882,7 +883,7 @@ export async function GET(_req: Request, { params }: Params) {
       authorizedByToken
     });
 
-    if (imported) {
+    if (importResult.imported) {
       site = await db.site.findFirst({
         where: lookupWhere(siteId),
         select: {
@@ -894,6 +895,20 @@ export async function GET(_req: Request, { params }: Params) {
           coolifyProjectId: true
         }
       });
+
+      if (!site && importResult.resolvedIdentity) {
+        site = await db.site.findFirst({
+          where: lookupWhere(importResult.resolvedIdentity),
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            stagingEnabled: true,
+            coolifyServiceUuid: true,
+            coolifyProjectId: true
+          }
+        });
+      }
     }
   }
 
@@ -1153,7 +1168,7 @@ export async function POST(req: Request, { params }: Params) {
   let site = await db.site.findFirst({ ...siteWhere, select: siteSelect });
 
   if (!site) {
-    const imported = await tryAutoImportMappedCoolifySite({
+    const importResult = await tryAutoImportMappedCoolifySite({
       db,
       siteId,
       session,
@@ -1161,8 +1176,37 @@ export async function POST(req: Request, { params }: Params) {
       authorizedByToken
     });
 
-    if (imported) {
+    if (importResult.imported) {
       site = await db.site.findFirst({ ...siteWhere, select: siteSelect });
+
+      if (!site && importResult.resolvedIdentity) {
+        const retryWhere =
+          authorizedByToken || bootstrapGlobalAccess
+            ? {
+                where: {
+                  ...buildSiteIdentityWhere(importResult.resolvedIdentity)
+                }
+              }
+            : {
+                where: {
+                  ...buildSiteIdentityWhere(importResult.resolvedIdentity),
+                  OR: [
+                    {
+                      organization: {
+                        deletedAt: null,
+                        OR: [
+                          { ownerId: session!.user!.id },
+                          { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
+                        ]
+                      }
+                    },
+                    { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
+                  ]
+                }
+              };
+
+        site = await db.site.findFirst({ ...retryWhere, select: siteSelect });
+      }
     }
   }
 

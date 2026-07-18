@@ -24,19 +24,20 @@ type Props = {
 
 export default function SiteInfoForm({ siteId, initial }: Props) {
   const router = useRouter();
+  const initialDerivedTemporarySlug = normalizeTemporaryDomainSlug(initial.name);
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description ?? "");
   const [coolifyUuid, setCoolifyUuid] = useState(initial.coolifyServiceUuid ?? "");
   const [coolifyProjectId, setCoolifyProjectId] = useState(initial.coolifyProjectId ?? "");
   const [gitUrl, setGitUrl] = useState(initial.gitRepositoryUrl ?? "");
-  const [temporaryDomainSlug, setTemporaryDomainSlug] = useState(initial.temporaryDomainSlug ?? "");
+  const [temporaryDomainSlug, setTemporaryDomainSlug] = useState(initial.temporaryDomainSlug ?? initialDerivedTemporarySlug);
   const [temporaryDomainSuffix, setTemporaryDomainSuffix] = useState<string>(
     initial.temporaryDomainSuffix ?? DEFAULT_TEMPORARY_DOMAIN_SUFFIX
   );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const derivedTemporarySlug = normalizeTemporaryDomainSlug(name) || normalizeTemporaryDomainSlug(initial.name);
+  const derivedTemporarySlug = normalizeTemporaryDomainSlug(name) || initialDerivedTemporarySlug;
   const effectiveTemporarySlug = normalizeTemporaryDomainSlug(temporaryDomainSlug) || derivedTemporarySlug;
   const temporaryDomainPreview = buildTemporaryProductionDomain({
     slug: effectiveTemporarySlug,

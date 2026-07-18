@@ -50,8 +50,7 @@ function makeUniqueSlug(baseSlug: string, existingSlugs: Set<string>): string {
 
 function createSiteSlug(site: SiteOverview, existingSlugs: Set<string>): string {
   const baseName = slugify(site.name) || "app";
-  const idSuffix = site.id.slice(0, 8).toLowerCase();
-  return makeUniqueSlug(`${baseName}-${idSuffix}`, existingSlugs);
+  return makeUniqueSlug(baseName, existingSlugs);
 }
 
 async function loadLinkedProjects(organizationId: string): Promise<LinkedProjectRecord[]> {
