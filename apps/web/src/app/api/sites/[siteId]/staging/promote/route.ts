@@ -338,10 +338,18 @@ export async function POST(req: Request, { params }: Params) {
       : {
           where: {
             ...buildSiteIdentityWhere(siteId),
-            organization: {
-              deletedAt: null,
-              OR: [{ ownerId: session!.user!.id }, { collaborators: { some: { userId: session!.user!.id } } }]
-            }
+            OR: [
+              {
+                organization: {
+                  deletedAt: null,
+                  OR: [
+                    { ownerId: session!.user!.id },
+                    { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
+                  ]
+                }
+              },
+              { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
+            ]
           },
           include: {
             organization: {
