@@ -6,7 +6,6 @@ import {
   applyCoolifyApplicationDomains,
   applyCoolifyServiceDomains,
   buildStagingSyncDryRunPlan,
-  deleteCoolifyStagingEnvironment,
   deriveCoolifyStagingDomainFromProduction,
   getCoolifyAppBackupInventory,
   destroyCoolifyApplication,
@@ -1639,7 +1638,6 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   let destroyResult: { ok: boolean; message: string } | null = null;
-  let destroyEnvironmentResult: { ok: boolean; message: string; reason?: string } | null = null;
   let capability = null as Awaited<ReturnType<typeof getCoolifyAppStagingCapability>> | null;
   let destroyedTargetCount = 0;
 
@@ -1653,8 +1651,7 @@ export async function POST(req: Request, { params }: Params) {
     try {
       capability = await getCoolifyAppStagingCapability(
         appUuid,
-        projectId,
-        { relaxedTargetMatch: Boolean(body.burnExisting) }
+        projectId
       );
     } catch {
       capability = null;
@@ -1662,38 +1659,17 @@ export async function POST(req: Request, { params }: Params) {
     const shouldDestroy = Boolean(body.burnExisting) && Boolean(capability?.detected && capability?.applicationUuid);
     if (shouldDestroy && capability?.applicationUuid) {
       try {
-        let lastDestroyMessage = "Staging target is no longer attached in Coolify.";
-        let cleanupFailed = false;
+        const result = await destroyCoolifyApplication(capability.applicationUuid, capability.resourceKind);
+        const lastDestroyMessage = result.message;
 
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          const activeCapability = attempt === 0
-            ? capability
-            : await getCoolifyAppStagingCapability(
-                appUuid,
-                projectId,
-                { relaxedTargetMatch: Boolean(body.burnExisting) }
-              );
-
-          if (!activeCapability?.applicationUuid) {
-            break;
-          }
-
-          const result = await destroyCoolifyApplication(activeCapability.applicationUuid, activeCapability.resourceKind);
-          lastDestroyMessage = result.message;
-
-          if (!result.ok) {
-            cleanupFailed = true;
-            break;
-          }
-
-          destroyedTargetCount += 1;
+        if (result.ok) {
+          destroyedTargetCount = 1;
           await sleep(500);
         }
 
         const afterDestroyProbe = await getCoolifyAppStagingCapability(
           appUuid,
-          projectId,
-          { relaxedTargetMatch: Boolean(body.burnExisting) }
+          projectId
         );
 
         if (!afterDestroyProbe.applicationUuid) {
@@ -1708,9 +1684,7 @@ export async function POST(req: Request, { params }: Params) {
         } else {
           destroyResult = {
             ok: false,
-            message: cleanupFailed
-              ? lastDestroyMessage
-              : "Some staging targets are still attached in Coolify and require manual cleanup."
+            message: lastDestroyMessage
           };
           capability = afterDestroyProbe;
         }
@@ -1722,26 +1696,11 @@ export async function POST(req: Request, { params }: Params) {
       }
     }
 
-    if (Boolean(body.burnExisting) && projectId) {
-      try {
-        const environmentResult = await deleteCoolifyStagingEnvironment(projectId);
-        destroyEnvironmentResult = {
-          ok: environmentResult.ok,
-          message: environmentResult.message,
-          reason: environmentResult.reason
-        };
-      } catch {
-        destroyEnvironmentResult = {
-          ok: false,
-          message: "Staging environment cleanup could not be verified automatically.",
-          reason: "auto_provision_unsupported"
-        };
-      }
-    }
+    // Intentionally do not auto-delete the shared staging environment here.
+    // Disabling a single site must never remove other sites' staging targets.
   }
 
-  const environmentDestroyed = destroyEnvironmentResult?.reason === "environment_deleted";
-  const destroyed = Boolean(destroyResult?.ok || environmentDestroyed);
+  const destroyed = Boolean(destroyResult?.ok);
   const destroyActionType = destroyed ? "staging_disable_destroy" : "staging_disable_requested";
 
   await tryRecordStagingAuditLog({
@@ -1756,7 +1715,7 @@ export async function POST(req: Request, { params }: Params) {
       destroyed,
       destroyedTargetCount,
       burnExisting: Boolean(body.burnExisting),
-      message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
+      message: destroyResult?.message ?? "Staging disabled in Jongo."
     },
     req
   });
@@ -1768,7 +1727,7 @@ export async function POST(req: Request, { params }: Params) {
     actionHint: !destroyed && Boolean(body.burnExisting)
       ? "Jongo disabled staging, but automatic cleanup failed. Remove staging resources manually in the infrastructure panel before re-enabling destructive cleanup."
       : null,
-    message: destroyResult?.message ?? destroyEnvironmentResult?.message ?? "Staging disabled in Jongo."
+    message: destroyResult?.message ?? "Staging disabled in Jongo."
   });
   } catch (error) {
     console.error("POST /api/sites/[siteId]/staging error:", error);

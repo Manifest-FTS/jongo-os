@@ -320,6 +320,12 @@ export async function PUT(req: Request, { params }: Params) {
         throw error;
       }
 
+      if ("temporaryDomainSlug" in updates || "temporaryDomainSuffix" in updates) {
+        return NextResponse.json({
+          error: "Temporary domain settings are not writable yet because the database migration is missing on this environment."
+        }, { status: 409 });
+      }
+
       const { temporaryDomainSlug: _tmpSlug, temporaryDomainSuffix: _tmpSuffix, ...safeUpdates } = updates;
       updated = await db.site.update({
         where: { id: site.id },
