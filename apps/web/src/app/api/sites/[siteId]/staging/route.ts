@@ -423,11 +423,7 @@ function buildSiteIdentityWhere(siteId: string) {
   }
 
   return {
-    OR: [
-      { slug: normalizedSiteId },
-      { coolifyServiceUuid: normalizedSiteId },
-      { coolifyServiceId: normalizedSiteId }
-    ],
+    slug: normalizedSiteId,
     deletedAt: null
   };
 }
