@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { destroyCoolifyApplication } from "@/lib/coolify";
 import { isAdminRole } from "@/lib/roles";
 import {
   normalizeTemporaryDomainSlug,
@@ -338,13 +339,21 @@ export async function PUT(req: Request, { params }: Params) {
  * DELETE /api/sites/[siteId]
  * Soft-deletes the site. Requires owner or admin on the parent organization.
  */
-export async function DELETE(_req: Request, { params }: Params) {
+export async function DELETE(req: Request, { params }: Params) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { siteId } = await params;
+
+  let deleteCoolifyResource = false;
+  try {
+    const body = await req.json();
+    deleteCoolifyResource = body?.deleteCoolifyResource === true;
+  } catch {
+    deleteCoolifyResource = false;
+  }
 
   try {
     const { db } = await import("@/lib/db");
@@ -359,6 +368,7 @@ export async function DELETE(_req: Request, { params }: Params) {
       },
       select: {
         id: true,
+        coolifyServiceUuid: true,
         organization: {
           select: { id: true, ownerId: true, collaborators: { where: { userId: session.user.id }, select: { role: true } } }
         }
@@ -375,9 +385,23 @@ export async function DELETE(_req: Request, { params }: Params) {
       return NextResponse.json({ error: "Only admins can delete apps" }, { status: 403 });
     }
 
+    let coolifyDestroyed = false;
+    let coolifyDeletionMessage: string | undefined;
+
+    if (deleteCoolifyResource && site.coolifyServiceUuid?.trim()) {
+      const deletion = await destroyCoolifyApplication(site.coolifyServiceUuid.trim());
+      coolifyDestroyed = deletion.ok;
+      coolifyDeletionMessage = deletion.message;
+    }
+
     await db.site.update({ where: { id: site.id }, data: { deletedAt: new Date() } });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      coolifyDeletionRequested: deleteCoolifyResource,
+      coolifyDestroyed,
+      coolifyDeletionMessage
+    });
   } catch (err) {
     console.error("DELETE /api/sites/[id] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

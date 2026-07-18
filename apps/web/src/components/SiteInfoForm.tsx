@@ -37,6 +37,8 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteCoolifyResource, setDeleteCoolifyResource] = useState(false);
   const derivedTemporarySlug = normalizeTemporaryDomainSlug(name) || initialDerivedTemporarySlug;
   const effectiveTemporarySlug = normalizeTemporaryDomainSlug(temporaryDomainSlug) || derivedTemporarySlug;
   const temporaryDomainPreview = buildTemporaryProductionDomain({
@@ -84,6 +86,46 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
       setError("Network error — please try again");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeleteSite() {
+    if (deleting || loading) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      deleteCoolifyResource
+        ? "Delete this app from Jongo and attempt to delete the linked Coolify resource as well?"
+        : "Delete this app from Jongo?"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+    setSuccess(false);
+    setDeleting(true);
+
+    try {
+      const res = await fetch(`/api/sites/${siteId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deleteCoolifyResource })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Failed to delete app");
+        return;
+      }
+
+      router.replace("/apps");
+      router.refresh();
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -170,6 +212,19 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
       <button type="submit" className="btn" disabled={loading}>
         {loading ? "Saving…" : "Save Changes"}
       </button>
+      <div style={{ marginTop: "1rem", paddingTop: "0.85rem", borderTop: "1px solid var(--border)" }}>
+        <label className="form-help" style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginBottom: "0.65rem" }}>
+          <input
+            type="checkbox"
+            checked={deleteCoolifyResource}
+            onChange={(e) => setDeleteCoolifyResource(e.target.checked)}
+          />
+          Also delete linked Coolify resource (if linked)
+        </label>
+        <button type="button" className="btn btn-danger" disabled={deleting || loading} onClick={handleDeleteSite}>
+          {deleting ? "Deleting…" : "Delete App"}
+        </button>
+      </div>
     </form>
   );
 }
