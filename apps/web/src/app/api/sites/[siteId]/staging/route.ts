@@ -731,6 +731,11 @@ export async function GET(_req: Request, { params }: Params) {
       coolifyProjectId: true
     }
   });
+
+  if (!site) {
+    return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+  }
+
   let temporaryDomainSlug: string | null = null;
   let temporaryDomainSuffix: string | null = null;
   try {
@@ -747,11 +752,6 @@ export async function GET(_req: Request, { params }: Params) {
     if (!isPrismaSchemaMismatchError(error)) {
       throw error;
     }
-  }
-
-
-  if (!site) {
-    return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
   }
 
   const appUuid = site.coolifyServiceUuid?.trim() || "";
@@ -1416,7 +1416,11 @@ export async function POST(req: Request, { params }: Params) {
 
   if (appUuid) {
     try {
-      capability = await getCoolifyAppStagingCapability(appUuid, projectId);
+      capability = await getCoolifyAppStagingCapability(
+        appUuid,
+        projectId,
+        { relaxedTargetMatch: Boolean(body.burnExisting) }
+      );
     } catch {
       capability = null;
     }
@@ -1427,7 +1431,11 @@ export async function POST(req: Request, { params }: Params) {
         destroyResult = { ok: result.ok, message: result.message };
 
         if (!destroyResult.ok) {
-          const afterDestroyProbe = await getCoolifyAppStagingCapability(appUuid, projectId);
+          const afterDestroyProbe = await getCoolifyAppStagingCapability(
+            appUuid,
+            projectId,
+            { relaxedTargetMatch: Boolean(body.burnExisting) }
+          );
           if (!afterDestroyProbe.applicationUuid) {
             destroyResult = {
               ok: true,
