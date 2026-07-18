@@ -101,6 +101,35 @@ function shouldApplyViewerScope(viewer?: ViewerContext): boolean {
   return Boolean(getScopedViewerUserId(viewer) && !hasBootstrapGlobalAccess(viewer));
 }
 
+let hasCheckedTemporaryDomainColumns = false;
+let temporaryDomainColumnsAvailable = false;
+
+async function hasTemporaryDomainColumns(prisma: any): Promise<boolean> {
+  if (hasCheckedTemporaryDomainColumns) {
+    return temporaryDomainColumnsAvailable;
+  }
+
+  try {
+    const columns = await prisma.$queryRaw<Array<{ columnName: string }>>`
+      select column_name as "columnName"
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'Site'
+        and column_name in ('temporaryDomainSlug', 'temporaryDomainSuffix')
+    `;
+
+    const available = new Set(columns.map((column: { columnName: string }) => column.columnName));
+    temporaryDomainColumnsAvailable =
+      available.has("temporaryDomainSlug") && available.has("temporaryDomainSuffix");
+    hasCheckedTemporaryDomainColumns = true;
+    return temporaryDomainColumnsAvailable;
+  } catch {
+    hasCheckedTemporaryDomainColumns = true;
+    temporaryDomainColumnsAvailable = false;
+    return false;
+  }
+}
+
 function buildSiteIdentityWhere(siteId: string): Record<string, unknown> {
   if (isUuid(siteId)) {
     return {
@@ -110,7 +139,7 @@ function buildSiteIdentityWhere(siteId: string): Record<string, unknown> {
   }
 
   return {
-    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }],
+    slug: siteId,
     deletedAt: null
   };
 }
@@ -1815,19 +1844,24 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
       if (dbSite) {
         let temporaryDomainSlug: string | undefined;
         let temporaryDomainSuffix: string | undefined;
-        try {
-          const temporaryDomainValues = await prisma.site.findUnique({
-            where: { id: dbSite.id },
-            select: {
-              temporaryDomainSlug: true,
-              temporaryDomainSuffix: true
+        if (await hasTemporaryDomainColumns(prisma)) {
+          try {
+            const temporaryDomainValues = await prisma.site.findUnique({
+              where: { id: dbSite.id },
+              select: {
+                temporaryDomainSlug: true,
+                temporaryDomainSuffix: true
+              }
+            });
+            temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? undefined;
+            temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? undefined;
+          } catch (error) {
+            if (!isPrismaSchemaMismatchError(error)) {
+              throw error;
             }
-          });
-          temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? undefined;
-          temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? undefined;
-        } catch (error) {
-          if (!isPrismaSchemaMismatchError(error)) {
-            throw error;
+
+            hasCheckedTemporaryDomainColumns = true;
+            temporaryDomainColumnsAvailable = false;
           }
         }
 
