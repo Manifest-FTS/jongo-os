@@ -447,6 +447,35 @@ function isPrismaSchemaMismatchError(error: unknown): boolean {
   );
 }
 
+let hasCheckedTemporaryDomainColumns = false;
+let temporaryDomainColumnsAvailable = false;
+
+async function hasTemporaryDomainColumns(db: any): Promise<boolean> {
+  if (hasCheckedTemporaryDomainColumns) {
+    return temporaryDomainColumnsAvailable;
+  }
+
+  try {
+    const columns = await db.$queryRaw<Array<{ columnName: string }>>`
+      select column_name as "columnName"
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'Site'
+        and column_name in ('temporaryDomainSlug', 'temporaryDomainSuffix')
+    `;
+
+    const available = new Set(columns.map((column: { columnName: string }) => column.columnName));
+    temporaryDomainColumnsAvailable =
+      available.has("temporaryDomainSlug") && available.has("temporaryDomainSuffix");
+    hasCheckedTemporaryDomainColumns = true;
+    return temporaryDomainColumnsAvailable;
+  } catch {
+    hasCheckedTemporaryDomainColumns = true;
+    temporaryDomainColumnsAvailable = false;
+    return false;
+  }
+}
+
 function stagingTargetLabel(resourceKind?: string): "application" | "service" {
   return resourceKind === "service" ? "service" : "application";
 }
@@ -746,19 +775,24 @@ export async function GET(_req: Request, { params }: Params) {
 
   let temporaryDomainSlug: string | null = null;
   let temporaryDomainSuffix: string | null = null;
-  try {
-    const temporaryDomainValues = await db.site.findUnique({
-      where: { id: site.id },
-      select: {
-        temporaryDomainSlug: true,
-        temporaryDomainSuffix: true
+  if (await hasTemporaryDomainColumns(db)) {
+    try {
+      const temporaryDomainValues = await db.site.findUnique({
+        where: { id: site.id },
+        select: {
+          temporaryDomainSlug: true,
+          temporaryDomainSuffix: true
+        }
+      });
+      temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
+      temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? null;
+    } catch (error) {
+      if (!isPrismaSchemaMismatchError(error)) {
+        throw error;
       }
-    });
-    temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
-    temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? null;
-  } catch (error) {
-    if (!isPrismaSchemaMismatchError(error)) {
-      throw error;
+
+      hasCheckedTemporaryDomainColumns = true;
+      temporaryDomainColumnsAvailable = false;
     }
   }
 
@@ -1014,17 +1048,22 @@ export async function POST(req: Request, { params }: Params) {
   const appUuid = site.coolifyServiceUuid?.trim() || "";
   const projectId = site.coolifyProjectId?.trim() || undefined;
   let temporaryDomainSlug: string | null = null;
-  try {
-    const temporaryDomainValues = await db.site.findUnique({
-      where: { id: site.id },
-      select: {
-        temporaryDomainSlug: true
+  if (await hasTemporaryDomainColumns(db)) {
+    try {
+      const temporaryDomainValues = await db.site.findUnique({
+        where: { id: site.id },
+        select: {
+          temporaryDomainSlug: true
+        }
+      });
+      temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
+    } catch (error) {
+      if (!isPrismaSchemaMismatchError(error)) {
+        throw error;
       }
-    });
-    temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
-  } catch (error) {
-    if (!isPrismaSchemaMismatchError(error)) {
-      throw error;
+
+      hasCheckedTemporaryDomainColumns = true;
+      temporaryDomainColumnsAvailable = false;
     }
   }
 
