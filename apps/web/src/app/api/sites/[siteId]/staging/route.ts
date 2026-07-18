@@ -17,7 +17,9 @@ import {
   triggerCoolifyDeploy,
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
+import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
+import { getSiteWorkspace } from "@/lib/repositories";
 import { StagingProvisioningPipeline } from "@/orchestration/staging";
 
 type Params = { params: Promise<{ siteId: string }> };
@@ -400,6 +402,20 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function normalizeEmail(value?: string | null): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function hasBootstrapGlobalAccess(session: Awaited<ReturnType<typeof auth>>): boolean {
+  const configuredAdmin = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
+  const sessionEmail = normalizeEmail(session?.user?.email);
+  if (!configuredAdmin || !sessionEmail) {
+    return false;
+  }
+
+  return configuredAdmin === sessionEmail;
+}
+
 function buildSiteIdentityWhere(siteId: string) {
   const normalizedSiteId = decodeURIComponent(siteId).trim();
 
@@ -441,6 +457,93 @@ function isPrismaSchemaMismatchError(error: unknown): boolean {
     (message.includes("column") && message.includes("does not exist")) ||
     (message.includes("the column") && message.includes("does not exist"))
   );
+}
+
+async function tryAutoImportMappedCoolifySite(params: {
+  db: any;
+  siteId: string;
+  session: Awaited<ReturnType<typeof auth>>;
+  bootstrapGlobalAccess: boolean;
+  authorizedByToken: boolean;
+}): Promise<boolean> {
+  const sessionUserId = params.session?.user?.id;
+  const viewer = {
+    userId: sessionUserId,
+    email: params.session?.user?.email
+  };
+
+  const workspace = await getSiteWorkspace(params.siteId, viewer);
+  if (!workspace || workspace.source !== "coolify") {
+    return false;
+  }
+
+  const coolifyProjectId = workspace.coolifyProjectId?.trim();
+  if (!coolifyProjectId) {
+    return false;
+  }
+
+  const candidateOrg = await params.db.organization.findFirst({
+    where: {
+      deletedAt: null,
+      OR: [
+        { coolifyProjectId },
+        {
+          coolifyProjectLinks: {
+            some: {
+              coolifyProjectId,
+              deletedAt: null
+            }
+          }
+        }
+      ]
+    },
+    select: {
+      id: true,
+      ownerId: true,
+      collaborators: sessionUserId
+        ? {
+            where: {
+              userId: sessionUserId,
+              deletedAt: null
+            },
+            select: { id: true },
+            take: 1
+          }
+        : {
+            where: { deletedAt: null },
+            select: { id: true },
+            take: 1
+          }
+    }
+  });
+
+  if (!candidateOrg) {
+    return false;
+  }
+
+  const allowedByOwnership = Boolean(
+    sessionUserId && (
+      candidateOrg.ownerId === sessionUserId ||
+      candidateOrg.collaborators.length > 0
+    )
+  );
+
+  if (!params.authorizedByToken && !params.bootstrapGlobalAccess && !allowedByOwnership) {
+    return false;
+  }
+
+  try {
+    await importLinkedCoolifyProjectSites(candidateOrg.id);
+    return true;
+  } catch (error) {
+    console.error("[staging] automatic Coolify site import failed", {
+      siteId: params.siteId,
+      coolifyProjectId,
+      organizationId: candidateOrg.id,
+      error
+    });
+    return false;
+  }
 }
 
 let hasCheckedTemporaryDomainColumns = false;
@@ -728,6 +831,7 @@ async function tryRecordStagingAuditLog(params: {
 export async function GET(_req: Request, { params }: Params) {
   const authorizedByToken = hasOpsToken(_req);
   const session = await auth();
+  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session);
   if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -735,13 +839,13 @@ export async function GET(_req: Request, { params }: Params) {
   const { siteId } = await params;
   const { db } = await import("@/lib/db");
 
-  const site = await db.site.findFirst({
-    where: authorizedByToken
+  const lookupWhere = (resolvedSiteId: string) => (
+    authorizedByToken || bootstrapGlobalAccess
       ? {
-          ...buildSiteIdentityWhere(siteId)
+          ...buildSiteIdentityWhere(resolvedSiteId)
         }
       : {
-          ...buildSiteIdentityWhere(siteId),
+          ...buildSiteIdentityWhere(resolvedSiteId),
           OR: [
             {
               organization: {
@@ -754,7 +858,11 @@ export async function GET(_req: Request, { params }: Params) {
             },
             { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
           ]
-        },
+        }
+  );
+
+  let site = await db.site.findFirst({
+    where: lookupWhere(siteId),
     select: {
       id: true,
       slug: true,
@@ -764,6 +872,30 @@ export async function GET(_req: Request, { params }: Params) {
       coolifyProjectId: true
     }
   });
+
+  if (!site) {
+    const imported = await tryAutoImportMappedCoolifySite({
+      db,
+      siteId,
+      session,
+      bootstrapGlobalAccess,
+      authorizedByToken
+    });
+
+    if (imported) {
+      site = await db.site.findFirst({
+        where: lookupWhere(siteId),
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          stagingEnabled: true,
+          coolifyServiceUuid: true,
+          coolifyProjectId: true
+        }
+      });
+    }
+  }
 
   if (!site) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
@@ -951,6 +1083,7 @@ export async function GET(_req: Request, { params }: Params) {
 export async function POST(req: Request, { params }: Params) {
   const authorizedByToken = hasOpsToken(req);
   const session = await auth();
+  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session);
   if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -973,27 +1106,30 @@ export async function POST(req: Request, { params }: Params) {
   try {
 
   const { db } = await import("@/lib/db");
-  const site = await db.site.findFirst(
-    authorizedByToken
+  const siteSelect = {
+    id: true,
+    organizationId: true,
+    slug: true,
+    name: true,
+    stagingEnabled: true,
+    coolifyServiceUuid: true,
+    coolifyProjectId: true,
+    organization: {
+      select: {
+        id: true,
+        ownerId: true,
+        collaborators: session?.user?.id
+          ? { where: { userId: session.user.id }, select: { role: true } }
+          : { select: { role: true }, take: 1 }
+      }
+    }
+  };
+
+  const siteWhere =
+    authorizedByToken || bootstrapGlobalAccess
       ? {
           where: {
             ...buildSiteIdentityWhere(siteId)
-          },
-        select: {
-          id: true,
-          organizationId: true,
-          slug: true,
-          name: true,
-          stagingEnabled: true,
-          coolifyServiceUuid: true,
-          coolifyProjectId: true,
-            organization: {
-              select: {
-                id: true,
-                ownerId: true,
-                collaborators: { select: { role: true }, take: 1 }
-              }
-            }
           }
         }
       : {
@@ -1011,32 +1147,35 @@ export async function POST(req: Request, { params }: Params) {
               },
               { collaborators: { some: { userId: session!.user!.id, deletedAt: null } } }
             ]
-          },
-          select: {
-            id: true,
-            organizationId: true,
-            slug: true,
-            name: true,
-            stagingEnabled: true,
-            coolifyServiceUuid: true,
-            coolifyProjectId: true,
-            organization: {
-              select: {
-                id: true,
-                ownerId: true,
-                collaborators: { where: { userId: session!.user!.id }, select: { role: true } }
-              }
-            }
           }
-        }
-  );
+        };
+
+  let site = await db.site.findFirst({ ...siteWhere, select: siteSelect });
+
+  if (!site) {
+    const imported = await tryAutoImportMappedCoolifySite({
+      db,
+      siteId,
+      session,
+      bootstrapGlobalAccess,
+      authorizedByToken
+    });
+
+    if (imported) {
+      site = await db.site.findFirst({ ...siteWhere, select: siteSelect });
+    }
+  }
 
   if (!site) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
   }
 
   const callerIsOwner = Boolean(session?.user?.id && site.organization.ownerId === session.user.id);
-  const callerIsAdmin = authorizedByToken || callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
+  const callerIsAdmin =
+    authorizedByToken ||
+    bootstrapGlobalAccess ||
+    callerIsOwner ||
+    isAdminRole(site.organization.collaborators[0]?.role);
   if (!callerIsAdmin) {
     return NextResponse.json({ error: "Only admins can manage staging" }, { status: 403 });
   }
@@ -1599,6 +1738,8 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session);
+
   const { siteId } = await params;
 
   let body: { domains?: string };
@@ -1614,21 +1755,25 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const { db } = await import("@/lib/db");
   const site = await db.site.findFirst({
-    where: {
-      ...buildSiteIdentityWhere(siteId),
-      OR: [
-        {
-          organization: {
-            deletedAt: null,
-            OR: [
-              { ownerId: session.user.id },
-              { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-            ]
-          }
+    where: bootstrapGlobalAccess
+      ? {
+          ...buildSiteIdentityWhere(siteId)
+        }
+      : {
+          ...buildSiteIdentityWhere(siteId),
+          OR: [
+            {
+              organization: {
+                deletedAt: null,
+                OR: [
+                  { ownerId: session.user.id },
+                  { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+                ]
+              }
+            },
+            { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
+          ]
         },
-        { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-      ]
-    },
     include: {
       organization: {
         select: {
@@ -1645,7 +1790,7 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   const callerIsOwner = site.organization.ownerId === session.user.id;
-  const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
+  const callerIsAdmin = bootstrapGlobalAccess || callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
   if (!callerIsAdmin) {
     return NextResponse.json({ error: "Only admins can manage staging domains" }, { status: 403 });
   }
