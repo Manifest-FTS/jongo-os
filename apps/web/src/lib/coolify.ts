@@ -3204,10 +3204,15 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
  * Looks for a staging environment in the same project and for a staging application.
  * Read-only – never creates or modifies resources.
  */
-export async function getCoolifyAppStagingCapability(appUuid: string, projectId?: string): Promise<StagingCapabilityRecord> {
+export async function getCoolifyAppStagingCapability(
+  appUuid: string,
+  projectId?: string,
+  options?: { relaxedTargetMatch?: boolean }
+): Promise<StagingCapabilityRecord> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
   const checkedAt = new Date().toISOString();
+  const relaxedTargetMatch = Boolean(options?.relaxedTargetMatch);
 
   if (!baseUrl || !token) {
     return { detected: false, note: "missing_credentials", checkedAt };
@@ -3266,6 +3271,14 @@ export async function getCoolifyAppStagingCapability(appUuid: string, projectId?
       });
 
       const matched = sanitized.filter((candidate) => isLikelyStagingSibling(candidate));
+      if (matched.length === 0 && relaxedTargetMatch && sanitized.length === 1) {
+        return {
+          selected: sanitized[0],
+          candidateCount: sanitized.length,
+          matchedCount: matched.length
+        };
+      }
+
       return {
         selected: matched[0],
         candidateCount: sanitized.length,
