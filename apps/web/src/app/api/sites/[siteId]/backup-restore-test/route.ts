@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
 import { isAdminRole } from "@/lib/roles";
+import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 
 export const runtime = "nodejs";
 
@@ -18,12 +19,12 @@ function hasValue(value?: string | null): boolean {
 }
 
 // scripts/ sits at the repo root; the built app runs from apps/web.
-function resolveVerifyScriptPath(): string | null {
+function resolveScriptPath(name: string): string | null {
   const cwd = process.cwd();
   const candidates = [
-    path.join(cwd, "scripts", "verify-jongo-backup.mjs"),
-    path.join(cwd, "..", "scripts", "verify-jongo-backup.mjs"),
-    path.join(cwd, "..", "..", "scripts", "verify-jongo-backup.mjs")
+    path.join(cwd, "scripts", name),
+    path.join(cwd, "..", "scripts", name),
+    path.join(cwd, "..", "..", "scripts", name)
   ];
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
@@ -74,27 +75,9 @@ export async function POST(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Only admins can run restore tests" }, { status: 403 });
   }
 
-  const resourceUuid = site.coolifyServiceUuid?.trim();
-  if (!resourceUuid) {
+  const appUuid = site.coolifyServiceUuid?.trim();
+  if (!appUuid) {
     return NextResponse.json({ error: "This app is not linked to a Coolify resource." }, { status: 409 });
-  }
-
-  // The restore test needs the DB user to read ground-truth row counts, and we
-  // will not guess it per-resource. Only the configured backup-testable DB is
-  // eligible. Set JONGO_DB_CONTAINER / JONGO_DB_USER in the app environment.
-  const configuredContainer = (process.env.JONGO_DB_CONTAINER || "").trim();
-  const configuredUser = (process.env.JONGO_DB_USER || "").trim();
-  if (!configuredContainer || !configuredUser) {
-    return NextResponse.json(
-      { ok: false, reason: "not_configured", message: "Restore testing is not configured (JONGO_DB_CONTAINER / JONGO_DB_USER unset)." },
-      { status: 412 }
-    );
-  }
-  if (resourceUuid !== configuredContainer) {
-    return NextResponse.json(
-      { ok: false, reason: "resource_not_eligible", message: "Restore testing is only configured for the platform database, not this resource." },
-      { status: 412 }
-    );
   }
 
   if (!hasValue(process.env.STAGING_SYNC_SSH_HOST) && !hasValue(process.env.COOLIFY_SSH_HOST)) {
@@ -104,26 +87,42 @@ export async function POST(_request: Request, { params }: Params) {
     );
   }
 
-  const scriptPath = resolveVerifyScriptPath();
+  // Resolve THIS app's own database resource (container UUID + engine) from the
+  // Coolify backup inventory. Prefer one with a successful backup to restore.
+  const inventory = await getCoolifyAppBackupInventory(appUuid);
+  const coverage = inventory.databaseCoverage ?? [];
+  const target =
+    coverage.find((c) => c.hasSuccessfulExecution) ??
+    coverage.find((c) => c.hasSchedule) ??
+    coverage[0];
+
+  if (!target) {
+    return NextResponse.json(
+      { ok: false, reason: "no_database", message: "No backed-up database was found for this app." },
+      { status: 412 }
+    );
+  }
+
+  const scriptPath = resolveScriptPath("restore-test-resource.mjs");
   if (!scriptPath) {
     return NextResponse.json({ error: "Restore-test script not found." }, { status: 500 });
   }
 
   // Detached: the script records its own result when it completes.
-  const child = spawn(process.execPath, [scriptPath, "--restore-test"], {
-    cwd: process.cwd(),
-    env: { ...process.env, JONGO_DB_CONTAINER: configuredContainer, JONGO_DB_USER: configuredUser },
-    detached: true,
-    stdio: "ignore"
-  });
+  const child = spawn(
+    process.execPath,
+    [scriptPath, "--resource-uuid", target.resourceId, "--engine", target.engine],
+    { cwd: process.cwd(), env: process.env, detached: true, stdio: "ignore" }
+  );
   child.unref();
 
   return NextResponse.json(
     {
       ok: true,
       status: "started",
-      resourceUuid,
-      message: "Restore test started. It restores into an isolated container; the result appears here in a few minutes."
+      resourceUuid: target.resourceId,
+      engine: target.engine,
+      message: `Restore test started for ${target.resourceName}. It restores into an isolated container; the result appears here in a few minutes.`
     },
     { status: 202 }
   );
