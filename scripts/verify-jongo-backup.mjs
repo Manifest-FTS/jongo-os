@@ -175,7 +175,7 @@ docker run -d --name "$PROBE" -e POSTGRES_PASSWORD=dr-restore -e POSTGRES_DB=${D
 for i in $(seq 1 30); do docker exec "$PROBE" pg_isready -q && break; sleep 1; done
 
 START=$(date +%s)
-if docker exec -i "$PROBE" pg_restore --no-owner --no-acl -U postgres -d ${D} < "$LATEST" 2>/tmp/${PROBE}.err; then
+if docker exec -i "$PROBE" pg_restore --no-owner --no-acl -U postgres -d ${D} < "$LATEST" 2>/tmp/$PROBE.err; then
   echo "RESTORE=ok"
 else
   echo "RESTORE=completed_with_warnings"
@@ -194,7 +194,7 @@ LIVE=$(docker exec ${C} psql -U ${U} -d ${D} -tA -c \
 echo "LIVE_ROWS_SITE_USER_ORG=$LIVE"
 
 docker rm -f "$PROBE" >/dev/null 2>&1 || true
-rm -f /tmp/${PROBE}.err
+rm -f /tmp/$PROBE.err
 echo "TEARDOWN=ok"
 `;
 }
