@@ -98,6 +98,12 @@ export default async function BackupsPage({ params }: Params) {
   const recentExecutions = inventory?.recentExecutions ?? [];
   const databaseCoverage = inventory?.databaseCoverage ?? [];
   const uncoveredDatabases = databaseCoverage.filter((entry) => !entry.hasSchedule);
+
+  // The database this app's restore test targets (prefer one with a real backup).
+  const restoreTargetDb =
+    databaseCoverage.find((entry) => entry.hasSuccessfulExecution) ??
+    databaseCoverage.find((entry) => entry.hasSchedule) ??
+    databaseCoverage[0];
   const lastSuccessfulBackup = getLastSuccessfulBackup(inventory);
   const failureChain = hasFailureChain(inventory);
   const backupRunning = isRunningBackup(inventory);
@@ -158,20 +164,17 @@ export default async function BackupsPage({ params }: Params) {
           ? "Not protected"
           : "Status unknown";
 
-  // Restore-test outcome recorded by scripts/verify-jongo-backup.mjs, keyed by
-  // this resource's Coolify UUID. Absent → chip shows "Never verified".
-  const restoreVerificationRecord = appUuid
+  // Restore-test outcome recorded by scripts/restore-test-resource.mjs, keyed by
+  // the DB resource UUID it tested. Absent → chip shows "Never verified".
+  const restoreVerificationRecord = restoreTargetDb
     ? await (async () => {
         const { db } = await import("@/lib/db");
-        return db.backupRestoreVerification.findUnique({ where: { resourceUuid: appUuid } });
+        return db.backupRestoreVerification.findUnique({ where: { resourceUuid: restoreTargetDb.resourceId } });
       })()
     : null;
 
-  // The one-click restore test only runs for the configured platform database
-  // (the script needs its DB user). Render the trigger only where it is eligible.
-  const restoreTestEligible = Boolean(
-    appUuid && appUuid === (process.env.JONGO_DB_CONTAINER || "").trim()
-  );
+  // Show the one-click restore test wherever the app has a backed-up database.
+  const restoreTestEligible = Boolean(restoreTargetDb?.hasSuccessfulExecution);
 
   const ownershipLabel = `${workspace.clientName} / ${workspace.name}`;
   const readModel = buildBackupReadModelSnapshot({
