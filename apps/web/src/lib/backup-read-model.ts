@@ -58,7 +58,7 @@ export function getBackupRestoreVerification(
       lastVerifiedAt: null,
       ageHours: null,
       rpoHours,
-      detail: "No restore test has been recorded. Run `npm run ops:verify-backup:restore-test`."
+      detail: "No restore test has been recorded yet. Use “Run restore test” to verify this backup restores cleanly."
     };
   }
 
