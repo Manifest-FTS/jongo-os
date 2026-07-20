@@ -3,16 +3,12 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
-import { isAdminRole } from "@/lib/roles";
+import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ siteId: string }> };
-
-function normalizeEmail(value?: string | null): string {
-  return value?.trim().toLowerCase() ?? "";
-}
 
 function hasValue(value?: string | null): boolean {
   return Boolean(value && value.trim().length > 0);
@@ -39,43 +35,43 @@ function resolveScriptPath(name: string): string | null {
  * records its own result via /api/ops/backup-restore-verification when it
  * finishes, so the chip updates on the next page load.
  */
-export async function POST(_request: Request, { params }: Params) {
+export async function POST(_request: Request, ctx: Params) {
+  try {
+    return await handleRestoreTest(ctx);
+  } catch (error) {
+    return NextResponse.json(
+      { error: `Restore test could not be started: ${error instanceof Error ? error.message : "unknown error"}` },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleRestoreTest({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { db } = await import("@/lib/db");
-  const site = await db.site.findFirst({
-    where: {
-      OR: [{ id: siteId }, { slug: siteId }],
-      deletedAt: null
-    },
-    include: {
-      organization: {
-        select: {
-          ownerId: true,
-          collaborators: { where: { userId: session.user.id }, select: { role: true } }
-        }
-      }
-    }
+  // Resolve the site the same way the page does (handles slug or UUID, and
+  // scopes to sites the viewer can see) — a raw findFirst by id would throw on
+  // a slug because id is a UUID column.
+  const workspace = await getSiteWorkspace(siteId, {
+    userId: session.user.id,
+    email: session.user.email
   });
-
-  if (!site) {
+  if (!workspace) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
   }
 
-  const bootstrapAdmin = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const callerIsOwner = site.organization.ownerId === session.user.id;
-  const callerIsBootstrap = Boolean(bootstrapAdmin && normalizeEmail(session.user.email) === bootstrapAdmin);
-  const callerIsAdmin =
-    callerIsOwner || callerIsBootstrap || isAdminRole(site.organization.collaborators[0]?.role);
+  const callerIsAdmin = Boolean(
+    workspace.organizationId && (await isClientAdmin(workspace.organizationId, session.user.id))
+  );
   if (!callerIsAdmin) {
     return NextResponse.json({ error: "Only admins can run restore tests" }, { status: 403 });
   }
 
-  const appUuid = site.coolifyServiceUuid?.trim();
+  const appUuid = workspace.coolifyServiceUuid?.trim();
   if (!appUuid) {
     return NextResponse.json({ error: "This app is not linked to a Coolify resource." }, { status: 409 });
   }
