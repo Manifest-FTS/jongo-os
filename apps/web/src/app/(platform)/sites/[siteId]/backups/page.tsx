@@ -4,6 +4,7 @@ import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import { auth } from "@/lib/auth.config";
+import RestoreTestButton from "@/components/RestoreTestButton";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -166,6 +167,12 @@ export default async function BackupsPage({ params }: Params) {
       })()
     : null;
 
+  // The one-click restore test only runs for the configured platform database
+  // (the script needs its DB user). Render the trigger only where it is eligible.
+  const restoreTestEligible = Boolean(
+    appUuid && appUuid === (process.env.JONGO_DB_CONTAINER || "").trim()
+  );
+
   const ownershipLabel = `${workspace.clientName} / ${workspace.name}`;
   const readModel = buildBackupReadModelSnapshot({
     ownership: ownershipLabel,
@@ -311,6 +318,11 @@ export default async function BackupsPage({ params }: Params) {
                 <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
                   {readModel.restoreVerification.detail}
                 </p>
+                {restoreTestEligible ? (
+                  <div style={{ marginTop: "0.6rem" }}>
+                    <RestoreTestButton siteId={siteId} />
+                  </div>
+                ) : null}
               </div>
               <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
                 <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore scope</p>
