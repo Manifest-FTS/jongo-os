@@ -5,6 +5,7 @@ import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS }
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import { auth } from "@/lib/auth.config";
 import RestoreTestButton from "@/components/RestoreTestButton";
+import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPanel";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -176,6 +177,33 @@ export default async function BackupsPage({ params }: Params) {
   // Show the one-click restore test wherever the app has a backed-up database.
   const restoreTestEligible = Boolean(restoreTargetDb?.hasSuccessfulExecution);
 
+  // Jongo-managed full-site backups (files + database, offsite in Backblaze).
+  const siteBackupRows: SiteBackupRow[] = workspace.id
+    ? await (async () => {
+        const { db } = await import("@/lib/db");
+        const rows = await db.siteBackup.findMany({
+          where: { siteId: workspace.id },
+          orderBy: { startedAt: "desc" },
+          take: 20
+        });
+        return rows.map((row: Record<string, unknown>) => ({
+          id: String(row.id),
+          startedAt: (row.startedAt as Date).toISOString(),
+          completedAt: row.completedAt ? (row.completedAt as Date).toISOString() : null,
+          status: String(row.status),
+          trigger: String(row.trigger),
+          label: (row.label as string | null) ?? null,
+          posts: (row.posts as number | null) ?? null,
+          pages: (row.pages as number | null) ?? null,
+          plugins: (row.plugins as number | null) ?? null,
+          comments: (row.comments as number | null) ?? null,
+          wpVersion: (row.wpVersion as string | null) ?? null,
+          restorable: row.status === "success" && Boolean(row.resticSnapshotId),
+          error: (row.error as string | null) ?? null
+        }));
+      })()
+    : [];
+
   const ownershipLabel = `${workspace.clientName} / ${workspace.name}`;
   const readModel = buildBackupReadModelSnapshot({
     ownership: ownershipLabel,
@@ -283,6 +311,12 @@ export default async function BackupsPage({ params }: Params) {
           )}
         </article>
       ) : null}
+
+      <SiteBackupsPanel
+        siteId={siteId}
+        backups={siteBackupRows}
+        canManage={canViewInternalMetadata}
+      />
 
       <article className="card">
         <h3 className="card-title">Backup Read Model Snapshot</h3>

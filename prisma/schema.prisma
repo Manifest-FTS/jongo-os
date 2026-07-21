@@ -137,6 +137,7 @@ model Site {
   collaborators            SiteCollaborator[]
   invitations              Invitation[]
   wordpressTelemetryConfig WordPressTelemetryConfig?
+  backups                  SiteBackup[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -164,6 +165,39 @@ model WordPressTelemetryConfig {
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@index([siteId])
+}
+
+// One row per site backup (Flywheel-style catalog entry). Each backup is a
+// single restic snapshot in Backblaze B2 containing BOTH the WordPress files
+// and a database dump, so it is independently restorable offsite.
+model SiteBackup {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId       String @db.Uuid
+  resourceUuid String // Coolify service UUID this backup belongs to
+
+  label   String? // optional operator note
+  trigger String // 'manual' | 'scheduled'
+  status  String // 'running' | 'success' | 'failed'
+
+  // Offsite locator: the restic snapshot in B2 that holds files + db dump.
+  resticSnapshotId String?
+  sizeBytes        BigInt?
+
+  // Content metadata captured at backup time (the Flywheel-style columns).
+  posts     Int?
+  pages     Int?
+  plugins   Int?
+  comments  Int?
+  wpVersion String?
+
+  error       String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, startedAt])
+  @@index([resourceUuid])
 }
 
 // Records the outcome of an end-to-end restore test for a Coolify database
