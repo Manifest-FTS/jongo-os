@@ -30,14 +30,28 @@ discover_container() {
 get_coolify_domain() {
     local container_id="$1"
     local domain=""
-    
-    # Try Traefik router rules (Host(`domain.com`))
-    # Extract domain from label traefik.http.routers.<random>.rule
-    domain=$(docker inspect --format '{{ range $k, $v := .Config.Labels }}{{ if printf "%s" $k | match "^traefik\\.http\\.routers\\..*\\.rule$" }}{{ $v }}{{ end }}{{ end }}' "$container_id" | grep -oP 'Host\(`\K[^`]+' | head -n 1)
-    
+    local labels_json=""
+
+    # Pull labels as JSON and parse in shell so this works on docker engines
+    # that do not support advanced template helpers like "match".
+    labels_json=$(docker inspect --format '{{ json .Config.Labels }}' "$container_id" 2>/dev/null || echo "")
+
+    if [[ -n "$labels_json" ]]; then
+        domain=$(echo "$labels_json" \
+            | grep -oE '"traefik\.http\.routers\.[^"]+\.rule":"[^"]+"' \
+            | sed -E 's/.*Host\(`([^`]+)`.*/\1/' \
+            | head -n 1)
+    fi
+
     if [[ -z "$domain" ]]; then
         # Fallback to coolify.fqdn label
-        domain=$(docker inspect --format '{{ index .Config.Labels "coolify.fqdn" }}' "$container_id")
+        domain=$(docker inspect --format '{{ index .Config.Labels "coolify.fqdn" }}' "$container_id" 2>/dev/null || true)
+    fi
+
+    if [[ -z "$domain" ]]; then
+        # Fallback to caddy label format like https://example.com
+        domain=$(docker inspect --format '{{ index .Config.Labels "caddy_0" }}' "$container_id" 2>/dev/null \
+            | sed -E 's#https?://##; s#/.*$##' || true)
     fi
     
     if [[ -z "$domain" ]]; then
@@ -75,7 +89,27 @@ wait_for_container() {
 docker_exec_wp() {
     local container_id="$1"
     shift
-    
-    # Run wp-cli securely as www-data or appropriate user
-    docker exec -u www-data "$container_id" wp "$@"
+
+    # Prefer native wp binary when available.
+    if docker exec -u www-data "$container_id" sh -lc 'command -v wp >/dev/null 2>&1'; then
+        docker exec -u www-data "$container_id" wp --path=/var/www/html "$@"
+        return $?
+    fi
+
+    # Fallback: bootstrap wp-cli.phar inside the container for official
+    # wordpress images that do not include wp binary.
+    docker exec "$container_id" sh -lc '
+        if [ ! -f /tmp/wp-cli.phar ]; then
+            if command -v curl >/dev/null 2>&1; then
+                curl -fsSL -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+            elif command -v wget >/dev/null 2>&1; then
+                wget -qO /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+            else
+                exit 127
+            fi
+            chmod 755 /tmp/wp-cli.phar
+        fi
+    '
+
+    docker exec -u www-data "$container_id" php /tmp/wp-cli.phar --path=/var/www/html "$@"
 }
