@@ -71,7 +71,9 @@ async function getCallerAccess(siteId: string, userId: string): Promise<CallerAc
         }
       ]
     },
-    include: {
+    select: {
+      id: true,
+      name: true,
       organization: {
         select: {
           id: true,
