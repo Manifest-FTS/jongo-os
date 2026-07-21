@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export type SiteBackupRow = {
@@ -25,19 +25,36 @@ type Props = {
   canManage: boolean;
 };
 
-function formatWhen(iso: string): { date: string; time: string } {
-  const d = new Date(iso);
-  return {
-    date: d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }),
-    time: `${d.toISOString().slice(11, 16)} UTC`
-  };
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
 }
 
-function Metric({ value, unit }: { value: number | null; unit: string }) {
+function formatTimeUtc(iso: string): string {
+  return `${new Date(iso).toISOString().slice(11, 16)} UTC`;
+}
+
+function relativeAge(iso: string): string {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function Metric({ value, label }: { value: number | string | null; label: string }) {
+  const empty = value === null || value === undefined || value === "";
   return (
-    <div style={{ minWidth: "5.5rem" }}>
-      <div style={{ fontSize: "1.15rem", fontWeight: 600, lineHeight: 1.1 }}>{value ?? "—"}</div>
-      <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{unit}</div>
+    <div className="bk-metric">
+      <p className={`bk-metric__value${empty ? " bk-metric__value--muted" : ""}`}>
+        {empty ? "—" : value}
+      </p>
+      <p className="bk-metric__label">{label}</p>
     </div>
   );
 }
@@ -48,6 +65,34 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the actions menu on outside click / Escape.
+  useEffect(() => {
+    if (!openMenu) return;
+    function onClick(event: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        setOpenMenu(null);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpenMenu(null);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openMenu]);
+
+  // While a backup is running, poll so the row fills in without a manual refresh.
+  const hasRunning = backups.some((b) => b.status === "running");
+  useEffect(() => {
+    if (!hasRunning) return;
+    const timer = setInterval(() => router.refresh(), 15000);
+    return () => clearInterval(timer);
+  }, [hasRunning, router]);
 
   function report(text: string, error = false) {
     setMessage(text);
@@ -77,10 +122,11 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
     }
   }
 
-  async function restore(backupId: string) {
+  async function restore(backupId: string, when: string) {
     const confirmed = window.confirm(
-      "Restore this backup?\n\nThis OVERWRITES the live site's files and database, and the site will be briefly offline. " +
-        "A safety snapshot of the current state is taken first so this can be rolled back."
+      `Restore the backup from ${when}?\n\n` +
+        "This OVERWRITES the live site's files and database, and the site will be briefly offline.\n\n" +
+        "A safety snapshot of the current state is taken first, so this can be rolled back."
     );
     if (!confirmed) return;
 
@@ -111,136 +157,112 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
   }
 
   return (
-    <article className="card">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+    <article className="card" ref={panelRef}>
+      <div className="bk-head">
         <div>
-          <h2 style={{ margin: 0 }}>Backups</h2>
-          <p style={{ margin: "0.25rem 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>
+          <h3 className="card-title" style={{ marginTop: 0 }}>Backups</h3>
+          <p className="card-muted" style={{ margin: 0 }}>
             Full site snapshots — files and database — stored offsite in Backblaze.
           </p>
         </div>
         {canManage ? (
           <button
             type="button"
-            className="button button-secondary"
+            className="bk-btn bk-btn--primary"
             onClick={createBackup}
             disabled={busy}
-            aria-label="Create backup"
-            title="Create backup now"
+            title="Create a backup now"
           >
-            {busy ? "Working…" : "+ Back up now"}
+            {busy ? "Working…" : "+  Back up now"}
           </button>
         ) : null}
       </div>
 
       {message ? (
-        <p
-          style={{
-            margin: "0.75rem 0 0",
-            fontSize: "0.8rem",
-            color: isError ? "var(--danger, #b00020)" : "var(--muted)"
-          }}
-        >
+        <p className={`bk-note${isError ? " bk-note--error" : ""}`} role="status">
           {message}
         </p>
       ) : null}
 
       {backups.length === 0 ? (
-        <p style={{ margin: "1rem 0 0", fontSize: "0.86rem", color: "var(--muted)" }}>
-          No backups yet.{canManage ? " Use “Back up now” to create the first one." : ""}
-        </p>
+        <div className="bk-empty">
+          <p className="bk-empty__title">No backups yet</p>
+          <p className="bk-empty__hint">
+            {canManage
+              ? "Create the first snapshot — it captures files and the database together, offsite."
+              : "Backups will appear here once your administrator creates one."}
+          </p>
+        </div>
       ) : (
-        <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column" }}>
+        <div className="bk-list">
           {backups.map((b) => {
-            const when = formatWhen(b.startedAt);
             const running = b.status === "running";
             const failed = b.status === "failed";
+            const when = formatDate(b.startedAt);
+
             return (
-              <div
-                key={b.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "1rem",
-                  flexWrap: "wrap",
-                  padding: "0.85rem 0",
-                  borderTop: "1px solid var(--border)"
-                }}
-              >
-                <div style={{ minWidth: "10rem" }}>
-                  <div style={{ fontWeight: 600 }}>{when.date}</div>
-                  <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>
-                    {when.time}
-                    {b.trigger === "manual" ? " · manual" : ""}
-                  </div>
+              <div className="bk-row" key={b.id}>
+                <div className="bk-when">
+                  <p className="bk-when__date">{when}</p>
+                  <p className="bk-when__time">
+                    {formatTimeUtc(b.startedAt)} · {relativeAge(b.startedAt)}
+                  </p>
+                  {b.trigger === "manual" ? <span className="bk-tag">Manual</span> : null}
                   {b.label ? (
-                    <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{b.label}</div>
+                    <p className="bk-when__time" style={{ marginTop: "0.25rem" }}>{b.label}</p>
                   ) : null}
                 </div>
 
                 {running ? (
-                  <span className="status-chip unknown">Backing up…</span>
+                  <div className="bk-metrics">
+                    <span className="status-chip unknown bk-pulse">Backing up…</span>
+                    <span className="bk-when__time">Capturing files and database to Backblaze</span>
+                  </div>
                 ) : failed ? (
-                  <span className="status-chip degraded" title={b.error ?? undefined}>
-                    Failed
-                  </span>
-                ) : (
-                  <>
-                    <Metric value={b.posts} unit="Posts" />
-                    <Metric value={b.pages} unit="Pages" />
-                    <Metric value={b.plugins} unit="Plugins" />
-                    <Metric value={b.comments} unit="Comments" />
-                    <div style={{ minWidth: "6rem" }}>
-                      <div style={{ fontSize: "1.05rem", fontWeight: 600, lineHeight: 1.1 }}>
-                        {b.wpVersion ?? "—"}
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>WP Version</div>
-                    </div>
-                  </>
-                )}
-
-                {canManage && b.restorable ? (
-                  <div style={{ position: "relative" }}>
-                    <button
-                      type="button"
-                      className="button button-secondary"
-                      onClick={() => setOpenMenu(openMenu === b.id ? null : b.id)}
-                      disabled={busy}
-                      aria-label="Backup actions"
-                    >
-                      ⋯
-                    </button>
-                    {openMenu === b.id ? (
-                      <div
-                        style={{
-                          position: "absolute",
-                          right: 0,
-                          top: "110%",
-                          zIndex: 10,
-                          background: "var(--surface, #fff)",
-                          border: "1px solid var(--border)",
-                          borderRadius: "8px",
-                          padding: "0.35rem",
-                          minWidth: "12rem",
-                          boxShadow: "0 6px 18px rgba(0,0,0,0.12)"
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          style={{ width: "100%" }}
-                          onClick={() => restore(b.id)}
-                          disabled={busy}
-                        >
-                          Restore this backup
-                        </button>
-                      </div>
-                    ) : null}
+                  <div className="bk-metrics">
+                    <span className="status-chip error">Failed</span>
+                    <span className="bk-when__time">{b.error ?? "This backup did not complete."}</span>
                   </div>
                 ) : (
-                  <div style={{ width: "3rem" }} />
+                  <div className="bk-metrics">
+                    <Metric value={b.posts} label="Posts" />
+                    <Metric value={b.pages} label="Pages" />
+                    <Metric value={b.plugins} label="Plugins" />
+                    <Metric value={b.comments} label="Comments" />
+                    <Metric value={b.wpVersion} label="WP Version" />
+                  </div>
                 )}
+
+                <div className="bk-actions">
+                  {canManage && b.restorable ? (
+                    <>
+                      <button
+                        type="button"
+                        className="bk-btn bk-btn--icon"
+                        onClick={() => setOpenMenu(openMenu === b.id ? null : b.id)}
+                        disabled={busy}
+                        aria-haspopup="menu"
+                        aria-expanded={openMenu === b.id}
+                        aria-label={`Actions for backup from ${when}`}
+                      >
+                        ⋯
+                      </button>
+                      {openMenu === b.id ? (
+                        <div className="bk-menu" role="menu">
+                          <button
+                            type="button"
+                            className="bk-btn bk-btn--danger"
+                            onClick={() => restore(b.id, when)}
+                            disabled={busy}
+                            role="menuitem"
+                          >
+                            Restore this backup
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
               </div>
             );
           })}

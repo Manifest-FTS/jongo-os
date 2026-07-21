@@ -1585,3 +1585,202 @@ main {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ============================================================
+   Site backups (Flywheel-style catalog)
+   Scoped to the backups panel so it does not affect other views.
+   ============================================================ */
+
+.bk-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.bk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 60ms ease;
+  white-space: nowrap;
+}
+
+.bk-btn:hover:not(:disabled) {
+  background: var(--surface-alt);
+  border-color: #c7cfcf;
+}
+
+.bk-btn:active:not(:disabled) { transform: translateY(1px); }
+
+.bk-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.bk-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  color: #16301a;
+}
+
+.bk-btn--primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.bk-btn--icon {
+  padding: 0.4rem 0.6rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.bk-btn--danger {
+  color: #8c1d18;
+  border-color: #f0c8c4;
+  background: #fdf4f3;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.bk-btn--danger:hover:not(:disabled) {
+  background: #f9e5e3;
+  border-color: #e0a9a3;
+}
+
+.bk-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.bk-note--error { color: #8c1d18; }
+
+.bk-list { margin-top: 0.5rem; }
+
+.bk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  flex-wrap: wrap;
+  padding: 0.95rem 0.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.bk-row:hover { background: var(--surface-alt); }
+
+.bk-when { min-width: 11rem; flex: 0 0 auto; }
+
+.bk-when__date {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.bk-when__time {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.bk-tag {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #516265;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.bk-metrics {
+  display: flex;
+  align-items: center;
+  gap: 1.75rem;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.bk-metric { min-width: 4.5rem; }
+
+.bk-metric__value {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.05;
+  color: #14313b;
+}
+
+.bk-metric__value--muted { color: #9aa7a8; }
+
+.bk-metric__label {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #516265;
+}
+
+.bk-actions { position: relative; flex: 0 0 auto; }
+
+.bk-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 20;
+  min-width: 13rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.4rem;
+  box-shadow: var(--shadow);
+}
+
+.bk-empty {
+  margin: 1.25rem 0 0.25rem;
+  padding: 1.5rem;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+
+.bk-empty__title {
+  margin: 0;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.bk-empty__hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.bk-pulse { animation: bk-pulse 1.4s ease-in-out infinite; }
+
+@keyframes bk-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (max-width: 720px) {
+  .bk-row { align-items: flex-start; }
+  .bk-metrics { gap: 1.1rem; }
+  .bk-metric { min-width: 3.75rem; }
+  .bk-metric__value { font-size: 1.1rem; }
+}
