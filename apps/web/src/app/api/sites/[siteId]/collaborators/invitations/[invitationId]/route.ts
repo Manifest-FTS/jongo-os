@@ -24,6 +24,22 @@ type Access = {
   isAdmin: boolean;
 };
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function buildSiteIdentityWhere(siteId: string): Record<string, unknown> {
+  if (isUuid(siteId)) {
+    return {
+      OR: [{ id: siteId }, { slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
+    };
+  }
+
+  return {
+    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
+  };
+}
+
 function getInvitationStatus(invite: {
   acceptedAt: Date | null;
   revokedAt: Date | null;
@@ -39,7 +55,7 @@ async function getAccess(siteId: string, userId: string): Promise<Access | null>
   const { db } = await import("@/lib/db");
   const site = await db.site.findFirst({
     where: {
-      id: siteId,
+      ...buildSiteIdentityWhere(siteId),
       deletedAt: null,
       OR: [
         {
@@ -51,7 +67,9 @@ async function getAccess(siteId: string, userId: string): Promise<Access | null>
         { collaborators: { some: { userId, deletedAt: null } } }
       ]
     },
-    include: {
+    select: {
+      id: true,
+      name: true,
       organization: {
         select: {
           id: true,

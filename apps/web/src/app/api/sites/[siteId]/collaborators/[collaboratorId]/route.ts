@@ -9,21 +9,39 @@ type CallerAccess = {
   callerRole: "admin" | "collaborator";
 };
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function buildSiteIdentityWhere(siteId: string): Record<string, unknown> {
+  if (isUuid(siteId)) {
+    return {
+      OR: [{ id: siteId }, { slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
+    };
+  }
+
+  return {
+    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
+  };
+}
+
 async function getCallerAccess(siteId: string, userId: string): Promise<CallerAccess | null> {
   const { db } = await import("@/lib/db");
 
   const site = await db.site.findFirst({
     where: {
-      id: siteId,
+      ...buildSiteIdentityWhere(siteId),
       deletedAt: null,
       organization: {
         deletedAt: null,
         OR: [{ ownerId: userId }, { collaborators: { some: { userId } } }]
       }
     },
-    include: {
+    select: {
+      id: true,
       organization: {
         select: {
+          id: true,
           ownerId: true,
           collaborators: {
             where: { userId },
