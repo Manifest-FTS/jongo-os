@@ -8,47 +8,12 @@ import {
   getWordPressTelemetryFreshness
 } from "@/lib/wordpress-telemetry";
 import { auth } from "@/lib/auth.config";
-import { getDb } from "@/lib/db";
-import { isAdminRole } from "@/lib/roles";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ siteId: string }> };
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function buildIdentityMatchers(values: string[]) {
-  return values.flatMap((value): Array<Record<string, string>> =>
-    isUuid(value)
-      ? [
-          { id: value },
-          { slug: value },
-          { coolifyServiceUuid: value },
-          { coolifyServiceId: value },
-          { coolifyProjectId: value }
-        ]
-      : [
-          { slug: value },
-          { coolifyServiceUuid: value },
-          { coolifyServiceId: value },
-          { coolifyProjectId: value },
-          { name: value }
-        ]
-  );
-}
-
-function normalizeEmail(value?: string | null): string {
-  return value?.trim().toLowerCase() ?? "";
-}
-
-function hasBootstrapGlobalAccess(email?: string | null): boolean {
-  const configured = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const viewer = normalizeEmail(email);
-  return Boolean(configured && viewer && configured === viewer);
-}
 
 export default async function IntegrationsPage({ params }: Params) {
   const { siteId } = await params;
@@ -64,10 +29,14 @@ export default async function IntegrationsPage({ params }: Params) {
   }
 
   const canViewInternalMetadata = Boolean(
-    session?.user?.id &&
-    workspace.organizationId &&
-    await isClientAdmin(workspace.organizationId, session.user.id)
+    session?.user?.id && workspace.organizationId && await isClientAdmin(workspace.organizationId, session.user.id)
   );
+
+  const permissionSnapshot = await resolveSitePermissionSnapshot({
+    siteId,
+    workspace,
+    viewer
+  });
 
   const [overview, deployments, activity] = await Promise.all([
     canViewInternalMetadata ? getCoolifyOverview() : Promise.resolve(null),
@@ -75,77 +44,7 @@ export default async function IntegrationsPage({ params }: Params) {
     getSiteActivityFeed(siteId, 4, viewer)
   ]);
 
-  let canManageTelemetry = false;
-  if (session?.user?.id) {
-    const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session.user.email);
-    const db = await getDb();
-    if (db) {
-      const identifiers = [
-        siteId,
-        workspace.id,
-        workspace.slug,
-        workspace.coolifyServiceUuid,
-        workspace.coolifyProjectId,
-        workspace.name
-      ]
-        .map((value) => value?.trim() || "")
-        .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
-
-      const site = await db.site.findFirst({
-        where: {
-          AND: [
-            {
-              deletedAt: null,
-              OR: buildIdentityMatchers(identifiers) as any
-            },
-            ...(workspace.organizationId ? [{ organizationId: workspace.organizationId }] : []),
-            ...(bootstrapGlobalAccess
-              ? []
-              : [
-                  {
-                    OR: [
-                      {
-                        organization: {
-                          deletedAt: null,
-                          OR: [
-                            { ownerId: session.user.id },
-                            { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-                          ]
-                        }
-                      },
-                      { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-                    ]
-                  }
-                ])
-          ]
-        },
-        include: {
-          organization: {
-            select: {
-              ownerId: true,
-              collaborators: {
-                where: { userId: session.user.id, deletedAt: null },
-                select: { role: true }
-              }
-            }
-          },
-          collaborators: {
-            where: { userId: session.user.id, deletedAt: null },
-            select: { role: true }
-          }
-        }
-      });
-
-      const ownerAdmin = site?.organization?.ownerId === session.user.id;
-      const orgCollaboratorAdmin = isAdminRole(site?.organization?.collaborators?.[0]?.role);
-      const siteAdmin = isAdminRole(site?.collaborators?.[0]?.role);
-      canManageTelemetry = Boolean(
-        bootstrapGlobalAccess || canViewInternalMetadata || ownerAdmin || orgCollaboratorAdmin || siteAdmin
-      );
-    } else {
-      canManageTelemetry = bootstrapGlobalAccess || canViewInternalMetadata;
-    }
-  }
+  const canManageTelemetry = permissionSnapshot.canManageTelemetry;
 
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const coolifySite = overview?.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
