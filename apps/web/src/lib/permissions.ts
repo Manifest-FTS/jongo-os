@@ -162,7 +162,9 @@ export async function resolveSitePermissionSnapshot(
                 ])
           ]
         },
-        include: {
+        // Use a narrow select so legacy databases without newer Site scalar
+        // columns can still resolve role-based permissions safely.
+        select: {
           organization: {
             select: {
               ownerId: true,
