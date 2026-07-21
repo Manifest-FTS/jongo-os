@@ -1,15 +1,17 @@
-import { getCoolifyOverview } from "@/lib/coolify";
-import { getCoolifyAppBackupInventory, getCoolifyAppStagingCapability, AppBackupInventory } from "@/lib/coolify";
+import { getCoolifyOverview, getCoolifyAppBackupInventory, getCoolifyAppStagingCapability, AppBackupInventory } from "@/lib/coolify";
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import { getBackupReadiness } from "@/lib/deploy-guards";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
 import DeployButton from "@/components/DeployButton";
-import { getSiteActivityFeed, getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { getSiteActivityFeed, getSiteWorkspace } from "@/lib/repositories";
 import Link from "next/link";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 import InfrastructureDiagnostics from "@/components/InfrastructureDiagnostics";
+import SiteOverviewCollaboratorsCard from "@/components/SiteOverviewCollaboratorsCard";
+import { buildTemporaryProductionDomain } from "@/lib/temporary-domains";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +25,12 @@ type ReadinessCheck = {
   state: ReadinessState;
   detail: string;
   nextStep?: string;
+};
+
+type OverviewDomain = {
+  label: string;
+  value: string;
+  detail: string;
 };
 
 function formatDuration(seconds: number): string {
@@ -116,6 +124,61 @@ function getResourceWorkflowModel(siteType?: string): { title: string; body: str
   };
 }
 
+function buildOverviewDomains(
+  workspace: Awaited<ReturnType<typeof getSiteWorkspace>>,
+  site?: { deployTargetId: string; name: string; coolifyEnvironmentName?: string | null; coolifyProjectName?: string | null; resourceType?: string; siteType?: string }
+): OverviewDomain[] {
+  const temporaryDomain = buildTemporaryProductionDomain({
+    slug: workspace?.temporaryDomainSlug ?? workspace?.slug ?? workspace?.name,
+    suffix: workspace?.temporaryDomainSuffix
+  });
+
+  return [
+    {
+      label: "Primary domain",
+      value: temporaryDomain ?? "Not generated yet",
+      detail: temporaryDomain
+        ? "Derived from the workspace slug and temporary domain suffix."
+        : "Set a production slug in Settings to generate the site URL."
+    },
+    {
+      label: "Deployment target",
+      value: site?.name ?? workspace?.coolifyProjectName ?? "Unassigned",
+      detail: site?.coolifyEnvironmentName
+        ? `Environment: ${site.coolifyEnvironmentName}`
+        : workspace?.coolifyEnvironmentName
+          ? `Environment: ${workspace.coolifyEnvironmentName}`
+          : site?.deployTargetId ?? workspace?.deployTargetId ?? "No live target linked yet."
+    },
+    {
+      label: "Resource type",
+      value: site?.resourceType ?? workspace?.siteType ?? "Unknown",
+      detail: workspace?.siteType === "wordpress"
+        ? "WordPress sites expose a plugin tab and admin-oriented workflows."
+        : "Non-WordPress apps stay on the standard overview workflow."
+    }
+  ];
+}
+
+function describePrivacyMode(canTogglePrivacyMode: boolean, isWordPress: boolean): { value: string; detail: string } {
+  if (!isWordPress) {
+    return {
+      value: "Not applicable",
+      detail: "Privacy controls are reserved for WordPress apps in this workspace model."
+    };
+  }
+
+  return canTogglePrivacyMode
+    ? {
+        value: "Available to admins",
+        detail: "The privacy control is reserved for admins and surfaces from app settings."
+      }
+    : {
+        value: "Locked for collaborators",
+        detail: "Collaborators can review the privacy posture, but only admins can change it."
+      };
+}
+
 export default async function SiteOverviewPage({ params }: Params) {
   const { siteId } = await params;
   const session = await auth();
@@ -129,27 +192,24 @@ export default async function SiteOverviewPage({ params }: Params) {
     notFound();
   }
 
-  const canViewInternalMetadata = Boolean(
-    session?.user?.id &&
-    workspace.organizationId &&
-    await isClientAdmin(workspace.organizationId, session.user.id)
-  );
+  const permissions = await resolveSitePermissionSnapshot({ siteId, workspace, viewer });
+  const canViewDiagnostics = permissions.canViewDiagnostics;
+  const isWordPress = workspace.siteType === "wordpress";
 
   const [overview, siteActivity] = await Promise.all([
     getCoolifyOverview(),
     getSiteActivityFeed(siteId, 6, viewer)
   ]);
 
-  const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
+  const coolifyId = workspace.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
-  
-  const backupInventory = workspace?.coolifyServiceUuid
+  const overviewDomains = buildOverviewDomains(workspace, site);
+
+  const backupInventory = workspace.coolifyServiceUuid
     ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
     : null;
 
-  // Restore-test outcome recorded by scripts/verify-jongo-backup.mjs, keyed by
-  // this resource's Coolify UUID. Absent → the chip shows "Never verified".
-  const restoreVerificationRecord = workspace?.coolifyServiceUuid
+  const restoreVerificationRecord = workspace.coolifyServiceUuid
     ? await (async () => {
         const { db } = await import("@/lib/db");
         return db.backupRestoreVerification.findUnique({
@@ -158,18 +218,18 @@ export default async function SiteOverviewPage({ params }: Params) {
       })()
     : null;
 
-  const stagingCapability = workspace?.coolifyServiceUuid
-    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace?.coolifyProjectId ?? undefined)
+  const stagingCapability = workspace.coolifyServiceUuid
+    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined)
     : null;
 
-  const backupReadiness = getBackupReadiness(backupInventory, workspace?.coolifyServiceUuid);
+  const backupReadiness = getBackupReadiness(backupInventory, workspace.coolifyServiceUuid);
   const backupLockReason = backupReadiness.locked
     ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
     : "Dry-run mode: execution remains disabled in this interface.";
-  
+
   const lastSuccessfulBackup = getLastSuccessfulBackupTime(backupInventory);
   const recentBackupHealthy = lastSuccessfulBackup ? isRecentBackup(lastSuccessfulBackup, 7) : false;
-  
+
   const backupLocalStatus = backupInventory?.source !== "live"
     ? "Status unknown"
     : backupInventory.configured
@@ -191,25 +251,26 @@ export default async function SiteOverviewPage({ params }: Params) {
 
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
-  const stagingConfigured = Boolean(workspace?.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
-  const workflowModel = getResourceWorkflowModel(workspace?.siteType);
+  const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
+  const workflowModel = getResourceWorkflowModel(workspace.siteType);
+  const privacyModeSummary = describePrivacyMode(permissions.canTogglePrivacyMode, isWordPress);
 
   let readinessChecks: ReadinessCheck[] = [];
   let readinessSummary = { state: "unknown" as ReadinessState, detail: "" };
 
-  if (canViewInternalMetadata) {
+  if (canViewDiagnostics) {
     readinessChecks = [
       {
         key: "backup-configured",
         label: "Backups configured",
-        state: !workspace?.coolifyServiceUuid
+        state: !workspace.coolifyServiceUuid
           ? "not_configured"
           : backupInventory?.source !== "live"
             ? "unknown"
             : backupInventory?.configured
               ? "ready"
               : "not_configured",
-        detail: !workspace?.coolifyServiceUuid
+        detail: !workspace.coolifyServiceUuid
           ? "No infrastructure app UUID is linked to this app."
           : backupInventory?.source !== "live"
             ? "Could not reach live backup inventory from platform."
@@ -251,14 +312,14 @@ export default async function SiteOverviewPage({ params }: Params) {
       {
         key: "staging",
         label: "Staging configured",
-        state: stagingConfigured ? "ready" : workspace?.stagingEnabled ? "attention" : "not_configured",
+        state: stagingConfigured ? "ready" : workspace.stagingEnabled ? "attention" : "not_configured",
         detail: stagingConfigured
           ? "Staging environment and target are both attached."
-          : workspace?.stagingEnabled && stagingEnvironmentReady
+          : workspace.stagingEnabled && stagingEnvironmentReady
             ? "Staging environment exists but no staging target is attached yet."
-            : workspace?.stagingEnabled
+            : workspace.stagingEnabled
               ? "Staging is enabled but no staging environment is detected in the platform."
-            : "Staging is not configured for this app.",
+              : "Staging is not configured for this app.",
         nextStep: "Configure staging environment mapping in app settings."
       },
       {
@@ -278,135 +339,133 @@ export default async function SiteOverviewPage({ params }: Params) {
   }
 
   return (
-    <div>
-      <div className="grid" style={{ marginBottom: "1rem" }}>
-        
-        {/* Site Health */}
-        <article className="card">
-          <h3 className="card-title">Site Health</h3>
-          <p style={{ margin: "0.35rem 0" }}>
-            Production:{" "}
-            <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>
-              {site?.productionStatus ?? "unknown"}
+    <div style={{ display: "grid", gap: "1rem" }}>
+      <section className="card" style={{ padding: "1.25rem 1.35rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ maxWidth: "52rem" }}>
+            <span className="tag" style={{ display: "inline-flex", marginBottom: "0.85rem" }}>
+              {isWordPress ? "WordPress app" : "App overview"}
             </span>
-          </p>
-          <p style={{ margin: "0.35rem 0" }}>
-            Staging:{" "}
-            <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
-              {site?.stagingStatus ?? "unknown"}
-            </span>
-          </p>
-          <p style={{ margin: "0.35rem 0", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>
-              {stagingEnvironmentReady ? "Environment created" : "Environment missing"}
-            </span>
-            <span className={`status-chip ${stagingTargetAttached ? "healthy" : "degraded"}`}>
-              {stagingTargetAttached ? "Target attached" : "Target missing"}
-            </span>
-          </p>
-          <p style={{ margin: "0.35rem 0" }}>
-            Overall:{" "}
-            <span className={`status-chip ${site?.status ?? "unknown"}`}>
-              {site?.status ?? "unknown"}
-            </span>
-          </p>
-          {stagingConfigured ? (
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
-              <DeployButton
-                siteId={siteId}
-                deployTargetId={site?.deployTargetId}
-                environment="production"
-                disabled
-                disabledReason={backupLockReason}
-              />
-              <DeployButton
-                siteId={siteId}
-                deployTargetId={site?.deployTargetId}
-                environment="staging"
-                disabled
-                disabledReason={backupLockReason}
-              />
-            </div>
-          ) : (
-            <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-              {workspace?.stagingEnabled && stagingEnvironmentReady
-                ? "Staging environment exists, but no target is attached yet. Attach a staging environment, then refresh this page."
-                : "Staging controls are hidden until a staging environment is configured. Configure staging in Settings."}
+            <h2 style={{ margin: 0 }}>{workspace.name}</h2>
+            <p className="card-muted" style={{ margin: "0.55rem 0 0" }}>
+              {workspace.description ?? "Overview, access, domains, and operations live together here."}
             </p>
-          )}
-          
-          {canViewInternalMetadata ? (
-            <p style={{ margin: "0.55rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-              {overview.mode === "live"
-                ? <>Live telemetry · {formatAgo(overview.generatedAt)}{overview.fetchError && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}</>
-                : "Demo mode — live telemetry requires provider config"}
+            <p style={{ margin: "0.7rem 0 0", fontSize: "0.92rem", color: "var(--muted)" }}>
+              {workspace.clientName}
+              {workspace.slug ? <span> / {workspace.slug}</span> : null}
             </p>
-          ) : null}
-        </article>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <Link href={`/apps/${siteId}/settings`} className="action-link">
+              Settings <ArrowRightIcon className="btn-icon" />
+            </Link>
+            <Link href={`/apps/${siteId}/team`} className="action-link">
+              Team <ArrowRightIcon className="btn-icon" />
+            </Link>
+            {stagingConfigured ? (
+              <Link href={`/apps/${siteId}/staging`} className="action-link">
+                Publishing <ArrowRightIcon className="btn-icon" />
+              </Link>
+            ) : null}
+          </div>
+        </div>
 
-        {/* Publishing */}
-        <article className="card">
-          <h3 className="card-title">Publishing</h3>
-          {stagingConfigured ? (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
+          <span className={`status-chip ${site?.status ?? "unknown"}`}>{site?.status ?? "unknown"}</span>
+          <span className="tag">{workspace.siteType}</span>
+          {canViewDiagnostics ? (
             <>
-              <p className="card-muted">Move changes safely from staging to production.</p>
-              <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-                Use staging sync for review, then promote when ready.
-              </p>
-              <p style={{ margin: "0.75rem 0 0" }}>
-                <Link href={`/apps/${siteId}/staging`} className="action-link">
-                  Open publishing workflow <ArrowRightIcon className="btn-icon" />
-                </Link>
-              </p>
+              <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>prod {site?.productionStatus ?? "unknown"}</span>
+              <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>staging {site?.stagingStatus ?? "unknown"}</span>
+              <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>
+                {stagingEnvironmentReady ? "Environment created" : "Environment missing"}
+              </span>
             </>
           ) : (
-            <p className="card-muted">
-              {workspace?.stagingEnabled && stagingEnvironmentReady
-                ? "Staging environment exists but target attachment is incomplete. Complete target attachment, then continue in Staging."
-                : "Staging is not configured yet. Configure it in Settings to unlock staging workflows."}
-            </p>
+            <span className="tag">Diagnostics hidden</span>
           )}
-        </article>
+        </div>
+      </section>
 
+      <div className="grid">
         <article className="card">
-          <h3 className="card-title">Resource Workflow Model</h3>
-          <p className="card-muted" style={{ marginBottom: "0.5rem" }}>{workflowModel.body}</p>
-          <span className="tag" style={{ marginBottom: "0.5rem", display: "inline-flex" }}>{workflowModel.title}</span>
-          <ul style={{ margin: 0, paddingLeft: "1.15rem", display: "grid", gap: "0.25rem" }}>
-            {workflowModel.bullets.map((item) => (
-              <li key={item} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{item}</li>
+          <h3 className="card-title">Domains</h3>
+          <p className="card-muted">The overview keeps the domain story simple: primary URL, target, and resource type.</p>
+          <div style={{ display: "grid", gap: "0.8rem", marginTop: "0.8rem" }}>
+            {overviewDomains.map((domain) => (
+              <div key={domain.label} style={{ paddingBottom: "0.65rem", borderBottom: "1px solid var(--border)" }}>
+                <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>{domain.label}</p>
+                <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{domain.value}</p>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{domain.detail}</p>
+              </div>
             ))}
-          </ul>
+          </div>
+          <p style={{ margin: "0.8rem 0 0" }}>
+            <Link href={`/apps/${siteId}/settings`} className="action-link">
+              Update domains <ArrowRightIcon className="btn-icon" />
+            </Link>
+          </p>
+        </article>
+
+        <SiteOverviewCollaboratorsCard siteId={siteId} currentUserId={session?.user?.id ?? ""} />
+
+        <article className="card">
+          <h3 className="card-title">Server location</h3>
+          <p className="card-muted">Show the placement the app is attached to without surfacing raw engine noise.</p>
+          <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.85rem" }}>
+            <div>
+              <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Project</p>
+              <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.coolifyProjectName ?? workspace.coolifyProjectName ?? "Unassigned"}</p>
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Environment</p>
+              <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.coolifyEnvironmentName ?? workspace.coolifyEnvironmentName ?? "Default"}</p>
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Target</p>
+              <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.deployTargetId ?? workspace.coolifyServiceUuid ?? "Not linked"}</p>
+            </div>
+          </div>
         </article>
 
         <article className="card">
-          <h3 className="card-title">Team</h3>
-          <p className="card-muted">Team management lives in the dedicated Team tab.</p>
-          <p style={{ margin: "0.75rem 0 0" }}>
-            <Link href={`/apps/${siteId}/team`} className="action-link">
-              Open app team <ArrowRightIcon className="btn-icon" />
+          <h3 className="card-title">Privacy mode</h3>
+          <p className="card-muted">A calm summary of the privacy posture, with the control path kept in settings.</p>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.85rem" }}>
+            <span className={`status-chip ${permissions.canTogglePrivacyMode ? "healthy" : "unknown"}`}>
+              {privacyModeSummary.value}
+            </span>
+            <span className="tag">{isWordPress ? "WordPress" : "Not available"}</span>
+          </div>
+          <p style={{ margin: "0.7rem 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>
+            {privacyModeSummary.detail}
+          </p>
+          <p style={{ margin: "0.8rem 0 0" }}>
+            <Link href={`/apps/${siteId}/settings`} className="action-link">
+              Review privacy settings <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>
         </article>
       </div>
 
-      {canViewInternalMetadata && (
-        <InfrastructureDiagnostics 
-          readinessChecks={readinessChecks} 
-          readinessSummary={readinessSummary} 
-          siteId={siteId} 
+      {canViewDiagnostics ? (
+        <InfrastructureDiagnostics
+          readinessChecks={readinessChecks}
+          readinessSummary={readinessSummary}
+          siteId={siteId}
         />
-      )}
+      ) : null}
 
-      <div style={{ display: "grid", gap: "1rem", marginBottom: "1rem", marginTop: "1rem" }}>
+      <div className="grid">
         <article className="card">
-          <h3 className="card-title">Activity Feed</h3>
+          <h3 className="card-title">Activity feed</h3>
+          <p className="card-muted">Recent app events stay visible without the legacy console clutter.</p>
           {siteActivity.length === 0 ? (
             <p className="card-muted" style={{ marginBottom: 0 }}>
               {getActivityFeedEmptyMessage(!site, Boolean(overview.fetchError))}
             </p>
           ) : (
-            <div style={{ marginTop: "0.5rem", display: "grid", gap: "0.55rem" }}>
+            <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.55rem" }}>
               {siteActivity.map((item) => (
                 <div
                   key={item.id}
@@ -414,7 +473,8 @@ export default async function SiteOverviewPage({ params }: Params) {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "flex-start",
-                    paddingBottom: "0.5rem",
+                    gap: "0.75rem",
+                    paddingBottom: "0.55rem",
                     borderBottom: "1px solid var(--border)"
                   }}
                 >
@@ -422,14 +482,14 @@ export default async function SiteOverviewPage({ params }: Params) {
                     <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 500 }}>{item.title}</p>
                     <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
                       {item.detail}
-                      {item.durationSeconds !== undefined && ` - ${formatDuration(item.durationSeconds)}`}
+                      {item.durationSeconds !== undefined ? ` - ${formatDuration(item.durationSeconds)}` : ""}
                       {item.timestamp ? ` - ${new Date(item.timestamp).toLocaleString()}` : ""}
                     </p>
                   </div>
-                  <div style={{ display: "flex", gap: "0.35rem", marginLeft: "0.75rem", flexShrink: 0 }}>
-                    {item.environment && item.environment !== "unknown" && (
+                  <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {item.environment && item.environment !== "unknown" ? (
                       <span className="status-chip unknown" style={{ fontSize: "0.72rem" }}>{item.environment}</span>
-                    )}
+                    ) : null}
                     <span className={`status-chip ${item.status}`}>{item.status}</span>
                   </div>
                 </div>
@@ -437,13 +497,10 @@ export default async function SiteOverviewPage({ params }: Params) {
             </div>
           )}
         </article>
-      </div>
 
-      <div className="grid">
-        {/* Backups */}
         <article className="card">
           <h3 className="card-title">Backups</h3>
-          <p className="card-muted">Read-model summary for backup posture in this app workspace.</p>
+          <p className="card-muted">A compact summary of backup posture and restore verification.</p>
           <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.55rem" }}>
             <p style={{ margin: 0, fontSize: "0.86rem" }}>
               Layer: <strong>{backupReadModel.layerType}</strong>
@@ -455,7 +512,7 @@ export default async function SiteOverviewPage({ params }: Params) {
               <p style={{ margin: 0, fontSize: "0.86rem" }}>Offsite:</p>
               <span className={`status-chip ${backupReadModel.offsite.tone}`}>{backupReadModel.offsite.label}</span>
             </div>
-            {canViewInternalMetadata ? (
+            {canViewDiagnostics ? (
               <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>{backupReadModel.offsite.detail}</p>
             ) : null}
             <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
@@ -464,7 +521,7 @@ export default async function SiteOverviewPage({ params }: Params) {
                 {backupReadModel.restoreVerification.label}
               </span>
             </div>
-            {canViewInternalMetadata ? (
+            {canViewDiagnostics ? (
               <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
                 {backupReadModel.restoreVerification.detail}
               </p>
@@ -472,7 +529,7 @@ export default async function SiteOverviewPage({ params }: Params) {
             <p style={{ margin: 0, fontSize: "0.86rem" }}>
               Restore scope: <strong>{backupReadModel.restoreScope}</strong>
             </p>
-            {canViewInternalMetadata ? (
+            {canViewDiagnostics ? (
               <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
                 Staging safety: {backupReadModel.stagingSafety}. {backupReadModel.stagingSafetyDetail}
               </p>
@@ -485,29 +542,59 @@ export default async function SiteOverviewPage({ params }: Params) {
           </p>
         </article>
 
-        {/* Environments */}
         <article className="card">
-          <h3 className="card-title">Environments</h3>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            Production, Staging, Development
-          </p>
+          <h3 className="card-title">Publishing and workflow</h3>
+          <p className="card-muted" style={{ marginBottom: "0.5rem" }}>{workflowModel.body}</p>
+          <span className="tag" style={{ marginBottom: "0.5rem", display: "inline-flex" }}>{workflowModel.title}</span>
+          <ul style={{ margin: 0, paddingLeft: "1.15rem", display: "grid", gap: "0.25rem" }}>
+            {workflowModel.bullets.map((item) => (
+              <li key={item} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{item}</li>
+            ))}
+          </ul>
           {stagingConfigured ? (
-            <p style={{ fontSize: "0.9rem" }}>
-              <Link href={`/apps/${siteId}/settings`} className="action-link">
-                Configure environments <ArrowRightIcon className="btn-icon" />
-              </Link>
-            </p>
+            <>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.85rem" }}>
+                <DeployButton
+                  siteId={siteId}
+                  deployTargetId={site?.deployTargetId}
+                  environment="production"
+                  disabled
+                  disabledReason={backupLockReason}
+                />
+                <DeployButton
+                  siteId={siteId}
+                  deployTargetId={site?.deployTargetId}
+                  environment="staging"
+                  disabled
+                  disabledReason={backupLockReason}
+                />
+              </div>
+              <p style={{ margin: "0.7rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{backupLockReason}</p>
+              <p style={{ margin: "0.75rem 0 0" }}>
+                <Link href={`/apps/${siteId}/staging`} className="action-link">
+                  Open publishing workflow <ArrowRightIcon className="btn-icon" />
+                </Link>
+              </p>
+            </>
           ) : (
-            <p className="card-muted" style={{ marginBottom: 0 }}>Staging configuration is required before environment actions are shown.</p>
+            <p className="card-muted" style={{ margin: "0.8rem 0 0" }}>
+              Staging is not configured yet, so publishing controls stay hidden here.
+            </p>
           )}
         </article>
+      </div>
 
-        {/* Next Steps */}
+      <div className="grid">
         <article className="card">
           <h3 className="card-title">What to do next</h3>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
             <Link href={`/apps/${siteId}/analytics`} className="action-link">
               Review deployment analytics <ArrowRightIcon className="btn-icon" />
+            </Link>
+          </p>
+          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
+            <Link href={`/apps/${siteId}/settings`} className="action-link">
+              Update site settings <ArrowRightIcon className="btn-icon" />
             </Link>
           </p>
           <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
@@ -518,11 +605,6 @@ export default async function SiteOverviewPage({ params }: Params) {
             ) : (
               <span className="card-muted">Publishing workflow is hidden until staging is configured.</span>
             )}
-          </p>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <Link href={`/apps/${siteId}/settings`} className="action-link">
-              Update site settings <ArrowRightIcon className="btn-icon" />
-            </Link>
           </p>
         </article>
       </div>
