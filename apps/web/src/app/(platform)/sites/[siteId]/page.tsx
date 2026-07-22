@@ -194,12 +194,11 @@ export default async function SiteOverviewPage({ params }: Params) {
 
   const permissions = await resolveSitePermissionSnapshot({ siteId, workspace, viewer });
   const canViewDiagnostics = permissions.canViewDiagnostics;
+  const isCollaboratorView = permissions.role === "collaborator";
   const isWordPress = workspace.siteType === "wordpress";
 
-  const [overview, siteActivity] = await Promise.all([
-    getCoolifyOverview(),
-    getSiteActivityFeed(siteId, 6, viewer)
-  ]);
+  const overview = await getCoolifyOverview();
+  const siteActivity = isCollaboratorView ? [] : await getSiteActivityFeed(siteId, 6, viewer);
 
   const coolifyId = workspace.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
@@ -387,66 +386,62 @@ export default async function SiteOverviewPage({ params }: Params) {
         </div>
       </section>
 
-      <div className="grid">
-        <article className="card">
-          <h3 className="card-title">Domains</h3>
-          <p className="card-muted">The overview keeps the domain story simple: primary URL, target, and resource type.</p>
-          <div style={{ display: "grid", gap: "0.8rem", marginTop: "0.8rem" }}>
-            {overviewDomains.map((domain) => (
-              <div key={domain.label} style={{ paddingBottom: "0.65rem", borderBottom: "1px solid var(--border)" }}>
-                <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>{domain.label}</p>
-                <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{domain.value}</p>
-                <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{domain.detail}</p>
+      <section style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
+        <div style={{ flex: "3 1 680px", minWidth: "320px" }}>
+          <article className="card">
+            <h3 className="card-title">Domains</h3>
+            <div style={{ display: "grid", gap: "0.8rem", marginTop: "0.8rem" }}>
+              {overviewDomains.map((domain) => (
+                <div key={domain.label} style={{ paddingBottom: "0.65rem", borderBottom: "1px solid var(--border)" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>{domain.label}</p>
+                  <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{domain.value}</p>
+                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{domain.detail}</p>
+                </div>
+              ))}
+            </div>
+            <p style={{ margin: "0.8rem 0 0" }}>
+              <Link href={`/apps/${siteId}/settings`} className="action-link">
+                Update domains <ArrowRightIcon className="btn-icon" />
+              </Link>
+            </p>
+          </article>
+        </div>
+
+        <div style={{ flex: "1 1 280px", minWidth: "260px", display: "grid", gap: "1rem" }}>
+          <SiteOverviewCollaboratorsCard siteId={siteId} currentUserId={session?.user?.id ?? ""} />
+
+          <article className="card">
+            <h3 className="card-title">Server location</h3>
+            <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.45rem" }}>
+              <div>
+                <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Project</p>
+                <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.coolifyProjectName ?? workspace.coolifyProjectName ?? "Unassigned"}</p>
               </div>
-            ))}
-          </div>
-          <p style={{ margin: "0.8rem 0 0" }}>
-            <Link href={`/apps/${siteId}/settings`} className="action-link">
-              Update domains <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
-        </article>
-
-        <SiteOverviewCollaboratorsCard siteId={siteId} currentUserId={session?.user?.id ?? ""} />
-
-        <article className="card">
-          <h3 className="card-title">Server location</h3>
-          <p className="card-muted">Show the placement the app is attached to without surfacing raw engine noise.</p>
-          <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.85rem" }}>
-            <div>
-              <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Project</p>
-              <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.coolifyProjectName ?? workspace.coolifyProjectName ?? "Unassigned"}</p>
+              <div>
+                <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Environment</p>
+                <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.coolifyEnvironmentName ?? workspace.coolifyEnvironmentName ?? "Default"}</p>
+              </div>
+              <div>
+                <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Target</p>
+                <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.deployTargetId ?? workspace.coolifyServiceUuid ?? "Not linked"}</p>
+              </div>
             </div>
-            <div>
-              <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Environment</p>
-              <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.coolifyEnvironmentName ?? workspace.coolifyEnvironmentName ?? "Default"}</p>
-            </div>
-            <div>
-              <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Target</p>
-              <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.deployTargetId ?? workspace.coolifyServiceUuid ?? "Not linked"}</p>
-            </div>
-          </div>
-        </article>
+          </article>
 
-        <article className="card">
-          <h3 className="card-title">Privacy mode</h3>
-          <p className="card-muted">A calm summary of the privacy posture, with the control path kept in settings.</p>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.85rem" }}>
-            <span className={`status-chip ${permissions.canTogglePrivacyMode ? "healthy" : "unknown"}`}>
-              {privacyModeSummary.value}
-            </span>
-            <span className="tag">{isWordPress ? "WordPress" : "Not available"}</span>
-          </div>
-          <p style={{ margin: "0.7rem 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>
-            {privacyModeSummary.detail}
-          </p>
-          <p style={{ margin: "0.8rem 0 0" }}>
-            <Link href={`/apps/${siteId}/settings`} className="action-link">
-              Review privacy settings <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
-        </article>
-      </div>
+          <article className="card">
+            <h3 className="card-title">Privacy mode</h3>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.45rem" }}>
+              <span className={`status-chip ${permissions.canTogglePrivacyMode ? "healthy" : "unknown"}`}>
+                {privacyModeSummary.value}
+              </span>
+              <span className="tag">{isWordPress ? "WordPress" : "Not available"}</span>
+            </div>
+            <p style={{ margin: "0.7rem 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>
+              {privacyModeSummary.detail}
+            </p>
+          </article>
+        </div>
+      </section>
 
       {canViewDiagnostics ? (
         <InfrastructureDiagnostics
@@ -456,158 +451,160 @@ export default async function SiteOverviewPage({ params }: Params) {
         />
       ) : null}
 
-      <div className="grid">
-        <article className="card">
-          <h3 className="card-title">Activity feed</h3>
-          <p className="card-muted">Recent app events stay visible without the legacy console clutter.</p>
-          {siteActivity.length === 0 ? (
-            <p className="card-muted" style={{ marginBottom: 0 }}>
-              {getActivityFeedEmptyMessage(!site, Boolean(overview.fetchError))}
-            </p>
-          ) : (
-            <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.55rem" }}>
-              {siteActivity.map((item) => (
-                <div
-                  key={item.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: "0.75rem",
-                    paddingBottom: "0.55rem",
-                    borderBottom: "1px solid var(--border)"
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 500 }}>{item.title}</p>
-                    <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-                      {item.detail}
-                      {item.durationSeconds !== undefined ? ` - ${formatDuration(item.durationSeconds)}` : ""}
-                      {item.timestamp ? ` - ${new Date(item.timestamp).toLocaleString()}` : ""}
-                    </p>
-                  </div>
-                  <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    {item.environment && item.environment !== "unknown" ? (
-                      <span className="status-chip unknown" style={{ fontSize: "0.72rem" }}>{item.environment}</span>
-                    ) : null}
-                    <span className={`status-chip ${item.status}`}>{item.status}</span>
-                  </div>
+      {!isCollaboratorView ? (
+        <>
+          <div className="grid">
+            <article className="card">
+              <h3 className="card-title">Activity feed</h3>
+              {siteActivity.length === 0 ? (
+                <p className="card-muted" style={{ marginBottom: 0 }}>
+                  {getActivityFeedEmptyMessage(!site, Boolean(overview.fetchError))}
+                </p>
+              ) : (
+                <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.55rem" }}>
+                  {siteActivity.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: "0.75rem",
+                        paddingBottom: "0.55rem",
+                        borderBottom: "1px solid var(--border)"
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 500 }}>{item.title}</p>
+                        <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+                          {item.detail}
+                          {item.durationSeconds !== undefined ? ` - ${formatDuration(item.durationSeconds)}` : ""}
+                          {item.timestamp ? ` - ${new Date(item.timestamp).toLocaleString()}` : ""}
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        {item.environment && item.environment !== "unknown" ? (
+                          <span className="status-chip unknown" style={{ fontSize: "0.72rem" }}>{item.environment}</span>
+                        ) : null}
+                        <span className={`status-chip ${item.status}`}>{item.status}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </article>
+              )}
+            </article>
 
-        <article className="card">
-          <h3 className="card-title">Backups</h3>
-          <p className="card-muted">A compact summary of backup posture and restore verification.</p>
-          <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.55rem" }}>
-            <p style={{ margin: 0, fontSize: "0.86rem" }}>
-              Layer: <strong>{backupReadModel.layerType}</strong>
-            </p>
-            <p style={{ margin: 0, fontSize: "0.86rem" }}>
-              Local status: <strong>{backupReadModel.localStatus}</strong>
-            </p>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
-              <p style={{ margin: 0, fontSize: "0.86rem" }}>Offsite:</p>
-              <span className={`status-chip ${backupReadModel.offsite.tone}`}>{backupReadModel.offsite.label}</span>
-            </div>
-            {canViewDiagnostics ? (
-              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>{backupReadModel.offsite.detail}</p>
-            ) : null}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
-              <p style={{ margin: 0, fontSize: "0.86rem" }}>Restore verified:</p>
-              <span className={`status-chip ${backupReadModel.restoreVerification.tone}`}>
-                {backupReadModel.restoreVerification.label}
-              </span>
-            </div>
-            {canViewDiagnostics ? (
-              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
-                {backupReadModel.restoreVerification.detail}
-              </p>
-            ) : null}
-            <p style={{ margin: 0, fontSize: "0.86rem" }}>
-              Restore scope: <strong>{backupReadModel.restoreScope}</strong>
-            </p>
-            {canViewDiagnostics ? (
-              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
-                Staging safety: {backupReadModel.stagingSafety}. {backupReadModel.stagingSafetyDetail}
-              </p>
-            ) : null}
-          </div>
-          <p style={{ margin: "0.7rem 0 0", fontSize: "0.9rem" }}>
-            <Link href={`/apps/${siteId}/backups`} className="action-link">
-              Open backup details <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
-        </article>
-
-        <article className="card">
-          <h3 className="card-title">Publishing and workflow</h3>
-          <p className="card-muted" style={{ marginBottom: "0.5rem" }}>{workflowModel.body}</p>
-          <span className="tag" style={{ marginBottom: "0.5rem", display: "inline-flex" }}>{workflowModel.title}</span>
-          <ul style={{ margin: 0, paddingLeft: "1.15rem", display: "grid", gap: "0.25rem" }}>
-            {workflowModel.bullets.map((item) => (
-              <li key={item} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{item}</li>
-            ))}
-          </ul>
-          {stagingConfigured ? (
-            <>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.85rem" }}>
-                <DeployButton
-                  siteId={siteId}
-                  deployTargetId={site?.deployTargetId}
-                  environment="production"
-                  disabled
-                  disabledReason={backupLockReason}
-                />
-                <DeployButton
-                  siteId={siteId}
-                  deployTargetId={site?.deployTargetId}
-                  environment="staging"
-                  disabled
-                  disabledReason={backupLockReason}
-                />
+            <article className="card">
+              <h3 className="card-title">Backups</h3>
+              <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.55rem" }}>
+                <p style={{ margin: 0, fontSize: "0.86rem" }}>
+                  Layer: <strong>{backupReadModel.layerType}</strong>
+                </p>
+                <p style={{ margin: 0, fontSize: "0.86rem" }}>
+                  Local status: <strong>{backupReadModel.localStatus}</strong>
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+                  <p style={{ margin: 0, fontSize: "0.86rem" }}>Offsite:</p>
+                  <span className={`status-chip ${backupReadModel.offsite.tone}`}>{backupReadModel.offsite.label}</span>
+                </div>
+                {canViewDiagnostics ? (
+                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>{backupReadModel.offsite.detail}</p>
+                ) : null}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+                  <p style={{ margin: 0, fontSize: "0.86rem" }}>Restore verified:</p>
+                  <span className={`status-chip ${backupReadModel.restoreVerification.tone}`}>
+                    {backupReadModel.restoreVerification.label}
+                  </span>
+                </div>
+                {canViewDiagnostics ? (
+                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                    {backupReadModel.restoreVerification.detail}
+                  </p>
+                ) : null}
+                <p style={{ margin: 0, fontSize: "0.86rem" }}>
+                  Restore scope: <strong>{backupReadModel.restoreScope}</strong>
+                </p>
+                {canViewDiagnostics ? (
+                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                    Staging safety: {backupReadModel.stagingSafety}. {backupReadModel.stagingSafetyDetail}
+                  </p>
+                ) : null}
               </div>
-              <p style={{ margin: "0.7rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{backupLockReason}</p>
-              <p style={{ margin: "0.75rem 0 0" }}>
-                <Link href={`/apps/${siteId}/staging`} className="action-link">
-                  Open publishing workflow <ArrowRightIcon className="btn-icon" />
+              <p style={{ margin: "0.7rem 0 0", fontSize: "0.9rem" }}>
+                <Link href={`/apps/${siteId}/backups`} className="action-link">
+                  Open backup details <ArrowRightIcon className="btn-icon" />
                 </Link>
               </p>
-            </>
-          ) : (
-            <p className="card-muted" style={{ margin: "0.8rem 0 0" }}>
-              Staging is not configured yet, so publishing controls stay hidden here.
-            </p>
-          )}
-        </article>
-      </div>
+            </article>
 
-      <div className="grid">
-        <article className="card">
-          <h3 className="card-title">What to do next</h3>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <Link href={`/apps/${siteId}/analytics`} className="action-link">
-              Review deployment analytics <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            <Link href={`/apps/${siteId}/settings`} className="action-link">
-              Update site settings <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
-          <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
-            {stagingConfigured ? (
-              <Link href={`/apps/${siteId}/staging`} className="action-link">
-                Run publishing workflow <ArrowRightIcon className="btn-icon" />
-              </Link>
-            ) : (
-              <span className="card-muted">Publishing workflow is hidden until staging is configured.</span>
-            )}
-          </p>
-        </article>
-      </div>
+            <article className="card">
+              <h3 className="card-title">Publishing and workflow</h3>
+              <p className="card-muted" style={{ marginBottom: "0.5rem" }}>{workflowModel.body}</p>
+              <span className="tag" style={{ marginBottom: "0.5rem", display: "inline-flex" }}>{workflowModel.title}</span>
+              <ul style={{ margin: 0, paddingLeft: "1.15rem", display: "grid", gap: "0.25rem" }}>
+                {workflowModel.bullets.map((item) => (
+                  <li key={item} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{item}</li>
+                ))}
+              </ul>
+              {stagingConfigured ? (
+                <>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.85rem" }}>
+                    <DeployButton
+                      siteId={siteId}
+                      deployTargetId={site?.deployTargetId}
+                      environment="production"
+                      disabled
+                      disabledReason={backupLockReason}
+                    />
+                    <DeployButton
+                      siteId={siteId}
+                      deployTargetId={site?.deployTargetId}
+                      environment="staging"
+                      disabled
+                      disabledReason={backupLockReason}
+                    />
+                  </div>
+                  <p style={{ margin: "0.7rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{backupLockReason}</p>
+                  <p style={{ margin: "0.75rem 0 0" }}>
+                    <Link href={`/apps/${siteId}/staging`} className="action-link">
+                      Open publishing workflow <ArrowRightIcon className="btn-icon" />
+                    </Link>
+                  </p>
+                </>
+              ) : (
+                <p className="card-muted" style={{ margin: "0.8rem 0 0" }}>
+                  Staging is not configured yet, so publishing controls stay hidden here.
+                </p>
+              )}
+            </article>
+          </div>
+
+          <div className="grid">
+            <article className="card">
+              <h3 className="card-title">What to do next</h3>
+              <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
+                <Link href={`/apps/${siteId}/analytics`} className="action-link">
+                  Review deployment analytics <ArrowRightIcon className="btn-icon" />
+                </Link>
+              </p>
+              <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
+                <Link href={`/apps/${siteId}/settings`} className="action-link">
+                  Update site settings <ArrowRightIcon className="btn-icon" />
+                </Link>
+              </p>
+              <p style={{ margin: "0.35rem 0", fontSize: "0.9rem" }}>
+                {stagingConfigured ? (
+                  <Link href={`/apps/${siteId}/staging`} className="action-link">
+                    Run publishing workflow <ArrowRightIcon className="btn-icon" />
+                  </Link>
+                ) : (
+                  <span className="card-muted">Publishing workflow is hidden until staging is configured.</span>
+                )}
+              </p>
+            </article>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PlusIcon } from "@/components/JongoIcons";
-import PendingBadge from "@/components/PendingBadge";
 import { normalizeRole } from "@/lib/roles";
 
 type SiteCollaborator = {
@@ -207,57 +206,68 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
     }
   }
 
+  function getInitial(fullName: string | null | undefined, emailValue: string): string {
+    const source = (fullName?.trim() || emailValue.trim() || "?").charAt(0);
+    return source.toUpperCase();
+  }
+
   return (
     <div>
       {loading ? <p className="card-muted">Loading app team…</p> : null}
 
-      {!loading && rows.length === 0 && pendingInvites.length === 0 ? (
-        <p className="card-muted">No app collaborators yet.</p>
-      ) : null}
+      <form onSubmit={invite} className="form-row" style={{ marginTop: loading ? 0 : "0.35rem" }}>
+        <input
+          className="form-input"
+          style={{ flex: "1 1 190px" }}
+          type="email"
+          placeholder="user@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          disabled={busy}
+        />
+        <select
+          className="form-select"
+          style={{ width: "auto", minWidth: "130px" }}
+          value={role}
+          onChange={(e) => setRole(e.target.value as "admin" | "collaborator")}
+          disabled={busy}
+        >
+          {roleOptions.map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+        <button type="submit" className="btn" disabled={busy}>
+          <PlusIcon className="btn-icon" />
+          {busy ? "Saving…" : "Invite"}
+        </button>
+      </form>
 
-      {!loading ? (
-        <div style={{ marginBottom: "1rem", display: "grid", gap: "0.55rem" }}>
-          {rows.map((row) => {
-            const normalized = normalizeRole(row.role);
-            const isSelf = row.userId === currentUserId;
-            return (
-              <div key={row.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "0.45rem" }}>
-                <div>
-                  <p style={{ margin: 0, fontWeight: 600 }}>{row.fullName ?? row.email}</p>
-                  <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.82rem" }}>{row.email}</p>
-                </div>
+      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.55rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+        <input
+          type="checkbox"
+          checked={forceInvite}
+          onChange={(e) => setForceInvite(e.target.checked)}
+          disabled={busy}
+        />
+        Always issue invite token
+      </label>
 
-                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                  {callerRole === "admin" ? (
-                    <select
-                      className="form-select"
-                      style={{ width: "auto", minWidth: "130px" }}
-                      value={normalized}
-                      onChange={(e) => updateRole(row.id, e.target.value)}
-                      disabled={busy}
-                    >
-                      {roleOptions.map((r) => (
-                        <option key={r} value={r}>{r}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="tag">{normalized}</span>
-                  )}
-
-                  {callerRole === "admin" && !isSelf ? (
-                    <button className="btn btn-danger" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => removeCollaborator(row.id)} disabled={busy}>
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
+      {inviteLink && !emailDeliveryConfigured ? (
+        <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.85rem", background: "var(--surface)", border: "1px solid var(--warning)", borderRadius: "6px" }}>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input className="form-input" value={inviteLink} readOnly />
+            <button type="button" className="btn" onClick={() => copyInviteLink()}>Copy link</button>
+          </div>
         </div>
       ) : null}
 
+      {notice ? <p className="form-help" style={{ marginTop: "0.5rem" }}>{notice}</p> : null}
+      {error ? <p className="form-error" style={{ marginTop: "0.5rem" }}>{error}</p> : null}
+
       {!loading && pendingInvites.length > 0 ? (
-        <div style={{ marginBottom: "1rem", display: "grid", gap: "0.5rem" }}>
+        <div style={{ marginTop: "1rem", marginBottom: "1rem", display: "grid", gap: "0.5rem" }}>
+          <h4 style={{ margin: 0, fontSize: "0.92rem" }}>Pending invites</h4>
           {pendingInvites.map((invite) => (
             <div key={invite.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "0.45rem" }}>
               <div>
@@ -302,75 +312,68 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
         </div>
       ) : null}
 
-      <form onSubmit={invite} className="form-row">
-        <input
-          className="form-input"
-          style={{ flex: "1 1 190px" }}
-          type="email"
-          placeholder="user@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          disabled={busy}
-        />
-        <select
-          className="form-select"
-          style={{ width: "auto", minWidth: "130px" }}
-          value={role}
-          onChange={(e) => setRole(e.target.value as "admin" | "collaborator")}
-          disabled={busy}
-        >
-          {roleOptions.map((r) => (
-            <option key={r} value={r}>{r}</option>
-          ))}
-        </select>
-        <button type="submit" className="btn" disabled={busy}>
-          <PlusIcon className="btn-icon" />
-          {busy ? "Saving…" : "Invite"}
-        </button>
-      </form>
+      {!loading ? (
+        <div style={{ marginTop: "0.8rem", display: "grid", gap: "0.55rem" }}>
+          <h4 style={{ margin: 0, fontSize: "0.92rem" }}>Current members</h4>
+          {rows.map((row) => {
+            const normalized = normalizeRole(row.role);
+            const isSelf = row.userId === currentUserId;
+            return (
+              <div key={row.id} style={{ display: "grid", gridTemplateColumns: "34px minmax(0, 1fr) auto", gap: "0.65rem", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "0.45rem" }}>
+                <div
+                  aria-hidden
+                  style={{
+                    width: "34px",
+                    height: "34px",
+                    borderRadius: "999px",
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    display: "grid",
+                    placeItems: "center",
+                    fontWeight: 700,
+                    fontSize: "0.82rem"
+                  }}
+                >
+                  {getInitial(row.fullName, row.email)}
+                </div>
 
-      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.55rem", fontSize: "0.85rem", color: "var(--muted)" }}>
-        <input
-          type="checkbox"
-          checked={forceInvite}
-          onChange={(e) => setForceInvite(e.target.checked)}
-          disabled={busy}
-        />
-        Always issue invite token (even when account already exists)
-      </label>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: 0, fontWeight: 600 }}>{row.fullName ?? row.email}</p>
+                  <p style={{ margin: "0.1rem 0 0", color: "var(--muted)", fontSize: "0.82rem", overflow: "hidden", textOverflow: "ellipsis" }}>{row.email}</p>
+                </div>
 
-      {inviteLink && !emailDeliveryConfigured ? (
-        <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.85rem", background: "var(--surface)", border: "1px solid var(--warning)", borderRadius: "6px" }}>
-          <p style={{ margin: "0 0 0.45rem", fontSize: "0.82rem", color: "var(--warning)" }}>
-            Email delivery not configured yet - copy this invite link manually
-          </p>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <input className="form-input" value={inviteLink} readOnly />
-            <button type="button" className="btn" onClick={() => copyInviteLink()}>Copy link</button>
-          </div>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  {callerRole === "admin" ? (
+                    <select
+                      className="form-select"
+                      style={{ width: "auto", minWidth: "130px" }}
+                      value={normalized}
+                      onChange={(e) => updateRole(row.id, e.target.value)}
+                      disabled={busy}
+                    >
+                      {roleOptions.map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="tag">{normalized}</span>
+                  )}
+
+                  {callerRole === "admin" && !isSelf ? (
+                    <button className="btn btn-danger" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => removeCollaborator(row.id)} disabled={busy}>
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+
+          {rows.length === 0 && pendingInvites.length === 0 ? (
+            <p className="card-muted" style={{ margin: 0 }}>No app collaborators yet.</p>
+          ) : null}
         </div>
       ) : null}
-
-      <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.85rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px" }}>
-        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-          <PendingBadge reason="Email delivery not configured" />
-          <span>
-            {emailDeliveryConfigured
-              ? "Invite emails are sent automatically when SMTP is configured."
-              : "Email delivery not configured yet - copy this invite link manually."}
-          </span>
-        </p>
-      </div>
-
-      {callerRole !== "admin" ? (
-        <p className="form-help" style={{ marginTop: "0.55rem" }}>
-          Collaborators can invite collaborators only. Admin invites require app admin access.
-        </p>
-      ) : null}
-
-      {notice ? <p className="form-help" style={{ marginTop: "0.5rem" }}>{notice}</p> : null}
-      {error ? <p className="form-error" style={{ marginTop: "0.5rem" }}>{error}</p> : null}
     </div>
   );
 }

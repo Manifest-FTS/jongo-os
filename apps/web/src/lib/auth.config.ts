@@ -4,6 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 
 const AUTH_DB_UNAVAILABLE_CODE = "AUTH_DB_UNAVAILABLE";
+const DEV_AUTH_FALLBACK_USER_ID = "00000000-0000-4000-8000-000000000001";
 
 function isUuid(value?: string | null): boolean {
   if (!value) return false;
@@ -121,10 +122,18 @@ export const authConfig = {
             console.warn(
               "[auth] DEV_AUTH credentials matched but no UUID-backed DB user was found for DEV_AUTH_EMAIL."
             );
-            return null;
+            return {
+              id: DEV_AUTH_FALLBACK_USER_ID,
+              email: devAuthEmail,
+              name: "Local Dev User"
+            };
           } catch (error) {
             console.warn("[auth] DEV_AUTH credential fallback failed to resolve DB user.", error);
-            return null;
+            return {
+              id: DEV_AUTH_FALLBACK_USER_ID,
+              email: devAuthEmail,
+              name: "Local Dev User"
+            };
           }
         }
 

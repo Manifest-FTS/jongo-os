@@ -1,9 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRightIcon, PlusIcon } from "@/components/JongoIcons";
 import SiteCollaboratorManager from "@/components/SiteCollaboratorManager";
+
+type CollaboratorRow = {
+  id: string;
+  userId: string;
+  role: string;
+  email: string;
+  fullName?: string | null;
+};
 
 type Props = {
   siteId: string;
@@ -12,15 +20,57 @@ type Props = {
 
 export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId }: Props) {
   const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<CollaboratorRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/sites/${siteId}/collaborators`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (!cancelled) {
+            setError((data as { error?: string }).error ?? "Could not load collaborators");
+          }
+          return;
+        }
+        if (!cancelled) {
+          setRows((data as { collaborators?: CollaboratorRow[] }).collaborators ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Could not load collaborators");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId, open]);
+
+  function getInitial(row: CollaboratorRow): string {
+    const source = (row.fullName?.trim() || row.email.trim() || "?").charAt(0);
+    return source.toUpperCase();
+  }
 
   return (
     <article className="card">
       <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
         <div>
           <h3 className="card-title">Collaborators</h3>
-          <p className="card-muted" style={{ marginBottom: 0 }}>
-            Open the invite modal to add people, adjust roles, or review pending invitations.
-          </p>
+          <p className="card-muted" style={{ marginBottom: 0 }}>{rows.length} total</p>
         </div>
         <button type="button" className="btn" onClick={() => setOpen(true)}>
           <PlusIcon className="btn-icon" />
@@ -28,16 +78,59 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId }:
         </button>
       </div>
 
-      <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.9rem" }}>
-        <p style={{ margin: 0, fontSize: "0.9rem" }}>
-          Role changes and invite management live behind a single, focused modal so the overview stays calm.
+      {loading ? <p className="card-muted" style={{ marginTop: "0.85rem", marginBottom: 0 }}>Loading…</p> : null}
+      {error ? <p className="form-error" style={{ marginTop: "0.85rem", marginBottom: 0 }}>{error}</p> : null}
+
+      {!loading && !error ? (
+        <div style={{ display: "grid", gap: "0.55rem", marginTop: "0.9rem" }}>
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "34px minmax(0, 1fr) auto",
+                alignItems: "center",
+                gap: "0.6rem",
+                paddingBottom: "0.45rem",
+                borderBottom: "1px solid var(--border)"
+              }}
+            >
+              <div
+                aria-hidden
+                style={{
+                  width: "34px",
+                  height: "34px",
+                  borderRadius: "999px",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  display: "grid",
+                  placeItems: "center",
+                  fontWeight: 700,
+                  fontSize: "0.82rem"
+                }}
+              >
+                {getInitial(row)}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 600 }}>{row.fullName ?? row.email}</p>
+                <p style={{ margin: "0.15rem 0 0", color: "var(--muted)", fontSize: "0.82rem", overflow: "hidden", textOverflow: "ellipsis" }}>{row.email}</p>
+              </div>
+              <span className="tag" style={{ textTransform: "capitalize" }}>{row.role}</span>
+            </div>
+          ))}
+          <p style={{ margin: "0.2rem 0 0" }}>
+            <Link href={`/apps/${siteId}/team`} className="action-link">
+              Open team <ArrowRightIcon className="btn-icon" />
+            </Link>
+          </p>
+        </div>
+      ) : null}
+
+      {!loading && !error && rows.length === 0 ? (
+        <p className="card-muted" style={{ marginTop: "0.85rem", marginBottom: 0 }}>
+          No collaborators yet.
         </p>
-        <p style={{ margin: 0 }}>
-          <Link href={`/apps/${siteId}/team`} className="action-link">
-            Open the full team page <ArrowRightIcon className="btn-icon" />
-          </Link>
-        </p>
-      </div>
+      ) : null}
 
       {open ? (
         <div
@@ -70,10 +163,7 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId }:
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", marginBottom: "1rem" }}>
               <div>
-                <h2 style={{ margin: 0 }}>Manage collaborators</h2>
-                <p className="card-muted" style={{ marginBottom: 0 }}>
-                  Invite teammates, review pending access, and keep access changes in one place.
-                </p>
+                <h2 style={{ margin: 0 }}>Collaborators</h2>
               </div>
               <button type="button" className="btn" onClick={() => setOpen(false)}>
                 Close
