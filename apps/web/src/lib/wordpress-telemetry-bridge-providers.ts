@@ -189,6 +189,32 @@ function extractCoreVersion(rootJson: unknown): string {
   return match?.[1] ?? "collector_pending";
 }
 
+function hasPluginRestRoute(rootJson: unknown): boolean {
+  if (!isRecord(rootJson)) {
+    return false;
+  }
+
+  const routes = rootJson.routes;
+  if (!isRecord(routes)) {
+    return false;
+  }
+
+  return Object.prototype.hasOwnProperty.call(routes, "/wp/v2/plugins");
+}
+
+function hasApplicationPasswordAuth(rootJson: unknown): boolean {
+  if (!isRecord(rootJson)) {
+    return false;
+  }
+
+  const authentication = rootJson.authentication;
+  if (!isRecord(authentication)) {
+    return false;
+  }
+
+  return Object.prototype.hasOwnProperty.call(authentication, "application-passwords");
+}
+
 function extractPluginSlug(item: Record<string, unknown>, pluginPath: string): string | null {
   const directSlug = typeof item.slug === "string" ? item.slug.trim() : "";
   if (directSlug) {
@@ -508,10 +534,32 @@ export async function collectFromRestCredentials(
     fetchJson(`${normalizedBase}/wp-json`, headers, timeout),
     fetchJsonWithStatus(`${normalizedBase}/wp-json/wp/v2/plugins?per_page=100`, headers, timeout)
   ]);
+  const pluginRouteAvailable = hasPluginRestRoute(root);
+  const appPasswordAuthAvailable = hasApplicationPasswordAuth(root);
 
   if (!pluginList.ok) {
+    if (!pluginRouteAvailable || pluginList.status === 404) {
+      return buildUnavailableSnapshot({
+        label: "Plugin REST route unavailable",
+        summary: "This WordPress site is not exposing the /wp/v2/plugins REST route required for plugin telemetry.",
+        guidance: "Ensure WordPress REST API remains enabled, update WordPress core if needed, and verify no security plugin or WAF rule blocks /wp-json/wp/v2/plugins.",
+        pluginStatus: "plugin_route_unavailable",
+        siteHealth: "degraded"
+      });
+    }
+
     if (!authCheck.ok || !isRecord(authCheck.data)) {
       if (authCheck.status === 401 || authCheck.status === 403) {
+        if (!appPasswordAuthAvailable) {
+          return buildUnavailableSnapshot({
+            label: "Application passwords unavailable",
+            summary: "This WordPress site is not advertising application-password authentication for REST telemetry.",
+            guidance: "Enable HTTPS and application-password authentication on the site, then reconnect WordPress telemetry credentials.",
+            pluginStatus: "app_passwords_unavailable",
+            siteHealth: "degraded"
+          });
+        }
+
         return buildUnavailableSnapshot({
           label: "Credentials rejected",
           summary: "Saved WordPress telemetry credentials were rejected by the site.",

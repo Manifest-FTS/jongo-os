@@ -38,6 +38,10 @@ export default async function IntegrationsPage({ params }: Params) {
     viewer
   });
 
+  if (permissionSnapshot.role !== "admin") {
+    notFound();
+  }
+
   const [overview, deployments, activity] = await Promise.all([
     canViewInternalMetadata ? getCoolifyOverview() : Promise.resolve(null),
     listSiteDeployments(siteId, viewer),
@@ -123,53 +127,53 @@ export default async function IntegrationsPage({ params }: Params) {
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
             Last updated: {new Date(wpTelemetrySnapshot.checkedAt).toLocaleString()}
           </p>
-                      {canViewInternalMetadata ? (
-                        <p style={{ margin: "0.55rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-                          Need maintenance details? Open app settings for mapping and provider checks.
-                        </p>
-                      ) : null}
-                      <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
-                        <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugins page</Link>
-                      </p>
-                    </article>
-                  ) : (
-                    <article className="card">
-                      <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-                        No active integrations
-                        <PendingBadge reason="Provider integrations (analytics, monitoring, CMS signals) will connect here as they become available." />
-                      </h3>
-                      <p className="card-muted">Attach provider tooling here as this app stack grows.</p>
-                    </article>
-                  )}
+          {canViewInternalMetadata ? (
+            <p style={{ margin: "0.55rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+              Need maintenance details? Open app settings for mapping and provider checks.
+            </p>
+          ) : null}
+          <p style={{ margin: "0.65rem 0 0", fontSize: "0.88rem" }}>
+            <Link href={`/apps/${siteId}/plugins`} className="action-link">Open plugins page</Link>
+          </p>
+        </article>
+      ) : (
+        <article className="card">
+          <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+            No active integrations
+            <PendingBadge reason="Provider integrations (analytics, monitoring, CMS signals) will connect here as they become available." />
+          </h3>
+          <p className="card-muted">Attach provider tooling here as this app stack grows.</p>
+        </article>
+      )}
 
-                  {isWordPress ? (
-                    <article className="card">
-                      <h3 className="card-title">WordPress Access</h3>
-                      <p className="card-muted" style={{ marginTop: 0 }}>
-                        Add this app's WordPress login details to show plugin monitoring here. Each app keeps its own saved details.
-                      </p>
-                      <WordPressTelemetryConnectionPanel siteId={siteId} canManage={canManageTelemetry} />
-                    </article>
-                  ) : null}
+      {isWordPress ? (
+        <article className="card">
+          <h3 className="card-title">WordPress Access</h3>
+          <p className="card-muted" style={{ marginTop: 0 }}>
+            Add this app's WordPress login details to show plugin monitoring here. Each app keeps its own saved details.
+          </p>
+          <WordPressTelemetryConnectionPanel siteId={siteId} canManage={canManageTelemetry} />
+        </article>
+      ) : null}
 
-                  <article className="card">
-                    <h3 className="card-title">Recent Integration Events</h3>
-                    {activity.length === 0 ? (
-                      <p className="card-muted" style={{ marginBottom: 0 }}>No deployment events available yet.</p>
-                    ) : (
-                      <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.6rem" }}>
-                        {activity.map((item) => (
-                          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.65rem" }}>
-                            <p style={{ margin: 0, fontSize: "0.88rem" }}>{item.detail}</p>
-                            <span className={`status-chip ${item.status}`}>{item.status}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
-                      <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings</Link>
-                    </p>
-                  </article>
-                </div>
-              );
-            }
+      <article className="card">
+        <h3 className="card-title">Recent Integration Events</h3>
+        {activity.length === 0 ? (
+          <p className="card-muted" style={{ marginBottom: 0 }}>No deployment events available yet.</p>
+        ) : (
+          <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.6rem" }}>
+            {activity.map((item) => (
+              <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.65rem" }}>
+                <p style={{ margin: 0, fontSize: "0.88rem" }}>{item.detail}</p>
+                <span className={`status-chip ${item.status}`}>{item.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <p style={{ margin: "0.8rem 0 0", fontSize: "0.88rem" }}>
+          <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings</Link>
+        </p>
+      </article>
+    </div>
+  );
+}
