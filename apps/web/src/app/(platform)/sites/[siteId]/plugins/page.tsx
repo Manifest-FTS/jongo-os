@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
-import { getWordPressTelemetrySnapshotForRequest } from "@/lib/wordpress-telemetry-snapshot";
+import { getWordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
+import { getWordPressTelemetrySnapshotFromCollector } from "@/lib/wordpress-telemetry-collector";
 
 export const dynamic = "force-dynamic";
 
@@ -112,37 +113,37 @@ export default async function SitePluginsPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
-  const isWordPress = workspace.siteType === "wordpress";
+
+  const isWordPress = workspace.siteType === "wordpress" || workspace.resourceType === "WordPress";
   if (!isWordPress) {
-    return (
-      <div className="page-stack">
-        <article className="card">
-          <h2 style={{ marginTop: 0 }}>Plugin Stats</h2>
-          <p className="card-muted">Plugin stats are available only for WordPress app types.</p>
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.88rem" }}>
-            <Link href={`/apps/${siteId}/integrations`} className="action-link">Open integrations</Link>
-          </p>
-        </article>
-      </div>
-    );
+    notFound();
   }
 
   const resolvedSiteId = workspace.slug ?? workspace.id ?? siteId;
-  const snapshot = await getWordPressTelemetrySnapshotForRequest({
+  const fallbackSnapshot = getWordPressTelemetrySnapshot({
     siteId: resolvedSiteId,
     isWordPress,
     hasCoolifyServiceUuid: Boolean(workspace.coolifyServiceUuid)
   });
+  const collectorSnapshot = await getWordPressTelemetrySnapshotFromCollector({
+    fallback: fallbackSnapshot,
+    workspace,
+    requestedSiteId: siteId,
+    preferredSiteDbId: workspace.id
+  });
+  const snapshot = collectorSnapshot ?? fallbackSnapshot;
+
   const policy = snapshot.policy;
-  const hasInventory = policy.pluginInventory.length > 0;
   const pluginCount = policy.pluginInventory.length;
+  const pluginCountLabel = String(pluginCount);
   const adminPluginsUrl = policy.siteUrl ? normalizeWordPressAdminUrl(policy.siteUrl) : null;
+  const inventoryUnavailable = pluginCount === 0 && policy.signals.pluginStatus !== "healthy";
 
   return (
     <div className="page-stack">
       <article className="card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>Installed Plugins ({pluginCount})</h2>
+          <h2 style={{ margin: 0 }}>Installed Plugins ({pluginCountLabel})</h2>
           {adminPluginsUrl ? (
             <>
               <style>{`
@@ -205,8 +206,17 @@ export default async function SitePluginsPage({ params }: Params) {
               </tbody>
             </table>
           </div>
+        ) : inventoryUnavailable ? (
+          <div style={{ display: "grid", gap: "0.45rem" }}>
+            <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--muted)" }}>
+              Live plugin inventory is currently unavailable for this WordPress app.
+            </p>
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+              {policy.summary}
+            </p>
+          </div>
         ) : (
-          <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--muted)" }}>No plugin rows are available yet for this site.</p>
+          <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--muted)" }}>No installed plugins were returned for this app.</p>
         )}
       </article>
     </div>

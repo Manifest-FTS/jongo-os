@@ -363,7 +363,7 @@ export async function GET(_req: Request, { params }: Params) {
 
     const fallbackSnapshot = getWordPressTelemetrySnapshot({
       siteId: workspace.slug ?? workspace.id,
-      isWordPress: workspace.siteType === "wordpress",
+      isWordPress: workspace.siteType === "wordpress" || workspace.resourceType === "WordPress",
       hasCoolifyServiceUuid: Boolean(workspace.coolifyServiceUuid)
     });
 

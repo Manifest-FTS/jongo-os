@@ -208,7 +208,13 @@ function comparePluginVersions(installedVersion: string, latestVersion: string):
 }
 
 function parsePluginRows(value: unknown): ParsedPluginInventoryRow[] {
-  if (!Array.isArray(value)) {
+  const listValue = Array.isArray(value)
+    ? value
+    : isRecord(value)
+      ? value.plugins ?? value.items ?? value.data ?? value.results ?? []
+      : [];
+
+  if (!Array.isArray(listValue)) {
     return [];
   }
 
@@ -283,7 +289,7 @@ function parsePluginRows(value: unknown): ParsedPluginInventoryRow[] {
   }
 
   const rows: ParsedPluginInventoryRow[] = [];
-  for (const item of value) {
+  for (const item of listValue) {
     if (!isRecord(item)) {
       continue;
     }
@@ -459,15 +465,103 @@ export async function collectFromRestCredentials(
     "content-type": "application/json"
   };
 
-  const normalizedBase = siteUrl.replace(/\/+$/, "");
-  const authCheck = await fetchJsonWithStatus(`${normalizedBase}/wp-json/wp/v2/users/me`, headers, timeout);
-  if (!authCheck.ok || !isRecord(authCheck.data)) {
-    return null;
+  function buildUnavailableSnapshot(params: {
+    label: string;
+    summary: string;
+    guidance: string;
+    pluginStatus: string;
+    siteHealth: string;
+  }): CollectorSnapshotPayload {
+    return {
+      checkedAt: new Date().toISOString(),
+      source,
+      collectorStatus: "ready_for_pull",
+      tone: "degraded",
+      label: params.label,
+      summary: params.summary,
+      guidance: params.guidance,
+      siteUrl: normalizedBase,
+      needsSetup: false,
+      setupSteps: [],
+      signals: {
+        coreVersion: "collector_pending",
+        pluginStatus: params.pluginStatus,
+        themeStatus: "collector_pending",
+        updateAvailability: "collector_pending",
+        maintenanceMode: "collector_pending",
+        siteHealth: params.siteHealth
+      },
+      pluginInsights: {
+        inventoryConnected: false,
+        activePlugins: null,
+        inactivePlugins: null,
+        updatesAvailable: null,
+        securityIssues: null
+      },
+      pluginInventory: []
+    };
   }
 
-  const root = await fetchJson(`${normalizedBase}/wp-json`, headers, timeout);
-  const pluginList = await fetchJson(`${normalizedBase}/wp-json/wp/v2/plugins?per_page=100`, headers, timeout);
-  const pluginInventory = await enrichPluginRows(parsePluginRows(pluginList), Math.min(timeout, 2500));
+  const normalizedBase = siteUrl.replace(/\/+$/, "");
+  const authCheck = await fetchJsonWithStatus(`${normalizedBase}/wp-json/wp/v2/users/me`, headers, timeout);
+  const [root, pluginList] = await Promise.all([
+    fetchJson(`${normalizedBase}/wp-json`, headers, timeout),
+    fetchJsonWithStatus(`${normalizedBase}/wp-json/wp/v2/plugins?per_page=100`, headers, timeout)
+  ]);
+
+  if (!pluginList.ok) {
+    if (!authCheck.ok || !isRecord(authCheck.data)) {
+      if (authCheck.status === 401 || authCheck.status === 403) {
+        return buildUnavailableSnapshot({
+          label: "Credentials rejected",
+          summary: "Saved WordPress telemetry credentials were rejected by the site.",
+          guidance: "Update the saved username or application password, then test the connection again.",
+          pluginStatus: "credentials_rejected",
+          siteHealth: "authentication_failed"
+        });
+      }
+    }
+
+    if (pluginList.status === 401 || pluginList.status === 403) {
+      return buildUnavailableSnapshot({
+        label: "Plugin access limited",
+        summary: "WordPress telemetry credentials are valid, but this user cannot read installed plugins.",
+        guidance: "Use an application password for a user with plugin management access, then retry telemetry.",
+        pluginStatus: "limited_access",
+        siteHealth: "good"
+      });
+    }
+
+    if (pluginList.status >= 500) {
+      return buildUnavailableSnapshot({
+        label: "Plugin endpoint unavailable",
+        summary: "The WordPress plugins endpoint responded with a server error while inventory was loading.",
+        guidance: "Check the site's plugin administration endpoint and hosting health, then refresh telemetry.",
+        pluginStatus: "plugin_endpoint_unavailable",
+        siteHealth: "degraded"
+      });
+    }
+
+    if (pluginList.status === 0) {
+      return buildUnavailableSnapshot({
+        label: "Plugin endpoint unreachable",
+        summary: "Jongo could not reach the WordPress plugins endpoint for this site.",
+        guidance: "Verify the saved site URL and outbound network path to the WordPress site, then retry.",
+        pluginStatus: "plugin_endpoint_unreachable",
+        siteHealth: "unreachable"
+      });
+    }
+
+    return buildUnavailableSnapshot({
+      label: "Plugin endpoint unavailable",
+      summary: "WordPress accepted the saved credentials, but plugin inventory could not be loaded.",
+      guidance: "Verify the site's REST plugin endpoint and retry telemetry.",
+      pluginStatus: "plugin_endpoint_unavailable",
+      siteHealth: "degraded"
+    });
+  }
+
+  const pluginInventory = await enrichPluginRows(parsePluginRows(pluginList.data), Math.min(timeout, 2500));
 
   if (pluginInventory.length === 0) {
     return {

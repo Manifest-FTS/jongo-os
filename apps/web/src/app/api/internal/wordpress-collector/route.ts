@@ -128,25 +128,32 @@ function buildSnapshot(record?: CollectorMockRecord) {
   const inactivePlugins = readFinite(record?.inactivePlugins);
   const updatesAvailable = readFinite(record?.updatesAvailable);
   const securityIssues = readFinite(record?.securityIssues);
-  const inventoryConnected =
-    activePlugins !== null || inactivePlugins !== null || updatesAvailable !== null || securityIssues !== null;
   const pluginInventory = normalizePluginInventory(record?.pluginInventory);
+  const inventoryConnected =
+    activePlugins !== null ||
+    inactivePlugins !== null ||
+    updatesAvailable !== null ||
+    securityIssues !== null ||
+    pluginInventory.length > 0;
+  const hasMockRecord = Boolean(record);
 
   return {
     checkedAt: new Date().toISOString(),
     source: "collector_bridge_mock",
     collectorStatus: "ready_for_pull" as const,
-    tone: inventoryConnected ? "healthy" : "unknown",
-    label: inventoryConnected ? "Live" : "Awaiting inventory",
+    tone: inventoryConnected ? "healthy" : "degraded",
+    label: inventoryConnected ? "Live" : "Telemetry unavailable",
     summary: inventoryConnected
       ? "Live WordPress plugin inventory is connected."
-      : "Collector bridge is active but no plugin inventory payload is available for this site yet.",
+      : "WordPress plugin telemetry is currently unavailable for this site.",
     guidance: inventoryConnected
       ? "Review plugin and update metrics below."
-      : "Open Integrations and connect WordPress telemetry credentials for this app.",
+      : hasMockRecord
+        ? "Review telemetry credentials and site availability, then refresh plugin telemetry."
+        : "Connect WordPress telemetry credentials in Integrations, then refresh plugin telemetry.",
     siteUrl: record?.siteUrl?.trim() || null,
-    needsSetup: !inventoryConnected,
-    setupSteps: inventoryConnected
+    needsSetup: !inventoryConnected && !hasMockRecord,
+    setupSteps: inventoryConnected || hasMockRecord
       ? []
       : [
           "Open App > Integrations > Connect Telemetry.",
