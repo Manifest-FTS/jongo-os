@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { ToastStack, useToasts } from "@/components/Toasts";
 import { describeBackupError } from "@/lib/backup-messages";
 
 export type SiteBackupRow = {
@@ -19,12 +20,17 @@ export type SiteBackupRow = {
   wpVersion: string | null;
   restorable: boolean;
   error: string | null;
+  restoreStatus: string | null;
+  restoreError: string | null;
 };
 
 type Props = {
   siteId: string;
   backups: SiteBackupRow[];
   canManage: boolean;
+  page: number;
+  pageSize: number;
+  total: number;
 };
 
 function formatDate(iso: string): string {
@@ -61,11 +67,17 @@ function Metric({ value, label }: { value: number | string | null; label: string
   );
 }
 
-export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) {
+export default function SiteBackupsPanel({
+  siteId,
+  backups,
+  canManage,
+  page,
+  pageSize,
+  total
+}: Props) {
   const router = useRouter();
+  const { toasts, push, dismiss } = useToasts();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [pendingRestore, setPendingRestore] = useState<{ id: string; when: string } | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -89,22 +101,52 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
     };
   }, [openMenu]);
 
-  // While a backup is running, poll so the row fills in without a manual refresh.
-  const hasRunning = backups.some((b) => b.status === "running");
+  // Poll while anything is in flight so rows fill in without a manual refresh.
+  const inFlight = backups.some((b) => b.status === "running" || b.restoreStatus === "running");
   useEffect(() => {
-    if (!hasRunning) return;
-    const timer = setInterval(() => router.refresh(), 15000);
+    if (!inFlight) return;
+    const timer = setInterval(() => router.refresh(), 10000);
     return () => clearInterval(timer);
-  }, [hasRunning, router]);
+  }, [inFlight, router]);
 
-  function report(text: string, error = false) {
-    setMessage(text);
-    setIsError(error);
-  }
+  // Announce transitions: a backup or restore that WAS running and now isn't.
+  const prevRef = useRef<Map<string, { status: string; restoreStatus: string | null }>>(new Map());
+  useEffect(() => {
+    const prev = prevRef.current;
+    for (const b of backups) {
+      const before = prev.get(b.id);
+      if (before) {
+        if (before.status === "running" && b.status !== "running") {
+          push(
+            b.status === "success"
+              ? { tone: "success", title: "Backup complete", text: "Files and database are saved offsite in Backblaze." }
+              : {
+                  tone: "error",
+                  title: "Backup failed",
+                  text: describeBackupError(b.error) ?? "The backup did not complete.",
+                  ttl: 0
+                }
+          );
+        }
+        if (before.restoreStatus === "running" && b.restoreStatus && b.restoreStatus !== "running") {
+          push(
+            b.restoreStatus === "success"
+              ? { tone: "success", title: "Restore complete", text: "The site has been rolled back and is running again." }
+              : {
+                  tone: "error",
+                  title: "Restore failed",
+                  text: describeBackupError(b.restoreError) ?? "The restore did not complete.",
+                  ttl: 0
+                }
+          );
+        }
+      }
+    }
+    prevRef.current = new Map(backups.map((b) => [b.id, { status: b.status, restoreStatus: b.restoreStatus }]));
+  }, [backups, push]);
 
   async function createBackup() {
     setBusy(true);
-    report("");
     try {
       const res = await fetch(`/api/sites/${encodeURIComponent(siteId)}/backups`, {
         method: "POST",
@@ -113,13 +155,13 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok && res.status !== 202) {
-        report(data.message ?? data.error ?? "Backup could not be started.", true);
+        push({ tone: "error", title: "Couldn't start backup", text: data.message ?? data.error ?? "Please try again.", ttl: 0 });
       } else {
-        report(data.message ?? "Backup started.");
+        push({ tone: "info", title: "Backup started", text: "Capturing files and database — this page updates automatically." });
         router.refresh();
       }
     } catch {
-      report("Network error — could not reach the backup API.", true);
+      push({ tone: "error", title: "Network error", text: "Could not reach the backup API.", ttl: 0 });
     } finally {
       setBusy(false);
     }
@@ -127,7 +169,6 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
 
   async function restore(backupId: string) {
     setBusy(true);
-    report("");
     try {
       const res = await fetch(
         `/api/sites/${encodeURIComponent(siteId)}/backups/${encodeURIComponent(backupId)}/restore`,
@@ -139,13 +180,17 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok && res.status !== 202) {
-        report(data.message ?? data.error ?? "Restore could not be started.", true);
+        push({ tone: "error", title: "Couldn't start restore", text: data.message ?? data.error ?? "Please try again.", ttl: 0 });
       } else {
-        report(data.message ?? "Restore started.");
+        push({
+          tone: "info",
+          title: "Restore started",
+          text: "The site is briefly offline while files and the database are put back."
+        });
         router.refresh();
       }
     } catch {
-      report("Network error — could not reach the restore API.", true);
+      push({ tone: "error", title: "Network error", text: "Could not reach the restore API.", ttl: 0 });
     } finally {
       setBusy(false);
       setPendingRestore(null);
@@ -173,12 +218,6 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
           </button>
         ) : null}
       </div>
-
-      {message ? (
-        <p className={`bk-note${isError ? " bk-note--error" : ""}`} role="status">
-          {message}
-        </p>
-      ) : null}
 
       {backups.length === 0 ? (
         <div className="bk-empty">
@@ -209,7 +248,12 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
                   ) : null}
                 </div>
 
-                {running ? (
+                {b.restoreStatus === "running" ? (
+                  <div className="bk-metrics">
+                    <span className="status-chip unknown bk-pulse">Restoring…</span>
+                    <span className="bk-when__time">Putting files and the database back — the site is briefly offline</span>
+                  </div>
+                ) : running ? (
                   <div className="bk-metrics">
                     <span className="status-chip unknown bk-pulse">Backing up…</span>
                     <span className="bk-when__time">Capturing files and database to Backblaze</span>
@@ -267,8 +311,36 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
               </div>
             );
           })}
+
+          {total > pageSize ? (
+            <div className="bk-pager">
+              <p className="bk-pager__info">
+                Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total} backups
+              </p>
+              <div className="bk-pager__controls">
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => router.push(`?bkPage=${page - 1}`, { scroll: false })}
+                  disabled={page <= 1}
+                >
+                  Newer
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => router.push(`?bkPage=${page + 1}`, { scroll: false })}
+                  disabled={page * pageSize >= total}
+                >
+                  Older
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
+
+      <ToastStack toasts={toasts} onDismiss={dismiss} />
 
       <ConfirmDialog
         open={pendingRestore !== null}

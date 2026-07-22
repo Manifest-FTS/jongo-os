@@ -89,6 +89,18 @@ async function restoreBackup(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Restore script not found." }, { status: 500 });
   }
 
+  // Mark the restore as in-flight so the UI can report completion rather than
+  // firing and forgetting. The script clears this via /api/ops/site-restore-record.
+  await db.siteBackup.update({
+    where: { id: backup.id },
+    data: {
+      restoreStatus: "running",
+      restoreStartedAt: new Date(),
+      restoreCompletedAt: null,
+      restoreError: null
+    }
+  });
+
   const child = spawn(
     process.execPath,
     [
