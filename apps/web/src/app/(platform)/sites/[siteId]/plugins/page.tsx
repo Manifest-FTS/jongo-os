@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
+import WordPressTelemetryConnectionPanel from "@/components/WordPressTelemetryConnectionPanel";
 import { getWordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
 import { getWordPressTelemetrySnapshotFromCollector } from "@/lib/wordpress-telemetry-collector";
 
@@ -119,6 +121,13 @@ export default async function SitePluginsPage({ params }: Params) {
     notFound();
   }
 
+  const permissionSnapshot = await resolveSitePermissionSnapshot({
+    siteId,
+    workspace,
+    viewer
+  });
+  const canManageTelemetry = permissionSnapshot.canManageTelemetry;
+
   const resolvedSiteId = workspace.slug ?? workspace.id ?? siteId;
   const fallbackSnapshot = getWordPressTelemetrySnapshot({
     siteId: resolvedSiteId,
@@ -218,6 +227,14 @@ export default async function SitePluginsPage({ params }: Params) {
         ) : (
           <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--muted)" }}>No installed plugins were returned for this app.</p>
         )}
+      </article>
+
+      <article className="card">
+        <h3 className="card-title">WordPress Access</h3>
+        <p className="card-muted" style={{ marginTop: 0 }}>
+          Update WordPress telemetry credentials here when plugin inventory is unavailable or permissions change.
+        </p>
+        <WordPressTelemetryConnectionPanel siteId={siteId} canManage={canManageTelemetry} />
       </article>
     </div>
   );

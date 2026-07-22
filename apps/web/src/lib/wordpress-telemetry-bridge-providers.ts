@@ -497,6 +497,8 @@ export async function collectFromRestCredentials(
     guidance: string;
     pluginStatus: string;
     siteHealth: string;
+    needsSetup?: boolean;
+    setupSteps?: string[];
   }): CollectorSnapshotPayload {
     return {
       checkedAt: new Date().toISOString(),
@@ -507,8 +509,8 @@ export async function collectFromRestCredentials(
       summary: params.summary,
       guidance: params.guidance,
       siteUrl: normalizedBase,
-      needsSetup: false,
-      setupSteps: [],
+      needsSetup: Boolean(params.needsSetup),
+      setupSteps: params.setupSteps ?? [],
       signals: {
         coreVersion: "collector_pending",
         pluginStatus: params.pluginStatus,
@@ -544,7 +546,13 @@ export async function collectFromRestCredentials(
         summary: "This WordPress site is not exposing the /wp/v2/plugins REST route required for plugin telemetry.",
         guidance: "Ensure WordPress REST API remains enabled, update WordPress core if needed, and verify no security plugin or WAF rule blocks /wp-json/wp/v2/plugins.",
         pluginStatus: "plugin_route_unavailable",
-        siteHealth: "degraded"
+        siteHealth: "degraded",
+        needsSetup: true,
+        setupSteps: [
+          "Open https://your-site/wp-json and confirm the route map loads over HTTPS.",
+          "Confirm /wp-json/wp/v2/plugins returns data for an administrator app-password request.",
+          "Disable or reconfigure security/WAF rules that block REST plugin routes."
+        ]
       });
     }
 
@@ -556,7 +564,13 @@ export async function collectFromRestCredentials(
             summary: "This WordPress site is not advertising application-password authentication for REST telemetry.",
             guidance: "Enable HTTPS and application-password authentication on the site, then reconnect WordPress telemetry credentials.",
             pluginStatus: "app_passwords_unavailable",
-            siteHealth: "degraded"
+            siteHealth: "degraded",
+            needsSetup: true,
+            setupSteps: [
+              "Ensure the WordPress site is served over HTTPS.",
+              "Verify application passwords are enabled for the telemetry user role.",
+              "Regenerate the app password and reconnect WordPress telemetry credentials."
+            ]
           });
         }
 
