@@ -97,6 +97,11 @@ export default async function DeploymentsPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+
+  const isWordPress = workspace.siteType === "wordpress" || workspace.resourceType === "WordPress";
+  if (isWordPress) {
+    notFound();
+  }
   
   const canViewInternalMetadata = Boolean(
     session?.user?.id &&

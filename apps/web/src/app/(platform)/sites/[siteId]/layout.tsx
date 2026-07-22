@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyAppStagingCapability } from "@/lib/coolify";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -32,6 +33,18 @@ export default async function SiteWorkspaceLayout({
     await isClientAdmin(site.organizationId, session.user.id)
   );
 
+  const permissionSnapshot = await resolveSitePermissionSnapshot({
+    siteId,
+    workspace: site,
+    viewer: {
+      userId: session?.user?.id,
+      email: session?.user?.email
+    }
+  });
+
+  const isWordPress = site.siteType === "wordpress" || site.resourceType === "WordPress";
+  const isAdminViewer = permissionSnapshot.role === "admin";
+
   const appUuid = site.coolifyServiceUuid?.trim() || "";
   const stagingCapability = (site.stagingEnabled && appUuid)
     ? await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined)
@@ -43,9 +56,9 @@ export default async function SiteWorkspaceLayout({
 
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
-    { name: "Deployments", href: `/apps/${siteId}/deployments` },
-    { name: "Integrations", href: `/apps/${siteId}/integrations` },
-    ...(site?.siteType === "wordpress" ? [{ name: "Plugins", href: `/apps/${siteId}/plugins` } as WorkspaceTab] : []),
+    ...(!isWordPress ? [{ name: "Deployments", href: `/apps/${siteId}/deployments` } as WorkspaceTab] : []),
+    ...(isAdminViewer ? [{ name: "Integrations", href: `/apps/${siteId}/integrations` } as WorkspaceTab] : []),
+    ...(isWordPress ? [{ name: "Plugins", href: `/apps/${siteId}/plugins` } as WorkspaceTab] : []),
     ...(showStagingTab ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
     { name: "Backups", href: `/apps/${siteId}/backups` },
     { name: "Analytics", href: `/apps/${siteId}/analytics` },
@@ -53,7 +66,7 @@ export default async function SiteWorkspaceLayout({
     { name: "Settings", href: `/apps/${siteId}/settings` }
   ];
 
-  const showOwnershipState = canViewInternalMetadata && site?.ownershipState !== "unavailable";
+  const showOwnershipState = permissionSnapshot.canViewInternalMetadata && site?.ownershipState !== "unavailable";
   const isMapped = site?.ownershipState === "mapped";
 
   return (
