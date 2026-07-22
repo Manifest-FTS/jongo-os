@@ -185,6 +185,25 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   const requestedPage = Number((await searchParams)?.bkPage ?? 1);
   const backupPage = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
 
+  // Watchdog: a backup whose result callback never arrived would otherwise sit
+  // in "running" forever. Anything still running after 30 minutes is treated as
+  // failed so the UI can never hang indefinitely.
+  if (workspace.id) {
+    const { db } = await import("@/lib/db");
+    await db.siteBackup.updateMany({
+      where: {
+        siteId: workspace.id,
+        status: "running",
+        startedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) }
+      },
+      data: {
+        status: "failed",
+        error: "timed_out",
+        completedAt: new Date()
+      }
+    });
+  }
+
   const backupTotal: number = workspace.id
     ? await (async () => {
         const { db } = await import("@/lib/db");
@@ -332,7 +351,8 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       <SiteBackupsPanel
         siteId={siteId}
         backups={siteBackupRows}
-        canManage={canViewInternalMetadata}
+        canManage={canViewInternalMetadata && workspace.siteType === "wordpress"}
+        supported={workspace.siteType === "wordpress"}
         page={backupPage}
         pageSize={backupPageSize}
         total={backupTotal}
