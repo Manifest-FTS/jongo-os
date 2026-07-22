@@ -28,6 +28,8 @@ type Props = {
   siteId: string;
   backups: SiteBackupRow[];
   canManage: boolean;
+  /** False for non-WordPress resources, which cannot be full-site backed up. */
+  supported?: boolean;
   page: number;
   pageSize: number;
   total: number;
@@ -71,6 +73,7 @@ export default function SiteBackupsPanel({
   siteId,
   backups,
   canManage,
+  supported = true,
   page,
   pageSize,
   total
@@ -221,11 +224,15 @@ export default function SiteBackupsPanel({
 
       {backups.length === 0 ? (
         <div className="bk-empty">
-          <p className="bk-empty__title">No backups yet</p>
+          <p className="bk-empty__title">
+            {supported ? "No backups yet" : "Not available for this app"}
+          </p>
           <p className="bk-empty__hint">
-            {canManage
-              ? "Create the first snapshot — it captures files and the database together, offsite."
-              : "Backups will appear here once your administrator creates one."}
+            {!supported
+              ? "Full-site backups capture a WordPress site's files and database together. This app isn't a WordPress site, so it's backed up through its database schedule instead."
+              : canManage
+                ? "Create the first snapshot — it captures files and the database together, offsite."
+                : "Backups will appear here once your administrator creates one."}
           </p>
         </div>
       ) : (
