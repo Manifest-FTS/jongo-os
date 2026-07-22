@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { describeBackupError } from "@/lib/backup-messages";
 
 export type SiteBackupRow = {
   id: string;
@@ -65,6 +67,7 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<{ id: string; when: string } | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Close the actions menu on outside click / Escape.
@@ -122,16 +125,8 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
     }
   }
 
-  async function restore(backupId: string, when: string) {
-    const confirmed = window.confirm(
-      `Restore the backup from ${when}?\n\n` +
-        "This OVERWRITES the live site's files and database, and the site will be briefly offline.\n\n" +
-        "A safety snapshot of the current state is taken first, so this can be rolled back."
-    );
-    if (!confirmed) return;
-
+  async function restore(backupId: string) {
     setBusy(true);
-    setOpenMenu(null);
     report("");
     try {
       const res = await fetch(
@@ -153,6 +148,7 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
       report("Network error — could not reach the restore API.", true);
     } finally {
       setBusy(false);
+      setPendingRestore(null);
     }
   }
 
@@ -221,7 +217,9 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
                 ) : failed ? (
                   <div className="bk-metrics">
                     <span className="status-chip error">Failed</span>
-                    <span className="bk-when__time">{b.error ?? "This backup did not complete."}</span>
+                    <span className="bk-when__time">
+                      {describeBackupError(b.error) ?? "This backup did not complete."}
+                    </span>
                   </div>
                 ) : (
                   <div className="bk-metrics">
@@ -252,7 +250,10 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
                           <button
                             type="button"
                             className="bk-btn bk-btn--danger"
-                            onClick={() => restore(b.id, when)}
+                            onClick={() => {
+                              setOpenMenu(null);
+                              setPendingRestore({ id: b.id, when });
+                            }}
                             disabled={busy}
                             role="menuitem"
                           >
@@ -268,6 +269,24 @@ export default function SiteBackupsPanel({ siteId, backups, canManage }: Props) 
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingRestore !== null}
+        title="Restore this backup?"
+        body={
+          pendingRestore
+            ? `This replaces the live site with the backup from ${pendingRestore.when}. Files and the database are both rolled back, and the site will be briefly offline while it happens.`
+            : ""
+        }
+        warning="Any content created since that backup will be lost. A safety snapshot of the current state is taken first, so this can be undone."
+        confirmPhrase="RESTORE"
+        confirmLabel="Restore site"
+        busy={busy}
+        onCancel={() => setPendingRestore(null)}
+        onConfirm={() => {
+          if (pendingRestore) void restore(pendingRestore.id);
+        }}
+      />
     </article>
   );
 }
