@@ -203,6 +203,27 @@ try {
   if (summary.safetySnapshot) {
     console.log(`Pre-restore state saved as restic snapshot ${summary.safetySnapshot} (use it to roll back).`);
   }
+
+  // Report completion so the UI can stop showing "restoring…" and tell the user.
+  const appBaseUrl = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
+  const opsToken = firstEnvValue(["BACKUP_RECONCILE_TOKEN", "OWNERSHIP_SYNC_TOKEN"]);
+  if (backupId && appBaseUrl && opsToken) {
+    try {
+      const res = await fetch(`${appBaseUrl}/api/ops/site-restore-record`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${opsToken}` },
+        body: JSON.stringify({
+          backupId,
+          status: ok ? "success" : "failed",
+          error: ok ? null : (k.RESULT || "unknown failure"),
+          safetySnapshot: summary.safetySnapshot
+        })
+      });
+      console.log(`recorded restore -> ${res.status}`);
+    } catch (e) {
+      console.error(`WARN: failed to record restore: ${e instanceof Error ? e.message : "unknown"}`);
+    }
+  }
   console.log(ok ? "\nRESULT: PASS" : "\nRESULT: FAIL");
   process.exit(ok ? 0 : 1);
 } finally {

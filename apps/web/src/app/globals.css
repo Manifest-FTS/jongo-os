@@ -1936,3 +1936,97 @@ main {
   background: #8c1d18;
   border-color: #8c1d18;
 }
+
+/* ============================================================
+   Toasts — fixed overlay, no effect on document flow
+   ============================================================ */
+
+.toast-stack {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: min(24rem, calc(100vw - 2.5rem));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: toast-in 180ms ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.toast__dot {
+  flex: 0 0 auto;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  margin-top: 0.35rem;
+  background: var(--muted);
+}
+
+.toast--success { border-color: #cfe6cf; }
+.toast--success .toast__dot { background: var(--accent-strong); }
+.toast--error { border-color: #f0c8c4; }
+.toast--error .toast__dot { background: #b3261e; }
+.toast--info .toast__dot { background: #6c7778; }
+
+.toast__body { flex: 1 1 auto; min-width: 0; }
+
+.toast__title {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.toast__text {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.toast__close {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
+  border-radius: 4px;
+}
+
+.toast__close:hover { background: var(--surface-alt); color: var(--text); }
+
+/* Pagination */
+.bk-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.bk-pager__info { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.bk-pager__controls { display: flex; gap: 0.5rem; }
