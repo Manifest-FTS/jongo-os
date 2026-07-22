@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import AppToaster from "@/components/AppToaster";
 
 export const metadata: Metadata = {
   title: "Jongo",
@@ -12,7 +13,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <AppToaster />
+      </body>
     </html>
   );
 }

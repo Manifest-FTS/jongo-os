@@ -10,6 +10,8 @@ import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 import InfrastructureDiagnostics from "@/components/InfrastructureDiagnostics";
 import SiteOverviewCollaboratorsCard from "@/components/SiteOverviewCollaboratorsCard";
+import SiteIpAddressCard from "@/components/SiteIpAddressCard";
+import SitePrivacyModeControl from "@/components/SitePrivacyModeControl";
 import { buildTemporaryProductionDomain } from "@/lib/temporary-domains";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 
@@ -160,23 +162,18 @@ function buildOverviewDomains(
   ];
 }
 
-function describePrivacyMode(canTogglePrivacyMode: boolean, isWordPress: boolean): { value: string; detail: string } {
-  if (!isWordPress) {
-    return {
-      value: "Not applicable",
-      detail: "Privacy controls are reserved for WordPress apps in this workspace model."
-    };
+function resolveHostingIpAddress(): string | null {
+  const explicitIp = process.env.HOSTING_SERVER_IP?.trim();
+  if (explicitIp) {
+    return explicitIp;
   }
 
-  return canTogglePrivacyMode
-    ? {
-        value: "Available to admins",
-        detail: "The privacy control is reserved for admins and surfaces from app settings."
-      }
-    : {
-        value: "Locked for collaborators",
-        detail: "Collaborators can review the privacy posture, but only admins can change it."
-      };
+  const sshHost = process.env.STAGING_SYNC_SSH_HOST?.trim();
+  if (sshHost && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(sshHost)) {
+    return sshHost;
+  }
+
+  return null;
 }
 
 export default async function SiteOverviewPage({ params }: Params) {
@@ -210,10 +207,20 @@ export default async function SiteOverviewPage({ params }: Params) {
 
   const restoreVerificationRecord = workspace.coolifyServiceUuid
     ? await (async () => {
-        const { db } = await import("@/lib/db");
-        return db.backupRestoreVerification.findUnique({
-          where: { resourceUuid: workspace.coolifyServiceUuid! }
-        });
+        const { getDb } = await import("@/lib/db");
+        const prisma = await getDb();
+
+        if (!prisma || !("backupRestoreVerification" in prisma)) {
+          return null;
+        }
+
+        try {
+          return await (prisma as any).backupRestoreVerification.findUnique({
+            where: { resourceUuid: workspace.coolifyServiceUuid! }
+          });
+        } catch {
+          return null;
+        }
       })()
     : null;
 
@@ -252,7 +259,8 @@ export default async function SiteOverviewPage({ params }: Params) {
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
   const workflowModel = getResourceWorkflowModel(workspace.siteType);
-  const privacyModeSummary = describePrivacyMode(permissions.canTogglePrivacyMode, isWordPress);
+  const hostingServerIp = resolveHostingIpAddress();
+  const hostingServerCountryName = process.env.HOSTING_SERVER_COUNTRY?.trim() || "United States";
 
   let readinessChecks: ReadinessCheck[] = [];
   let readinessSummary = { state: "unknown" as ReadinessState, detail: "" };
@@ -339,53 +347,6 @@ export default async function SiteOverviewPage({ params }: Params) {
 
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
-      <section className="card" style={{ padding: "1.25rem 1.35rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ maxWidth: "52rem" }}>
-            <span className="tag" style={{ display: "inline-flex", marginBottom: "0.85rem" }}>
-              {isWordPress ? "WordPress app" : "App overview"}
-            </span>
-            <h2 style={{ margin: 0 }}>{workspace.name}</h2>
-            <p className="card-muted" style={{ margin: "0.55rem 0 0" }}>
-              {workspace.description ?? "Overview, access, domains, and operations live together here."}
-            </p>
-            <p style={{ margin: "0.7rem 0 0", fontSize: "0.92rem", color: "var(--muted)" }}>
-              {workspace.clientName}
-              {workspace.slug ? <span> / {workspace.slug}</span> : null}
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href={`/apps/${siteId}/settings`} className="action-link">
-              Settings <ArrowRightIcon className="btn-icon" />
-            </Link>
-            <Link href={`/apps/${siteId}/team`} className="action-link">
-              Team <ArrowRightIcon className="btn-icon" />
-            </Link>
-            {stagingConfigured ? (
-              <Link href={`/apps/${siteId}/staging`} className="action-link">
-                Publishing <ArrowRightIcon className="btn-icon" />
-              </Link>
-            ) : null}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
-          <span className={`status-chip ${site?.status ?? "unknown"}`}>{site?.status ?? "unknown"}</span>
-          <span className="tag">{workspace.siteType}</span>
-          {canViewDiagnostics ? (
-            <>
-              <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>prod {site?.productionStatus ?? "unknown"}</span>
-              <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>staging {site?.stagingStatus ?? "unknown"}</span>
-              <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>
-                {stagingEnvironmentReady ? "Environment created" : "Environment missing"}
-              </span>
-            </>
-          ) : (
-            <span className="tag">Diagnostics hidden</span>
-          )}
-        </div>
-      </section>
-
       <section style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
         <div style={{ flex: "3 1 680px", minWidth: "320px" }}>
           <article className="card">
@@ -410,35 +371,14 @@ export default async function SiteOverviewPage({ params }: Params) {
         <div style={{ flex: "1 1 280px", minWidth: "260px", display: "grid", gap: "1rem" }}>
           <SiteOverviewCollaboratorsCard siteId={siteId} currentUserId={session?.user?.id ?? ""} />
 
-          <article className="card">
-            <h3 className="card-title">Server location</h3>
-            <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.45rem" }}>
-              <div>
-                <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Project</p>
-                <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.coolifyProjectName ?? workspace.coolifyProjectName ?? "Unassigned"}</p>
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Environment</p>
-                <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.coolifyEnvironmentName ?? workspace.coolifyEnvironmentName ?? "Default"}</p>
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Target</p>
-                <p style={{ margin: "0.2rem 0 0", fontWeight: 600 }}>{site?.deployTargetId ?? workspace.coolifyServiceUuid ?? "Not linked"}</p>
-              </div>
-            </div>
-          </article>
+          <SiteIpAddressCard ipAddress={hostingServerIp} countryName={hostingServerCountryName} />
 
           <article className="card">
-            <h3 className="card-title">Privacy mode</h3>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.45rem" }}>
-              <span className={`status-chip ${permissions.canTogglePrivacyMode ? "healthy" : "unknown"}`}>
-                {privacyModeSummary.value}
-              </span>
-              <span className="tag">{isWordPress ? "WordPress" : "Not available"}</span>
-            </div>
-            <p style={{ margin: "0.7rem 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>
-              {privacyModeSummary.detail}
-            </p>
+            <SitePrivacyModeControl
+              isWordPress={isWordPress}
+              canToggle={permissions.canTogglePrivacyMode}
+              isCollaboratorView={isCollaboratorView}
+            />
           </article>
         </div>
       </section>

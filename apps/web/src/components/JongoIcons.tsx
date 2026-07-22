@@ -194,3 +194,12 @@ export function EyeOffIcon(props: IconProps) {
     </BaseIcon>
   );
 }
+
+export function CopyIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+    </BaseIcon>
+  );
+}
