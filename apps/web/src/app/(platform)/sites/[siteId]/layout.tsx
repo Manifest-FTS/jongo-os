@@ -66,7 +66,7 @@ export default async function SiteWorkspaceLayout({
     ...(isWordPress ? [{ name: "Plugins", href: `/apps/${siteId}/plugins` } as WorkspaceTab] : []),
     ...(showStagingTab ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
     { name: "Backups", href: `/apps/${siteId}/backups` },
-    { name: "Analytics", href: `/apps/${siteId}/analytics` },
+    ...(isAdminViewer ? [{ name: "Analytics", href: `/apps/${siteId}/analytics` } as WorkspaceTab] : []),
     { name: "Advanced", href: `/apps/${siteId}/settings` }
   ];
 

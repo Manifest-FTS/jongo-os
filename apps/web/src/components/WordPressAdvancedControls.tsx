@@ -61,6 +61,23 @@ function StubToggle({
           aria-hidden="true"
           style={{
             position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: enabled ? "flex-start" : "flex-end",
+            padding: "0 9px",
+            color: "#fff",
+            fontSize: "0.75rem",
+            fontWeight: 700,
+            letterSpacing: "0.02em"
+          }}
+        >
+          {enabled ? "ON" : "OFF"}
+        </span>
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
             top: "3px",
             left: enabled ? "30px" : "3px",
             width: "24px",
@@ -159,14 +176,17 @@ export default function WordPressAdvancedControls({
                 ))}
               </select>
               {domainError ? <p className="form-error" style={{ margin: 0 }}>{domainError}</p> : null}
-              <button
-                type="button"
-                className="btn"
-                onClick={saveDomainSettings}
-                disabled={!canManageDomainSlug || savingDomain}
-              >
-                {savingDomain ? "Saving..." : "Save"}
-              </button>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ width: "min(100%, 7.5rem)" }}
+                  onClick={saveDomainSettings}
+                  disabled={!canManageDomainSlug || savingDomain}
+                >
+                  {savingDomain ? "Saving..." : "Save"}
+                </button>
+              </div>
             </div>
           </div>
 
