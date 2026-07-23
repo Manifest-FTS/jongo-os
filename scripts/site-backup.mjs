@@ -121,8 +121,15 @@ DB_PASS=$(read_env "$WP" WORDPRESS_DB_PASSWORD)
 [ -n "$DB_NAME" ] || DB_NAME=wordpress
 
 # ── Content metadata (Flywheel-style columns) ────────────────────────────────
-PREFIX=$(docker exec "$WP" sh -lc "grep -m1 table_prefix /var/www/html/wp-config.php 2>/dev/null | sed \\"s/.*=\\s*'\\([^']*\\)'.*/\\1/\\"" 2>/dev/null)
+# The official WordPress image sets the prefix via WORDPRESS_TABLE_PREFIX (its
+# wp-config uses getenv_docker(...), so parsing wp-config.php is unreliable).
+# Read the env var, default wp_, then verify against the real tables.
+PREFIX=$(read_env "$WP" WORDPRESS_TABLE_PREFIX)
 [ -n "$PREFIX" ] || PREFIX=wp_
+if ! docker exec "$DB" sh -lc "mariadb -u$DB_USER -p$DB_PASS -N -B -e \\"SELECT 1 FROM \${PREFIX}posts LIMIT 1\\" $DB_NAME" >/dev/null 2>&1; then
+  DETECTED=$(docker exec "$DB" sh -lc "mariadb -u$DB_USER -p$DB_PASS -N -B -e \\"SHOW TABLES LIKE '%posts'\\" $DB_NAME" 2>/dev/null | head -1 | sed 's/posts\$//')
+  [ -n "$DETECTED" ] && PREFIX="$DETECTED"
+fi
 echo "PREFIX=$PREFIX"
 
 WPVER=$(docker exec "$WP" sh -lc "grep -m1 '\\\$wp_version =' /var/www/html/wp-includes/version.php 2>/dev/null | sed \\"s/.*'\\([^']*\\)'.*/\\1/\\"" 2>/dev/null)
