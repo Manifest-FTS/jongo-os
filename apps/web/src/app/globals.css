@@ -277,11 +277,13 @@ main {
   text-align: left;
   padding: 0;
   font: inherit;
+  text-decoration: none;
   cursor: pointer;
 }
 
 .user-menu-link-button:hover {
   color: #1b5e20;
+  text-decoration: none;
 }
 
 .card {
@@ -677,6 +679,18 @@ main {
   flex-wrap: wrap;
 }
 
+.directory-toolbar--compact {
+  padding: 0.7rem 0.9rem;
+}
+
+.directory-toolbar__inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .directory-filter-trigger {
   border: 1px solid #d6e0d8;
   background: #f8fbf8;
@@ -860,8 +874,12 @@ main {
 
 .directory-results.directory-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 0.85rem;
+}
+
+.directory-results.directory-grid.directory-grid--two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .directory-row,
@@ -874,6 +892,23 @@ main {
 .directory-row {
   align-items: center;
   padding: 0.95rem 1rem;
+  position: relative;
+}
+
+.directory-row--linked {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.directory-row--linked:hover {
+  border-color: #cad7cd;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.directory-stretched-link {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  z-index: 1;
 }
 
 .directory-card {
@@ -882,6 +917,8 @@ main {
 
 .directory-main {
   min-width: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .directory-title-row {
@@ -904,6 +941,15 @@ main {
   font-size: 0.9rem;
 }
 
+.directory-client-link {
+  text-decoration: none;
+}
+
+.directory-client-link:hover {
+  text-decoration: underline;
+  color: #1f5a3d;
+}
+
 .directory-badges {
   display: flex;
   align-items: center;
@@ -918,6 +964,31 @@ main {
   gap: 0.6rem;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.directory-results.directory-grid .directory-row {
+  align-items: flex-start;
+  min-height: 220px;
+}
+
+.directory-results.directory-grid .directory-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.directory-results.directory-grid .directory-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.directory-results.directory-grid .directory-meta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .directory-empty {
@@ -1063,10 +1134,18 @@ main {
     align-items: stretch;
   }
 
+  .directory-toolbar__inline {
+    align-items: stretch;
+  }
+
   .directory-filter-trigger,
   .view-toggle {
     width: calc(50% - 0.375rem);
     justify-content: center;
+  }
+
+  .directory-results.directory-grid.directory-grid--two-up {
+    grid-template-columns: 1fr;
   }
 
   .directory-filter-panel {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRightIcon, BuildingOfficeIcon, SettingsIcon, StarIcon } from "@/components/JongoIcons";
+import { BuildingOfficeIcon, SettingsIcon, StarIcon } from "@/components/JongoIcons";
 import ResourceTypePill from "@/components/ResourceTypePill";
 import { ToastStack, useToasts } from "@/components/Toasts";
 import { useAppDirectoryPreferences } from "@/hooks/useAppDirectoryPreferences";
@@ -71,11 +71,15 @@ function statusCopy(status: SiteItem["status"]): { label: string; tone: string }
 export default function SiteDirectoryView({
   sites,
   userId,
-  isCollaboratorView = false
+  isCollaboratorView = false,
+  toolbarMode = "full",
+  gridColumns = 3
 }: {
   sites: SiteItem[];
   userId?: string;
   isCollaboratorView?: boolean;
+  toolbarMode?: "full" | "view-only";
+  gridColumns?: 2 | 3;
 }) {
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -254,61 +258,75 @@ export default function SiteDirectoryView({
 
   return (
     <div className="page-stack">
-      <div className="card directory-toolbar directory-toolbar--modern">
-        <div className="directory-toolbar__row">
-          <input
-            className="directory-search"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter apps by name, client, or description"
-            aria-label="Filter apps"
-            style={{ flex: "1 1 auto", minWidth: "220px" }}
-          />
-
-          <button
-            type="button"
-            className="directory-filter-trigger"
-            onClick={() => setFiltersOpen(true)}
-            aria-label="Open filters"
-          >
-            <SettingsIcon style={{ width: "0.95rem", height: "0.95rem" }} />
-            <span>Filter by</span>
-            {hasActiveFilters ? <span className="directory-filter-count">{activeFilterCount}</span> : null}
-          </button>
-
-          <div className="view-toggle" aria-label="Site view toggle">
-            <button type="button" className={`view-pill ${view === "list" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "list" })}>List</button>
-            <button type="button" className={`view-pill ${view === "grid" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "grid" })}>Grid</button>
+      {toolbarMode === "view-only" ? (
+        <div className="card directory-toolbar directory-toolbar--compact">
+          <div className="directory-toolbar__inline">
+            <p className="card-muted" style={{ margin: 0 }}>
+              {filtered.length} app{filtered.length === 1 ? "" : "s"}
+            </p>
+            <div className="view-toggle" aria-label="Site view toggle">
+              <button type="button" className={`view-pill ${view === "list" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "list" })}>List</button>
+              <button type="button" className={`view-pill ${view === "grid" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "grid" })}>Grid</button>
+            </div>
           </div>
         </div>
+      ) : (
+        <div className="card directory-toolbar directory-toolbar--modern">
+          <div className="directory-toolbar__row">
+            <input
+              className="directory-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Filter apps by name, client, or description"
+              aria-label="Filter apps"
+              style={{ flex: "1 1 auto", minWidth: "220px" }}
+            />
 
-        {hasActiveFilters ? (
-          <div className="directory-active-filters">
-            {statusFilters.map((status) => (
-              <button key={status} type="button" className="directory-active-chip" onClick={() => toggleStatusFilter(status)}>
-                {status === "healthy" ? "On track" : status === "degraded" ? "Needs review" : status === "error" ? "Action needed" : "Unavailable"}
-                <span aria-hidden>×</span>
-              </button>
-            ))}
-            {resourceTypeFilters.map((type) => (
-              <button key={type} type="button" className="directory-active-chip" onClick={() => toggleTypeFilter(type)}>
-                {RESOURCE_TYPE_LABELS[type]}
-                <span aria-hidden>×</span>
-              </button>
-            ))}
-            {stagingFilter !== "all" ? (
-              <button type="button" className="directory-active-chip" onClick={() => setPrefs({ stagingFilter: "all" })}>
-                {stagingFilter === "only_staging" ? "Staging only" : "Production only"}
-                <span aria-hidden>×</span>
-              </button>
-            ) : null}
-            <button type="button" className="directory-active-clear" onClick={clearFilters}>Clear all</button>
+            <button
+              type="button"
+              className="directory-filter-trigger"
+              onClick={() => setFiltersOpen(true)}
+              aria-label="Open filters"
+            >
+              <SettingsIcon style={{ width: "0.95rem", height: "0.95rem" }} />
+              <span>Filter by</span>
+              {hasActiveFilters ? <span className="directory-filter-count">{activeFilterCount}</span> : null}
+            </button>
+
+            <div className="view-toggle" aria-label="Site view toggle">
+              <button type="button" className={`view-pill ${view === "list" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "list" })}>List</button>
+              <button type="button" className={`view-pill ${view === "grid" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "grid" })}>Grid</button>
+            </div>
           </div>
-        ) : null}
-      </div>
 
-      {filtersOpen ? (
+          {hasActiveFilters ? (
+            <div className="directory-active-filters">
+              {statusFilters.map((status) => (
+                <button key={status} type="button" className="directory-active-chip" onClick={() => toggleStatusFilter(status)}>
+                  {status === "healthy" ? "On track" : status === "degraded" ? "Needs review" : status === "error" ? "Action needed" : "Unavailable"}
+                  <span aria-hidden>×</span>
+                </button>
+              ))}
+              {resourceTypeFilters.map((type) => (
+                <button key={type} type="button" className="directory-active-chip" onClick={() => toggleTypeFilter(type)}>
+                  {RESOURCE_TYPE_LABELS[type]}
+                  <span aria-hidden>×</span>
+                </button>
+              ))}
+              {stagingFilter !== "all" ? (
+                <button type="button" className="directory-active-chip" onClick={() => setPrefs({ stagingFilter: "all" })}>
+                  {stagingFilter === "only_staging" ? "Staging only" : "Production only"}
+                  <span aria-hidden>×</span>
+                </button>
+              ) : null}
+              <button type="button" className="directory-active-clear" onClick={clearFilters}>Clear all</button>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {toolbarMode === "full" && filtersOpen ? (
         <div className="directory-filter-sheet" role="dialog" aria-modal="true" aria-label="Filter apps">
           <button type="button" className="directory-filter-backdrop" aria-label="Close filters" onClick={() => setFiltersOpen(false)} />
           <div className="directory-filter-panel">
@@ -387,24 +405,25 @@ export default function SiteDirectoryView({
         </div>
       ) : null}
 
-      <p className="card-muted">{filtered.length} app{filtered.length === 1 ? "" : "s"}</p>
+      {toolbarMode === "full" ? <p className="card-muted">{filtered.length} app{filtered.length === 1 ? "" : "s"}</p> : null}
 
       {filtered.length === 0 ? (
         <div className="card directory-empty">
           <p className="card-muted">No apps match those filters.</p>
         </div>
       ) : (
-        <section className={`directory-results ${view === "list" ? "directory-list" : "directory-grid"}`}>
+        <section className={`directory-results ${view === "list" ? "directory-list" : `directory-grid ${gridColumns === 2 ? "directory-grid--two-up" : ""}`}`}>
           {filtered.map((site) => {
             const resolvedType = isKnownResourceType(site.resourceType) ? site.resourceType : "Web App";
             const state = statusCopy(site.status);
             const isFavorite = favoriteIds.has(site.id);
             return (
-              <article key={site.id} className="card tone-card directory-row">
+              <article key={site.id} className="card tone-card directory-row directory-row--linked">
+                <Link href={site.href} className="directory-stretched-link" aria-label={`Open ${site.name} workspace`} />
                 <div className="directory-main">
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.45rem", flexWrap: "wrap" }}>
                     <ResourceTypePill type={resolvedType} size="sm" />
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", position: "relative", zIndex: 2 }}>
                       <button
                         type="button"
                         onClick={() => toggleFavorite(site.id)}
@@ -433,10 +452,21 @@ export default function SiteDirectoryView({
                     <h2 className="directory-title" style={{ fontSize: "1.06rem", lineHeight: 1.2 }}>{site.name}</h2>
                   </div>
                   {site.description ? <p className="directory-summary">{site.description}</p> : null}
-                  <p className="directory-meta" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                    <BuildingOfficeIcon style={{ width: "0.9rem", height: "0.9rem", color: "var(--muted)" }} />
-                    <span>{site.clientName}</span>
-                  </p>
+                  {site.clientHref ? (
+                    <Link
+                      href={site.clientHref}
+                      className="directory-meta directory-client-link"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", position: "relative", zIndex: 2 }}
+                    >
+                      <BuildingOfficeIcon style={{ width: "0.9rem", height: "0.9rem", color: "var(--muted)" }} />
+                      <span>{site.clientName}</span>
+                    </Link>
+                  ) : (
+                    <p className="directory-meta" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                      <BuildingOfficeIcon style={{ width: "0.9rem", height: "0.9rem", color: "var(--muted)" }} />
+                      <span>{site.clientName}</span>
+                    </p>
+                  )}
                   {!isCollaboratorView && (site.backupLocalStatus || site.backupOffsiteLabel) ? (
                     <div className="directory-badges">
                       {site.backupLocalStatus ? <span className="tag">Backup: {site.backupLocalStatus}</span> : null}
@@ -470,17 +500,6 @@ export default function SiteDirectoryView({
                       </span>
                     </div>
                   ) : null}
-                </div>
-
-                <div className="directory-actions">
-                  {site.clientHref ? (
-                    <Link href={site.clientHref} className="action-link">
-                      View client <ArrowRightIcon className="btn-icon" />
-                    </Link>
-                  ) : null}
-                  <Link href={site.href} className="action-link">
-                    Open workspace <ArrowRightIcon className="btn-icon" />
-                  </Link>
                 </div>
               </article>
             );
