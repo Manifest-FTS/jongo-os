@@ -348,20 +348,10 @@ async function resolveAuthorizedSite(siteId: string, options?: { requireManage?:
             ])
       ]
     },
-    include: {
-      organization: {
-        select: {
-          ownerId: true,
-          collaborators: {
-            where: { userId: session.user.id, deletedAt: null },
-            select: { role: true }
-          }
-        }
-      },
-      collaborators: {
-        where: { userId: session.user.id, deletedAt: null },
-        select: { role: true }
-      }
+    select: {
+      id: true,
+      slug: true,
+      name: true
     }
   });
 
@@ -388,7 +378,13 @@ async function resolveAuthorizedSite(siteId: string, options?: { requireManage?:
     return { error: NextResponse.json({ error: "You do not have permission to manage WordPress telemetry connections" }, { status: 403 }) };
   }
 
-  return { db, siteId: resolvedSiteId, canManage };
+  return {
+    db,
+    siteId: resolvedSiteId,
+    canManage,
+    siteName: site?.name ?? siteId,
+    siteSlug: site?.slug ?? siteId
+  };
 }
 
 async function parseBody(req: Request): Promise<WordPressConfigBody | NextResponse> {
@@ -399,16 +395,36 @@ async function parseBody(req: Request): Promise<WordPressConfigBody | NextRespon
   }
 }
 
+function inferDefaultSiteUrl(input: { siteUrl?: string | null; siteName?: string; siteSlug?: string }): string | null {
+  const explicit = input.siteUrl?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const candidate = (input.siteName?.trim() || input.siteSlug?.trim() || "").toLowerCase();
+  if (!candidate || candidate.includes(" ") || !candidate.includes(".")) {
+    return null;
+  }
+
+  return `https://${candidate.replace(/^https?:\/\//, "")}`;
+}
+
 function toSummary(config: {
   siteUrl: string;
   username: string;
   lastTestedAt: Date | null;
   lastTestStatus: string | null;
   lastError: string | null;
-} | null) {
+} | null, fallback?: { siteName?: string; siteSlug?: string }) {
+  const effectiveSiteUrl = inferDefaultSiteUrl({
+    siteUrl: config?.siteUrl ?? null,
+    siteName: fallback?.siteName,
+    siteSlug: fallback?.siteSlug
+  });
+
   return {
     connected: Boolean(config),
-    siteUrl: config?.siteUrl ?? null,
+    siteUrl: effectiveSiteUrl,
     username: config?.username ?? null,
     hasPassword: Boolean(config),
     lastTestedAt: config?.lastTestedAt?.toISOString() ?? null,
@@ -435,7 +451,7 @@ export async function GET(_req: Request, { params }: Params) {
     }
   });
 
-  return NextResponse.json(toSummary(config));
+  return NextResponse.json(toSummary(config, { siteName: resolved.siteName, siteSlug: resolved.siteSlug }));
 }
 
 export async function PUT(req: Request, { params }: Params) {
