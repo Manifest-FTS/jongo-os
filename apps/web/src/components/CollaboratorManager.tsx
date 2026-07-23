@@ -40,7 +40,6 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "collaborator">("collaborator");
-  const [forceInvite, setForceInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -86,7 +85,7 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
       const res = await fetch(`/api/organizations/${organizationId}/collaborators`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role, forceInvite })
+        body: JSON.stringify({ email: email.trim(), role, forceInvite: true })
       });
 
       const data = await res.json();
@@ -336,16 +335,6 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
         </button>
       </form>
 
-      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.55rem", fontSize: "0.85rem", color: "var(--muted)" }}>
-        <input
-          type="checkbox"
-          checked={forceInvite}
-          onChange={(e) => setForceInvite(e.target.checked)}
-          disabled={inviteLoading}
-        />
-        Always issue invite token (even when account already exists)
-      </label>
-
       {inviteLink && !emailDeliveryConfigured ? (
         <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.85rem", background: "var(--surface)", border: "1px solid var(--warning)", borderRadius: "6px" }}>
           <p style={{ margin: "0 0 0.45rem", fontSize: "0.82rem", color: "var(--warning)" }}>
@@ -360,11 +349,6 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
 
       {inviteError && <p className="form-error" style={{ marginTop: "0.5rem" }}>{inviteError}</p>}
       {inviteNotice && <p className="form-help" style={{ marginTop: "0.5rem" }}>{inviteNotice}</p>}
-      <p className="form-help">
-        {emailDeliveryConfigured
-          ? "Invite by email. SMTP delivery is enabled and invite links are sent automatically."
-          : "Email delivery not configured yet - copy this invite link manually."}
-      </p>
     </div>
   );
 }

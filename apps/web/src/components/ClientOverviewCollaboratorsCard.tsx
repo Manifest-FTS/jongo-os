@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import CollaboratorManager from "@/components/CollaboratorManager";
+import { UsersIcon } from "@/components/JongoIcons";
+import UserAvatar from "@/components/UserAvatar";
 
 type TeamMember = {
   id: string;
   name: string;
   email: string;
   role: string;
+  avatarUrl?: string | null;
 };
 
 type Props = {
@@ -22,6 +25,7 @@ type CollaboratorsResponse = {
     role: string;
     email: string;
     fullName?: string | null;
+    avatarUrl?: string | null;
   }>;
 };
 
@@ -60,7 +64,8 @@ export default function ClientOverviewCollaboratorsCard({ organizationId, curren
               id: member.id,
               name: member.fullName || member.email,
               email: member.email,
-              role: member.role
+              role: member.role,
+              avatarUrl: member.avatarUrl ?? null
             }))
           );
         }
@@ -82,9 +87,13 @@ export default function ClientOverviewCollaboratorsCard({ organizationId, curren
     };
   }, [organizationId, open]);
 
-  function getInitial(member: TeamMember): string {
-    const source = (member.name?.trim() || member.email.trim() || "?").charAt(0);
-    return source.toUpperCase();
+  function getInitials(member: TeamMember): string {
+    const source = member.name?.trim() || member.email.trim() || "?";
+    const parts = source.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+    }
+    return (parts[0]?.slice(0, 2) ?? "?").toUpperCase();
   }
 
   return (
@@ -111,7 +120,7 @@ export default function ClientOverviewCollaboratorsCard({ organizationId, curren
             padding: 0
           }}
         >
-          <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>+</span>
+          <UsersIcon style={{ width: "1rem", height: "1rem" }} />
         </button>
       </div>
 
@@ -126,7 +135,7 @@ export default function ClientOverviewCollaboratorsCard({ organizationId, curren
 
       {organizationId && !loading && !error ? (
         <div style={{ display: "grid", gap: "0.55rem", marginTop: "0.9rem" }}>
-          {rows.map((member) => (
+          {rows.map((member, index) => (
             <div
               key={member.id}
               style={{
@@ -135,25 +144,16 @@ export default function ClientOverviewCollaboratorsCard({ organizationId, curren
                 alignItems: "center",
                 gap: "0.6rem",
                 paddingBottom: "0.45rem",
-                borderBottom: "1px solid var(--border)"
+                borderBottom: rows.length > 1 && index < rows.length - 1 ? "1px solid var(--border)" : "none"
               }}
             >
-              <div
-                aria-hidden
-                style={{
-                  width: "34px",
-                  height: "34px",
-                  borderRadius: "999px",
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  display: "grid",
-                  placeItems: "center",
-                  fontWeight: 700,
-                  fontSize: "0.82rem"
-                }}
-              >
-                {getInitial(member)}
-              </div>
+              <UserAvatar
+                imageUrl={member.avatarUrl}
+                initials={getInitials(member)}
+                alt={member.name}
+                title={member.name}
+                size={34}
+              />
               <div style={{ minWidth: 0 }}>
                 <p style={{ margin: 0, fontWeight: 600 }}>{member.name}</p>
                 <p style={{ margin: "0.15rem 0 0", color: "var(--muted)", fontSize: "0.82rem", overflow: "hidden", textOverflow: "ellipsis" }}>{member.email}</p>
