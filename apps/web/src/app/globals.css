@@ -1955,6 +1955,16 @@ main {
   pointer-events: none;
 }
 
+.toast-stack--right {
+  right: 1.25rem;
+  left: auto;
+}
+
+.toast-stack--left {
+  left: 1.25rem;
+  right: auto;
+}
+
 .toast {
   pointer-events: auto;
   display: flex;
@@ -1984,8 +1994,9 @@ main {
 
 .toast--success { border-color: #cfe6cf; }
 .toast--success .toast__dot { background: var(--accent-strong); }
-.toast--error { border-color: #f0c8c4; }
+.toast--error { border-color: #f0c8c4; background: #fff5f4; }
 .toast--error .toast__dot { background: #b3261e; }
+.toast--error .toast__title { color: #8c1d18; }
 .toast--info .toast__dot { background: #6c7778; }
 
 .toast__body { flex: 1 1 auto; min-width: 0; }
