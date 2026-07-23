@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { openJobLog } from "@/lib/job-log";
 import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 
 export const runtime = "nodejs";
@@ -105,10 +106,12 @@ async function handleRestoreTest({ params }: Params) {
   }
 
   // Detached: the script records its own result when it completes.
+  // Keep the job detached but preserve its output for diagnosis.
+  const jobLog = openJobLog("restore-test");
   const child = spawn(
     process.execPath,
     [scriptPath, "--resource-uuid", target.resourceId, "--engine", target.engine],
-    { cwd: process.cwd(), env: process.env, detached: true, stdio: "ignore" }
+    { cwd: process.cwd(), env: process.env, detached: true, stdio: ["ignore", jobLog, jobLog] }
   );
   child.unref();
 

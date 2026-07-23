@@ -66,6 +66,19 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Result callbacks from the backup/restore scripts. These run detached on the
+  // server and report back with a machine token — without them listed here the
+  // middleware redirects the POST to /login (307), the result is never recorded,
+  // and the row hangs in "Backing up…" forever.
+  if (
+    hasOpsToken &&
+    (pathname === "/api/ops/site-backup-record" ||
+      pathname === "/api/ops/site-restore-record" ||
+      pathname === "/api/ops/backup-restore-verification")
+  ) {
+    return NextResponse.next();
+  }
+
   // Operational staging endpoints support machine-token auth for scripted checks.
   if (hasOpsToken) {
     if (pathname === "/api/sites/staging-targets") {

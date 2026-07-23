@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { openJobLog } from "@/lib/job-log";
 
 export const runtime = "nodejs";
 
@@ -101,6 +102,10 @@ async function restoreBackup(request: Request, { params }: Params) {
     }
   });
 
+  // Keep the job detached but preserve its output for diagnosis.
+
+  const jobLog = openJobLog("site-restore");
+
   const child = spawn(
     process.execPath,
     [
@@ -109,7 +114,7 @@ async function restoreBackup(request: Request, { params }: Params) {
       "--snapshot-id", backup.resticSnapshotId,
       "--backup-id", backup.id
     ],
-    { cwd: process.cwd(), env: process.env, detached: true, stdio: "ignore" }
+    { cwd: process.cwd(), env: process.env, detached: true, stdio: ["ignore", jobLog, jobLog] }
   );
   child.unref();
 
