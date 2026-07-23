@@ -65,9 +65,9 @@ export default async function SiteSettingsPage({ params }: Params) {
         <p className="card-muted" style={{ marginBottom: "0.35rem" }}>
           {workspace?.clientName ?? "Unassigned client"} / {workspace?.name ?? siteId}
         </p>
-        <h2 style={{ margin: 0 }}>Settings</h2>
+        <h2 style={{ margin: 0 }}>Advanced</h2>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Manage app identity, hosting links, and staging.
+          Manage app identity, hosting links, and operational controls.
         </p>
       </div>
 

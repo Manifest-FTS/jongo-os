@@ -192,12 +192,23 @@ export default async function BackupsPage({ params }: Params) {
   // Jongo-managed full-site backups (files + database, offsite in Backblaze).
   const siteBackupRows: SiteBackupRow[] = workspace.id
     ? await (async () => {
-        const { db } = await import("@/lib/db");
-        const rows = await db.siteBackup.findMany({
-          where: { siteId: workspace.id },
-          orderBy: { startedAt: "desc" },
-          take: 20
-        });
+        const { getDb } = await import("@/lib/db");
+        const prisma = await getDb();
+        if (!prisma || !("siteBackup" in prisma)) {
+          return [];
+        }
+
+        let rows: Array<Record<string, unknown>> = [];
+        try {
+          rows = await (prisma as any).siteBackup.findMany({
+            where: { siteId: workspace.id },
+            orderBy: { startedAt: "desc" },
+            take: 20
+          });
+        } catch {
+          return [];
+        }
+
         return rows.map((row: Record<string, unknown>) => ({
           id: String(row.id),
           startedAt: (row.startedAt as Date).toISOString(),
