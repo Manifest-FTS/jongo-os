@@ -39,12 +39,25 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  async function readJsonSafely(response: Response): Promise<any> {
+    const text = await response.text();
+    if (!text.trim()) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error("The server returned an invalid response. Refresh and try again.");
+    }
+  }
+
   async function loadSummary(options?: { preserveDraft?: boolean }) {
     const response = await fetch(`/api/sites/${siteId}/wordpress-telemetry-connection`, {
       cache: "no-store"
     });
 
-    const data = await response.json();
+    const data = await readJsonSafely(response);
     if (!response.ok) {
       throw new Error(data.error ?? "Failed to load WordPress connection status");
     }
@@ -92,7 +105,7 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
         body: JSON.stringify({ siteUrl, username, appPassword })
       });
 
-      const data = await response.json();
+      const data = await readJsonSafely(response);
       if (!response.ok) {
         throw new Error(data.error ?? "Failed to save WordPress connection");
       }
@@ -121,7 +134,7 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
         body: JSON.stringify(appPassword.trim() ? { siteUrl, username, appPassword } : {})
       });
 
-      const data = await response.json();
+      const data = await readJsonSafely(response);
       if (!response.ok) {
         throw new Error(data.error ?? "Connection test failed");
       }
@@ -144,7 +157,7 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
       const response = await fetch(`/api/sites/${siteId}/wordpress-telemetry-connection`, {
         method: "DELETE"
       });
-      const data = await response.json();
+      const data = await readJsonSafely(response);
       if (!response.ok) {
         throw new Error(data.error ?? "Failed to disconnect telemetry");
       }
@@ -169,17 +182,9 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
 
   return (
     <div style={{ display: "grid", gap: "0.75rem" }}>
-      <p style={{ margin: 0 }}>
-        Status: <span className="tag">{summary.connected ? "connected" : "not saved"}</span>
-      </p>
       <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-        These details belong only to this app. They are not shared with any other app.
+        Create this in WordPress under Users &gt; Profile &gt; Application Passwords. Use the same username shown below.
       </p>
-      {!canManage ? (
-        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-          You can view this app's WordPress connection status, but only admins can change these details.
-        </p>
-      ) : null}
       <form onSubmit={saveConnection} className="form-stack" style={{ marginTop: 0 }}>
         <div>
           <label className="form-label">Website Address</label>
@@ -237,9 +242,6 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
               ?
             </span>
           </label>
-          <p style={{ margin: "0.3rem 0 0.45rem", fontSize: "0.78rem", color: "var(--muted)" }}>
-            Create this in WordPress under Users &gt; Profile &gt; Application Passwords. Use the same username shown above.
-          </p>
           <input
             className="form-input mono-input"
             type="password"
@@ -277,16 +279,6 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
           </div>
         ) : null}
       </form>
-
-      <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-        Last test: {summary.lastTestedAt ? new Date(summary.lastTestedAt).toLocaleString() : "not tested yet"}
-      </p>
-      {summary.lastTestStatus ? (
-        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-          Last result: {summary.lastTestStatus}
-          {summary.lastError ? ` (${summary.lastError})` : ""}
-        </p>
-      ) : null}
     </div>
   );
 }

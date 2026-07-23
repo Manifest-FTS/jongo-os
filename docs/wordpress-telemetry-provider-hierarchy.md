@@ -43,7 +43,42 @@ Notes:
 
 - Passwords are encrypted server-side at rest.
 - Passwords are never returned to the browser after save.
-- Configuration and testing are admin-only actions.
+- Configuration and testing are app-member actions.
+- Current product path remains manual entry, but this is an interim workflow.
+
+### Planned Provisioning Upgrade
+
+The intended next step is to stop relying on manual credential entry for newly provisioned WordPress resources.
+
+Target flow:
+
+1. Provision WordPress from Jongo OS into Coolify.
+2. Create a dedicated service user on the site, such as `jongo-telemetry`, during bootstrap.
+3. Generate a WordPress application password programmatically via WP-CLI or REST bootstrap flow.
+4. Encrypt and store the generated secret in Jongo.
+5. Run immediate health checks against `/wp-json` and `/wp-json/wp/v2/plugins`.
+6. Mark telemetry connected only if the plugin route returns a successful authenticated response.
+7. Surface explicit remediation if REST is blocked, app passwords are unavailable, the role is insufficient, or a WAF/security plugin blocks the route.
+
+Operational caveat:
+
+- Plugin inventory requires elevated WordPress capabilities. In practice, the service user may need administrator-level access unless a scoped site plugin or custom REST permission layer is introduced.
+
+## Jongo-Led WordPress Provisioning R&D
+
+Future Jongo-managed provisioning should support:
+
+- Creating Clients, Projects, and Apps/Services directly from Jongo OS.
+- Provisioning the Coolify WordPress resource from Jongo OS.
+- Deriving the initial WordPress bootstrap username from the creator's Jongo OS profile username.
+- Extending Jongo OS user profiles to include:
+	- username
+	- first name
+	- last name
+	- role
+	- email
+	- avatar image or gravatar link
+- Offering repair/re-bootstrap actions to rotate app passwords, revoke old credentials, and recreate the service user if the site drifts.
 
 ### 3) Env-Map REST Fallback (Dev/Testing)
 

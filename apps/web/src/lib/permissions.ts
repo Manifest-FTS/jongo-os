@@ -196,7 +196,7 @@ export async function resolveSitePermissionSnapshot(
     ...permissions,
     role,
     canViewInternalMetadata,
-    canManageTelemetry: permissions.isAdmin || canViewInternalMetadata,
+    canManageTelemetry: true,
     canManageDomains: Boolean(userId && permissions.canEditDomains)
   };
 }
