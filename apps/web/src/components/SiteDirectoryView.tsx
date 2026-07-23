@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRightIcon, BuildingOfficeIcon, StarIcon } from "@/components/JongoIcons";
+import { ArrowRightIcon, BuildingOfficeIcon, SettingsIcon, StarIcon } from "@/components/JongoIcons";
 import ResourceTypePill from "@/components/ResourceTypePill";
+import { ToastStack, useToasts } from "@/components/Toasts";
 import { useAppDirectoryPreferences } from "@/hooks/useAppDirectoryPreferences";
 import { RESOURCE_TYPES, type ResourceType } from "@/lib/resource-types";
 
@@ -77,8 +78,10 @@ export default function SiteDirectoryView({
   isCollaboratorView?: boolean;
 }) {
   const [search, setSearch] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
+  const { toasts, push, dismiss } = useToasts();
   const { prefs, setPrefs, ready } = useAppDirectoryPreferences(userId);
 
   // Derive available resource types from current site list (only show types with at least one match)
@@ -88,6 +91,8 @@ export default function SiteDirectoryView({
   const statusFilters = prefs.statusFilters;
   const stagingFilter = prefs.stagingFilter;
   const view = prefs.view;
+  const activeFilterCount = statusFilters.length + resourceTypeFilters.length + (stagingFilter === "all" ? 0 : 1);
+  const hasActiveFilters = activeFilterCount > 0;
 
   // Remove stale type filters if the current list no longer contains that type.
   useEffect(() => {
@@ -158,6 +163,12 @@ export default function SiteDirectoryView({
       });
 
       if (!res.ok) {
+        push({
+          tone: "error",
+          title: "Could not update favorite",
+          text: "Please try again.",
+          ttl: 5000
+        });
         setFavoriteIds((prev) => {
           const next = new Set(prev);
           if (isFavorite) {
@@ -167,8 +178,23 @@ export default function SiteDirectoryView({
           }
           return next;
         });
+      } else {
+        const siteName = sites.find((site) => site.id === siteId)?.name ?? "App";
+        push({
+          tone: "success",
+          title: nextFavorited ? "App starred" : "App unstarred",
+          text: nextFavorited
+            ? `${siteName} was added to Starred apps.`
+            : `${siteName} was removed from Starred apps.`
+        });
       }
     } catch {
+      push({
+        tone: "error",
+        title: "Could not update favorite",
+        text: "Network error. Please try again.",
+        ttl: 5000
+      });
       setFavoriteIds((prev) => {
         const next = new Set(prev);
         if (isFavorite) {
@@ -197,6 +223,14 @@ export default function SiteDirectoryView({
     setPrefs({ resourceTypeFilters: next });
   }
 
+  function clearFilters() {
+    setPrefs({
+      statusFilters: [],
+      resourceTypeFilters: [],
+      stagingFilter: "all"
+    });
+  }
+
   const query = search.trim().toLowerCase();
   const filtered = sites.filter((site) => {
     const matchesQuery =
@@ -220,8 +254,8 @@ export default function SiteDirectoryView({
 
   return (
     <div className="page-stack">
-      <div className="card directory-toolbar" style={{ gap: "0.75rem", display: "grid" }}>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+      <div className="card directory-toolbar directory-toolbar--modern">
+        <div className="directory-toolbar__row">
           <input
             className="directory-search"
             type="search"
@@ -229,70 +263,129 @@ export default function SiteDirectoryView({
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Filter apps by name, client, or description"
             aria-label="Filter apps"
-            style={{ flex: "2 1 280px", minWidth: "220px" }}
+            style={{ flex: "1 1 auto", minWidth: "220px" }}
           />
-          <div className="filter-group" aria-label="Site status filters" style={{ flexWrap: "wrap", flex: "1 1 500px" }}>
-            <button type="button" className={`filter-pill ${statusFilters.length === 0 ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilters: [] })}>All</button>
-            <button type="button" className={`filter-pill ${statusFilters.includes("healthy") ? "is-active" : ""}`} onClick={() => toggleStatusFilter("healthy")}>On track</button>
-            <button type="button" className={`filter-pill ${statusFilters.includes("degraded") ? "is-active" : ""}`} onClick={() => toggleStatusFilter("degraded")}>Needs review</button>
-            <button type="button" className={`filter-pill ${statusFilters.includes("error") ? "is-active" : ""}`} onClick={() => toggleStatusFilter("error")}>Action needed</button>
-            <button type="button" className={`filter-pill ${statusFilters.includes("unknown") ? "is-active" : ""}`} onClick={() => toggleStatusFilter("unknown")}>Unavailable</button>
-          </div>
-        </div>
 
-        <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
-          {availableTypes.length > 0 ? (
-            <div className="filter-group" aria-label="Resource type filters" style={{ flexWrap: "wrap" }}>
-              <button
-                type="button"
-                className={`filter-pill ${resourceTypeFilters.length === 0 ? "is-active" : ""}`}
-                onClick={() => setPrefs({ resourceTypeFilters: [] })}
-              >
-                {RESOURCE_TYPE_LABELS["all"]}
-              </button>
-              {availableTypes.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  className={`filter-pill ${resourceTypeFilters.includes(type) ? "is-active" : ""}`}
-                  onClick={() => toggleTypeFilter(type)}
-                >
-                  {RESOURCE_TYPE_LABELS[type]}
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="filter-group" aria-label="Staging filters" style={{ flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className={`filter-pill ${stagingFilter === "all" ? "is-active" : ""}`}
-              onClick={() => setPrefs({ stagingFilter: "all" })}
-            >
-              All Envs
-            </button>
-            <button
-              type="button"
-              className={`filter-pill ${stagingFilter === "exclude_staging" ? "is-active" : ""}`}
-              onClick={() => setPrefs({ stagingFilter: "exclude_staging" })}
-            >
-              Production
-            </button>
-            <button
-              type="button"
-              className={`filter-pill ${stagingFilter === "only_staging" ? "is-active" : ""}`}
-              onClick={() => setPrefs({ stagingFilter: "only_staging" })}
-            >
-              Staging
-            </button>
-          </div>
+          <button
+            type="button"
+            className="directory-filter-trigger"
+            onClick={() => setFiltersOpen(true)}
+            aria-label="Open filters"
+          >
+            <SettingsIcon style={{ width: "0.95rem", height: "0.95rem" }} />
+            <span>Filter by</span>
+            {hasActiveFilters ? <span className="directory-filter-count">{activeFilterCount}</span> : null}
+          </button>
 
           <div className="view-toggle" aria-label="Site view toggle">
             <button type="button" className={`view-pill ${view === "list" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "list" })}>List</button>
             <button type="button" className={`view-pill ${view === "grid" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "grid" })}>Grid</button>
           </div>
         </div>
+
+        {hasActiveFilters ? (
+          <div className="directory-active-filters">
+            {statusFilters.map((status) => (
+              <button key={status} type="button" className="directory-active-chip" onClick={() => toggleStatusFilter(status)}>
+                {status === "healthy" ? "On track" : status === "degraded" ? "Needs review" : status === "error" ? "Action needed" : "Unavailable"}
+                <span aria-hidden>×</span>
+              </button>
+            ))}
+            {resourceTypeFilters.map((type) => (
+              <button key={type} type="button" className="directory-active-chip" onClick={() => toggleTypeFilter(type)}>
+                {RESOURCE_TYPE_LABELS[type]}
+                <span aria-hidden>×</span>
+              </button>
+            ))}
+            {stagingFilter !== "all" ? (
+              <button type="button" className="directory-active-chip" onClick={() => setPrefs({ stagingFilter: "all" })}>
+                {stagingFilter === "only_staging" ? "Staging only" : "Production only"}
+                <span aria-hidden>×</span>
+              </button>
+            ) : null}
+            <button type="button" className="directory-active-clear" onClick={clearFilters}>Clear all</button>
+          </div>
+        ) : null}
       </div>
+
+      {filtersOpen ? (
+        <div className="directory-filter-sheet" role="dialog" aria-modal="true" aria-label="Filter apps">
+          <button type="button" className="directory-filter-backdrop" aria-label="Close filters" onClick={() => setFiltersOpen(false)} />
+          <div className="directory-filter-panel">
+            <div className="directory-filter-panel__head">
+              <h3 style={{ margin: 0, fontSize: "1rem" }}>Filter by</h3>
+              <button type="button" className="directory-filter-close" onClick={() => setFiltersOpen(false)}>×</button>
+            </div>
+
+            <div className="directory-filter-section">
+              <p className="directory-filter-label">Status</p>
+              <div className="directory-filter-options">
+                <label className="directory-filter-option">
+                  <input type="checkbox" checked={statusFilters.length === 0} onChange={() => setPrefs({ statusFilters: [] })} />
+                  <span>Any status</span>
+                </label>
+                <label className="directory-filter-option">
+                  <input type="checkbox" checked={statusFilters.includes("healthy")} onChange={() => toggleStatusFilter("healthy")} />
+                  <span>On track</span>
+                </label>
+                <label className="directory-filter-option">
+                  <input type="checkbox" checked={statusFilters.includes("degraded")} onChange={() => toggleStatusFilter("degraded")} />
+                  <span>Needs review</span>
+                </label>
+                <label className="directory-filter-option">
+                  <input type="checkbox" checked={statusFilters.includes("error")} onChange={() => toggleStatusFilter("error")} />
+                  <span>Action needed</span>
+                </label>
+                <label className="directory-filter-option">
+                  <input type="checkbox" checked={statusFilters.includes("unknown")} onChange={() => toggleStatusFilter("unknown")} />
+                  <span>Unavailable</span>
+                </label>
+              </div>
+            </div>
+
+            {availableTypes.length > 0 ? (
+              <div className="directory-filter-section">
+                <p className="directory-filter-label">Type</p>
+                <div className="directory-filter-options">
+                  <label className="directory-filter-option">
+                    <input type="checkbox" checked={resourceTypeFilters.length === 0} onChange={() => setPrefs({ resourceTypeFilters: [] })} />
+                    <span>All types</span>
+                  </label>
+                  {availableTypes.map((type) => (
+                    <label key={type} className="directory-filter-option">
+                      <input type="checkbox" checked={resourceTypeFilters.includes(type)} onChange={() => toggleTypeFilter(type)} />
+                      <span>{RESOURCE_TYPE_LABELS[type]}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="directory-filter-section">
+              <p className="directory-filter-label">Environment</p>
+              <div className="directory-filter-options">
+                <label className="directory-filter-option">
+                  <input type="radio" name="env-filter" checked={stagingFilter === "all"} onChange={() => setPrefs({ stagingFilter: "all" })} />
+                  <span>All environments</span>
+                </label>
+                <label className="directory-filter-option">
+                  <input type="radio" name="env-filter" checked={stagingFilter === "exclude_staging"} onChange={() => setPrefs({ stagingFilter: "exclude_staging" })} />
+                  <span>Production only</span>
+                </label>
+                <label className="directory-filter-option">
+                  <input type="radio" name="env-filter" checked={stagingFilter === "only_staging"} onChange={() => setPrefs({ stagingFilter: "only_staging" })} />
+                  <span>Staging only</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="directory-filter-panel__foot">
+              <button type="button" className="btn" onClick={clearFilters}>Reset</button>
+              <button type="button" className="btn" onClick={() => setFiltersOpen(false)}>Apply</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <p className="card-muted">{filtered.length} app{filtered.length === 1 ? "" : "s"}</p>
 
@@ -394,6 +487,8 @@ export default function SiteDirectoryView({
           })}
         </section>
       )}
+
+      <ToastStack toasts={toasts} onDismiss={dismiss} side="right" />
     </div>
   );
 }

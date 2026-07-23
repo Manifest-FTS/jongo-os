@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getActivityFeed, getInventorySnapshot, isClientAdmin, listClientWorkspaces } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { DayIcon, EveningIcon } from "@/components/JongoIcons";
+import SiteDirectoryView from "@/components/SiteDirectoryView";
 
 export const dynamic = "force-dynamic";
 
@@ -129,32 +130,45 @@ export default async function DashboardPage() {
             </p>
           </article>
 
-          <article className="card">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Quick access</p>
-                <h2 className="card-title">Starred apps</h2>
-              </div>
+          <section className="page-stack">
+            <div>
+              <p className="panel-kicker" style={{ margin: 0 }}>Quick access</p>
+              <h2 className="card-title" style={{ margin: "0.2rem 0 0" }}>Favorite Apps</h2>
             </div>
 
             {starredApps.length === 0 ? (
-              <p className="card-muted" style={{ marginTop: 0 }}>
-                Star apps from the Apps directory to pin them here.
-              </p>
+              <article className="card">
+                <p className="card-muted" style={{ marginTop: 0 }}>
+                  Star apps from the Apps directory to pin them here.
+                </p>
+              </article>
             ) : (
-              <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.2rem" }}>
-                {starredApps.slice(0, 6).map((site) => (
-                  <div key={site.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.65rem", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "0.45rem" }}>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 600 }}>{site.name}</p>
-                      <p className="card-muted" style={{ margin: "0.1rem 0 0", fontSize: "0.8rem" }}>{site.clientName}</p>
-                    </div>
-                    <Link href={`/apps/${site.slug ?? site.id}`} className="action-link">Open</Link>
-                  </div>
-                ))}
-              </div>
+              <SiteDirectoryView
+                userId={session?.user?.id}
+                isCollaboratorView={!hasAdminClientAccess}
+                sites={starredApps.map((site) => ({
+                  id: site.id,
+                  name: site.name,
+                  description: site.description,
+                  clientId: site.clientId,
+                  clientName: site.clientName,
+                  status: site.status,
+                  ownershipState: site.ownershipState,
+                  ownershipDiagnostic: site.ownershipDiagnostic,
+                  source: site.source,
+                  href: `/apps/${site.slug ?? site.id}`,
+                  clientHref: site.ownershipState === "mapped" ? `/clients/${site.clientId}` : undefined,
+                  resourceType: site.resourceType,
+                  showInternalMetadata: hasAdminClientAccess,
+                  isStagingResource:
+                    site.coolifyEnvironmentName?.toLowerCase().includes("staging")
+                    || site.name.toLowerCase().includes("staging")
+                    || site.slug?.toLowerCase().includes("staging")
+                    || false
+                }))}
+              />
             )}
-          </article>
+          </section>
         </div>
 
         <article className="card dashboard-activity-panel">
