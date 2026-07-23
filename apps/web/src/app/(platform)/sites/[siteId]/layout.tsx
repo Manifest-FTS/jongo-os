@@ -53,11 +53,16 @@ export default async function SiteWorkspaceLayout({
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetReady = Boolean(stagingCapability?.applicationUuid);
   const showStagingTab = Boolean(site.stagingEnabled || stagingEnvironmentReady || stagingTargetReady);
+  const environmentName = (site.coolifyEnvironmentName ?? "").trim().toLowerCase();
+  const isStagingWorkspace = environmentName.includes("stag") || environmentName.includes("preview") || environmentName === "dev";
+  const primaryEnvironmentStatus = isStagingWorkspace ? site.stagingStatus : site.productionStatus;
+  const primaryEnvironmentLabel = isStagingWorkspace ? "Staging" : "Prod";
+  const showStagingReadyTag = !isStagingWorkspace && showStagingTab;
 
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
     ...(!isWordPress ? [{ name: "Deployments", href: `/apps/${siteId}/deployments` } as WorkspaceTab] : []),
-    ...(isAdminViewer ? [{ name: "Integrations", href: `/apps/${siteId}/integrations` } as WorkspaceTab] : []),
+    ...(!isWordPress && isAdminViewer ? [{ name: "Integrations", href: `/apps/${siteId}/integrations` } as WorkspaceTab] : []),
     ...(isWordPress ? [{ name: "Plugins", href: `/apps/${siteId}/plugins` } as WorkspaceTab] : []),
     ...(showStagingTab ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
     { name: "Backups", href: `/apps/${siteId}/backups` },
@@ -96,16 +101,10 @@ export default async function SiteWorkspaceLayout({
             <span className={`status-chip ${site?.status ?? "unknown"}`}>
               {site?.status ?? "unknown"}
             </span>
-            <span className={`status-chip ${site?.productionStatus ?? "unknown"}`}>
-              Prod
+            <span className={`status-chip ${primaryEnvironmentStatus ?? "unknown"}`}>
+              {primaryEnvironmentLabel}
             </span>
-            {site?.stagingEnabled ? (
-              <span className={`status-chip ${site?.stagingStatus ?? "unknown"}`}>
-                Staging
-              </span>
-            ) : (
-              <span className="tag">No staging</span>
-            )}
+            {showStagingReadyTag ? <span className="tag">Staging ready</span> : null}
             {showOwnershipState ? (
               <span className={`tag ${isMapped ? "tag-mapped" : "tag-warning"}`}>
                 {isMapped ? "mapped" : "mapping needs review"}
