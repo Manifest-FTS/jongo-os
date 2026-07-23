@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowRightIcon, PlusIcon } from "@/components/JongoIcons";
+import { PlusIcon } from "@/components/JongoIcons";
 import SiteCollaboratorManager from "@/components/SiteCollaboratorManager";
 
 type CollaboratorRow = {
@@ -118,11 +117,6 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId }:
               <span className="tag" style={{ textTransform: "capitalize" }}>{row.role}</span>
             </div>
           ))}
-          <p style={{ margin: "0.2rem 0 0" }}>
-            <Link href={`/apps/${siteId}/team`} className="action-link">
-              Open team <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
         </div>
       ) : null}
 

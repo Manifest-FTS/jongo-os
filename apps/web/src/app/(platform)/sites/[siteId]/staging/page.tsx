@@ -12,10 +12,11 @@ import StagingDomainForm from "@/components/StagingDomainForm";
 import StagingAuditHistory from "@/components/StagingAuditHistory";
 import CopyTextButton from "@/components/CopyTextButton";
 import Link from "next/link";
-import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { getSiteWorkspace } from "@/lib/repositories";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 
 type Params = {
   params: Promise<{ siteId: string }>;
@@ -268,11 +269,16 @@ export default async function StagingPage({ params, searchParams }: Params) {
     notFound();
   }
 
-  const canManageDomains = Boolean(
-    session?.user?.id &&
-    workspace.organizationId &&
-    await isClientAdmin(workspace.organizationId, session.user.id)
-  );
+  const permissionSnapshot = await resolveSitePermissionSnapshot({
+    siteId,
+    workspace,
+    viewer: {
+      userId: session?.user?.id,
+      email: session?.user?.email
+    }
+  });
+
+  const canManageDomains = Boolean(session?.user?.id && permissionSnapshot.canManageStaging);
 
   const stagingEnabled = Boolean(workspace?.stagingEnabled);
   const appUuid = workspace?.coolifyServiceUuid;
@@ -298,7 +304,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const prodToStagingPreflight = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
   const stagingToProdPreflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
   const promoteLockedReason = !canManageDomains
-    ? "Only admins can promote staging to production."
+    ? "You do not have permission to promote staging to production."
     : stagingToProdPreflight.tone === "error"
       ? stagingToProdPreflight.detail
       : undefined;

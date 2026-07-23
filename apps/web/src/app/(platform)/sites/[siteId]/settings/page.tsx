@@ -2,11 +2,13 @@ type Params = { params: Promise<{ siteId: string }> };
 
 import SiteInfoForm from "@/components/SiteInfoForm";
 import SiteStagingToggle from "@/components/SiteStagingToggle";
+import WordPressAdvancedControls from "@/components/WordPressAdvancedControls";
 import PageAutoRefresh from "@/components/PageAutoRefresh";
 import Link from "next/link";
-import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyAppStagingCapability, getCoolifyOverview } from "@/lib/coolify";
 import { auth } from "@/lib/auth.config";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -46,17 +48,45 @@ export default async function SiteSettingsPage({ params }: Params) {
       </div>
     );
   }
-  const canViewInternalMetadata = Boolean(
-    session?.user?.id &&
-    workspace.organizationId &&
-    await isClientAdmin(workspace.organizationId, session.user.id)
-  );
+  const permissionSnapshot = await resolveSitePermissionSnapshot({
+    siteId,
+    workspace,
+    viewer
+  });
+  const canViewInternalMetadata = permissionSnapshot.canViewInternalMetadata;
+  const isWordPress = workspace.siteType === "wordpress" || workspace.resourceType === "WordPress";
   const stagingCapability = workspace?.coolifyServiceUuid
     ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined)
     : null;
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
+
+  const latestWordPressVersion = workspace.id
+    ? await (async () => {
+        const { getDb } = await import("@/lib/db");
+        const prisma = await getDb();
+        if (!prisma || !("siteBackup" in prisma)) {
+          return null;
+        }
+
+        try {
+          const row = await (prisma as any).siteBackup.findFirst({
+            where: {
+              siteId: workspace.id,
+              status: "success",
+              wpVersion: { not: null }
+            },
+            orderBy: { startedAt: "desc" },
+            select: { wpVersion: true }
+          });
+
+          return typeof row?.wpVersion === "string" ? row.wpVersion : null;
+        } catch {
+          return null;
+        }
+      })()
+    : null;
 
   return (
     <div>
@@ -65,14 +95,55 @@ export default async function SiteSettingsPage({ params }: Params) {
         <p className="card-muted" style={{ marginBottom: "0.35rem" }}>
           {workspace?.clientName ?? "Unassigned client"} / {workspace?.name ?? siteId}
         </p>
-        <h2 style={{ margin: 0 }}>Settings</h2>
+        <h2 style={{ margin: 0 }}>Advanced</h2>
         <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Manage app identity, hosting links, and staging.
+          Manage app identity, hosting links, and operational controls.
         </p>
       </div>
 
-      {/* Site Record (DB-backed sites only) */}
-      {workspace?.source === "db" && (
+      {isWordPress ? (
+        <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)", alignItems: "start" }}>
+          <WordPressAdvancedControls
+            siteId={siteId}
+            canManageDomainSlug={Boolean(session?.user?.id)}
+            initialDomainSlug={workspace.temporaryDomainSlug ?? workspace.slug ?? undefined}
+            initialDomainSuffix={workspace.temporaryDomainSuffix ?? undefined}
+            initialStagingEnabled={Boolean(workspace.stagingEnabled)}
+            hasDetectedStagingTarget={stagingTargetAttached}
+          />
+
+          <div style={{ display: "grid", gap: "1rem" }}>
+            <article className="card">
+              <h3 className="card-title">Service Telemetry</h3>
+              <div style={{ display: "grid", gap: "0.45rem", fontSize: "0.88rem", marginTop: "0.55rem" }}>
+                <p style={{ margin: 0 }}><strong>Service ID:</strong> {workspace.coolifyServiceUuid ?? "Unavailable"}</p>
+                <p style={{ margin: 0 }}><strong>Project ID:</strong> {workspace.coolifyProjectId ?? "Unavailable"}</p>
+              </div>
+            </article>
+
+            <article className="card">
+              <h3 className="card-title">WordPress Version</h3>
+              <p style={{ margin: "0.55rem 0 0" }}>{latestWordPressVersion ?? "Unavailable"}</p>
+            </article>
+
+            <article className="card">
+              <h3 className="card-title">PHP Version</h3>
+              <p style={{ margin: "0.55rem 0 0" }}>Unavailable</p>
+            </article>
+
+            <article className="card">
+              <h3 className="card-title">Database</h3>
+              <p className="card-muted" style={{ margin: "0.55rem 0 0.35rem" }}>Prefix: Unavailable</p>
+              <button type="button" className="btn" disabled title="Database prefix editing will be available in a follow-up update.">
+                Change Prefix
+              </button>
+            </article>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Site Record (non-WordPress DB-backed sites) */}
+      {!isWordPress && workspace?.source === "db" && (
         <article className="card" style={{ marginBottom: "1.5rem" }}>
           <h3 className="card-title">Site Information</h3>
           <p className="card-muted" style={{ marginBottom: "1rem" }}>Update name, description, and infrastructure links.</p>
@@ -97,35 +168,37 @@ export default async function SiteSettingsPage({ params }: Params) {
         </div>
       )}
 
-      {/* Staging */}
-      <article className="card" style={{ marginBottom: "1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
-          <div>
-            <h3 className="card-title" style={{ margin: 0 }}>Staging Environment</h3>
-            <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-              Turn on staging for this site. Check the platform Staging tab and give it a few minutes to provision.
-            </p>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", marginTop: "0.55rem", flexWrap: "wrap" }}>
-              <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>
-                {stagingEnvironmentReady ? "Environment created" : "Environment missing"}
-              </span>
-              <span className={`status-chip ${stagingTargetAttached ? "healthy" : "degraded"}`}>
-                {stagingTargetAttached ? "Target attached" : "Target missing"}
-              </span>
+      {/* Staging (non-WordPress view) */}
+      {!isWordPress ? (
+        <article className="card" style={{ marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+            <div>
+              <h3 className="card-title" style={{ margin: 0 }}>Staging Environment</h3>
+              <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
+                Turn on staging for this site. Check the platform Staging tab and give it a few minutes to provision.
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", marginTop: "0.55rem", flexWrap: "wrap" }}>
+                <span className={`status-chip ${stagingEnvironmentReady ? "healthy" : "unknown"}`}>
+                  {stagingEnvironmentReady ? "Environment created" : "Environment missing"}
+                </span>
+                <span className={`status-chip ${stagingTargetAttached ? "healthy" : "degraded"}`}>
+                  {stagingTargetAttached ? "Target attached" : "Target missing"}
+                </span>
+              </div>
             </div>
+            <SiteStagingToggle
+              siteId={siteId}
+              initialEnabled={Boolean(workspace.stagingEnabled)}
+              hasDetectedStagingTarget={stagingTargetAttached}
+            />
           </div>
-          <SiteStagingToggle
-            siteId={siteId}
-            initialEnabled={Boolean(workspace.stagingEnabled)}
-            hasDetectedStagingTarget={stagingTargetAttached}
-          />
-        </div>
-        {stagingConfigured ? (
-          <p style={{ margin: "0.85rem 0 0", fontSize: "0.88rem" }}>
-            <Link href={`/apps/${siteId}/staging`} className="action-link">Open Staging workspace</Link>
-          </p>
-        ) : null}
-      </article>
+          {stagingConfigured ? (
+            <p style={{ margin: "0.85rem 0 0", fontSize: "0.88rem" }}>
+              <Link href={`/apps/${siteId}/staging`} className="action-link">Open Staging workspace</Link>
+            </p>
+          ) : null}
+        </article>
+      ) : null}
 
       {/* Developer Details (replaces standalone Advanced tab) */}
       {canViewInternalMetadata ? (
