@@ -69,7 +69,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <section className="page-head compact-head" style={{ marginTop: "0.55rem" }}>
+      <section className="page-head compact-head" style={{ marginTop: "1.1rem" }}>
         <div>
           <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
             {isDaytime ? <DayIcon style={{ width: "2.05rem", height: "2.05rem" }} /> : <EveningIcon style={{ width: "2.05rem", height: "2.05rem" }} />}

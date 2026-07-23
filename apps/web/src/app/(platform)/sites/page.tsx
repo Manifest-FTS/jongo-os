@@ -205,6 +205,10 @@ export default async function SitesPage() {
       )
     : [];
   const clientAdminState = new Map(adminStateEntries);
+  const isCollaboratorView = siteDirectory.length > 0 && !siteDirectory.some((site) => {
+    if (!site.clientDbId) return false;
+    return Boolean(clientAdminState.get(site.clientDbId));
+  });
 
   return (
     <div className="page-stack">
@@ -267,9 +271,15 @@ export default async function SitesPage() {
       ) : (
         <SiteDirectoryView
           userId={session?.user?.id}
+          isCollaboratorView={isCollaboratorView}
           sites={siteDirectory.map((site) => {
             const overviewSite = overview.sites.find((item) => item.id === site.coolifyServiceUuid || item.id === site.id);
             const showInternalMetadata = site.clientDbId ? Boolean(clientAdminState.get(site.clientDbId)) : false;
+            const isStagingResource =
+              site.coolifyEnvironmentName?.toLowerCase().includes("staging")
+              || site.name.toLowerCase().includes("staging")
+              || site.slug?.toLowerCase().includes("staging")
+              || false;
 
             return {
               id: site.id,
@@ -291,7 +301,8 @@ export default async function SitesPage() {
               backupCheckedAt: backupPostureBySiteId.get(site.id)?.checkedAt,
               stagingEnvironmentReady: stagingPostureBySiteId.get(site.id)?.environmentReady,
               stagingTargetAttached: stagingPostureBySiteId.get(site.id)?.targetAttached,
-              stagingCheckedAt: stagingPostureBySiteId.get(site.id)?.checkedAt
+              stagingCheckedAt: stagingPostureBySiteId.get(site.id)?.checkedAt,
+              isStagingResource
             };
           })}
         />

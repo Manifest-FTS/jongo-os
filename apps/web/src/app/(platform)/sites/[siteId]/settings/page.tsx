@@ -61,6 +61,11 @@ export default async function SiteSettingsPage({ params }: Params) {
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
+  const isStagingResource =
+    workspace.coolifyEnvironmentName?.toLowerCase().includes("staging")
+    || workspace.name.toLowerCase().includes("staging")
+    || workspace.slug?.toLowerCase().includes("staging")
+    || false;
 
   const latestWordPressVersion = workspace.id
     ? await (async () => {
@@ -160,7 +165,7 @@ export default async function SiteSettingsPage({ params }: Params) {
       )}
 
       {/* Staging (non-WordPress view) */}
-      {!isWordPress ? (
+      {!isWordPress && !isStagingResource ? (
         <article className="card" style={{ marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
             <div>

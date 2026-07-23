@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
-import { getClientWorkspace, getSiteWorkspace, listSiteDirectory } from "@/lib/repositories";
+import { getClientWorkspace, getSiteWorkspace, isClientAdmin, listSiteDirectory } from "@/lib/repositories";
 import CreateSiteForm from "@/components/CreateSiteForm";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import { getCoolifyOverview } from "@/lib/coolify";
@@ -46,6 +46,7 @@ export default async function ClientAppsPage({ params }: Params) {
         }))
       )
     : [];
+  const canManageClient = Boolean(session?.user?.id && client.dbId && await isClientAdmin(client.dbId, session.user.id));
 
   return (
     <div className="page-stack">
@@ -69,6 +70,7 @@ export default async function ClientAppsPage({ params }: Params) {
       ) : (
         <SiteDirectoryView
           userId={session?.user?.id}
+          isCollaboratorView={!canManageClient}
           sites={apps.map((app) => ({
             id: app.id,
             name: app.name,
@@ -82,7 +84,12 @@ export default async function ClientAppsPage({ params }: Params) {
             href: `/apps/${app.slug ?? app.id}`,
             clientHref: `/clients/${clientId}`,
             resourceType: app.resourceType,
-            showInternalMetadata: false
+            showInternalMetadata: canManageClient,
+            isStagingResource:
+              app.coolifyEnvironmentName?.toLowerCase().includes("staging")
+              || app.name.toLowerCase().includes("staging")
+              || app.slug?.toLowerCase().includes("staging")
+              || false
           }))}
         />
       )}

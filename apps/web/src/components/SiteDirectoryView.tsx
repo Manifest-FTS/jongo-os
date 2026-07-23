@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRightIcon, StarIcon } from "@/components/JongoIcons";
+import { ArrowRightIcon, BuildingOfficeIcon, StarIcon } from "@/components/JongoIcons";
 import ResourceTypePill from "@/components/ResourceTypePill";
 import { useAppDirectoryPreferences } from "@/hooks/useAppDirectoryPreferences";
 import { RESOURCE_TYPES, type ResourceType } from "@/lib/resource-types";
@@ -28,6 +28,7 @@ type SiteItem = {
   stagingEnvironmentReady?: boolean;
   stagingTargetAttached?: boolean;
   stagingCheckedAt?: string;
+  isStagingResource?: boolean;
 };
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType | "all", string> = {
@@ -68,10 +69,12 @@ function statusCopy(status: SiteItem["status"]): { label: string; tone: string }
 
 export default function SiteDirectoryView({
   sites,
-  userId
+  userId,
+  isCollaboratorView = false
 }: {
   sites: SiteItem[];
   userId?: string;
+  isCollaboratorView?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -81,16 +84,20 @@ export default function SiteDirectoryView({
   // Derive available resource types from current site list (only show types with at least one match)
   const availableTypes = RESOURCE_TYPES.filter((t) => hasSomeType(sites, t));
 
-  const resourceTypeFilter = prefs.resourceTypeFilter;
-  const statusFilter = prefs.statusFilter;
+  const resourceTypeFilters = prefs.resourceTypeFilters;
+  const statusFilters = prefs.statusFilters;
+  const stagingFilter = prefs.stagingFilter;
   const view = prefs.view;
 
-  // Reset resource type filter if it no longer matches available types
+  // Remove stale type filters if the current list no longer contains that type.
   useEffect(() => {
-    if (ready && resourceTypeFilter !== "all" && !hasSomeType(sites, resourceTypeFilter)) {
-      setPrefs({ resourceTypeFilter: "all" });
+    if (!ready) return;
+
+    const nextTypeFilters = resourceTypeFilters.filter((type) => hasSomeType(sites, type));
+    if (nextTypeFilters.length !== resourceTypeFilters.length) {
+      setPrefs({ resourceTypeFilters: nextTypeFilters });
     }
-  }, [ready, resourceTypeFilter, sites, setPrefs]);
+  }, [ready, resourceTypeFilters, sites, setPrefs]);
 
   useEffect(() => {
     if (!userId) {
@@ -176,6 +183,20 @@ export default function SiteDirectoryView({
     }
   }
 
+  function toggleStatusFilter(value: "healthy" | "degraded" | "error" | "unknown") {
+    const next = statusFilters.includes(value)
+      ? statusFilters.filter((entry) => entry !== value)
+      : [...statusFilters, value];
+    setPrefs({ statusFilters: next });
+  }
+
+  function toggleTypeFilter(value: ResourceType) {
+    const next = resourceTypeFilters.includes(value)
+      ? resourceTypeFilters.filter((entry) => entry !== value)
+      : [...resourceTypeFilters, value];
+    setPrefs({ resourceTypeFilters: next });
+  }
+
   const query = search.trim().toLowerCase();
   const filtered = sites.filter((site) => {
     const matchesQuery =
@@ -184,19 +205,23 @@ export default function SiteDirectoryView({
       site.clientName.toLowerCase().includes(query) ||
       site.description?.toLowerCase().includes(query);
 
-    const matchesStatus = statusFilter === "all" || site.status === statusFilter;
+    const matchesStatus = statusFilters.length === 0 || statusFilters.includes(site.status);
 
-    const matchesType =
-      resourceTypeFilter === "all" ||
-      site.resourceType === resourceTypeFilter;
+    const matchesType = resourceTypeFilters.length === 0 || resourceTypeFilters.includes(site.resourceType as ResourceType);
 
-    return matchesQuery && matchesStatus && matchesType;
+    const isStaging = Boolean(site.isStagingResource);
+    const matchesStaging =
+      stagingFilter === "all" ||
+      (stagingFilter === "only_staging" && isStaging) ||
+      (stagingFilter === "exclude_staging" && !isStaging);
+
+    return matchesQuery && matchesStatus && matchesType && matchesStaging;
   });
 
   return (
     <div className="page-stack">
-      <div className="card directory-toolbar" style={{ gap: "0.75rem" }}>
-        <div className="directory-toolbar-primary">
+      <div className="card directory-toolbar" style={{ gap: "0.75rem", display: "grid" }}>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
           <input
             className="directory-search"
             type="search"
@@ -204,41 +229,68 @@ export default function SiteDirectoryView({
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Filter apps by name, client, or description"
             aria-label="Filter apps"
+            style={{ flex: "2 1 280px", minWidth: "220px" }}
           />
-          <div className="filter-group" aria-label="Site status filters">
-            <button type="button" className={`filter-pill ${statusFilter === "all" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "all" })}>All</button>
-            <button type="button" className={`filter-pill ${statusFilter === "healthy" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "healthy" })}>On track</button>
-            <button type="button" className={`filter-pill ${statusFilter === "degraded" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "degraded" })}>Needs review</button>
-            <button type="button" className={`filter-pill ${statusFilter === "error" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "error" })}>Action needed</button>
-            <button type="button" className={`filter-pill ${statusFilter === "unknown" ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilter: "unknown" })}>Unavailable</button>
+          <div className="filter-group" aria-label="Site status filters" style={{ flexWrap: "wrap", flex: "1 1 500px" }}>
+            <button type="button" className={`filter-pill ${statusFilters.length === 0 ? "is-active" : ""}`} onClick={() => setPrefs({ statusFilters: [] })}>All</button>
+            <button type="button" className={`filter-pill ${statusFilters.includes("healthy") ? "is-active" : ""}`} onClick={() => toggleStatusFilter("healthy")}>On track</button>
+            <button type="button" className={`filter-pill ${statusFilters.includes("degraded") ? "is-active" : ""}`} onClick={() => toggleStatusFilter("degraded")}>Needs review</button>
+            <button type="button" className={`filter-pill ${statusFilters.includes("error") ? "is-active" : ""}`} onClick={() => toggleStatusFilter("error")}>Action needed</button>
+            <button type="button" className={`filter-pill ${statusFilters.includes("unknown") ? "is-active" : ""}`} onClick={() => toggleStatusFilter("unknown")}>Unavailable</button>
           </div>
         </div>
 
-        {availableTypes.length > 0 && (
-          <div className="filter-group" aria-label="Resource type filters" style={{ flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+          {availableTypes.length > 0 ? (
+            <div className="filter-group" aria-label="Resource type filters" style={{ flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={`filter-pill ${resourceTypeFilters.length === 0 ? "is-active" : ""}`}
+                onClick={() => setPrefs({ resourceTypeFilters: [] })}
+              >
+                {RESOURCE_TYPE_LABELS["all"]}
+              </button>
+              {availableTypes.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  className={`filter-pill ${resourceTypeFilters.includes(type) ? "is-active" : ""}`}
+                  onClick={() => toggleTypeFilter(type)}
+                >
+                  {RESOURCE_TYPE_LABELS[type]}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="filter-group" aria-label="Staging filters" style={{ flexWrap: "wrap" }}>
             <button
               type="button"
-              className={`filter-pill ${resourceTypeFilter === "all" ? "is-active" : ""}`}
-              onClick={() => setPrefs({ resourceTypeFilter: "all" })}
+              className={`filter-pill ${stagingFilter === "all" ? "is-active" : ""}`}
+              onClick={() => setPrefs({ stagingFilter: "all" })}
             >
-              {RESOURCE_TYPE_LABELS["all"]}
+              All Envs
             </button>
-            {availableTypes.map((type) => (
-              <button
-                key={type}
-                type="button"
-                className={`filter-pill ${resourceTypeFilter === type ? "is-active" : ""}`}
-                onClick={() => setPrefs({ resourceTypeFilter: type })}
-              >
-                {RESOURCE_TYPE_LABELS[type]}
-              </button>
-            ))}
+            <button
+              type="button"
+              className={`filter-pill ${stagingFilter === "exclude_staging" ? "is-active" : ""}`}
+              onClick={() => setPrefs({ stagingFilter: "exclude_staging" })}
+            >
+              Production
+            </button>
+            <button
+              type="button"
+              className={`filter-pill ${stagingFilter === "only_staging" ? "is-active" : ""}`}
+              onClick={() => setPrefs({ stagingFilter: "only_staging" })}
+            >
+              Staging
+            </button>
           </div>
-        )}
 
-        <div className="view-toggle" aria-label="Site view toggle">
-          <button type="button" className={`view-pill ${view === "list" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "list" })}>List</button>
-          <button type="button" className={`view-pill ${view === "grid" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "grid" })}>Grid</button>
+          <div className="view-toggle" aria-label="Site view toggle">
+            <button type="button" className={`view-pill ${view === "list" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "list" })}>List</button>
+            <button type="button" className={`view-pill ${view === "grid" ? "is-active" : ""}`} onClick={() => setPrefs({ view: "grid" })}>Grid</button>
+          </div>
         </div>
       </div>
 
@@ -281,21 +333,24 @@ export default function SiteDirectoryView({
                       >
                         <StarIcon filled={isFavorite} style={{ width: "0.98rem", height: "0.98rem" }} />
                       </button>
-                      <span className={`status-chip ${state.tone}`}>{state.label}</span>
+                      {!isCollaboratorView ? <span className={`status-chip ${state.tone}`}>{state.label}</span> : null}
                     </div>
                   </div>
                   <div className="directory-title-row">
                     <h2 className="directory-title" style={{ fontSize: "1.06rem", lineHeight: 1.2 }}>{site.name}</h2>
                   </div>
                   {site.description ? <p className="directory-summary">{site.description}</p> : null}
-                  <p className="directory-meta">Client: {site.clientName}</p>
-                  {(site.backupLocalStatus || site.backupOffsiteLabel) ? (
+                  <p className="directory-meta" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <BuildingOfficeIcon style={{ width: "0.9rem", height: "0.9rem", color: "var(--muted)" }} />
+                    <span>{site.clientName}</span>
+                  </p>
+                  {!isCollaboratorView && (site.backupLocalStatus || site.backupOffsiteLabel) ? (
                     <div className="directory-badges">
                       {site.backupLocalStatus ? <span className="tag">Backup: {site.backupLocalStatus}</span> : null}
                       {site.backupOffsiteLabel ? <span className={`status-chip ${site.backupOffsiteTone ?? "unknown"}`}>Offsite: {site.backupOffsiteLabel}</span> : null}
                     </div>
                   ) : null}
-                  {(site.stagingEnvironmentReady !== undefined || site.stagingTargetAttached !== undefined) ? (
+                  {!isCollaboratorView && (site.stagingEnvironmentReady !== undefined || site.stagingTargetAttached !== undefined) ? (
                     <div className="directory-badges">
                       <span className={`status-chip ${site.stagingEnvironmentReady ? "healthy" : "unknown"}`}>
                         {site.stagingEnvironmentReady ? "Env created" : "Env missing"}
@@ -305,17 +360,17 @@ export default function SiteDirectoryView({
                       </span>
                     </div>
                   ) : null}
-                  {site.backupCheckedAt ? (
+                  {!isCollaboratorView && site.backupCheckedAt ? (
                     <p style={{ margin: "0.2rem 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
                       Backup status checked {formatAgo(site.backupCheckedAt)}
                     </p>
                   ) : null}
-                  {site.stagingCheckedAt ? (
+                  {!isCollaboratorView && site.stagingCheckedAt ? (
                     <p style={{ margin: "0.2rem 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
                       Staging status checked {formatAgo(site.stagingCheckedAt)}
                     </p>
                   ) : null}
-                  {site.showInternalMetadata ? (
+                  {!isCollaboratorView && site.showInternalMetadata ? (
                     <div className="directory-badges">
                       <span className={`tag ${site.ownershipState === "mapped" ? "tag-mapped" : "tag-warning"}`}>
                         Ownership: {site.ownershipState === "mapped" ? "mapped" : "mapping needs review"}
