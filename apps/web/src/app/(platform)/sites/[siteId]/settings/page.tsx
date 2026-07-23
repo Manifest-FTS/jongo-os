@@ -91,15 +91,6 @@ export default async function SiteSettingsPage({ params }: Params) {
   return (
     <div>
       <PageAutoRefresh intervalMs={12000} />
-      <div className="card" style={{ marginBottom: "1rem" }}>
-        <p className="card-muted" style={{ marginBottom: "0.35rem" }}>
-          {workspace?.clientName ?? "Unassigned client"} / {workspace?.name ?? siteId}
-        </p>
-        <h2 style={{ margin: 0 }}>Advanced</h2>
-        <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Manage app identity, hosting links, and operational controls.
-        </p>
-      </div>
 
       {isWordPress ? (
         <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)", alignItems: "start" }}>

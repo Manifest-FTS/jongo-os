@@ -1,15 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth.config";
-import { getClientWorkspace, getSiteWorkspace, isClientAdmin, listSiteDirectory } from "@/lib/repositories";
+import { getClientWorkspace, getSiteWorkspace, listSiteDirectory } from "@/lib/repositories";
 import CreateSiteForm from "@/components/CreateSiteForm";
-import DeleteAppButton from "@/components/DeleteAppButton";
-import ResourceTypePill from "@/components/ResourceTypePill";
 import { ArrowRightIcon } from "@/components/JongoIcons";
-import type { ResourceType } from "@/lib/resource-types";
-import { RESOURCE_TYPES } from "@/lib/resource-types";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { buildAvailableCoolifyAppOptions } from "@/lib/coolify-app-picker";
+import SiteDirectoryView from "@/components/SiteDirectoryView";
 
 type Params = { params: Promise<{ clientId: string }> };
 
@@ -49,7 +46,6 @@ export default async function ClientAppsPage({ params }: Params) {
         }))
       )
     : [];
-  const canViewInternalMetadata = Boolean(session?.user?.id && client.dbId && await isClientAdmin(client.dbId, session.user.id));
 
   return (
     <div className="page-stack">
@@ -61,36 +57,35 @@ export default async function ClientAppsPage({ params }: Params) {
         {client.dbId ? <CreateSiteForm organizationId={client.dbId} availableApps={availableApps} /> : null}
       </div>
 
-      <article className="card">
-        {apps.length === 0 ? (
+      {apps.length === 0 ? (
+        <article className="card">
           <p className="card-muted">No apps yet. Create the first app for this client.</p>
-        ) : (
-          <div style={{ display: "grid", gap: "0.65rem" }}>
-            {apps.map((app) => (
-              <div
-                key={app.id}
-                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.65rem", flexWrap: "wrap" }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                  <Link href={`/apps/${app.slug ?? app.id}`} className="action-link" style={{ fontWeight: 600 }}>
-                    {app.name} <ArrowRightIcon className="btn-icon" />
-                  </Link>
-                  {app.resourceType && RESOURCE_TYPES.includes(app.resourceType as ResourceType) && (
-                    <ResourceTypePill type={app.resourceType as ResourceType} size="xs" />
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
-                  <span className={`status-chip ${app.status}`}>{app.status}</span>
-                  {canViewInternalMetadata && app.ownershipState !== "mapped" ? (
-                    <span className="tag tag-warning" style={{ fontSize: "0.75rem" }}>mapping needs review</span>
-                  ) : null}
-                  {canViewInternalMetadata ? <DeleteAppButton siteId={app.id} /> : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </article>
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.88rem" }}>
+            <Link href="/apps" className="action-link">
+              Open app directory <ArrowRightIcon className="btn-icon" />
+            </Link>
+          </p>
+        </article>
+      ) : (
+        <SiteDirectoryView
+          userId={session?.user?.id}
+          sites={apps.map((app) => ({
+            id: app.id,
+            name: app.name,
+            description: app.description,
+            clientId: client.id,
+            clientName: client.name,
+            status: app.status,
+            ownershipState: app.ownershipState,
+            ownershipDiagnostic: app.ownershipDiagnostic,
+            source: app.source,
+            href: `/apps/${app.slug ?? app.id}`,
+            clientHref: `/clients/${clientId}`,
+            resourceType: app.resourceType,
+            showInternalMetadata: false
+          }))}
+        />
+      )}
     </div>
   );
 }

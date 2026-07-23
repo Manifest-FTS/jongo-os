@@ -1,8 +1,7 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { PlusIcon } from "@/components/JongoIcons";
-import SiteCollaboratorManager from "@/components/SiteCollaboratorManager";
 
 type CollaboratorRow = {
   id: string;
@@ -15,9 +14,10 @@ type CollaboratorRow = {
 type Props = {
   siteId: string;
   currentUserId: string;
+  clientId: string;
 };
 
-export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId }: Props) {
+export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, clientId }: Props) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<CollaboratorRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,9 +71,23 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId }:
           <h3 className="card-title">Collaborators</h3>
           <p className="card-muted" style={{ marginBottom: 0 }}>{rows.length} total</p>
         </div>
-        <button type="button" className="btn" onClick={() => setOpen(true)}>
-          <PlusIcon className="btn-icon" />
-          Invite
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setOpen(true)}
+          title="Manage access"
+          aria-label="Manage access"
+          style={{
+            width: "2.3rem",
+            height: "2.3rem",
+            borderRadius: "999px",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0
+          }}
+        >
+          <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>+</span>
         </button>
       </div>
 
@@ -158,13 +172,52 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId }:
             <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", marginBottom: "1rem" }}>
               <div>
                 <h2 style={{ margin: 0 }}>Collaborators</h2>
+                <p className="card-muted" style={{ margin: "0.4rem 0 0" }}>
+                  New invites now belong at the client/project level so teammates inherit access across all apps in this client.
+                </p>
               </div>
               <button type="button" className="btn" onClick={() => setOpen(false)}>
                 Close
               </button>
             </div>
 
-            <SiteCollaboratorManager siteId={siteId} currentUserId={currentUserId} />
+            <div style={{ display: "grid", gap: "0.85rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center", padding: "0.85rem 1rem", border: "1px solid var(--border)", borderRadius: "12px", background: "var(--surface)" }}>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 600 }}>Client team access</p>
+                  <p className="card-muted" style={{ margin: "0.2rem 0 0", fontSize: "0.85rem" }}>
+                    Invite admins and collaborators once at the client level instead of per app.
+                  </p>
+                </div>
+                <Link href={`/clients/${clientId}/team`} className="btn" onClick={() => setOpen(false)}>
+                  Open client team
+                </Link>
+              </div>
+
+              <div style={{ display: "grid", gap: "0.55rem" }}>
+                <h4 style={{ margin: 0, fontSize: "0.92rem" }}>Current app-level records</h4>
+                <p className="card-muted" style={{ margin: 0, fontSize: "0.82rem" }}>
+                  Existing app-specific collaborator records still load for compatibility, but new invites should be created from the client team page.
+                </p>
+                {rows.length > 0 ? rows.map((row) => (
+                  <div key={row.id} style={{ display: "grid", gridTemplateColumns: "34px minmax(0, 1fr) auto", alignItems: "center", gap: "0.6rem", paddingBottom: "0.45rem", borderBottom: "1px solid var(--border)" }}>
+                    <div
+                      aria-hidden
+                      style={{ width: "34px", height: "34px", borderRadius: "999px", background: "var(--surface)", border: "1px solid var(--border)", display: "grid", placeItems: "center", fontWeight: 700, fontSize: "0.82rem" }}
+                    >
+                      {getInitial(row)}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ margin: 0, fontWeight: 600 }}>{row.fullName ?? row.email}</p>
+                      <p style={{ margin: "0.15rem 0 0", color: "var(--muted)", fontSize: "0.82rem", overflow: "hidden", textOverflow: "ellipsis" }}>{row.email}</p>
+                    </div>
+                    <span className="tag" style={{ textTransform: "capitalize" }}>{row.role}</span>
+                  </div>
+                )) : (
+                  <p className="card-muted" style={{ margin: 0 }}>No app-specific collaborator records yet.</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       ) : null}

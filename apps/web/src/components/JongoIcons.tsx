@@ -97,6 +97,15 @@ export function UsersIcon(props: IconProps) {
   );
 }
 
+export function UserIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5 19a7 7 0 0 1 14 0" />
+    </BaseIcon>
+  );
+}
+
 export function BellIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
@@ -195,11 +204,61 @@ export function EyeOffIcon(props: IconProps) {
   );
 }
 
+export function LockIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </BaseIcon>
+  );
+}
+
 export function CopyIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
       <rect x="9" y="9" width="11" height="11" rx="2" />
       <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+    </BaseIcon>
+  );
+}
+
+export function StarIcon({ style, ...props }: IconProps & { filled?: boolean }) {
+  const { filled, ...rest } = props;
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={rest.className}
+      style={style}
+      {...rest}
+    >
+      <path
+        d="m12 3 2.8 5.7 6.2.9-4.5 4.3 1.1 6.1L12 17l-5.6 3 1.1-6.1L3 9.6l6.2-.9L12 3z"
+        fill={filled ? "currentColor" : "none"}
+      />
+    </svg>
+  );
+}
+
+export function DayIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6" />
+    </BaseIcon>
+  );
+}
+
+export function EveningIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M16.5 4.8A7.9 7.9 0 1 0 19.2 16a6.8 6.8 0 1 1-2.7-11.2z" />
+      <path d="M18.7 6.1v1.4M18 6.8h1.4" />
     </BaseIcon>
   );
 }

@@ -1,15 +1,40 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth.config";
+import { getDb } from "@/lib/db";
+import { getGravatarUrl } from "@/lib/gravatar";
+import { getInitials } from "@/lib/profile";
 import BrandLogo from "@/components/BrandLogo";
 import { BellIcon, ChevronDownIcon } from "@/components/JongoIcons";
 import PlatformPrimaryNav from "@/components/navigation/PlatformPrimaryNav";
 import SignOutButton from "@/components/auth/SignOutButton";
+import UserAvatar from "@/components/UserAvatar";
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
-  const email = session?.user?.email ?? "Account";
-  const userLabel = email === "Account" ? email : email.split("@")[0];
-  const userInitial = userLabel.slice(0, 1).toUpperCase();
+  const sessionEmail = session?.user?.email ?? "Account";
+
+  let email = sessionEmail;
+  let fullName = session?.user?.name ?? null;
+  let imageUrl: string | null = null;
+
+  if (session?.user?.id) {
+    const prisma = await getDb();
+    if (prisma) {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { email: true, fullName: true, avatarUrl: true }
+      });
+
+      if (currentUser) {
+        email = currentUser.email;
+        fullName = currentUser.fullName ?? null;
+        imageUrl = currentUser.avatarUrl ?? getGravatarUrl(currentUser.email, 96);
+      }
+    }
+  }
+
+  const userLabel = fullName?.trim() || (email === "Account" ? email : email.split("@")[0]);
+  const userInitials = getInitials(fullName, email);
 
   return (
     <div className="app-shell">
@@ -35,13 +60,13 @@ export default async function PlatformLayout({ children }: { children: React.Rea
             </button>
             <details className="user-menu">
               <summary className="user-menu-trigger">
-                <span className="user-avatar">{userInitial}</span>
+                <UserAvatar imageUrl={imageUrl} initials={userInitials} alt={userLabel} size={26} />
                 <span className="user-label">{userLabel}</span>
                 <ChevronDownIcon className="topbar-icon" />
               </summary>
               <div className="user-menu-panel">
                 <p className="user-menu-email">{email}</p>
-                <Link href="/settings">Account settings</Link>
+                <Link href="/settings">Profile Settings</Link>
                 <SignOutButton />
               </div>
             </details>

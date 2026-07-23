@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRightIcon } from "@/components/JongoIcons";
+import { ArrowRightIcon, StarIcon } from "@/components/JongoIcons";
 import ResourceTypePill from "@/components/ResourceTypePill";
 import { useAppDirectoryPreferences } from "@/hooks/useAppDirectoryPreferences";
 import { RESOURCE_TYPES, type ResourceType } from "@/lib/resource-types";
@@ -74,6 +74,8 @@ export default function SiteDirectoryView({
   userId?: string;
 }) {
   const [search, setSearch] = useState("");
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
   const { prefs, setPrefs, ready } = useAppDirectoryPreferences(userId);
 
   // Derive available resource types from current site list (only show types with at least one match)
@@ -89,6 +91,90 @@ export default function SiteDirectoryView({
       setPrefs({ resourceTypeFilter: "all" });
     }
   }, [ready, resourceTypeFilter, sites, setPrefs]);
+
+  useEffect(() => {
+    if (!userId) {
+      setFavoriteIds(new Set());
+      return;
+    }
+
+    let cancelled = false;
+    const visibleIds = new Set(sites.map((site) => site.id));
+
+    async function loadFavorites() {
+      try {
+        const res = await fetch("/api/user/favorites/apps", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) {
+          return;
+        }
+
+        const appIds = Array.isArray((data as { appIds?: unknown[] }).appIds)
+          ? ((data as { appIds: string[] }).appIds)
+          : [];
+        setFavoriteIds(new Set(appIds.filter((id) => visibleIds.has(id))));
+      } catch {
+        if (!cancelled) {
+          setFavoriteIds(new Set());
+        }
+      }
+    }
+
+    void loadFavorites();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, sites]);
+
+  async function toggleFavorite(siteId: string) {
+    if (!userId || favoriteBusyId) return;
+
+    const isFavorite = favoriteIds.has(siteId);
+    const nextFavorited = !isFavorite;
+    setFavoriteBusyId(siteId);
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (nextFavorited) {
+        next.add(siteId);
+      } else {
+        next.delete(siteId);
+      }
+      return next;
+    });
+
+    try {
+      const res = await fetch("/api/user/favorites/apps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appId: siteId, favorited: nextFavorited })
+      });
+
+      if (!res.ok) {
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          if (isFavorite) {
+            next.add(siteId);
+          } else {
+            next.delete(siteId);
+          }
+          return next;
+        });
+      }
+    } catch {
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        if (isFavorite) {
+          next.add(siteId);
+        } else {
+          next.delete(siteId);
+        }
+        return next;
+      });
+    } finally {
+      setFavoriteBusyId(null);
+    }
+  }
 
   const query = search.trim().toLowerCase();
   const filtered = sites.filter((site) => {
@@ -167,12 +253,36 @@ export default function SiteDirectoryView({
           {filtered.map((site) => {
             const resolvedType = isKnownResourceType(site.resourceType) ? site.resourceType : "Web App";
             const state = statusCopy(site.status);
+            const isFavorite = favoriteIds.has(site.id);
             return (
               <article key={site.id} className="card tone-card directory-row">
                 <div className="directory-main">
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.45rem", flexWrap: "wrap" }}>
                     <ResourceTypePill type={resolvedType} size="sm" />
-                    <span className={`status-chip ${state.tone}`}>{state.label}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleFavorite(site.id)}
+                        disabled={!userId || favoriteBusyId === site.id}
+                        aria-label={isFavorite ? `Remove ${site.name} from favorites` : `Favorite ${site.name}`}
+                        title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                        style={{
+                          width: "1.95rem",
+                          height: "1.95rem",
+                          borderRadius: "999px",
+                          border: "1px solid var(--border)",
+                          background: isFavorite ? "#fff7db" : "var(--card, #ffffff)",
+                          color: isFavorite ? "#d97706" : "var(--muted)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer"
+                        }}
+                      >
+                        <StarIcon filled={isFavorite} style={{ width: "0.98rem", height: "0.98rem" }} />
+                      </button>
+                      <span className={`status-chip ${state.tone}`}>{state.label}</span>
+                    </div>
                   </div>
                   <div className="directory-title-row">
                     <h2 className="directory-title" style={{ fontSize: "1.06rem", lineHeight: 1.2 }}>{site.name}</h2>
