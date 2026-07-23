@@ -13,6 +13,10 @@ export type SiteBackupRow = {
   status: string;
   trigger: string;
   label: string | null;
+  resourceType: string | null;
+  volumeCount: number | null;
+  databaseCount: number | null;
+  sizeBytes: number | null;
   posts: number | null;
   pages: number | null;
   plugins: number | null;
@@ -23,6 +27,18 @@ export type SiteBackupRow = {
   restoreStatus: string | null;
   restoreError: string | null;
 };
+
+function formatBytes(n: number | null): string | null {
+  if (n === null || !Number.isFinite(n) || n <= 0) return null;
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
 
 type Props = {
   siteId: string;
@@ -306,13 +322,19 @@ export default function SiteBackupsPanel({
                       {describeBackupError(b.error) ?? "This backup did not complete."}
                     </span>
                   </div>
-                ) : (
+                ) : b.resourceType === "wordpress" || b.posts !== null || b.wpVersion !== null ? (
                   <div className="bk-metrics">
                     <Metric value={b.posts} label="Posts" />
                     <Metric value={b.pages} label="Pages" />
                     <Metric value={b.plugins} label="Plugins" />
                     <Metric value={b.comments} label="Comments" />
                     <Metric value={b.wpVersion} label="WP Version" />
+                  </div>
+                ) : (
+                  <div className="bk-metrics">
+                    <Metric value={b.volumeCount} label={b.volumeCount === 1 ? "Volume" : "Volumes"} />
+                    <Metric value={b.databaseCount} label={b.databaseCount === 1 ? "Database" : "Databases"} />
+                    <Metric value={formatBytes(b.sizeBytes)} label="Size" />
                   </div>
                 )}
 

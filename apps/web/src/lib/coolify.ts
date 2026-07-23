@@ -1678,6 +1678,30 @@ export async function isCoolifyWordPressService(serviceUuid: string): Promise<bo
   return names.some((name) => name.toLowerCase() === "wordpress");
 }
 
+/**
+ * Whether a resource has persistent state worth a full-site backup — a service
+ * (has application containers, hence volumes) or a standalone database. Plain
+ * stateless applications return false. This is the generalized eligibility
+ * signal that replaces the WordPress-only gate; the backup script is still the
+ * final arbiter and reports "nothing to back up" if a resource turns out empty.
+ */
+export async function hasCoolifyBackupableState(serviceUuid: string): Promise<boolean> {
+  if (!serviceUuid?.trim()) {
+    return false;
+  }
+  const names = await resolveCoolifyServiceApplicationNames(serviceUuid);
+  if (names.length > 0) {
+    return true;
+  }
+  // Not a service — is it a standalone database resource?
+  try {
+    const payload = await coolifyFetch(`/api/v1/databases/${encodeURIComponent(serviceUuid)}`);
+    return Boolean(payload && typeof payload === "object" && !Array.isArray(payload));
+  } catch {
+    return false;
+  }
+}
+
 export type CoolifyServiceDomainResult = {
   ok: boolean;
   status?: number;

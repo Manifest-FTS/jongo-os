@@ -97,71 +97,100 @@ function buildScript() {
   return `set -uo pipefail
 RUUID=${shQuote(resourceUuid)}
 BID=${shQuote(backupId)}
-WP="wordpress-$RUUID"
 
-docker ps --format '{{.Names}}' | grep -qx "$WP" || { echo "RESULT=fail_no_wp_container"; exit 1; }
+read_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" 2>/dev/null | awk -F= -v k="$2" '$1==k{print substr($0,index($0,"=")+1)}' | tail -n 1; }
 
-# Database container: mariadb-, mysql- or postgres- sibling of the same service.
-DB=""
-for c in "mariadb-$RUUID" "mysql-$RUUID" "postgresql-$RUUID" "postgres-$RUUID"; do
-  if docker ps --format '{{.Names}}' | grep -qx "$c"; then DB="$c"; break; fi
-done
-[ -n "$DB" ] || { echo "RESULT=fail_no_db_container"; exit 1; }
-echo "DB_CONTAINER=$DB"
+# Discover every running container for this resource. Coolify names them
+# <app>-<uuid> (wordpress-, mariadb-, …) or, for a standalone database, just
+# <uuid>. This replaces the WordPress-only assumption.
+CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E "(^|-)$RUUID\\$" || true)
+[ -n "$CONTAINERS" ] || { echo "RESULT=fail_no_containers"; exit 1; }
 
-# Host path of the WordPress files volume (authoritative, via the mount table).
-VOL=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' "$WP" 2>/dev/null)
-[ -n "$VOL" ] && [ -d "$VOL" ] || { echo "RESULT=fail_no_files_volume"; exit 1; }
-echo "FILES_VOLUME=$VOL"
-
-read_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" | awk -F= -v k="$2" '$1==k{print substr($0,index($0,"=")+1)}' | tail -n 1; }
-DB_NAME=$(read_env "$WP" WORDPRESS_DB_NAME)
-DB_USER=$(read_env "$WP" WORDPRESS_DB_USER)
-DB_PASS=$(read_env "$WP" WORDPRESS_DB_PASSWORD)
-[ -n "$DB_NAME" ] || DB_NAME=wordpress
-
-# ── Content metadata (Flywheel-style columns) ────────────────────────────────
-# The official WordPress image sets the prefix via WORDPRESS_TABLE_PREFIX (its
-# wp-config uses getenv_docker(...), so parsing wp-config.php is unreliable).
-# Read the env var, default wp_, then verify against the real tables.
-PREFIX=$(read_env "$WP" WORDPRESS_TABLE_PREFIX)
-[ -n "$PREFIX" ] || PREFIX=wp_
-if ! docker exec "$DB" sh -lc "mariadb -u$DB_USER -p$DB_PASS -N -B -e \\"SELECT 1 FROM \${PREFIX}posts LIMIT 1\\" $DB_NAME" >/dev/null 2>&1; then
-  DETECTED=$(docker exec "$DB" sh -lc "mariadb -u$DB_USER -p$DB_PASS -N -B -e \\"SHOW TABLES LIKE '%posts'\\" $DB_NAME" 2>/dev/null | head -1 | sed 's/posts\$//')
-  [ -n "$DETECTED" ] && PREFIX="$DETECTED"
-fi
-echo "PREFIX=$PREFIX"
-
-WPVER=$(docker exec "$WP" sh -lc "grep -m1 '\\\$wp_version =' /var/www/html/wp-includes/version.php 2>/dev/null | sed \\"s/.*'\\([^']*\\)'.*/\\1/\\"" 2>/dev/null)
-echo "WP_VERSION=$WPVER"
-
-PLUGINS=$(docker exec "$WP" sh -lc 'ls -1 /var/www/html/wp-content/plugins 2>/dev/null | grep -v "^index.php$" | wc -l' 2>/dev/null || echo 0)
-echo "PLUGINS=$PLUGINS"
-
-q() { docker exec "$DB" sh -lc "mariadb -u$DB_USER -p$DB_PASS -N -B -e \\"$1\\" $DB_NAME" 2>/dev/null || echo ""; }
-POSTS=$(q "SELECT COUNT(*) FROM \${PREFIX}posts WHERE post_type='post' AND post_status='publish'")
-PAGES=$(q "SELECT COUNT(*) FROM \${PREFIX}posts WHERE post_type='page' AND post_status='publish'")
-COMMENTS=$(q "SELECT COUNT(*) FROM \${PREFIX}comments WHERE comment_approved='1'")
-echo "POSTS=$POSTS"
-echo "PAGES=$PAGES"
-echo "COMMENTS=$COMMENTS"
-
-# ── Database dump (staged next to the files so both land in one snapshot) ────
 STAGE="/var/backups/jongo/$RUUID"
-mkdir -p "$STAGE"
-DUMP="$STAGE/db.sql"
-if ! docker exec "$DB" sh -lc "mariadb-dump --single-transaction -u$DB_USER -p$DB_PASS $DB_NAME" > "$DUMP" 2>/dev/null; then
-  docker exec "$DB" sh -lc "mysqldump --single-transaction -u$DB_USER -p$DB_PASS $DB_NAME" > "$DUMP" 2>/dev/null || { echo "RESULT=fail_dump"; exit 1; }
-fi
-DUMP_SIZE=$(stat -Lc %s "$DUMP" 2>/dev/null || echo 0)
-[ "$DUMP_SIZE" -gt 100 ] || { echo "RESULT=fail_dump_empty"; exit 1; }
-echo "DUMP_SIZE=$DUMP_SIZE"
+rm -rf "$STAGE"; mkdir -p "$STAGE"
+PATHS_FILE=$(mktemp)
+VOLCOUNT=0
+DBCOUNT=0
+WP_CONTAINER=""
+WP_DB=""
 
-# ── One restic snapshot to B2: files + dump, tagged with this backup id ──────
-[ -f /root/.config/restic/b2-credentials.env ] || { echo "RESULT=fail_no_b2_creds"; exit 1; }
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  IMG=$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null)
+  NI="$c $IMG"
+  case "$c" in wordpress-*) WP_CONTAINER="$c";; esac
+
+  if echo "$NI" | grep -qiE 'postgres'; then
+    # ── PostgreSQL: dump via the container's own credentials ──
+    PGU=$(read_env "$c" POSTGRES_USER); [ -n "$PGU" ] || PGU=postgres
+    PGDB=$(read_env "$c" POSTGRES_DB); [ -n "$PGDB" ] || PGDB="$PGU"
+    PGP=$(read_env "$c" POSTGRES_PASSWORD)
+    DUMP="$STAGE/db-$c.sql"
+    if docker exec -e PGPASSWORD="$PGP" "$c" sh -lc "pg_dump -U $PGU -d $PGDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
+      echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1))
+    else rm -f "$DUMP"; fi
+
+  elif echo "$NI" | grep -qiE 'mariadb|mysql|percona'; then
+    # ── MySQL / MariaDB: prefer root creds from the DB container itself ──
+    RU=root
+    RP=$(read_env "$c" MARIADB_ROOT_PASSWORD); [ -n "$RP" ] || RP=$(read_env "$c" MYSQL_ROOT_PASSWORD)
+    MDB=$(read_env "$c" MARIADB_DATABASE); [ -n "$MDB" ] || MDB=$(read_env "$c" MYSQL_DATABASE)
+    # Fallback to the WordPress app credentials when the DB root pass is not exposed.
+    if [ -z "$RP" ] && [ -n "$WP_CONTAINER" ]; then
+      RU=$(read_env "$WP_CONTAINER" WORDPRESS_DB_USER)
+      RP=$(read_env "$WP_CONTAINER" WORDPRESS_DB_PASSWORD)
+      MDB=$(read_env "$WP_CONTAINER" WORDPRESS_DB_NAME)
+    fi
+    [ -n "$MDB" ] || MDB=wordpress
+    DUMP="$STAGE/db-$c.sql"
+    if docker exec "$c" sh -lc "mariadb-dump --single-transaction -u$RU -p$RP $MDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
+      echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1)); WP_DB="$c"
+    elif docker exec "$c" sh -lc "mysqldump --single-transaction -u$RU -p$RP $MDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
+      echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1)); WP_DB="$c"
+    else rm -f "$DUMP"; fi
+
+  else
+    # ── Application / service container: back up its named (persistent) volumes ──
+    while IFS= read -r src; do
+      [ -n "$src" ] && [ -d "$src" ] && { echo "$src" >> "$PATHS_FILE"; VOLCOUNT=$((VOLCOUNT+1)); }
+    done < <(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Source}}{{end}}{{end}}' "$c" 2>/dev/null)
+  fi
+done <<< "$CONTAINERS"
+
+sort -u "$PATHS_FILE" -o "$PATHS_FILE"
+[ -s "$PATHS_FILE" ] || { echo "RESULT=fail_nothing_to_backup"; rm -f "$PATHS_FILE"; exit 1; }
+echo "VOLCOUNT=$VOLCOUNT"
+echo "DBCOUNT=$DBCOUNT"
+
+# ── WordPress content metadata (Flywheel-style columns) — only when present ──
+if [ -n "$WP_CONTAINER" ] && [ -n "$WP_DB" ]; then
+  WU=$(read_env "$WP_CONTAINER" WORDPRESS_DB_USER)
+  WP_PASS=$(read_env "$WP_CONTAINER" WORDPRESS_DB_PASSWORD)
+  WN=$(read_env "$WP_CONTAINER" WORDPRESS_DB_NAME); [ -n "$WN" ] || WN=wordpress
+  PREFIX=$(read_env "$WP_CONTAINER" WORDPRESS_TABLE_PREFIX); [ -n "$PREFIX" ] || PREFIX=wp_
+  if ! docker exec "$WP_DB" sh -lc "mariadb -u$WU -p$WP_PASS -N -B -e \\"SELECT 1 FROM \${PREFIX}posts LIMIT 1\\" $WN" >/dev/null 2>&1; then
+    DETECTED=$(docker exec "$WP_DB" sh -lc "mariadb -u$WU -p$WP_PASS -N -B -e \\"SHOW TABLES LIKE '%posts'\\" $WN" 2>/dev/null | head -1 | sed 's/posts\$//')
+    [ -n "$DETECTED" ] && PREFIX="$DETECTED"
+  fi
+  WPVER=$(docker exec "$WP_CONTAINER" sh -lc "grep -m1 '\\\$wp_version =' /var/www/html/wp-includes/version.php 2>/dev/null | sed \\"s/.*'\\([^']*\\)'.*/\\1/\\"" 2>/dev/null)
+  PLUGINS=$(docker exec "$WP_CONTAINER" sh -lc 'ls -1 /var/www/html/wp-content/plugins 2>/dev/null | grep -v "^index.php$" | wc -l' 2>/dev/null || echo 0)
+  q() { docker exec "$WP_DB" sh -lc "mariadb -u$WU -p$WP_PASS -N -B -e \\"$1\\" $WN" 2>/dev/null || echo ""; }
+  echo "WP_VERSION=$WPVER"
+  echo "PLUGINS=$PLUGINS"
+  echo "POSTS=$(q "SELECT COUNT(*) FROM \${PREFIX}posts WHERE post_type='post' AND post_status='publish'")"
+  echo "PAGES=$(q "SELECT COUNT(*) FROM \${PREFIX}posts WHERE post_type='page' AND post_status='publish'")"
+  echo "COMMENTS=$(q "SELECT COUNT(*) FROM \${PREFIX}comments WHERE comment_approved='1'")"
+fi
+
+# ── One restic snapshot to B2: all volumes + all dumps, tagged with backup id ──
+[ -f /root/.config/restic/b2-credentials.env ] || { echo "RESULT=fail_no_b2_creds"; rm -f "$PATHS_FILE"; exit 1; }
 set -a; . /root/.config/restic/b2-credentials.env; set +a
 export AWS_ACCESS_KEY_ID="\${B2_KEY_ID:-}" AWS_SECRET_ACCESS_KEY="\${B2_APPLICATION_KEY:-}"
 REPO="s3:\${B2_ENDPOINT}/\${B2_BUCKET}"
+
+# Total on-disk size of everything going into the snapshot (approximate).
+SIZE_BYTES=$(du -scb $(cat "$PATHS_FILE") 2>/dev/null | tail -1 | cut -f1)
+echo "SIZE_BYTES=\${SIZE_BYTES:-0}"
 
 OUT=$(/usr/bin/restic -r "$REPO" backup \\
   --tag jongo-backup \\
@@ -170,10 +199,11 @@ OUT=$(/usr/bin/restic -r "$REPO" backup \\
   --exclude '**/wp-content/cache' \\
   --exclude '**/wp-content/*cache*/**' \\
   --exclude '**/wp-content/upgrade' \\
-  "$VOL" "$DUMP" 2>&1)
+  --files-from "$PATHS_FILE" 2>&1)
+rm -f "$PATHS_FILE"
 echo "$OUT" | tail -5
 SNAP=$(echo "$OUT" | grep -oE 'snapshot [0-9a-f]{8,} saved' | grep -oE '[0-9a-f]{8,}' | tail -1)
-rm -f "$DUMP"
+rm -rf "$STAGE"
 [ -n "$SNAP" ] || { echo "RESULT=fail_restic"; exit 1; }
 echo "SNAPSHOT=$SNAP"
 echo "RESULT=ok"
@@ -202,7 +232,10 @@ try {
     backupId,
     status: ok ? "success" : "failed",
     resticSnapshotId: k.SNAPSHOT || null,
-    sizeBytes: num(k.DUMP_SIZE),
+    sizeBytes: num(k.SIZE_BYTES),
+    resourceType: k.WP_VERSION ? "wordpress" : (num(k.DBCOUNT) && !num(k.VOLCOUNT) ? "database" : "service"),
+    volumeCount: num(k.VOLCOUNT),
+    databaseCount: num(k.DBCOUNT),
     posts: num(k.POSTS),
     pages: num(k.PAGES),
     plugins: num(k.PLUGINS),
