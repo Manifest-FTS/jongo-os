@@ -272,7 +272,13 @@ export async function PUT(req: Request, { params }: Params) {
 
     const callerIsOwner = site.organization.ownerId === session.user.id;
     const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
-    if (!callerIsAdmin) {
+
+    const collaboratorAllowedFields = new Set(["temporaryDomainSlug", "temporaryDomainSuffix"]);
+    const requestedFields = Object.keys(body).filter((key) => Object.prototype.hasOwnProperty.call(body, key));
+    const collaboratorOnlyUpdate =
+      requestedFields.length > 0 && requestedFields.every((field) => collaboratorAllowedFields.has(field));
+
+    if (!callerIsAdmin && !collaboratorOnlyUpdate) {
       return NextResponse.json({ error: "Only admins can update apps" }, { status: 403 });
     }
 
