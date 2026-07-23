@@ -22,7 +22,7 @@ async function getFavoriteAppIds(userId?: string): Promise<string[]> {
       WHERE "userId" = ${userId}::uuid
     `;
 
-    return rows.map((row) => row.appId);
+    return rows.map((row: FavoriteRow) => row.appId);
   } catch {
     return [];
   }
