@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { isAdminRole } from "@/lib/roles";
 import {
   applyCoolifyApplicationDomain,
   applyCoolifyApplicationDomains,
@@ -1213,16 +1212,6 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
   }
 
-  const callerIsOwner = Boolean(session?.user?.id && site.organization.ownerId === session.user.id);
-  const callerIsAdmin =
-    authorizedByToken ||
-    bootstrapGlobalAccess ||
-    callerIsOwner ||
-    isAdminRole(site.organization.collaborators[0]?.role);
-  if (!callerIsAdmin) {
-    return NextResponse.json({ error: "Only admins can manage staging" }, { status: 403 });
-  }
-
   const appUuid = site.coolifyServiceUuid?.trim() || "";
   const projectId = site.coolifyProjectId?.trim() || undefined;
   let temporaryDomainSlug: string | null = null;
@@ -1792,12 +1781,6 @@ export async function PATCH(req: Request, { params }: Params) {
 
   if (!site) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
-  }
-
-  const callerIsOwner = site.organization.ownerId === session.user.id;
-  const callerIsAdmin = bootstrapGlobalAccess || callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
-  if (!callerIsAdmin) {
-    return NextResponse.json({ error: "Only admins can manage staging domains" }, { status: 403 });
   }
 
   const appUuid = site.coolifyServiceUuid?.trim() || "";
