@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type ConnectionSummary = {
   connected: boolean;
@@ -28,6 +29,7 @@ const EMPTY_SUMMARY: ConnectionSummary = {
 };
 
 export default function WordPressTelemetryConnectionPanel({ siteId, canManage }: Props) {
+  const router = useRouter();
   const [summary, setSummary] = useState<ConnectionSummary>(EMPTY_SUMMARY);
   const [siteUrl, setSiteUrl] = useState("");
   const [username, setUsername] = useState("");
@@ -115,6 +117,9 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
       setUsername(data.username ?? username);
       setAppPassword("");
       setSuccess("Access saved for this app.");
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save WordPress connection");
     } finally {
@@ -167,6 +172,9 @@ export default function WordPressTelemetryConnectionPanel({ siteId, canManage }:
       setUsername("");
       setAppPassword("");
       setSuccess("Connection removed.");
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (disconnectError) {
       setError(disconnectError instanceof Error ? disconnectError.message : "Failed to disconnect telemetry");
     } finally {
