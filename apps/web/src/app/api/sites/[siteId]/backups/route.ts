@@ -4,6 +4,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { isCoolifyWordPressService } from "@/lib/coolify";
+import { openJobLog } from "@/lib/job-log";
 
 export const runtime = "nodejs";
 
@@ -67,6 +69,21 @@ async function createBackup(request: Request, { params }: Params) {
     return NextResponse.json({ error: "This app is not linked to a Coolify resource." }, { status: 409 });
   }
 
+  // Full-site backup captures a WordPress files volume + its database. Confirm
+  // this Coolify resource actually has a WordPress container (via its `wordpress`
+  // application) rather than trusting the unreliable siteType heuristic — that
+  // both flags non-WordPress apps and misses real WordPress services.
+  if (!(await isCoolifyWordPressService(resourceUuid))) {
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "unsupported_resource_type",
+        message: "Full-site backups are only available for WordPress apps."
+      },
+      { status: 412 }
+    );
+  }
+
   if (!hasValue(process.env.STAGING_SYNC_SSH_HOST) && !hasValue(process.env.COOLIFY_SSH_HOST)) {
     return NextResponse.json(
       { ok: false, reason: "missing_config", message: "SSH host is not configured for server-side backups." },
@@ -105,6 +122,10 @@ async function createBackup(request: Request, { params }: Params) {
     }
   });
 
+  // Keep the job detached but preserve its output for diagnosis.
+
+  const jobLog = openJobLog("site-backup");
+
   const child = spawn(
     process.execPath,
     [
@@ -113,7 +134,7 @@ async function createBackup(request: Request, { params }: Params) {
       "--backup-id", record.id,
       ...(label ? ["--label", label] : [])
     ],
-    { cwd: process.cwd(), env: process.env, detached: true, stdio: "ignore" }
+    { cwd: process.cwd(), env: process.env, detached: true, stdio: ["ignore", jobLog, jobLog] }
   );
   child.unref();
 

@@ -1786,3 +1786,249 @@ main {
   .bk-metric { min-width: 3.75rem; }
   .bk-metric__value { font-size: 1.1rem; }
 }
+
+/* ============================================================
+   Base button system
+   These classes were referenced across the app (~20 usages) but never
+   defined, so they rendered as unstyled browser buttons. Defined here to
+   match the design tokens used elsewhere.
+   ============================================================ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--accent-strong);
+  background: var(--accent);
+  color: #16301a;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 120ms ease, border-color 120ms ease, transform 60ms ease,
+    opacity 120ms ease;
+}
+
+.button:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.button:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: translateY(1px);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.button:disabled,
+.button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Secondary variant — must follow .button to override it. */
+.button-secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.button-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--surface-alt);
+  border-color: #c7cfcf;
+}
+
+/* ============================================================
+   Confirmation dialog (destructive actions)
+   ============================================================ */
+
+.cd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(21, 34, 34, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.cd-dialog {
+  width: min(30rem, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 1.4rem 1.5rem 1.25rem;
+}
+
+.cd-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cd-body {
+  margin: 0.6rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.cd-warn {
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  background: #fdf4f3;
+  border: 1px solid #f0c8c4;
+  color: #8c1d18;
+  font-size: 0.83rem;
+  line-height: 1.45;
+}
+
+.cd-label {
+  display: block;
+  margin: 1rem 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #516265;
+}
+
+.cd-input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.cd-input:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.cd-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1.15rem;
+}
+
+.cd-confirm {
+  background: #b3261e;
+  border-color: #8c1d18;
+  color: #fff;
+}
+
+.cd-confirm:hover:not(:disabled) {
+  background: #8c1d18;
+  border-color: #8c1d18;
+}
+
+/* ============================================================
+   Toasts — fixed overlay, no effect on document flow
+   ============================================================ */
+
+.toast-stack {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: min(24rem, calc(100vw - 2.5rem));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: toast-in 180ms ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.toast__dot {
+  flex: 0 0 auto;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  margin-top: 0.35rem;
+  background: var(--muted);
+}
+
+.toast--success { border-color: #cfe6cf; }
+.toast--success .toast__dot { background: var(--accent-strong); }
+.toast--error { border-color: #f0c8c4; }
+.toast--error .toast__dot { background: #b3261e; }
+.toast--info .toast__dot { background: #6c7778; }
+
+.toast__body { flex: 1 1 auto; min-width: 0; }
+
+.toast__title {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.toast__text {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.toast__close {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
+  border-radius: 4px;
+}
+
+.toast__close:hover { background: var(--surface-alt); color: var(--text); }
+
+/* Pagination */
+.bk-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.bk-pager__info { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.bk-pager__controls { display: flex; gap: 0.5rem; }

@@ -194,6 +194,14 @@ model SiteBackup {
   startedAt   DateTime  @default(now())
   completedAt DateTime?
 
+  // Restore tracking — set when this backup is restored FROM, so the UI can
+  // report completion instead of firing and forgetting.
+  restoreStatus      String? // 'running' | 'success' | 'failed'
+  restoreStartedAt   DateTime?
+  restoreCompletedAt DateTime?
+  restoreError       String?
+  safetySnapshotId   String? // restic snapshot of pre-restore state (rollback handle)
+
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@index([siteId, startedAt])

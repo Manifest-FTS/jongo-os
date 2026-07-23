@@ -1,4 +1,4 @@
-import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory, isCoolifyWordPressService, AppBackupInventory } from "@/lib/coolify";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
@@ -9,7 +9,10 @@ import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPa
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-type Params = { params: Promise<{ siteId: string }> };
+type Params = {
+  params: Promise<{ siteId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -71,7 +74,7 @@ function getProtectionStatus(
   return "protected-recent";
 }
 
-export default async function BackupsPage({ params }: Params) {
+export default async function BackupsPage({ params, searchParams }: Params) {
   const { siteId } = await params;
   const session = await auth();
   const workspace = await getSiteWorkspace(siteId, {
@@ -91,6 +94,11 @@ export default async function BackupsPage({ params }: Params) {
 
   const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
+
+  // Full-site backup eligibility: does this Coolify resource actually have a
+  // WordPress container? (siteType is unreliable — it both false-positives and
+  // false-negatives.) This checks for a `wordpress` application on the service.
+  const isWordPressService = appUuid ? await isCoolifyWordPressService(appUuid) : false;
   const backupReadiness = getBackupReadiness(inventory, appUuid);
 
   const isConfigured = inventory?.configured ?? false;
@@ -190,25 +198,45 @@ export default async function BackupsPage({ params }: Params) {
   const restoreTestEligible = Boolean(restoreTargetDb?.hasSuccessfulExecution);
 
   // Jongo-managed full-site backups (files + database, offsite in Backblaze).
+  const backupPageSize = 10;
+  const requestedPage = Number((await searchParams)?.bkPage ?? 1);
+  const backupPage = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+
+  // Watchdog: a backup whose result callback never arrived would otherwise sit
+  // in "running" forever. Anything still running after 30 minutes is treated as
+  // failed so the UI can never hang indefinitely.
+  if (workspace.id) {
+    const { db } = await import("@/lib/db");
+    await db.siteBackup.updateMany({
+      where: {
+        siteId: workspace.id,
+        status: "running",
+        startedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) }
+      },
+      data: {
+        status: "failed",
+        error: "timed_out",
+        completedAt: new Date()
+      }
+    });
+  }
+
+  const backupTotal: number = workspace.id
+    ? await (async () => {
+        const { db } = await import("@/lib/db");
+        return db.siteBackup.count({ where: { siteId: workspace.id } });
+      })()
+    : 0;
+
   const siteBackupRows: SiteBackupRow[] = workspace.id
     ? await (async () => {
-        const { getDb } = await import("@/lib/db");
-        const prisma = await getDb();
-        if (!prisma || !("siteBackup" in prisma)) {
-          return [];
-        }
-
-        let rows: Array<Record<string, unknown>> = [];
-        try {
-          rows = await (prisma as any).siteBackup.findMany({
-            where: { siteId: workspace.id },
-            orderBy: { startedAt: "desc" },
-            take: 20
-          });
-        } catch {
-          return [];
-        }
-
+        const { db } = await import("@/lib/db");
+        const rows = await db.siteBackup.findMany({
+          where: { siteId: workspace.id },
+          orderBy: { startedAt: "desc" },
+          skip: (backupPage - 1) * backupPageSize,
+          take: backupPageSize
+        });
         return rows.map((row: Record<string, unknown>) => ({
           id: String(row.id),
           startedAt: (row.startedAt as Date).toISOString(),
@@ -222,7 +250,9 @@ export default async function BackupsPage({ params }: Params) {
           comments: (row.comments as number | null) ?? null,
           wpVersion: (row.wpVersion as string | null) ?? null,
           restorable: row.status === "success" && Boolean(row.resticSnapshotId),
-          error: (row.error as string | null) ?? null
+          error: (row.error as string | null) ?? null,
+          restoreStatus: (row.restoreStatus as string | null) ?? null,
+          restoreError: (row.restoreError as string | null) ?? null
         }));
       })()
     : [];
@@ -338,7 +368,11 @@ export default async function BackupsPage({ params }: Params) {
       <SiteBackupsPanel
         siteId={siteId}
         backups={siteBackupRows}
-        canManage={canViewInternalMetadata}
+        canManage={canViewInternalMetadata && isWordPressService}
+        supported={isWordPressService}
+        page={backupPage}
+        pageSize={backupPageSize}
+        total={backupTotal}
       />
 
       <article className="card">
