@@ -129,7 +129,27 @@ export async function DELETE(_req: Request, { params }: Params) {
       return NextResponse.json({ error: "Cannot remove the organization owner" }, { status: 403 });
     }
 
-    await db.collaborator.delete({ where: { id: collaboratorId } });
+    const organizationSites = await db.site.findMany({
+      where: { organizationId, deletedAt: null },
+      select: { id: true }
+    });
+    const organizationSiteIds = organizationSites.map((site: { id: string }) => site.id);
+
+    await db.$transaction([
+      db.siteCollaborator.deleteMany({
+        where: {
+          userId: collaborator.userId,
+          siteId: { in: organizationSiteIds }
+        }
+      }),
+      db.userFavoriteApp.deleteMany({
+        where: {
+          userId: collaborator.userId,
+          appId: { in: organizationSiteIds }
+        }
+      }),
+      db.collaborator.delete({ where: { id: collaboratorId } })
+    ]);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

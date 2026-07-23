@@ -256,3 +256,38 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export async function DELETE(_req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { organizationId, invitationId } = await params;
+  const access = await ensureAdminAccess(organizationId, session.user.id);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  try {
+    const { db } = await import("@/lib/db");
+    const invite = await db.invitation.findFirst({
+      where: {
+        id: invitationId,
+        organizationId,
+        inviteType: "organization"
+      },
+      select: { id: true }
+    });
+
+    if (!invite) {
+      return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
+    }
+
+    await db.invitation.delete({ where: { id: invitationId } });
+    return NextResponse.json({ ok: true, id: invitationId });
+  } catch (error) {
+    console.error("DELETE /api/organizations/[organizationId]/collaborators/invitations/[invitationId] error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

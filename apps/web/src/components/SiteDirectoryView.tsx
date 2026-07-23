@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BuildingOfficeIcon, SettingsIcon, StarIcon } from "@/components/JongoIcons";
 import ResourceTypePill from "@/components/ResourceTypePill";
@@ -87,6 +88,7 @@ export default function SiteDirectoryView({
   const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
   const { toasts, push, dismiss } = useToasts();
   const { prefs, setPrefs, ready } = useAppDirectoryPreferences(userId);
+  const router = useRouter();
 
   // Derive available resource types from current site list (only show types with at least one match)
   const availableTypes = RESOURCE_TYPES.filter((t) => hasSomeType(sites, t));
@@ -256,6 +258,11 @@ export default function SiteDirectoryView({
     return matchesQuery && matchesStatus && matchesType && matchesStaging;
   });
 
+  function shouldIgnoreCardNavigation(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(target.closest("a,button,input,select,textarea,label"));
+  }
+
   return (
     <div className="page-stack">
       {toolbarMode === "view-only" ? (
@@ -418,12 +425,27 @@ export default function SiteDirectoryView({
             const state = statusCopy(site.status);
             const isFavorite = favoriteIds.has(site.id);
             return (
-              <article key={site.id} className="card tone-card directory-row directory-row--linked">
-                <Link href={site.href} className="directory-stretched-link" aria-label={`Open ${site.name} workspace`} />
+              <article
+                key={site.id}
+                className="card tone-card directory-row directory-row--linked"
+                role="link"
+                tabIndex={0}
+                aria-label={`Open ${site.name} workspace`}
+                onClick={(event) => {
+                  if (shouldIgnoreCardNavigation(event.target)) return;
+                  router.push(site.href);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  if (shouldIgnoreCardNavigation(event.target)) return;
+                  event.preventDefault();
+                  router.push(site.href);
+                }}
+              >
                 <div className="directory-main">
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.6rem", marginBottom: "0.45rem", flexWrap: "wrap" }}>
                     <ResourceTypePill type={resolvedType} size="sm" />
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", position: "relative", zIndex: 2 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
                       <button
                         type="button"
                         onClick={() => toggleFavorite(site.id)}
@@ -456,7 +478,7 @@ export default function SiteDirectoryView({
                     <Link
                       href={site.clientHref}
                       className="directory-meta directory-client-link"
-                      style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", position: "relative", zIndex: 2 }}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
                     >
                       <BuildingOfficeIcon style={{ width: "0.9rem", height: "0.9rem", color: "var(--muted)" }} />
                       <span>{site.clientName}</span>

@@ -46,6 +46,7 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
   const [inviteLoading, setInviteLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [inviteActionBusyId, setInviteActionBusyId] = useState<string | null>(null);
+  const [inviteDeleteBusyId, setInviteDeleteBusyId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -198,6 +199,31 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
     }
   }
 
+  async function deleteInviteRecord(invitationId: string) {
+    setInviteDeleteBusyId(invitationId);
+    setInviteError(null);
+    setInviteNotice(null);
+
+    try {
+      const res = await fetch(`/api/organizations/${organizationId}/collaborators/invitations/${invitationId}`, {
+        method: "DELETE"
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteError((data as { error?: string }).error ?? "Could not delete invitation record.");
+        return;
+      }
+
+      setInviteNotice("Invitation record removed.");
+      await load();
+    } catch {
+      setInviteError("Network error - please try again");
+    } finally {
+      setInviteDeleteBusyId(null);
+    }
+  }
+
   function statusLabel(invite: PendingInvite): string {
     if (invite.status === "accepted") return "accepted";
     if (invite.status === "revoked") return "revoked";
@@ -212,6 +238,12 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
       <div style={{ marginBottom: "1rem" }}>
         {collaborators.length === 0 && pendingInvites.length === 0 ? (
           <p className="card-muted">No team members yet. Invite someone to get started.</p>
+        ) : null}
+
+        {collaborators.length > 0 ? (
+          <p className="card-muted" style={{ margin: "0 0 0.45rem" }}>
+            Current members ({collaborators.length})
+          </p>
         ) : null}
 
         {collaborators.map((c) => {
@@ -259,6 +291,12 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
           );
         })}
 
+        {pendingInvites.length > 0 ? (
+          <p className="card-muted" style={{ margin: "0.75rem 0 0.45rem" }}>
+            Invitation history ({pendingInvites.length})
+          </p>
+        ) : null}
+
         {pendingInvites.map((invite) => (
           <div
             key={invite.id}
@@ -299,12 +337,24 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
                 <button type="button" className="btn btn-danger" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "revoke")} disabled={inviteActionBusyId === invite.id}>
                   Revoke
                 </button>
+                <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => deleteInviteRecord(invite.id)} disabled={inviteDeleteBusyId === invite.id || inviteActionBusyId === invite.id}>
+                  Delete
+                </button>
               </div>
             ) : invite.status === "expired" || invite.status === "revoked" ? (
-              <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "regenerate")} disabled={inviteActionBusyId === invite.id}>
-                Regenerate
+              <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => runInviteAction(invite.id, "regenerate")} disabled={inviteActionBusyId === invite.id}>
+                  Regenerate
+                </button>
+                <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => deleteInviteRecord(invite.id)} disabled={inviteDeleteBusyId === invite.id || inviteActionBusyId === invite.id}>
+                  Delete
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="btn" style={{ padding: "0.25rem 0.5rem", fontSize: "0.78rem" }} onClick={() => deleteInviteRecord(invite.id)} disabled={inviteDeleteBusyId === invite.id}>
+                Delete
               </button>
-            ) : null}
+            )}
           </div>
         ))}
       </div>

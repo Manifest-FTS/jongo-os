@@ -10,10 +10,16 @@ type Params = { params: Promise<{ token: string }> };
 type Body = {
   email?: string;
   password?: string;
-  fullName?: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
 };
 
 function normalizeEmail(value?: string): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function normalizeUsername(value?: string): string {
   return value?.trim().toLowerCase() ?? "";
 }
 
@@ -90,14 +96,36 @@ export async function POST(req: Request, { params }: Params) {
 
     if (!user) {
       const password = body.password ?? "";
-      const fullName = body.fullName?.trim() || inviteEmail.split("@")[0];
+      const username = normalizeUsername(body.username);
+      const firstName = body.firstName?.trim() ?? "";
+      const lastName = body.lastName?.trim() ?? "";
+      const composedName = `${firstName} ${lastName}`.trim();
+      const fullName = composedName || inviteEmail.split("@")[0];
 
       if (requestEmail && requestEmail !== inviteEmail) {
         return NextResponse.json({ error: "Invite email does not match." }, { status: 400 });
       }
 
+      if (username.length > 0 && !/^[a-z0-9._-]{3,32}$/.test(username)) {
+        return NextResponse.json({ error: "Username must be 3-32 characters and use only letters, numbers, dot, underscore, or dash." }, { status: 400 });
+      }
+
+      if (username && !firstName) {
+        return NextResponse.json({ error: "First name is required." }, { status: 400 });
+      }
+
       if (password.length < 8) {
         return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+      }
+
+      if (username) {
+        const existingUsername = await db.userProfileSettings.findUnique({
+          where: { username },
+          select: { id: true }
+        });
+        if (existingUsername) {
+          return NextResponse.json({ error: "That username is already taken." }, { status: 409 });
+        }
       }
 
       const existingUser = await db.user.findFirst({
@@ -118,7 +146,17 @@ export async function POST(req: Request, { params }: Params) {
               fullName,
               passwordHash,
               emailVerified: false,
-              authProvider: "local"
+              authProvider: "local",
+              ...(username
+                ? {
+                  profileSettings: {
+                    create: {
+                      username,
+                      profileRole: normalizeRole(invite.role)
+                    }
+                  }
+                }
+                : {})
             },
             select: { id: true, email: true }
           });
