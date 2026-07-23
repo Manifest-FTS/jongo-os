@@ -66,7 +66,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
               </summary>
               <div className="user-menu-panel">
                 <p className="user-menu-email">{email}</p>
-                <Link href="/settings">Profile Settings</Link>
+                <Link href="/settings" className="user-menu-link-button">Profile Settings</Link>
                 <SignOutButton />
               </div>
             </details>

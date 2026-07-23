@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getActivityFeed, getInventorySnapshot, isClientAdmin, listClientWorkspaces } from "@/lib/repositories";
+import { getActivityFeed, getClientTeamMembers, getInventorySnapshot, isClientAdmin, listClientWorkspaces } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { DayIcon, EveningIcon } from "@/components/JongoIcons";
 import SiteDirectoryView from "@/components/SiteDirectoryView";
@@ -22,7 +22,7 @@ async function getFavoriteAppIds(userId?: string): Promise<string[]> {
       WHERE "userId" = ${userId}::uuid
     `;
 
-    return rows.map((row) => row.appId);
+    return rows.map((row: FavoriteRow) => row.appId);
   } catch {
     return [];
   }
@@ -58,11 +58,25 @@ export default async function DashboardPage() {
   const wordpressSites = visibleOverviewSites.filter((site) => site.siteType === "wordpress");
   const healthySites = visibleSiteDirectory.filter((site) => site.status === "healthy").length;
   const unknownSites = visibleSiteDirectory.filter((site) => site.status === "unknown").length;
-  const totalTeamMembers = clients.reduce((total, client) => total + client.memberCount, 0);
+  const uniqueClientDbIds = [...new Set(clients.map((client) => client.dbId).filter((id): id is string => Boolean(id)))];
+  const memberLists = await Promise.all(uniqueClientDbIds.map((clientDbId) => getClientTeamMembers(clientDbId)));
+  const uniqueTeamMembers = new Set<string>();
+  for (const members of memberLists) {
+    for (const member of members) {
+      const normalizedEmail = member.email.trim().toLowerCase();
+      if (normalizedEmail) {
+        uniqueTeamMembers.add(normalizedEmail);
+      } else if (member.userId) {
+        uniqueTeamMembers.add(`user:${member.userId}`);
+      } else {
+        uniqueTeamMembers.add(`member:${member.id}`);
+      }
+    }
+  }
+  const totalTeamMembers = uniqueTeamMembers.size;
   const favoriteAppIds = await getFavoriteAppIds(session?.user?.id);
   const favoriteAppIdSet = new Set(favoriteAppIds);
   const starredApps = visibleSiteDirectory.filter((site) => favoriteAppIdSet.has(site.id));
-  const uniqueClientDbIds = [...new Set(clients.map((client) => client.dbId).filter((id): id is string => Boolean(id)))];
   const adminChecks = session?.user?.id
     ? await Promise.all(uniqueClientDbIds.map((clientDbId) => isClientAdmin(clientDbId, session.user.id)))
     : [];
@@ -146,6 +160,8 @@ export default async function DashboardPage() {
               <SiteDirectoryView
                 userId={session?.user?.id}
                 isCollaboratorView={!hasAdminClientAccess}
+                toolbarMode="view-only"
+                gridColumns={2}
                 sites={starredApps.map((site) => ({
                   id: site.id,
                   name: site.name,

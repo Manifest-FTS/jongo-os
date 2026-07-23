@@ -37,7 +37,9 @@ export async function GET() {
     ]);
 
     const visibleIds = new Set(visibleSites.map((site) => site.id));
-    const appIds = rows.map((row) => row.appId).filter((appId) => visibleIds.has(appId));
+    const appIds = rows
+      .map((row: FavoriteRow) => row.appId)
+      .filter((appId: string) => visibleIds.has(appId));
 
     return NextResponse.json({ appIds });
   } catch (error) {
