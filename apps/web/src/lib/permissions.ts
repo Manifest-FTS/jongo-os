@@ -102,7 +102,7 @@ export function getPermissions(callerRole: unknown, isPlatformAdmin = false): Us
     isAdmin,
     isCollaborator: !isAdmin,
     canManageTeam: isAdmin,
-    canManageBackups: isAdmin,
+    canManageBackups: true,
     canManageStaging: true,
     canEditDomains: isAdmin,
     canTogglePrivacyMode: true,

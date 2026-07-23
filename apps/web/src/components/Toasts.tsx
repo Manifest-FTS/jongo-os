@@ -41,14 +41,16 @@ export function useToasts() {
 
 export function ToastStack({
   toasts,
-  onDismiss
+  onDismiss,
+  side = "right"
 }: {
   toasts: Toast[];
   onDismiss: (id: string) => void;
+  side?: "left" | "right";
 }) {
   if (toasts.length === 0) return null;
   return (
-    <div className="toast-stack" role="region" aria-label="Notifications">
+    <div className={`toast-stack ${side === "left" ? "toast-stack--left" : "toast-stack--right"}`} role="region" aria-label="Notifications">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}

@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
-import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { getSiteWorkspace } from "@/lib/repositories";
 import { isCoolifyWordPressService } from "@/lib/coolify";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { openJobLog } from "@/lib/job-log";
 
 export const runtime = "nodejs";
@@ -57,11 +58,16 @@ async function createBackup(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
   }
 
-  const isAdmin = Boolean(
-    workspace.organizationId && (await isClientAdmin(workspace.organizationId, session.user.id))
-  );
-  if (!isAdmin) {
-    return NextResponse.json({ error: "Only admins can create backups" }, { status: 403 });
+  const permissionSnapshot = await resolveSitePermissionSnapshot({
+    siteId,
+    workspace,
+    viewer: {
+      userId: session.user.id,
+      email: session.user.email
+    }
+  });
+  if (!permissionSnapshot.canManageBackups) {
+    return NextResponse.json({ error: "You do not have permission to create backups" }, { status: 403 });
   }
 
   const resourceUuid = workspace.coolifyServiceUuid?.trim();
@@ -99,10 +105,17 @@ async function createBackup(request: Request, { params }: Params) {
   const body = await request.json().catch(() => ({}));
   const label = typeof body?.label === "string" && body.label.trim() ? body.label.trim().slice(0, 200) : null;
 
-  const { db } = await import("@/lib/db");
+  const { getDb } = await import("@/lib/db");
+  const db = await getDb();
+  if (!db || !("siteBackup" in db)) {
+    return NextResponse.json(
+      { ok: false, reason: "feature_unavailable", message: "Site backup records are not available in this environment yet." },
+      { status: 503 }
+    );
+  }
 
   // Refuse to stack concurrent backups for the same site.
-  const running = await db.siteBackup.findFirst({
+  const running = await (db as any).siteBackup.findFirst({
     where: { siteId: workspace.id, status: "running" }
   });
   if (running) {
@@ -112,7 +125,7 @@ async function createBackup(request: Request, { params }: Params) {
     );
   }
 
-  const record = await db.siteBackup.create({
+  const record = await (db as any).siteBackup.create({
     data: {
       siteId: workspace.id,
       resourceUuid,

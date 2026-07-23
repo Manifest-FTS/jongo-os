@@ -3,7 +3,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
-import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { getSiteWorkspace } from "@/lib/repositories";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { openJobLog } from "@/lib/job-log";
 
 export const runtime = "nodejs";
@@ -52,11 +53,16 @@ async function restoreBackup(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
   }
 
-  const isAdmin = Boolean(
-    workspace.organizationId && (await isClientAdmin(workspace.organizationId, session.user.id))
-  );
-  if (!isAdmin) {
-    return NextResponse.json({ error: "Only admins can restore backups" }, { status: 403 });
+  const permissionSnapshot = await resolveSitePermissionSnapshot({
+    siteId,
+    workspace,
+    viewer: {
+      userId: session.user.id,
+      email: session.user.email
+    }
+  });
+  if (!permissionSnapshot.canManageBackups) {
+    return NextResponse.json({ error: "You do not have permission to restore backups" }, { status: 403 });
   }
 
   // Explicit confirmation — this overwrites live site content.
@@ -72,8 +78,16 @@ async function restoreBackup(request: Request, { params }: Params) {
     );
   }
 
-  const { db } = await import("@/lib/db");
-  const backup = await db.siteBackup.findUnique({ where: { id: backupId } });
+  const { getDb } = await import("@/lib/db");
+  const db = await getDb();
+  if (!db || !("siteBackup" in db)) {
+    return NextResponse.json(
+      { ok: false, reason: "feature_unavailable", message: "Site backup records are not available in this environment yet." },
+      { status: 503 }
+    );
+  }
+
+  const backup = await (db as any).siteBackup.findUnique({ where: { id: backupId } });
 
   if (!backup || backup.siteId !== workspace.id) {
     return NextResponse.json({ error: "Backup not found for this app." }, { status: 404 });
@@ -92,7 +106,7 @@ async function restoreBackup(request: Request, { params }: Params) {
 
   // Mark the restore as in-flight so the UI can report completion rather than
   // firing and forgetting. The script clears this via /api/ops/site-restore-record.
-  await db.siteBackup.update({
+  await (db as any).siteBackup.update({
     where: { id: backup.id },
     data: {
       restoreStatus: "running",

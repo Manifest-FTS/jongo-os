@@ -83,6 +83,8 @@ export default function SiteBackupsPanel({
   const [busy, setBusy] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [pendingRestore, setPendingRestore] = useState<{ id: string; when: string } | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createComment, setCreateComment] = useState("");
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Close the actions menu on outside click / Escape.
@@ -154,13 +156,15 @@ export default function SiteBackupsPanel({
       const res = await fetch(`/api/sites/${encodeURIComponent(siteId)}/backups`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({})
+        body: JSON.stringify({ label: createComment.trim() || undefined })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok && res.status !== 202) {
         push({ tone: "error", title: "Couldn't start backup", text: data.message ?? data.error ?? "Please try again.", ttl: 0 });
       } else {
         push({ tone: "info", title: "Backup started", text: "Capturing files and database — this page updates automatically." });
+        setCreateOpen(false);
+        setCreateComment("");
         router.refresh();
       }
     } catch {
@@ -204,20 +208,50 @@ export default function SiteBackupsPanel({
     <article className="card" ref={panelRef}>
       <div className="bk-head">
         <div>
-          <h3 className="card-title" style={{ marginTop: 0 }}>Backups</h3>
-          <p className="card-muted" style={{ margin: 0 }}>
-            Full site snapshots — files and database — stored offsite in Backblaze.
-          </p>
+          <h3 className="card-title" style={{ marginTop: 0, display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
+            <span>Backups</span>
+            <span
+              style={{
+                color: "var(--muted)",
+                fontStyle: "italic",
+                fontWeight: 500,
+                fontSize: "0.92rem",
+                fontFamily: "Georgia, 'Times New Roman', serif"
+              }}
+            >
+              powered by
+            </span>
+            <img
+              src="/assets/logos/logo-Backblaze.svg"
+              alt="Backblaze"
+              style={{ height: "1.25rem", width: "auto", transform: "translateY(1px)" }}
+            />
+          </h3>
+          {/* <p className="card-muted" style={{ margin: 0 }}>
+            Full site snapshots — files and database.
+          </p> */}
         </div>
         {canManage ? (
           <button
             type="button"
             className="bk-btn bk-btn--primary"
-            onClick={createBackup}
+            onClick={() => setCreateOpen(true)}
             disabled={busy}
-            title="Create a backup now"
+            title="Create a new backup"
+            aria-label="Create a new backup"
+            style={{
+              width: "2.3rem",
+              height: "2.3rem",
+              borderRadius: "999px",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "1.2rem",
+              lineHeight: 1,
+              padding: 0
+            }}
           >
-            {busy ? "Working…" : "+  Back up now"}
+            +
           </button>
         ) : null}
       </div>
@@ -347,7 +381,56 @@ export default function SiteBackupsPanel({
         </div>
       )}
 
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
+      <ToastStack toasts={toasts} onDismiss={dismiss} side="left" />
+
+      {createOpen ? (
+        <div
+          className="cd-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !busy) {
+              setCreateOpen(false);
+            }
+          }}
+        >
+          <div className="cd-dialog" role="dialog" aria-modal="true" aria-labelledby="bk-create-title">
+            <h2 className="cd-title" id="bk-create-title">Create a new backup</h2>
+            <label className="cd-label" htmlFor="bk-create-comment">Comment (optional)</label>
+            <input
+              id="bk-create-comment"
+              className="cd-input"
+              value={createComment}
+              onChange={(event) => setCreateComment(event.target.value)}
+              placeholder="Add context for this backup"
+              maxLength={200}
+              disabled={busy}
+            />
+            <div className="cd-actions">
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => {
+                  setCreateOpen(false);
+                  setCreateComment("");
+                }}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button cd-confirm"
+                onClick={() => {
+                  void createBackup();
+                }}
+                disabled={busy}
+              >
+                {busy ? "Working…" : "Create backup"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={pendingRestore !== null}

@@ -3,6 +3,7 @@ import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
+import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { auth } from "@/lib/auth.config";
 import RestoreTestButton from "@/components/RestoreTestButton";
 import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPanel";
@@ -86,11 +87,21 @@ export default async function BackupsPage({ params, searchParams }: Params) {
     notFound();
   }
 
+  const permissionSnapshot = await resolveSitePermissionSnapshot({
+    siteId,
+    workspace,
+    viewer: {
+      userId: session?.user?.id,
+      email: session?.user?.email
+    }
+  });
+
   const canViewInternalMetadata = Boolean(
     session?.user?.id &&
     workspace.organizationId &&
     await isClientAdmin(workspace.organizationId, session.user.id)
   );
+  const showAdminBackupDiagnostics = permissionSnapshot.isAdmin || canViewInternalMetadata;
 
   const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
@@ -206,37 +217,65 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   // in "running" forever. Anything still running after 30 minutes is treated as
   // failed so the UI can never hang indefinitely.
   if (workspace.id) {
-    const { db } = await import("@/lib/db");
-    await db.siteBackup.updateMany({
-      where: {
-        siteId: workspace.id,
-        status: "running",
-        startedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) }
-      },
-      data: {
-        status: "failed",
-        error: "timed_out",
-        completedAt: new Date()
+    const { getDb } = await import("@/lib/db");
+    const prisma = await getDb();
+
+    if (prisma && "siteBackup" in prisma) {
+      try {
+        await (prisma as any).siteBackup.updateMany({
+          where: {
+            siteId: workspace.id,
+            status: "running",
+            startedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) }
+          },
+          data: {
+            status: "failed",
+            error: "timed_out",
+            completedAt: new Date()
+          }
+        });
+      } catch {
+        // Degrade safely if schema drift or table access is unavailable.
       }
-    });
+    }
   }
 
   const backupTotal: number = workspace.id
     ? await (async () => {
-        const { db } = await import("@/lib/db");
-        return db.siteBackup.count({ where: { siteId: workspace.id } });
+        const { getDb } = await import("@/lib/db");
+        const prisma = await getDb();
+        if (!prisma || !("siteBackup" in prisma)) {
+          return 0;
+        }
+
+        try {
+          return await (prisma as any).siteBackup.count({ where: { siteId: workspace.id } });
+        } catch {
+          return 0;
+        }
       })()
     : 0;
 
   const siteBackupRows: SiteBackupRow[] = workspace.id
     ? await (async () => {
-        const { db } = await import("@/lib/db");
-        const rows = await db.siteBackup.findMany({
-          where: { siteId: workspace.id },
-          orderBy: { startedAt: "desc" },
-          skip: (backupPage - 1) * backupPageSize,
-          take: backupPageSize
-        });
+        const { getDb } = await import("@/lib/db");
+        const prisma = await getDb();
+        if (!prisma || !("siteBackup" in prisma)) {
+          return [];
+        }
+
+        let rows: Array<Record<string, unknown>> = [];
+        try {
+          rows = await (prisma as any).siteBackup.findMany({
+            where: { siteId: workspace.id },
+            orderBy: { startedAt: "desc" },
+            skip: (backupPage - 1) * backupPageSize,
+            take: backupPageSize
+          });
+        } catch {
+          return [];
+        }
+
         return rows.map((row: Record<string, unknown>) => ({
           id: String(row.id),
           startedAt: (row.startedAt as Date).toISOString(),
@@ -304,26 +343,6 @@ export default async function BackupsPage({ params, searchParams }: Params) {
 
   return (
     <div className="page-stack">
-      <article className="card">
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
-          <div>
-            <h2 style={{ marginTop: 0, marginBottom: "0.35rem" }}>Backups</h2>
-            <p className="card-muted" style={{ margin: 0 }}>
-              Automated database backup schedules and execution history for this app&apos;s databases only.
-            </p>
-            {canViewInternalMetadata && inventory && (
-              <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-                Platform · checked {formatRelativeTime(inventory.checkedAt)}
-                {inventory.source === "unavailable" && <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.3rem" }}>· unavailable</span>}
-              </p>
-            )}
-          </div>
-          <span className={`status-chip ${statusChipClass}`}>
-            {statusLabel}
-          </span>
-        </div>
-      </article>
-
       {!appUuid ? (
         <article className="card">
           <h3 className="card-title">No infrastructure resource linked</h3>
@@ -343,7 +362,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
             </p>
           )}
         </article>
-      ) : !isConfigured ? (
+      ) : !isConfigured && showAdminBackupDiagnostics ? (
         <article className="card">
           <h3 className="card-title" style={{ color: "var(--warning, #d97706)" }}>Backups not configured</h3>
           <p className="card-muted">No active backup schedules were found for at least one database in this workspace.</p>
@@ -368,71 +387,73 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       <SiteBackupsPanel
         siteId={siteId}
         backups={siteBackupRows}
-        canManage={canViewInternalMetadata && isWordPressService}
+        canManage={permissionSnapshot.canManageBackups && isWordPressService}
         supported={isWordPressService}
         page={backupPage}
         pageSize={backupPageSize}
         total={backupTotal}
       />
 
-      <article className="card">
-        <h3 className="card-title">Backup Read Model Snapshot</h3>
-        <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-          Read-only backup interpretation for this app workspace.
-        </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.65rem" }}>
-          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Layer type</p>
-            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.layerType}</p>
-          </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Ownership</p>
-            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.ownership}</p>
-          </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Local status</p>
-            <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.localStatus}</p>
-          </div>
-          {canViewInternalMetadata && (
-            <>
-              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
-                  <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Offsite status</p>
-                  <span className={`status-chip ${readModel.offsite.tone}`}>{readModel.offsite.label}</span>
-                </div>
-                <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>{readModel.offsite.detail}</p>
-              </div>
-              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
-                  <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore verified</p>
-                  <span className={`status-chip ${readModel.restoreVerification.tone}`}>
-                    {readModel.restoreVerification.label}
-                  </span>
-                </div>
-                <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-                  {readModel.restoreVerification.detail}
-                </p>
-                {restoreTestEligible ? (
-                  <div style={{ marginTop: "0.6rem" }}>
-                    <RestoreTestButton siteId={siteId} />
+      {showAdminBackupDiagnostics ? (
+        <article className="card">
+          <h3 className="card-title">Backup Read Model Snapshot</h3>
+          <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+            Read-only backup interpretation for this app workspace.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.65rem" }}>
+            <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Layer type</p>
+              <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.layerType}</p>
+            </div>
+            <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Ownership</p>
+              <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.ownership}</p>
+            </div>
+            <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Local status</p>
+              <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.localStatus}</p>
+            </div>
+            {canViewInternalMetadata && (
+              <>
+                <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                    <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Offsite status</p>
+                    <span className={`status-chip ${readModel.offsite.tone}`}>{readModel.offsite.label}</span>
                   </div>
-                ) : null}
-              </div>
-              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-                <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore scope</p>
-                <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.restoreScope}</p>
-              </div>
-              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
-                <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Staging safety</p>
-                <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.stagingSafety}</p>
-                <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-                  {readModel.stagingSafetyDetail}
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-      </article>
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>{readModel.offsite.detail}</p>
+                </div>
+                <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                    <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore verified</p>
+                    <span className={`status-chip ${readModel.restoreVerification.tone}`}>
+                      {readModel.restoreVerification.label}
+                    </span>
+                  </div>
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                    {readModel.restoreVerification.detail}
+                  </p>
+                  {restoreTestEligible ? (
+                    <div style={{ marginTop: "0.6rem" }}>
+                      <RestoreTestButton siteId={siteId} />
+                    </div>
+                  ) : null}
+                </div>
+                <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Restore scope</p>
+                  <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.restoreScope}</p>
+                </div>
+                <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.75rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Staging safety</p>
+                  <p style={{ margin: "0.2rem 0 0", fontSize: "0.9rem", fontWeight: 600 }}>{readModel.stagingSafety}</p>
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                    {readModel.stagingSafetyDetail}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </article>
+      ) : null}
 
       {canViewInternalMetadata && databaseCoverage.length > 0 ? (
         <article className="card">
@@ -460,7 +481,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       ) : null}
 
       {/* Last Successful Backup Status */}
-      {isConfigured && hasLiveData ? (
+      {showAdminBackupDiagnostics && isConfigured && hasLiveData ? (
         <article className="card" style={{ borderLeft: `4px solid var(--${statusChipClass === "error" ? "error" : statusChipClass === "degraded" ? "warning" : "success"}, #00c853)` }}>
           <h3 className="card-title" style={{ marginBottom: "0.5rem" }}>Recent Backup Status</h3>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "0.5rem" }}>
@@ -524,7 +545,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         </article>
       )}
 
-      {databaseNames.length > 0 ? (
+      {showAdminBackupDiagnostics && databaseNames.length > 0 ? (
         <article className="card">
           <h3 className="card-title">Database Backup Schedules</h3>
           <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.5rem" }}>
@@ -565,7 +586,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         </article>
       ) : null}
 
-      {hasLiveData ? (
+      {showAdminBackupDiagnostics && hasLiveData ? (
         <article className="card">
           <h3 className="card-title">Recent Backup Executions</h3>
           {recentExecutions.length === 0 ? (
@@ -612,12 +633,14 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         </article>
       ) : null}
 
-      <article className="card">
-        <h3 className="card-title">Backup Policy</h3>
-        <p className="card-muted" style={{ marginBottom: 0 }}>
-          Backup configuration and restoration are managed through the platform for database backups only. WordPress files, media, and staging sync workflows are not covered by this pass. Contact your platform administrator to change schedules, retention policies, or to initiate a recovery.
-        </p>
-      </article>
+      {showAdminBackupDiagnostics ? (
+        <article className="card">
+          <h3 className="card-title">Backup Policy</h3>
+          <p className="card-muted" style={{ marginBottom: 0 }}>
+            Backup configuration and restoration are managed through the platform for database backups only. WordPress files, media, and staging sync workflows are not covered by this pass. Contact your platform administrator to change schedules, retention policies, or to initiate a recovery.
+          </p>
+        </article>
+      ) : null}
     </div>
   );
 }
