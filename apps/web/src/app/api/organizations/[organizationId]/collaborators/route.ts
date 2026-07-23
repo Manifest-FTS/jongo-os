@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isSmtpConfigured, sendInviteEmail } from "@/lib/email";
+import { getGravatarUrl } from "@/lib/gravatar";
 import {
   buildInviteUrlForInvitation,
   createInviteToken,
@@ -88,7 +89,7 @@ export async function GET(_req: Request, { params }: Params) {
         role: c.role,
         email: c.user.email,
         fullName: c.user.fullName,
-        avatarUrl: c.user.avatarUrl,
+        avatarUrl: c.user.avatarUrl ?? getGravatarUrl(c.user.email, 96),
         createdAt: c.createdAt
       })),
       pendingInvites: pendingInvites.map((invite: any) => ({
