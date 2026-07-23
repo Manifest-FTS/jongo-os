@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
+import { isCoolifyWordPressService } from "@/lib/coolify";
 import { openJobLog } from "@/lib/job-log";
 
 export const runtime = "nodejs";
@@ -68,11 +69,11 @@ async function createBackup(request: Request, { params }: Params) {
     return NextResponse.json({ error: "This app is not linked to a Coolify resource." }, { status: 409 });
   }
 
-  // Full-site backup captures a WordPress files volume + its database. Other
-  // resource types (plain applications, standalone databases) have neither a
-  // wordpress-<uuid> container nor a sibling DB container, so the backup script
-  // cannot run against them — reject clearly instead of queuing a doomed job.
-  if (workspace.siteType !== "wordpress") {
+  // Full-site backup captures a WordPress files volume + its database. Confirm
+  // this Coolify resource actually has a WordPress container (via its `wordpress`
+  // application) rather than trusting the unreliable siteType heuristic — that
+  // both flags non-WordPress apps and misses real WordPress services.
+  if (!(await isCoolifyWordPressService(resourceUuid))) {
     return NextResponse.json(
       {
         ok: false,

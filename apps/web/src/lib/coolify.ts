@@ -1663,6 +1663,21 @@ export async function resolveCoolifyServiceApplicationNames(serviceUuid: string)
   }
 }
 
+/**
+ * Whether a Coolify resource is a WordPress service — i.e. one that has a
+ * `wordpress` application, which is exactly what produces a `wordpress-<uuid>`
+ * container and a files volume. This is the reliable eligibility signal for
+ * full-site backups; the `siteType` heuristic misclassifies both directions
+ * (flags non-WordPress apps as wordpress, and misses real WordPress services).
+ */
+export async function isCoolifyWordPressService(serviceUuid: string): Promise<boolean> {
+  if (!serviceUuid?.trim()) {
+    return false;
+  }
+  const names = await resolveCoolifyServiceApplicationNames(serviceUuid);
+  return names.some((name) => name.toLowerCase() === "wordpress");
+}
+
 export type CoolifyServiceDomainResult = {
   ok: boolean;
   status?: number;

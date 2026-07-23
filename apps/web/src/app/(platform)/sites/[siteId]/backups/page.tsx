@@ -1,4 +1,4 @@
-import { getCoolifyAppBackupInventory, AppBackupInventory } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory, isCoolifyWordPressService, AppBackupInventory } from "@/lib/coolify";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
@@ -94,6 +94,11 @@ export default async function BackupsPage({ params, searchParams }: Params) {
 
   const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
+
+  // Full-site backup eligibility: does this Coolify resource actually have a
+  // WordPress container? (siteType is unreliable — it both false-positives and
+  // false-negatives.) This checks for a `wordpress` application on the service.
+  const isWordPressService = appUuid ? await isCoolifyWordPressService(appUuid) : false;
   const backupReadiness = getBackupReadiness(inventory, appUuid);
 
   const isConfigured = inventory?.configured ?? false;
@@ -351,8 +356,8 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       <SiteBackupsPanel
         siteId={siteId}
         backups={siteBackupRows}
-        canManage={canViewInternalMetadata && workspace.siteType === "wordpress"}
-        supported={workspace.siteType === "wordpress"}
+        canManage={canViewInternalMetadata && isWordPressService}
+        supported={isWordPressService}
         page={backupPage}
         pageSize={backupPageSize}
         total={backupTotal}
