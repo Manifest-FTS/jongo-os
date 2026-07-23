@@ -39,15 +39,38 @@ function StubToggle({
       </div>
       <button
         type="button"
-        className="btn"
+        aria-label={`Toggle ${label}`}
         aria-pressed={enabled}
+        style={{
+          width: "58px",
+          height: "32px",
+          borderRadius: "999px",
+          border: `1px solid ${enabled ? "var(--accent)" : "var(--border)"}`,
+          background: enabled ? "var(--accent)" : "var(--surface-alt)",
+          position: "relative",
+          cursor: "pointer",
+          transition: "background 0.2s ease, border-color 0.2s ease"
+        }}
         onClick={() => {
           const next = !enabled;
           setEnabled(next);
           showSuccessToast(`${label} ${next ? "enabled" : "disabled"}.`);
         }}
       >
-        {enabled ? "On" : "Off"}
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            top: "3px",
+            left: enabled ? "30px" : "3px",
+            width: "24px",
+            height: "24px",
+            borderRadius: "999px",
+            background: "#fff",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+            transition: "left 0.2s ease"
+          }}
+        />
       </button>
     </div>
   );
@@ -114,6 +137,7 @@ export default function WordPressAdvancedControls({
               Control the preferred temporary production domain for this app.
             </p>
             <div className="form-stack" style={{ marginTop: 0 }}>
+              <label className="form-label" style={{ marginBottom: "-0.25rem" }}>Site Slug</label>
               <input
                 className="form-input mono-input"
                 value={domainSlug}
@@ -121,6 +145,7 @@ export default function WordPressAdvancedControls({
                 placeholder="site-slug"
                 disabled={!canManageDomainSlug}
               />
+              <label className="form-label" style={{ marginBottom: "-0.25rem" }}>Preferred Domain</label>
               <select
                 className="form-input"
                 value={domainSuffix}
@@ -128,12 +153,11 @@ export default function WordPressAdvancedControls({
                 disabled={!canManageDomainSlug}
               >
                 {TEMPORARY_DOMAIN_SUFFIX_OPTIONS.map((suffix) => (
-                  <option key={suffix} value={suffix}>{suffix}</option>
+                  <option key={suffix} value={suffix}>
+                    https://{buildTemporaryProductionDomain({ slug: normalizedSlug || "site", suffix }) ?? `site.${suffix}`}
+                  </option>
                 ))}
               </select>
-              <p className="form-help" style={{ margin: 0 }}>
-                Preferred domain: {previewDomain ? `https://${previewDomain}` : "Unavailable"}
-              </p>
               {domainError ? <p className="form-error" style={{ margin: 0 }}>{domainError}</p> : null}
               <button
                 type="button"

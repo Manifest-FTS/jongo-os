@@ -106,7 +106,7 @@ export default async function SiteSettingsPage({ params }: Params) {
           <WordPressAdvancedControls
             siteId={siteId}
             canManageDomainSlug={Boolean(session?.user?.id)}
-            initialDomainSlug={workspace.temporaryDomainSlug ?? undefined}
+            initialDomainSlug={workspace.temporaryDomainSlug ?? workspace.slug ?? undefined}
             initialDomainSuffix={workspace.temporaryDomainSuffix ?? undefined}
             initialStagingEnabled={Boolean(workspace.stagingEnabled)}
             hasDetectedStagingTarget={stagingTargetAttached}
