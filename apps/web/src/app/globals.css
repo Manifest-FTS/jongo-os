@@ -897,6 +897,7 @@ main {
 
 .directory-row--linked {
   transition: border-color 120ms ease, box-shadow 120ms ease;
+  cursor: pointer;
 }
 
 .directory-row--linked:hover {
@@ -904,11 +905,9 @@ main {
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
 }
 
-.directory-stretched-link {
-  position: absolute;
-  inset: 0;
-  border-radius: 14px;
-  z-index: 1;
+.directory-row--linked:focus-visible {
+  outline: 2px solid #7ba95d;
+  outline-offset: 2px;
 }
 
 .directory-card {
@@ -917,8 +916,6 @@ main {
 
 .directory-main {
   min-width: 0;
-  position: relative;
-  z-index: 2;
 }
 
 .directory-title-row {

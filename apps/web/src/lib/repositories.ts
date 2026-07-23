@@ -1589,7 +1589,34 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
         })
         .filter((record) => !scopeApplied || record.ownershipState === "mapped");
 
-      const mergedRecords = [...dbRecords, ...coolifyOnlyRecords];
+      const dedupeKey = (record: SiteDirectoryRecord): string => {
+        const uuidKey = normalizedKey(record.coolifyServiceUuid || record.deployTargetId || record.id);
+        if (uuidKey) {
+          return `uuid:${uuidKey}`;
+        }
+
+        const orgKey = normalizedKey(record.clientDbId || record.clientId);
+        const nameKey = normalizedKey(record.name);
+        const envKey = normalizedKey(record.coolifyEnvironmentName || record.coolifyEnvironmentId);
+        return `name:${orgKey}:${nameKey}:${envKey}`;
+      };
+
+      const mergedByKey = new Map<string, SiteDirectoryRecord>();
+      for (const record of [...dbRecords, ...coolifyOnlyRecords]) {
+        const key = dedupeKey(record);
+        const existing = mergedByKey.get(key);
+        if (!existing) {
+          mergedByKey.set(key, record);
+          continue;
+        }
+
+        // Prefer DB-backed records when duplicates represent the same app.
+        if (existing.source === "coolify" && record.source === "db") {
+          mergedByKey.set(key, record);
+        }
+      }
+
+      const mergedRecords = [...mergedByKey.values()];
       recordSiteDirectoryDiagnostics(mergedRecords, false, "db_plus_coolify_merge");
       return mergedRecords;
     } catch (siteQueryError) {

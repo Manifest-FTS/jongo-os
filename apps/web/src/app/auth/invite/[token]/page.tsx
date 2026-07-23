@@ -31,7 +31,9 @@ export default function AcceptInvitePage() {
   const [loading, setLoading] = useState(true);
   const [invite, setInvite] = useState<InvitePayload | null>(null);
   const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -78,7 +80,13 @@ export default function AcceptInvitePage() {
       const res = await fetch(`/api/invites/${encodeURIComponent(token)}/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, fullName, password })
+        body: JSON.stringify({
+          email,
+          username,
+          firstName,
+          lastName,
+          password
+        })
       });
 
       const data = await res.json();
@@ -171,17 +179,44 @@ export default function AcceptInvitePage() {
 
         <form onSubmit={acceptInvite} className="auth-form">
           {!isExistingUserFlow ? (
-            <div className="auth-field">
-              <label htmlFor="fullName">Full name</label>
-              <input
-                id="fullName"
-                type="text"
-                autoComplete="name"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-              />
-            </div>
+            <>
+              <div className="auth-field">
+                <label htmlFor="username">Username</label>
+                <input
+                  id="username"
+                  type="text"
+                  autoComplete="username"
+                  required
+                  minLength={3}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="kevin.adams"
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
+                <div className="auth-field" style={{ marginBottom: 0 }}>
+                  <label htmlFor="firstName">First name</label>
+                  <input
+                    id="firstName"
+                    type="text"
+                    autoComplete="given-name"
+                    required
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
+                </div>
+                <div className="auth-field" style={{ marginBottom: 0 }}>
+                  <label htmlFor="lastName">Last name</label>
+                  <input
+                    id="lastName"
+                    type="text"
+                    autoComplete="family-name"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                  />
+                </div>
+              </div>
+            </>
           ) : null}
 
           <div className="auth-field">
