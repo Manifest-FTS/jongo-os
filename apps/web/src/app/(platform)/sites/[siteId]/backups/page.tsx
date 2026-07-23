@@ -169,8 +169,20 @@ export default async function BackupsPage({ params }: Params) {
   // the DB resource UUID it tested. Absent → chip shows "Never verified".
   const restoreVerificationRecord = restoreTargetDb
     ? await (async () => {
-        const { db } = await import("@/lib/db");
-        return db.backupRestoreVerification.findUnique({ where: { resourceUuid: restoreTargetDb.resourceId } });
+        const { getDb } = await import("@/lib/db");
+        const prisma = await getDb();
+
+        if (!prisma || !("backupRestoreVerification" in prisma)) {
+          return null;
+        }
+
+        try {
+          return await (prisma as any).backupRestoreVerification.findUnique({
+            where: { resourceUuid: restoreTargetDb.resourceId }
+          });
+        } catch {
+          return null;
+        }
       })()
     : null;
 
