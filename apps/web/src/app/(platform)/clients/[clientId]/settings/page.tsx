@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth.config";
 import { getClientWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
@@ -26,43 +26,35 @@ export default async function ClientSettingsPage({ params }: Params) {
     getCoolifyOverview()
   ]);
 
+  if (!isAdmin) {
+    redirect(`/clients/${clientId}`);
+  }
+
   return (
     <div className="page-stack">
       <article className="card">
-        <h2 style={{ marginTop: 0 }}>Client Settings</h2>
-        <p className="card-muted">Configuration and ownership mapping controls for this client workspace.</p>
-      </article>
-
-      {isAdmin ? (
-        <article className="card">
-          <h3 className="card-title">Project Mapping</h3>
-          <p className="card-muted" style={{ marginBottom: "1rem" }}>
-            Link one or more projects to this client workspace. Project links are explicit and never auto-renamed.
-          </p>
-          {linkedProjects.length === 0 ? (
-            <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
-              <strong>No linked project.</strong> Link at least one project so this client's apps map cleanly in Jongo.
-            </div>
-          ) : null}
-          {client.dbId ? (
-            <CoolifyProjectMappingForm
-              organizationDbId={client.dbId}
-              organizationName={client.name}
-              availableProjects={overview.projects.map((project) => ({ id: project.id, name: project.name }))}
-            />
-          ) : (
-            <p className="card-muted">Database-backed organization record is required to update mapping.</p>
-          )}
-          <div style={{ marginTop: "1rem" }}>
-            <DeleteClientButton organizationId={client.dbId ?? client.id} />
+        <h3 className="card-title">Project Mapping</h3>
+        <p className="card-muted" style={{ marginBottom: "1rem" }}>
+          Link one or more projects to this client workspace. Project links are explicit and never auto-renamed.
+        </p>
+        {linkedProjects.length === 0 ? (
+          <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
+            <strong>No linked project.</strong> Link at least one project so this client's apps map cleanly in Jongo.
           </div>
-        </article>
-      ) : (
-        <article className="card">
-          <h3 className="card-title">Admin-only Settings</h3>
-          <p className="card-muted">Project mapping is restricted to admin users.</p>
-        </article>
-      )}
+        ) : null}
+        {client.dbId ? (
+          <CoolifyProjectMappingForm
+            organizationDbId={client.dbId}
+            organizationName={client.name}
+            availableProjects={overview.projects.map((project) => ({ id: project.id, name: project.name }))}
+          />
+        ) : (
+          <p className="card-muted">Database-backed organization record is required to update mapping.</p>
+        )}
+        <div style={{ marginTop: "1rem" }}>
+          <DeleteClientButton organizationId={client.dbId ?? client.id} />
+        </div>
+      </article>
     </div>
   );
 }

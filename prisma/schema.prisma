@@ -40,11 +40,13 @@ model User {
   authProviderId  String? // external provider ID
 
   // Relations
+  profileSettings      UserProfileSettings?
   organizations        Organization[]
   collaborations       Collaborator[]
   siteCollaborations   SiteCollaborator[]
   apiTokens            ApiToken[]
   auditLogs            AuditLog[]
+  favoriteApps         UserFavoriteApp[]
   deploymentsTriggered Deployment[]         @relation("TriggeredBy")
   collaboratorsGranted Collaborator[]       @relation("GrantedBy")
   invitationsSent      Invitation[]         @relation("InvitationInvitedBy")
@@ -57,6 +59,33 @@ model User {
 
   @@index([email])
   @@index([authProviderId])
+}
+
+model UserProfileSettings {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @unique @db.Uuid
+  username    String?  @unique
+  profileRole String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([username])
+}
+
+model UserFavoriteApp {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  appId     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, appId])
+  @@index([userId])
+  @@index([appId])
 }
 
 // ============================================================

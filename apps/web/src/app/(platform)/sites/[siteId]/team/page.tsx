@@ -1,7 +1,7 @@
+import Link from "next/link";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 import PendingBadge from "@/components/PendingBadge";
-import SiteCollaboratorManager from "@/components/SiteCollaboratorManager";
 import { getSiteWorkspace } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
@@ -24,12 +24,25 @@ export default async function AppTeamPage({ params }: Params) {
       <article className="card">
         <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
           App Team
-          <PendingBadge reason="Invite links are available. If email is not configured, copy links manually." />
+          <PendingBadge reason="Client-level invites are now the preferred path for granting access across all apps in a project." />
         </h2>
         <p className="card-muted" style={{ marginBottom: "1rem" }}>
-          Manage app collaborators. Existing users can be added directly, or invited with a single-use token link. Admins can invite admins and collaborators. Collaborators can invite collaborators only.
+          Manage access from the client/project team page so invited users automatically inherit access to every app in this client.
         </p>
-        <SiteCollaboratorManager siteId={siteId} currentUserId={session?.user?.id ?? ""} />
+        <div style={{ display: "grid", gap: "0.85rem" }}>
+          <div style={{ padding: "0.9rem 1rem", border: "1px solid var(--border)", borderRadius: "12px", background: "var(--surface)" }}>
+            <p style={{ margin: 0, fontWeight: 600 }}>Use client-level invites</p>
+            <p className="card-muted" style={{ margin: "0.25rem 0 0" }}>
+              App/resource-specific invites are being phased out in the UI. Manage admins and collaborators once at the client level instead.
+            </p>
+          </div>
+
+          <div>
+            <Link href={`/clients/${workspace.clientId}/team`} className="btn">
+              Open client team
+            </Link>
+          </div>
+        </div>
       </article>
     </div>
   );

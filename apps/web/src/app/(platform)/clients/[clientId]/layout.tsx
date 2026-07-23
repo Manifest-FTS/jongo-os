@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 import { auth } from "@/lib/auth.config";
-import { getClientWorkspace } from "@/lib/repositories";
+import { getClientWorkspace, isClientAdmin } from "@/lib/repositories";
 
 type LayoutProps = {
   children: ReactNode;
@@ -23,11 +23,16 @@ export default async function ClientWorkspaceLayout({ children, params }: Layout
     notFound();
   }
 
+  const canManageClient = Boolean(
+    session?.user?.id &&
+    client.dbId &&
+    await isClientAdmin(client.dbId, session.user.id)
+  );
+
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/clients/${clientId}`, match: "exact" },
     { name: "Apps", href: `/clients/${clientId}/apps` },
-    { name: "Team", href: `/clients/${clientId}/team` },
-    { name: "Settings", href: `/clients/${clientId}/settings` }
+    ...(canManageClient ? [{ name: "Settings", href: `/clients/${clientId}/settings` } satisfies WorkspaceTab] : [])
   ];
 
   return (

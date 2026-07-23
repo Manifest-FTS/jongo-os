@@ -369,7 +369,7 @@ export default async function SiteOverviewPage({ params }: Params) {
         </div>
 
         <div style={{ flex: "1 1 280px", minWidth: "260px", display: "grid", gap: "1rem" }}>
-          <SiteOverviewCollaboratorsCard siteId={siteId} currentUserId={session?.user?.id ?? ""} />
+          <SiteOverviewCollaboratorsCard siteId={siteId} currentUserId={session?.user?.id ?? ""} clientId={workspace.clientId} />
 
           <SiteIpAddressCard ipAddress={hostingServerIp} countryName={hostingServerCountryName} />
 

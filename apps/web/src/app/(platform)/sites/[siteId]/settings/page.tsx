@@ -61,6 +61,11 @@ export default async function SiteSettingsPage({ params }: Params) {
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
+  const isStagingResource =
+    workspace.coolifyEnvironmentName?.toLowerCase().includes("staging")
+    || workspace.name.toLowerCase().includes("staging")
+    || workspace.slug?.toLowerCase().includes("staging")
+    || false;
 
   const latestWordPressVersion = workspace.id
     ? await (async () => {
@@ -91,15 +96,6 @@ export default async function SiteSettingsPage({ params }: Params) {
   return (
     <div>
       <PageAutoRefresh intervalMs={12000} />
-      <div className="card" style={{ marginBottom: "1rem" }}>
-        <p className="card-muted" style={{ marginBottom: "0.35rem" }}>
-          {workspace?.clientName ?? "Unassigned client"} / {workspace?.name ?? siteId}
-        </p>
-        <h2 style={{ margin: 0 }}>Advanced</h2>
-        <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-          Manage app identity, hosting links, and operational controls.
-        </p>
-      </div>
 
       {isWordPress ? (
         <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)", alignItems: "start" }}>
@@ -169,7 +165,7 @@ export default async function SiteSettingsPage({ params }: Params) {
       )}
 
       {/* Staging (non-WordPress view) */}
-      {!isWordPress ? (
+      {!isWordPress && !isStagingResource ? (
         <article className="card" style={{ marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
             <div>

@@ -413,6 +413,10 @@ main {
   gap: 0.85rem;
 }
 
+.dashboard-metric-strip {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
 .metric-card {
   padding: 1rem 1.05rem;
 }
@@ -660,6 +664,166 @@ main {
   box-shadow: 0 0 0 3px rgba(158, 200, 119, 0.18);
 }
 
+.directory-toolbar--modern {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+}
+
+.directory-toolbar__row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.directory-filter-trigger {
+  border: 1px solid #d6e0d8;
+  background: #f8fbf8;
+  color: #2f4a3a;
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.directory-filter-count {
+  min-width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  padding: 0 0.35rem;
+  background: #14313b;
+  color: #fff;
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.directory-active-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.directory-active-chip {
+  border: 1px solid #d7e0d9;
+  background: #f7faf7;
+  border-radius: 999px;
+  padding: 0.3rem 0.56rem;
+  font-size: 0.76rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #35523f;
+  cursor: pointer;
+}
+
+.directory-active-clear {
+  border: none;
+  background: none;
+  color: #255f3f;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem;
+}
+
+.directory-filter-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.directory-filter-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(12, 23, 29, 0.45);
+}
+
+.directory-filter-panel {
+  position: relative;
+  z-index: 1;
+  width: min(640px, 100%);
+  max-height: min(88vh, 920px);
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid #dce6e1;
+  border-radius: 18px;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.2);
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.directory-filter-panel__head,
+.directory-filter-panel__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.directory-filter-panel__foot {
+  justify-content: flex-end;
+}
+
+.directory-filter-close {
+  border: none;
+  background: transparent;
+  color: #2f4650;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.directory-filter-section {
+  border-top: 1px solid #ebefec;
+  padding-top: 0.7rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.directory-filter-label {
+  margin: 0;
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #5b6d6f;
+  font-weight: 700;
+}
+
+.directory-filter-options {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.directory-filter-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid #dce5df;
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.84rem;
+  color: #324d45;
+  background: #fbfdfb;
+}
+
+.directory-filter-option input {
+  margin: 0;
+}
+
 .filter-group,
 .view-toggle {
   display: inline-flex;
@@ -893,6 +1057,28 @@ main {
   .directory-search {
     min-width: 100%;
     width: 100%;
+  }
+
+  .directory-toolbar__row {
+    align-items: stretch;
+  }
+
+  .directory-filter-trigger,
+  .view-toggle {
+    width: calc(50% - 0.375rem);
+    justify-content: center;
+  }
+
+  .directory-filter-panel {
+    width: 100%;
+    max-height: 100vh;
+    border-radius: 16px 16px 0 0;
+    align-self: end;
+    padding-bottom: 1rem;
+  }
+
+  .directory-filter-options {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1584,6 +1770,18 @@ main {
 @media (max-width: 900px) {
   /* Two-column layout becomes one column on smaller screens */
   div[style*="gridTemplateColumns: 1fr 320px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  div[style*="gridTemplateColumns: minmax(0, 3fr) minmax(280px, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  div[style*="gridTemplateColumns: 140px minmax(0, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  div[style*="gridTemplateColumns: repeat(2, minmax(0, 1fr))"] {
     grid-template-columns: 1fr !important;
   }
 }

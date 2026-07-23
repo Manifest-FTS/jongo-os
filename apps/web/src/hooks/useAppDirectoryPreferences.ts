@@ -10,14 +10,16 @@ import { useCallback, useEffect, useState } from "react";
 import type { ResourceType } from "@/lib/resource-types";
 
 export type AppDirectoryPreferences = {
-  resourceTypeFilter: ResourceType | "all";
-  statusFilter: "all" | "healthy" | "degraded" | "error" | "unknown";
+  resourceTypeFilters: ResourceType[];
+  statusFilters: Array<"healthy" | "degraded" | "error" | "unknown">;
+  stagingFilter: "all" | "only_staging" | "exclude_staging";
   view: "list" | "grid";
 };
 
 const DEFAULTS: AppDirectoryPreferences = {
-  resourceTypeFilter: "all",
-  statusFilter: "all",
+  resourceTypeFilters: [],
+  statusFilters: [],
+  stagingFilter: "all",
   view: "list"
 };
 
@@ -32,9 +34,24 @@ function readPrefs(userId: string | undefined): AppDirectoryPreferences {
     if (!raw) return DEFAULTS;
 
     const parsed = JSON.parse(raw) as Partial<AppDirectoryPreferences>;
+    const legacyResourceType = (parsed as Partial<{ resourceTypeFilter: ResourceType | "all" }>).resourceTypeFilter;
+    const legacyStatus = (parsed as Partial<{ statusFilter: "all" | "healthy" | "degraded" | "error" | "unknown" }>).statusFilter;
+
+    const resourceTypeFilters = Array.isArray(parsed.resourceTypeFilters)
+      ? parsed.resourceTypeFilters.filter((value): value is ResourceType => typeof value === "string")
+      : (legacyResourceType && legacyResourceType !== "all" ? [legacyResourceType] : []);
+
+    const statusFilters = Array.isArray(parsed.statusFilters)
+      ? parsed.statusFilters.filter(
+          (value): value is "healthy" | "degraded" | "error" | "unknown" =>
+            value === "healthy" || value === "degraded" || value === "error" || value === "unknown"
+        )
+      : (legacyStatus && legacyStatus !== "all" ? [legacyStatus] : []);
+
     return {
-      resourceTypeFilter: parsed.resourceTypeFilter ?? DEFAULTS.resourceTypeFilter,
-      statusFilter: parsed.statusFilter ?? DEFAULTS.statusFilter,
+      resourceTypeFilters,
+      statusFilters,
+      stagingFilter: parsed.stagingFilter ?? DEFAULTS.stagingFilter,
       view: parsed.view ?? DEFAULTS.view
     };
   } catch {
