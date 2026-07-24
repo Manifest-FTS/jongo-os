@@ -1679,24 +1679,42 @@ export async function isCoolifyWordPressService(serviceUuid: string): Promise<bo
 }
 
 /**
- * Whether a resource has persistent state worth a full-site backup — a service
- * (has application containers, hence volumes) or a standalone database. Plain
- * stateless applications return false. This is the generalized eligibility
- * signal that replaces the WordPress-only gate; the backup script is still the
- * final arbiter and reports "nothing to back up" if a resource turns out empty.
+ * Whether a resource has persistent state worth a full-site backup — covers all
+ * three Coolify resource kinds:
+ *   - a service (has application containers, hence volumes),
+ *   - a standalone database, or
+ *   - an application that has persistent storage (data volumes).
+ * A stateless application (no persistent storage) returns false. The backup
+ * script is still the final arbiter and reports "nothing to back up" if a
+ * resource turns out empty at runtime.
  */
 export async function hasCoolifyBackupableState(serviceUuid: string): Promise<boolean> {
   if (!serviceUuid?.trim()) {
     return false;
   }
+  const encoded = encodeURIComponent(serviceUuid);
+
+  // Service with application containers?
   const names = await resolveCoolifyServiceApplicationNames(serviceUuid);
   if (names.length > 0) {
     return true;
   }
-  // Not a service — is it a standalone database resource?
+
+  // Standalone database resource?
   try {
-    const payload = await coolifyFetch(`/api/v1/databases/${encodeURIComponent(serviceUuid)}`);
-    return Boolean(payload && typeof payload === "object" && !Array.isArray(payload));
+    const payload = await coolifyFetch(`/api/v1/databases/${encoded}`);
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      return true;
+    }
+  } catch {
+    // Not a database — fall through.
+  }
+
+  // Application with persistent storage (data volumes)?
+  try {
+    const storages = await coolifyFetch(`/api/v1/applications/${encoded}/storages`);
+    const persistent = (storages as { persistent_storages?: unknown } | null)?.persistent_storages;
+    return Array.isArray(persistent) && persistent.length > 0;
   } catch {
     return false;
   }
