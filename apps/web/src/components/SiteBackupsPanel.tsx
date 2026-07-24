@@ -279,7 +279,7 @@ export default function SiteBackupsPanel({
           </p>
           <p className="bk-empty__hint">
             {!supported
-              ? "Full-site backups capture a WordPress site's files and database together. This app isn't a WordPress site, so it's backed up through its database schedule instead."
+              ? "No files or database were found for this app to back up. If it should have data, its Coolify resource mapping may be out of date — re-check it in app settings."
               : canManage
                 ? "Create the first snapshot — it captures files and the database together, offsite."
                 : "Backups will appear here once your administrator creates one."}
