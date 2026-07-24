@@ -1,4 +1,4 @@
-import { getCoolifyAppBackupInventory, isCoolifyWordPressService, AppBackupInventory } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory, isCoolifyWordPressService, hasCoolifyBackupableState, AppBackupInventory } from "@/lib/coolify";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
@@ -106,10 +106,12 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
 
-  // Full-site backup eligibility: does this Coolify resource actually have a
-  // WordPress container? (siteType is unreliable — it both false-positives and
-  // false-negatives.) This checks for a `wordpress` application on the service.
-  const isWordPressService = appUuid ? await isCoolifyWordPressService(appUuid) : false;
+  // Backup eligibility: any resource with persistent state (service or database),
+  // not just WordPress. isWordPressService is kept only to choose which metric
+  // columns to display (posts/pages/plugins vs volumes/databases).
+  const [isWordPressService, isBackupable] = appUuid
+    ? await Promise.all([isCoolifyWordPressService(appUuid), hasCoolifyBackupableState(appUuid)])
+    : [false, false];
   const backupReadiness = getBackupReadiness(inventory, appUuid);
 
   const isConfigured = inventory?.configured ?? false;
@@ -283,6 +285,10 @@ export default async function BackupsPage({ params, searchParams }: Params) {
           status: String(row.status),
           trigger: String(row.trigger),
           label: (row.label as string | null) ?? null,
+          resourceType: (row.resourceType as string | null) ?? null,
+          volumeCount: (row.volumeCount as number | null) ?? null,
+          databaseCount: (row.databaseCount as number | null) ?? null,
+          sizeBytes: row.sizeBytes !== null && row.sizeBytes !== undefined ? Number(row.sizeBytes) : null,
           posts: (row.posts as number | null) ?? null,
           pages: (row.pages as number | null) ?? null,
           plugins: (row.plugins as number | null) ?? null,
@@ -387,8 +393,8 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       <SiteBackupsPanel
         siteId={siteId}
         backups={siteBackupRows}
-        canManage={permissionSnapshot.canManageBackups && isWordPressService}
-        supported={isWordPressService}
+        canManage={permissionSnapshot.canManageBackups && isBackupable}
+        supported={isBackupable}
         page={backupPage}
         pageSize={backupPageSize}
         total={backupTotal}

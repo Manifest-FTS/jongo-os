@@ -212,7 +212,12 @@ model SiteBackup {
   resticSnapshotId String?
   sizeBytes        BigInt?
 
-  // Content metadata captured at backup time (the Flywheel-style columns).
+  // What was captured (generalized beyond WordPress).
+  resourceType  String? // 'wordpress' | 'service' | 'application' | 'database'
+  volumeCount   Int?
+  databaseCount Int?
+
+  // WordPress-only content metadata (null for other resource types).
   posts     Int?
   pages     Int?
   plugins   Int?

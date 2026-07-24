@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
-import { isCoolifyWordPressService } from "@/lib/coolify";
+import { hasCoolifyBackupableState } from "@/lib/coolify";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { openJobLog } from "@/lib/job-log";
 
@@ -75,16 +75,15 @@ async function createBackup(request: Request, { params }: Params) {
     return NextResponse.json({ error: "This app is not linked to a Coolify resource." }, { status: 409 });
   }
 
-  // Full-site backup captures a WordPress files volume + its database. Confirm
-  // this Coolify resource actually has a WordPress container (via its `wordpress`
-  // application) rather than trusting the unreliable siteType heuristic — that
-  // both flags non-WordPress apps and misses real WordPress services.
-  if (!(await isCoolifyWordPressService(resourceUuid))) {
+  // The backup captures whatever persistent state a resource has (files volumes
+  // and/or databases). Reject only resources with neither — the script is the
+  // final arbiter and will report "nothing to back up" if it finds nothing.
+  if (!(await hasCoolifyBackupableState(resourceUuid))) {
     return NextResponse.json(
       {
         ok: false,
         reason: "unsupported_resource_type",
-        message: "Full-site backups are only available for WordPress apps."
+        message: "This resource has no files or database to back up."
       },
       { status: 412 }
     );
