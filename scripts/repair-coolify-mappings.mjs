@@ -128,7 +128,10 @@ async function main() {
       console.log("\nApplying repairable remaps...");
       let updated = 0;
       for (const { site, to } of repairable) {
-        await prisma.site.update({ where: { id: site.id }, data: { coolifyServiceUuid: to.uuid } });
+        // Raw UPDATE (not prisma.site.update) so this works even when the DB has
+        // schema drift — prisma.site.update returns the full row and would fail
+        // on any column the live DB is missing.
+        await prisma.$executeRaw`UPDATE "Site" SET "coolifyServiceUuid" = ${to.uuid}, "updatedAt" = now() WHERE id = ${site.id}::uuid`;
         updated += 1;
       }
       console.log(`Updated ${updated} site mapping(s). Ambiguous/unmatched were NOT touched.`);
