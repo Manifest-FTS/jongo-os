@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { ensureCoolifyAppBackupSchedules } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
-import { decideSiteArchive, shouldAbortArchiveBatch, selectDueBackups } from "@/lib/platform-reconcile-match";
+import { decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -182,21 +182,22 @@ export async function POST(request: Request) {
     const scheduleDefaultOn = (process.env.JONGO_SCHEDULED_BACKUPS || "").trim() === "true";
     const maxBackupsPerRun = Number(process.env.JONGO_SCHEDULED_BACKUPS_PER_RUN || 1) || 1;
     const scheduledStarted: string[] = [];
+    const scheduleSkipped: string[] = [];
 
-    // Runs unconditionally: selectDueBackups honours per-site opt-in even when
+    // Runs unconditionally: orderDueBackups honours per-site opt-in even when
     // the platform default is off, so a site can enable backups on its own.
     {
       const scheduleRows = await db.site.findMany({
         where: { deletedAt: null, isStagingResource: false, NOT: [{ coolifyServiceUuid: null }] },
         select: {
           id: true, slug: true, name: true, coolifyServiceUuid: true,
-          backupScheduleEnabled: true, backupFrequencyHours: true, lastScheduledBackupAt: true
+          backupScheduleEnabled: true, backupFrequencyHours: true, lastScheduledBackupAt: true,
+          backupEligible: true, backupEligibleAt: true
         }
       });
-      const due = selectDueBackups(scheduleRows, {
-        platformDefaultEnabled: scheduleDefaultOn,
-        maxPerRun: maxBackupsPerRun
-      });
+      // Uncapped and ordered: ineligible sites are filtered inside the loop, so
+      // capping here would let stateless apps eat the whole per-run budget.
+      const due = orderDueBackups(scheduleRows, { platformDefaultEnabled: scheduleDefaultOn });
 
       const backupScript = [
         path.join(process.cwd(), "scripts", "site-backup.mjs"),
@@ -204,11 +205,32 @@ export async function POST(request: Request) {
         path.join(process.cwd(), "..", "..", "scripts", "site-backup.mjs")
       ].find((c) => existsSync(c));
 
+      const ELIGIBILITY_TTL_MS = 24 * 60 * 60 * 1000;
       for (const site of due) {
         if (!backupScript) break;
+        if (scheduledStarted.length >= maxBackupsPerRun) break;
         const row = scheduleRows.find((r: { id: string }) => r.id === site.id);
         const uuid = row?.coolifyServiceUuid?.trim();
         if (!uuid) continue;
+
+        // A stateless app has nothing to snapshot. Without this the scheduler
+        // would manufacture a failed backup for it every single day, silently.
+        const checkedAt = row.backupEligibleAt ? new Date(row.backupEligibleAt).getTime() : 0;
+        let eligible = row.backupEligible;
+        if (eligible === null || eligible === undefined || Date.now() - checkedAt > ELIGIBILITY_TTL_MS) {
+          try {
+            eligible = await hasCoolifyBackupableState(uuid);
+          } catch {
+            // Unknown, not ineligible: skip this pass rather than cache a guess.
+            scheduleSkipped.push(`${row.slug}:eligibility_unknown`);
+            continue;
+          }
+          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${eligible}, "backupEligibleAt" = now() WHERE id = ${site.id}::uuid`;
+        }
+        if (!eligible) {
+          scheduleSkipped.push(`${row.slug}:no_state_to_back_up`);
+          continue;
+        }
 
         // Never stack backups for the same site.
         const running = await (db as any).siteBackup.findFirst({
@@ -279,7 +301,8 @@ export async function POST(request: Request) {
       scheduledBackups: {
         platformDefaultEnabled: scheduleDefaultOn,
         maxPerRun: maxBackupsPerRun,
-        started: scheduledStarted
+        started: scheduledStarted,
+        skipped: scheduleSkipped
       },
       lifecycle: {
         indexComplete: liveIndex.complete !== false,

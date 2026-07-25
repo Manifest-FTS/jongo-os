@@ -173,6 +173,15 @@ model Site {
   backupScheduleEnabled Boolean?
   backupFrequencyHours  Int       @default(24)
   lastScheduledBackupAt DateTime?
+  // Cached answer to "does this resource have anything worth snapshotting?".
+  // Null = never evaluated. Cached because the scheduler must not fan out an
+  // API call per site every hour, and stale-by-a-day is harmless: the on-demand
+  // path re-checks live before it ever starts a run.
+  backupEligible        Boolean?
+  backupEligibleAt      DateTime?
+  // Rate limit for scheduled-backup failure email. A site that is broken fails
+  // every night, and a nightly alert trains people to ignore alerts.
+  backupAlertSentAt     DateTime?
   // Note: Site is referred to as "App" in UI/UX language
 
   // Relations

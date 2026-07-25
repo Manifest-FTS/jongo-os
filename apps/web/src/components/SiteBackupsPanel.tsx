@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { ToastStack, useToasts } from "@/components/Toasts";
 import { describeBackupError } from "@/lib/backup-messages";
+import { BACKUP_FREQUENCY_CHOICES, type ScheduleSummary } from "@/lib/backup-schedule";
 
 export type SiteBackupRow = {
   id: string;
@@ -48,6 +49,8 @@ type Props = {
   supported?: boolean;
   /** Why it is unsupported, so the empty state can explain accurately. */
   unsupportedReason?: "staging" | "no_state";
+  /** Automatic-backup schedule; null when it could not be read. */
+  schedule?: ScheduleSummary | null;
   page: number;
   pageSize: number;
   total: number;
@@ -93,6 +96,7 @@ export default function SiteBackupsPanel({
   canManage,
   supported = true,
   unsupportedReason = "no_state",
+  schedule = null,
   page,
   pageSize,
   total
@@ -105,6 +109,7 @@ export default function SiteBackupsPanel({
   const [createOpen, setCreateOpen] = useState(false);
   const [createComment, setCreateComment] = useState("");
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   // Close the actions menu on outside click / Escape.
   useEffect(() => {
@@ -168,6 +173,28 @@ export default function SiteBackupsPanel({
     }
     prevRef.current = new Map(backups.map((b) => [b.id, { status: b.status, restoreStatus: b.restoreStatus }]));
   }, [backups, push]);
+
+  async function saveSchedule(patch: { enabled?: boolean; frequencyHours?: number }) {
+    setSavingSchedule(true);
+    try {
+      const res = await fetch(`/api/sites/${encodeURIComponent(siteId)}/backups/schedule`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        push({ tone: "error", title: "Couldn't save the schedule", text: data.error ?? "Please try again.", ttl: 0 });
+      } else {
+        push({ tone: "success", title: "Schedule updated", text: data.schedule?.detail ?? "Saved." });
+        router.refresh();
+      }
+    } catch {
+      push({ tone: "error", title: "Network error", text: "Could not reach the schedule API.", ttl: 0 });
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
 
   async function createBackup() {
     setBusy(true);
@@ -275,6 +302,42 @@ export default function SiteBackupsPanel({
         ) : null}
       </div>
 
+      {supported && schedule ? (
+        <div className="bk-schedule">
+          <div className="bk-schedule__text">
+            <span className={`status-chip ${schedule.enabled ? "healthy" : "unknown"}`}>
+              {schedule.enabled ? "Automatic backups on" : "Automatic backups off"}
+            </span>
+            <span className="bk-schedule__detail">{schedule.detail}</span>
+          </div>
+          {canManage ? (
+            <div className="bk-schedule__controls">
+              <select
+                className="bk-schedule__select"
+                value={schedule.frequencyHours}
+                disabled={savingSchedule || !schedule.enabled}
+                aria-label="Backup frequency"
+                onChange={(e) => saveSchedule({ frequencyHours: Number(e.target.value) })}
+              >
+                {BACKUP_FREQUENCY_CHOICES.map((c) => (
+                  <option key={c.hours} value={c.hours}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="bk-btn"
+                disabled={savingSchedule}
+                onClick={() => saveSchedule({ enabled: !schedule.enabled })}
+              >
+                {savingSchedule ? "Saving…" : schedule.enabled ? "Turn off" : "Turn on"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {backups.length === 0 ? (
         <div className="bk-empty">
           <p className="bk-empty__title">
@@ -299,6 +362,9 @@ export default function SiteBackupsPanel({
           {backups.map((b) => {
             const running = b.status === "running";
             const failed = b.status === "failed";
+            // Retention removed this snapshot from Backblaze; the row stays as
+            // history but can no longer be restored.
+            const pruned = b.status === "pruned";
             const when = formatDate(b.startedAt);
 
             return (
@@ -323,6 +389,13 @@ export default function SiteBackupsPanel({
                   <div className="bk-metrics">
                     <span className="status-chip unknown bk-pulse">Backing up…</span>
                     <span className="bk-when__time">Capturing files and database to Backblaze</span>
+                  </div>
+                ) : pruned ? (
+                  <div className="bk-metrics">
+                    <span className="status-chip unknown">Expired</span>
+                    <span className="bk-when__time">
+                      Removed by the retention policy, so it can no longer be restored.
+                    </span>
                   </div>
                 ) : failed ? (
                   <div className="bk-metrics">

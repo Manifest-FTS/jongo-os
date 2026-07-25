@@ -106,7 +106,8 @@ describe("shouldAbortArchiveBatch", () => {
   });
 });
 
-import { isBackupDue, selectDueBackups, type ScheduleCandidate } from "./platform-reconcile-match";
+import { isBackupDue, selectDueBackups,
+  orderDueBackups, type ScheduleCandidate } from "./platform-reconcile-match";
 
 describe("scheduled backups", () => {
   const now = new Date("2026-08-01T12:00:00Z");
@@ -145,5 +146,30 @@ describe("scheduled backups", () => {
 
   it("returns nothing when none are due", () => {
     expect(selectDueBackups([cand({ backupScheduleEnabled: true })], { now })).toHaveLength(0);
+  });
+});
+
+describe("orderDueBackups", () => {
+  const base = { backupScheduleEnabled: true, backupFrequencyHours: 24 };
+  const now = new Date("2026-07-25T12:00:00Z");
+
+  it("returns every due site, not just the per-run budget", () => {
+    const sites = [
+      { id: "a", slug: "a", ...base, lastScheduledBackupAt: new Date("2026-07-20T00:00:00Z") },
+      { id: "b", slug: "b", ...base, lastScheduledBackupAt: new Date("2026-07-22T00:00:00Z") },
+      { id: "c", slug: "c", ...base, lastScheduledBackupAt: new Date("2026-07-21T00:00:00Z") }
+    ];
+    // Uncapped, so the caller can skip ineligible sites without losing its
+    // budget to them.
+    expect(orderDueBackups(sites, { now }).map((s) => s.id)).toEqual(["a", "c", "b"]);
+    expect(selectDueBackups(sites, { now, maxPerRun: 1 }).map((s) => s.id)).toEqual(["a"]);
+  });
+
+  it("still excludes sites that are not due", () => {
+    const sites = [
+      { id: "fresh", slug: "fresh", ...base, lastScheduledBackupAt: new Date("2026-07-25T11:00:00Z") },
+      { id: "old", slug: "old", ...base, lastScheduledBackupAt: new Date("2026-07-01T00:00:00Z") }
+    ];
+    expect(orderDueBackups(sites, { now }).map((s) => s.id)).toEqual(["old"]);
   });
 });

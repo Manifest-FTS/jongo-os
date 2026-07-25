@@ -1,4 +1,5 @@
 import { getCoolifyAppBackupInventory, isCoolifyWordPressService, hasCoolifyBackupableState, AppBackupInventory } from "@/lib/coolify";
+import { describeRestorability } from "@/lib/backup-restorability";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
@@ -7,6 +8,7 @@ import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { auth } from "@/lib/auth.config";
 import RestoreTestButton from "@/components/RestoreTestButton";
 import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPanel";
+import { summarizeBackupSchedule } from "@/lib/backup-schedule";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -299,13 +301,43 @@ export default async function BackupsPage({ params, searchParams }: Params) {
           plugins: (row.plugins as number | null) ?? null,
           comments: (row.comments as number | null) ?? null,
           wpVersion: (row.wpVersion as string | null) ?? null,
-          restorable: row.status === "success" && Boolean(row.resticSnapshotId),
+          restorable: describeRestorability({
+            status: typeof row.status === "string" ? row.status : null,
+            resticSnapshotId: typeof row.resticSnapshotId === "string" ? row.resticSnapshotId : null
+          }).restorable,
           error: (row.error as string | null) ?? null,
           restoreStatus: (row.restoreStatus as string | null) ?? null,
           restoreError: (row.restoreError as string | null) ?? null
         }));
       })()
     : [];
+
+  // Read the schedule straight from the row rather than threading it through
+  // SiteWorkspaceRecord — a missing field in one of that type's select blocks
+  // fails silently as `undefined`, which would quietly show "off" to a customer
+  // whose backups are actually on.
+  const scheduleSummary = await (async () => {
+    try {
+      const { getDb } = await import("@/lib/db");
+      const prisma = await getDb();
+      if (!prisma) return null;
+      const row = await (prisma as any).site.findUnique({
+        where: { id: workspace.id },
+        select: {
+          backupScheduleEnabled: true,
+          backupFrequencyHours: true,
+          lastScheduledBackupAt: true
+        }
+      });
+      if (!row) return null;
+      return summarizeBackupSchedule({
+        ...row,
+        platformDefaultEnabled: (process.env.JONGO_SCHEDULED_BACKUPS || "").trim() === "true"
+      });
+    } catch {
+      return null;
+    }
+  })();
 
   const ownershipLabel = `${workspace.clientName} / ${workspace.name}`;
   const readModel = buildBackupReadModelSnapshot({
@@ -401,6 +433,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         canManage={permissionSnapshot.canManageBackups && isBackupable}
         supported={isBackupable}
         unsupportedReason={isStagingResource ? "staging" : "no_state"}
+        schedule={scheduleSummary}
         page={backupPage}
         pageSize={backupPageSize}
         total={backupTotal}

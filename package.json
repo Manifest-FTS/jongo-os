@@ -61,7 +61,9 @@
     "db:sync-approved-mappings": "node ./scripts/sync-approved-coolify-mappings.mjs",
     "db:sync-approved-mappings:apply": "node ./scripts/sync-approved-coolify-mappings.mjs --apply",
     "db:seed": "node prisma/seed.js",
-    "create-admin": "node ./scripts/create-admin.mjs"
+    "create-admin": "node ./scripts/create-admin.mjs",
+    "db:migrate:deploy:remote": "./scripts/db-tunnel.sh migrate deploy",
+    "db:migrate:status:remote": "./scripts/db-tunnel.sh migrate status"
   },
   "devDependencies": {
     "prisma": "^5.22.0",
