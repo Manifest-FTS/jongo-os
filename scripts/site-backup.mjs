@@ -61,6 +61,11 @@ const resticHost = (siteSlug || siteName || "").toLowerCase().replace(/[^a-z0-9.
 // Joined into ONE line: emitting these as conditional lines inside a
 // backslash-continued command yields a blank line when they are absent, which
 // ends the command early and breaks the script.
+// Retention policy (per site, applied after each successful backup).
+const keepDaily = Number(process.env.JONGO_BACKUP_KEEP_DAILY || 7) || 7;
+const keepWeekly = Number(process.env.JONGO_BACKUP_KEEP_WEEKLY || 4) || 4;
+const keepMonthly = Number(process.env.JONGO_BACKUP_KEEP_MONTHLY || 6) || 6;
+
 const resticLabelFlags = [
   resticHost ? `--host ${resticHost}` : null,
   siteSlug ? `--tag "slug=${siteSlug}"` : null,
@@ -242,6 +247,21 @@ SNAP=$(echo "$OUT" | grep -oE 'snapshot [0-9a-f]{8,} saved' | grep -oE '[0-9a-f]
 rm -rf "$STAGE"
 [ -n "$SNAP" ] || { echo "RESULT=fail_restic"; exit 1; }
 echo "SNAPSHOT=$SNAP"
+
+# ── Retention: without this, every backup is kept forever and B2 grows without
+# bound. Scoped by tag so it only ever affects THIS site's jongo backups.
+# Deliberately no --prune: the nightly offsite job already prunes the repo, and
+# pruning here would contend for the repo lock with concurrent backups.
+KEEP_DAILY=${keepDaily}
+KEEP_WEEKLY=${keepWeekly}
+KEEP_MONTHLY=${keepMonthly}
+FORGET_OUT=$(/usr/bin/restic -r "$REPO" forget \\
+  --tag "site=$RUUID" \\
+  --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" 2>&1) || true
+echo "$FORGET_OUT" | grep -oE 'remove [0-9]+ snapshots' | tail -1
+FORGOTTEN=$(echo "$FORGET_OUT" | grep -oE '^[0-9a-f]{8} ' | tr -d ' ' | paste -sd, -)
+[ -n "$FORGOTTEN" ] && echo "FORGOTTEN=$FORGOTTEN"
+
 echo "RESULT=ok"
 `;
 }

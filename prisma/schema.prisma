@@ -166,6 +166,13 @@ model Site {
   // UI can surface orphans instead of silently showing an empty app.
   isStagingResource    Boolean   @default(false)
   resourceMissingSince DateTime?
+
+  // Scheduled backups. backupScheduleEnabled is nullable on purpose: null means
+  // "follow the platform default", so the feature can be rolled out globally
+  // without writing a row per site, while still allowing per-site opt-out.
+  backupScheduleEnabled Boolean?
+  backupFrequencyHours  Int       @default(24)
+  lastScheduledBackupAt DateTime?
   // Note: Site is referred to as "App" in UI/UX language
 
   // Relations

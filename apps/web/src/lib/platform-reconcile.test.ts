@@ -105,3 +105,45 @@ describe("shouldAbortArchiveBatch", () => {
     expect(shouldAbortArchiveBatch({ candidates: 2, totalSites: 2 }).abort).toBe(false);
   });
 });
+
+import { isBackupDue, selectDueBackups, type ScheduleCandidate } from "./platform-reconcile-match";
+
+describe("scheduled backups", () => {
+  const now = new Date("2026-08-01T12:00:00Z");
+  const hoursAgo = (n: number) => new Date(now.getTime() - n * 60 * 60 * 1000);
+  const cand = (o: Partial<ScheduleCandidate>): ScheduleCandidate => ({
+    id: "s", slug: "s", backupScheduleEnabled: null,
+    backupFrequencyHours: 24, lastScheduledBackupAt: hoursAgo(1), ...o
+  });
+
+  it("is off unless enabled per-site or by platform default", () => {
+    expect(isBackupDue(cand({ lastScheduledBackupAt: null }), { now })).toBe(false);
+    expect(isBackupDue(cand({ lastScheduledBackupAt: null }), { now, platformDefaultEnabled: true })).toBe(true);
+  });
+
+  it("lets a site opt out of the platform default", () => {
+    expect(isBackupDue(cand({ backupScheduleEnabled: false, lastScheduledBackupAt: null }),
+      { now, platformDefaultEnabled: true })).toBe(false);
+  });
+
+  it("respects the frequency window", () => {
+    expect(isBackupDue(cand({ backupScheduleEnabled: true, lastScheduledBackupAt: hoursAgo(5) }), { now })).toBe(false);
+    expect(isBackupDue(cand({ backupScheduleEnabled: true, lastScheduledBackupAt: hoursAgo(25) }), { now })).toBe(true);
+  });
+
+  it("caps how many run per pass, most-overdue first", () => {
+    const sites = [
+      cand({ id: "recent", backupScheduleEnabled: true, lastScheduledBackupAt: hoursAgo(25) }),
+      cand({ id: "never", backupScheduleEnabled: true, lastScheduledBackupAt: null }),
+      cand({ id: "oldest", backupScheduleEnabled: true, lastScheduledBackupAt: hoursAgo(200) })
+    ];
+    const picked = selectDueBackups(sites, { now, maxPerRun: 2 });
+    expect(picked).toHaveLength(2);
+    expect(picked[0].id).toBe("never");   // never-run first
+    expect(picked[1].id).toBe("oldest");
+  });
+
+  it("returns nothing when none are due", () => {
+    expect(selectDueBackups([cand({ backupScheduleEnabled: true })], { now })).toHaveLength(0);
+  });
+});
