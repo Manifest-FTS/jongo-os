@@ -184,7 +184,7 @@ export async function POST(request: Request) {
     const scheduledStarted: string[] = [];
     const scheduleSkipped: string[] = [];
 
-    // Runs unconditionally: selectDueBackups honours per-site opt-in even when
+    // Runs unconditionally: orderDueBackups honours per-site opt-in even when
     // the platform default is off, so a site can enable backups on its own.
     {
       const scheduleRows = await db.site.findMany({
