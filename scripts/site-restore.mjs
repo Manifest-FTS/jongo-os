@@ -150,7 +150,11 @@ rm -rf "$TARGET"; mkdir -p "$TARGET"
 /usr/bin/restic -r "$REPO" restore "$SNAP" --target "$TARGET" >/dev/null 2>&1 || { echo "RESULT=fail_restic_restore"; rm -rf "$TARGET"; exit 1; }
 # The snapshot must contain at least one volume dir or a db dump.
 STAGED_VOLS=$(find "$TARGET/var/lib/docker/volumes" -maxdepth 2 -type d -name _data 2>/dev/null || true)
-STAGED_DUMPS=$(find "$TARGET/var/backups/jongo/$RUUID" -name 'db-*.sql' 2>/dev/null || true)
+# Search the whole staged backups tree, not one uuid dir: snapshots exist in
+# three generations — legacy db.sql, db-<container>.sql under the uuid dir, and
+# db-<container>.sql under a readable slug dir. Missing the legacy name meant
+# older snapshots silently restored files but not the database.
+STAGED_DUMPS=$(find "$TARGET/var/backups/jongo" -name 'db*.sql' 2>/dev/null || true)
 [ -n "$STAGED_VOLS" ] || [ -n "$STAGED_DUMPS" ] || { echo "RESULT=fail_empty_snapshot"; rm -rf "$TARGET"; exit 1; }
 echo "STAGED_OK=1"
 
@@ -177,7 +181,15 @@ DBS_RESTORED=0
 if [ -n "$STAGED_DUMPS" ]; then
   while IFS= read -r dump; do
     [ -s "$dump" ] || continue
-    cont=$(basename "$dump" .sql | sed 's/^db-//')  # db-<container>.sql -> <container>
+    base=$(basename "$dump" .sql)
+    if [ "$base" = "db" ]; then
+      # Legacy snapshot: filename carries no container, so use this resource's
+      # only database container.
+      cont=$(docker ps -a --format '{{.Names}}' | grep -E "^(mariadb|mysql|postgresql|postgres)-$RUUID\$" | head -1)
+    else
+      cont=$(echo "$base" | sed 's/^db-//')
+    fi
+    [ -n "$cont" ] || continue
     docker ps -a --format '{{.Names}}' | grep -qx "$cont" || continue
     docker start "$cont" >/dev/null 2>&1 || true
     E=$(engine_of "$cont")
