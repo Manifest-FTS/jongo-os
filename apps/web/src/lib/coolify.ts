@@ -1688,23 +1688,45 @@ export async function isCoolifyWordPressService(serviceUuid: string): Promise<bo
  * script is still the final arbiter and reports "nothing to back up" if a
  * resource turns out empty at runtime.
  */
-export async function hasCoolifyBackupableState(serviceUuid: string): Promise<boolean> {
+/**
+ * Why a resource can or cannot be backed up.
+ *
+ * "Cannot" is not one thing, and collapsing it to a boolean produced the worst
+ * message on the backups page: an app whose data lives in hosted Supabase was
+ * told "no files or database to back up", which reads as "you have nothing to
+ * lose". It has plenty to lose — just nowhere we can reach. A genuinely
+ * stateless app and an app with an external database need different words.
+ */
+export type BackupCapability = {
+  backupable: boolean;
+  reason:
+    | "service_containers"
+    | "standalone_database"
+    | "persistent_volumes"
+    | "linked_database"
+    | "external_database"
+    | "stateless";
+  /** Hostname only, never the connection string. Set for external_database. */
+  externalHost?: string;
+};
+
+export async function describeCoolifyBackupCapability(serviceUuid: string): Promise<BackupCapability> {
   if (!serviceUuid?.trim()) {
-    return false;
+    return { backupable: false, reason: "stateless" };
   }
   const encoded = encodeURIComponent(serviceUuid);
 
   // Service with application containers?
   const names = await resolveCoolifyServiceApplicationNames(serviceUuid);
   if (names.length > 0) {
-    return true;
+    return { backupable: true, reason: "service_containers" };
   }
 
   // Standalone database resource?
   try {
     const payload = await coolifyFetch(`/api/v1/databases/${encoded}`);
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      return true;
+      return { backupable: true, reason: "standalone_database" };
     }
   } catch {
     // Not a database — fall through.
@@ -1715,7 +1737,7 @@ export async function hasCoolifyBackupableState(serviceUuid: string): Promise<bo
     const storages = await coolifyFetch(`/api/v1/applications/${encoded}/storages`);
     const persistent = (storages as { persistent_storages?: unknown } | null)?.persistent_storages;
     if (Array.isArray(persistent) && persistent.length > 0) {
-      return true;
+      return { backupable: true, reason: "persistent_volumes" };
     }
   } catch {
     // Fall through to the linked-database check.
@@ -1724,29 +1746,39 @@ export async function hasCoolifyBackupableState(serviceUuid: string): Promise<bo
   // Application whose data lives in a database ON THIS PLATFORM. Apps reach
   // their database on a Coolify internal hostname that IS the database resource
   // uuid, so a connection string pointing at a known resource means there is
-  // something we can back up. Apps pointing at an EXTERNAL provider (Supabase,
-  // Neon, ...) resolve to a public hostname and are correctly excluded — that
-  // data is not ours to capture.
+  // something we can back up. A dotted host is an external provider (Supabase,
+  // Neon, ...) — not ours to capture, but very much not "nothing".
   try {
     const envs = await coolifyFetch(`/api/v1/applications/${encoded}/envs`);
     if (!Array.isArray(envs)) {
-      return false;
+      return { backupable: false, reason: "stateless" };
     }
+    let externalHost: string | undefined;
     for (const raw of envs) {
       const row = raw as Record<string, unknown>;
       const key = String(row.key ?? row.name ?? "");
       if (!/DATABASE_URL|DATABASE_URI|POSTGRES_URL|MYSQL_URL|DB_URL/i.test(key)) continue;
       const value = String(row.value ?? row.real_value ?? "");
       const host = value.match(/@([^:/?]+)/)?.[1];
+      if (!host) continue;
       // Coolify resource uuids are bare tokens; a dotted host is external.
-      if (host && !host.includes(".")) {
-        return true;
+      if (!host.includes(".")) {
+        return { backupable: true, reason: "linked_database" };
       }
+      // Keep looking — a local database elsewhere in the list still wins.
+      if (!externalHost) externalHost = host;
     }
-    return false;
+    return externalHost
+      ? { backupable: false, reason: "external_database", externalHost }
+      : { backupable: false, reason: "stateless" };
   } catch {
-    return false;
+    return { backupable: false, reason: "stateless" };
   }
+}
+
+/** Boolean form, for callers that only gate on eligibility. */
+export async function hasCoolifyBackupableState(serviceUuid: string): Promise<boolean> {
+  return (await describeCoolifyBackupCapability(serviceUuid)).backupable;
 }
 
 export type CoolifyServiceDomainResult = {

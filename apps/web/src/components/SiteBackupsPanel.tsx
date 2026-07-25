@@ -48,7 +48,9 @@ type Props = {
   /** False when this resource cannot be full-site backed up. */
   supported?: boolean;
   /** Why it is unsupported, so the empty state can explain accurately. */
-  unsupportedReason?: "staging" | "no_state";
+  unsupportedReason?: "staging" | "no_state" | "external_database";
+  /** Hostname of the external database, when that is why backups are off. */
+  externalDatabaseHost?: string;
   /** Automatic-backup schedule; null when it could not be read. */
   schedule?: ScheduleSummary | null;
   page: number;
@@ -96,6 +98,7 @@ export default function SiteBackupsPanel({
   canManage,
   supported = true,
   unsupportedReason = "no_state",
+  externalDatabaseHost,
   schedule = null,
   page,
   pageSize,
@@ -345,13 +348,17 @@ export default function SiteBackupsPanel({
               ? "No backups yet"
               : unsupportedReason === "staging"
                 ? "Staging apps don't need their own backups"
-                : "Not available for this app"}
+                : unsupportedReason === "external_database"
+                  ? "This app's data lives outside Jongo"
+                  : "Nothing to back up for this app"}
           </p>
           <p className="bk-empty__hint">
             {!supported
               ? unsupportedReason === "staging"
                 ? "This is a staging copy. Restore it from its production app's backup instead — that way there's one source of truth."
-                : "No files or database were found for this app to back up. If it should have data, its Coolify resource mapping may be out of date — re-check it in app settings."
+                : unsupportedReason === "external_database"
+                  ? `This app stores its data in an external database${externalDatabaseHost ? ` at ${externalDatabaseHost}` : ""}, which Jongo doesn't host and can't reach. Your data is not backed up here — set up backups with that provider, or move the database onto Jongo and we'll cover it automatically.`
+                  : "This app runs without a database or persistent files, so there is no data to capture — its code is the source of truth. If it should have data, its Coolify resource mapping may be out of date; re-check it in app settings."
               : canManage
                 ? "Create the first snapshot — it captures files and the database together, offsite."
                 : "Backups will appear here once your administrator creates one."}
