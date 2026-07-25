@@ -44,8 +44,10 @@ type Props = {
   siteId: string;
   backups: SiteBackupRow[];
   canManage: boolean;
-  /** False for non-WordPress resources, which cannot be full-site backed up. */
+  /** False when this resource cannot be full-site backed up. */
   supported?: boolean;
+  /** Why it is unsupported, so the empty state can explain accurately. */
+  unsupportedReason?: "staging" | "no_state";
   page: number;
   pageSize: number;
   total: number;
@@ -90,6 +92,7 @@ export default function SiteBackupsPanel({
   backups,
   canManage,
   supported = true,
+  unsupportedReason = "no_state",
   page,
   pageSize,
   total
@@ -275,11 +278,17 @@ export default function SiteBackupsPanel({
       {backups.length === 0 ? (
         <div className="bk-empty">
           <p className="bk-empty__title">
-            {supported ? "No backups yet" : "Not available for this app"}
+            {supported
+              ? "No backups yet"
+              : unsupportedReason === "staging"
+                ? "Staging apps don't need their own backups"
+                : "Not available for this app"}
           </p>
           <p className="bk-empty__hint">
             {!supported
-              ? "No files or database were found for this app to back up. If it should have data, its Coolify resource mapping may be out of date — re-check it in app settings."
+              ? unsupportedReason === "staging"
+                ? "This is a staging copy. Restore it from its production app's backup instead — that way there's one source of truth."
+                : "No files or database were found for this app to back up. If it should have data, its Coolify resource mapping may be out of date — re-check it in app settings."
               : canManage
                 ? "Create the first snapshot — it captures files and the database together, offsite."
                 : "Backups will appear here once your administrator creates one."}
