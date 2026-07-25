@@ -6,6 +6,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { ToastStack, useToasts } from "@/components/Toasts";
 import { describeBackupError } from "@/lib/backup-messages";
 import { BACKUP_FREQUENCY_CHOICES, type ScheduleSummary } from "@/lib/backup-schedule";
+import { describeBackupContent } from "@/lib/backup-content";
 
 export type SiteBackupRow = {
   id: string;
@@ -17,6 +18,7 @@ export type SiteBackupRow = {
   resourceType: string | null;
   volumeCount: number | null;
   databaseCount: number | null;
+  databaseTables: number | null;
   sizeBytes: number | null;
   posts: number | null;
   pages: number | null;
@@ -372,6 +374,9 @@ export default function SiteBackupsPanel({
             // Retention removed this snapshot from Backblaze; the row stays as
             // history but can no longer be restored.
             const pruned = b.status === "pruned";
+            // A successful backup that captured nothing must not read as a
+            // healthy restore point.
+            const content = describeBackupContent(b);
             const when = formatDate(b.startedAt);
 
             return (
@@ -396,6 +401,11 @@ export default function SiteBackupsPanel({
                   <div className="bk-metrics">
                     <span className="status-chip unknown bk-pulse">Backing up…</span>
                     <span className="bk-when__time">Capturing files and database to Backblaze</span>
+                  </div>
+                ) : !running && !failed && !pruned && !content.hasContent ? (
+                  <div className="bk-metrics">
+                    <span className="status-chip degraded">No data captured</span>
+                    <span className="bk-when__time">{content.detail}</span>
                   </div>
                 ) : pruned ? (
                   <div className="bk-metrics">

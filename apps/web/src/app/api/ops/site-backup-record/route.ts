@@ -48,6 +48,7 @@ export async function POST(request: Request) {
         resourceType: str(body.resourceType),
         volumeCount: int(body.volumeCount),
         databaseCount: int(body.databaseCount),
+        databaseTables: int(body.databaseTables),
         posts: int(body.posts),
         pages: int(body.pages),
         plugins: int(body.plugins),

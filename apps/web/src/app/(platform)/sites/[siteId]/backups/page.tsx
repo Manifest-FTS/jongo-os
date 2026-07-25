@@ -296,6 +296,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
           resourceType: (row.resourceType as string | null) ?? null,
           volumeCount: (row.volumeCount as number | null) ?? null,
           databaseCount: (row.databaseCount as number | null) ?? null,
+          databaseTables: (row.databaseTables as number | null) ?? null,
           sizeBytes: row.sizeBytes !== null && row.sizeBytes !== undefined ? Number(row.sizeBytes) : null,
           posts: (row.posts as number | null) ?? null,
           pages: (row.pages as number | null) ?? null,

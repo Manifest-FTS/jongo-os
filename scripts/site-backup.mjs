@@ -203,6 +203,20 @@ sort -u "$PATHS_FILE" -o "$PATHS_FILE"
 echo "VOLCOUNT=$VOLCOUNT"
 echo "DBCOUNT=$DBCOUNT"
 
+# How much was actually captured, as opposed to how many things were found.
+# A dump of an empty database is a valid, complete, ~600-byte file: without
+# this the run reports "1 database" and success, and the customer is told they
+# have a restore point that holds nothing.
+TABLES=0
+for f in "$STAGE"/db-*.sql; do
+  [ -f "$f" ] || continue
+  n=$(grep -c '^CREATE TABLE' "$f" 2>/dev/null || echo 0)
+  TABLES=$((TABLES + n))
+done
+FILECOUNT=$(wc -l < "$PATHS_FILE" | tr -d ' ')
+echo "DB_TABLES=$TABLES"
+echo "CAPTURED_PATHS=$FILECOUNT"
+
 # ── WordPress content metadata (Flywheel-style columns) — only when present ──
 if [ -n "$WP_CONTAINER" ] && [ -n "$WP_DB" ]; then
   WU=$(read_env "$WP_CONTAINER" WORDPRESS_DB_USER)
@@ -346,6 +360,7 @@ try {
     forgottenSnapshotIds: parseForgotten(k.FORGET_JSON_B64),
     volumeCount: num(k.VOLCOUNT),
     databaseCount: num(k.DBCOUNT),
+    databaseTables: num(k.DB_TABLES),
     posts: num(k.POSTS),
     pages: num(k.PAGES),
     plugins: num(k.PLUGINS),
