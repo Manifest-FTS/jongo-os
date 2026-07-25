@@ -158,6 +158,14 @@ model Site {
   stagingEnabled        Boolean @default(false)
   temporaryDomainSlug   String?
   temporaryDomainSuffix String?
+
+  // Maintained by the hourly reconciler (see lib/platform-reconcile.ts).
+  // isStagingResource: this Site's Coolify resource lives in a staging
+  // environment, so it is a staging counterpart rather than a production app.
+  // resourceMissingSince: its Coolify resource could not be found; set so the
+  // UI can surface orphans instead of silently showing an empty app.
+  isStagingResource    Boolean   @default(false)
+  resourceMissingSince DateTime?
   // Note: Site is referred to as "App" in UI/UX language
 
   // Relations

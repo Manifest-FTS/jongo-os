@@ -109,9 +109,14 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   // Backup eligibility: any resource with persistent state (service or database),
   // not just WordPress. isWordPressService is kept only to choose which metric
   // columns to display (posts/pages/plugins vs volumes/databases).
-  const [isWordPressService, isBackupable] = appUuid
+  const [isWordPressService, hasBackupableState] = appUuid
     ? await Promise.all([isCoolifyWordPressService(appUuid), hasCoolifyBackupableState(appUuid)])
     : [false, false];
+
+  // Staging resources are restored from their production counterpart, so they
+  // do not get their own backups. Flag is maintained by the hourly reconciler.
+  const isStagingResource = Boolean(workspace.isStagingResource);
+  const isBackupable = hasBackupableState && !isStagingResource;
   const backupReadiness = getBackupReadiness(inventory, appUuid);
 
   const isConfigured = inventory?.configured ?? false;
@@ -395,6 +400,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         backups={siteBackupRows}
         canManage={permissionSnapshot.canManageBackups && isBackupable}
         supported={isBackupable}
+        unsupportedReason={isStagingResource ? "staging" : "no_state"}
         page={backupPage}
         pageSize={backupPageSize}
         total={backupTotal}

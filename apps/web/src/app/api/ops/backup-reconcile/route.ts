@@ -63,6 +63,8 @@ export async function POST(request: Request) {
     let mappingsRepaired = 0;
     let mappingsStaleUnresolved = 0;
     let stagingEnvsEnsured = 0;
+    let stagingResourcesFlagged = 0;
+    let resourcesMissing = 0;
 
     let alreadyConfigured = 0;
     let autoProvisioned = 0;
@@ -108,6 +110,21 @@ export async function POST(request: Request) {
         if (healed.stagingEnvironmentEnsured) {
           stagingEnvsEnsured += 1;
         }
+
+        // Persist classification so the UI and backup eligibility read a cheap
+        // flag. Raw UPDATE: touches only these columns, resilient to drift.
+        if (healed.isStagingResource !== undefined) {
+          if (healed.isStagingResource) stagingResourcesFlagged += 1;
+          await db.$executeRaw`UPDATE "Site" SET "isStagingResource" = ${healed.isStagingResource} WHERE id = ${site.id}::uuid`;
+        }
+        if (healed.resourceMissing !== undefined) {
+          if (healed.resourceMissing) {
+            resourcesMissing += 1;
+            await db.$executeRaw`UPDATE "Site" SET "resourceMissingSince" = COALESCE("resourceMissingSince", now()) WHERE id = ${site.id}::uuid`;
+          } else {
+            await db.$executeRaw`UPDATE "Site" SET "resourceMissingSince" = NULL WHERE id = ${site.id}::uuid`;
+          }
+        }
       } catch {
         // Healing is best-effort; never block backup reconciliation.
       }
@@ -150,7 +167,9 @@ export async function POST(request: Request) {
       selfHealing: {
         mappingsRepaired,
         mappingsStaleUnresolved,
-        stagingEnvsEnsured
+        stagingEnvsEnsured,
+        stagingResourcesFlagged,
+        resourcesMissing
       },
       results
     });

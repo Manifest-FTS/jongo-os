@@ -192,6 +192,8 @@ export type SiteWorkspaceRecord = {
   productionStatus: "healthy" | "degraded" | "error" | "unknown";
   stagingStatus: "healthy" | "degraded" | "error" | "unknown";
   stagingEnabled: boolean;
+  /** Maintained by the hourly reconciler; true when the resource lives in a staging environment. */
+  isStagingResource?: boolean;
   deploymentCount: number;
   recentActivity: string[];
   siteType: "wordpress" | "database" | "service" | "generic";
@@ -1818,6 +1820,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
                 coolifyServiceUuid: true,
                 coolifyProjectId: true,
                 stagingEnabled: true,
+                isStagingResource: true,
                 gitRepositoryUrl: true,
                 organization: {
                   select: {
@@ -1851,6 +1854,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
                 coolifyServiceUuid: true,
                 coolifyProjectId: true,
                 stagingEnabled: true,
+                isStagingResource: true,
                 gitRepositoryUrl: true,
                 organization: {
                   select: {
@@ -1939,6 +1943,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
           productionStatus: coolifyMatch?.productionStatus ?? "unknown",
           stagingStatus: coolifyMatch?.stagingStatus ?? "unknown",
           stagingEnabled: dbSite.stagingEnabled,
+          isStagingResource: dbSite.isStagingResource ?? false,
           deploymentCount: dbSite.environments.reduce((n: number, env: any) => n + env.deployments.length, 0),
           recentActivity,
           siteType: coolifyMatch?.siteType ?? "generic",

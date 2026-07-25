@@ -21,10 +21,10 @@ export type {
   SiteForReconcile,
   SiteReconcileOutcome
 } from "./platform-reconcile-match";
-export { findRepairTarget } from "./platform-reconcile-match";
+export { findRepairTarget, isStagingEnvironmentName } from "./platform-reconcile-match";
 
 import type { LiveResource, LiveResourceIndex, SiteForReconcile, SiteReconcileOutcome } from "./platform-reconcile-match";
-import { findRepairTarget } from "./platform-reconcile-match";
+import { findRepairTarget, isStagingEnvironmentName } from "./platform-reconcile-match";
 
 function projectIdOf(resource: Record<string, unknown>): string {
   const environment = resource.environment as Record<string, unknown> | undefined;
@@ -43,6 +43,34 @@ export async function buildLiveResourceIndex(): Promise<LiveResourceIndex> {
     { kind: "database", path: "/api/v1/databases" }
   ];
 
+  // Resources expose only a numeric environment_id, so resolve id -> name from
+  // the projects' environment lists (the /projects list omits environments, so
+  // each project's detail is read once per run).
+  const environmentNameById = new Map<number, string>();
+  try {
+    const projects = await coolifyFetch("/api/v1/projects");
+    if (Array.isArray(projects)) {
+      for (const p of projects) {
+        const uuid = String((p as Record<string, unknown>)?.uuid ?? "");
+        if (!uuid) continue;
+        try {
+          const detail = await coolifyFetch(`/api/v1/projects/${encodeURIComponent(uuid)}`);
+          const envs = (detail as { environments?: unknown })?.environments;
+          if (!Array.isArray(envs)) continue;
+          for (const e of envs) {
+            const env = e as Record<string, unknown>;
+            const id = Number(env.id);
+            if (Number.isFinite(id)) environmentNameById.set(id, String(env.name ?? ""));
+          }
+        } catch {
+          // Skip a project we cannot read; staging detection degrades, not fails.
+        }
+      }
+    }
+  } catch {
+    // No environment names available this run; isStagingResource stays unchanged.
+  }
+
   const all: LiveResource[] = [];
   for (const { kind, path } of kinds) {
     try {
@@ -53,11 +81,16 @@ export async function buildLiveResourceIndex(): Promise<LiveResourceIndex> {
         const resource = raw as Record<string, unknown>;
         const uuid = String(resource.uuid ?? resource.id ?? "");
         if (!uuid) continue;
+        const environmentId = Number(resource.environment_id);
         all.push({
           uuid,
           kind,
           name: String(resource.name ?? resource.human_name ?? uuid),
-          projectId: projectIdOf(resource)
+          projectId: projectIdOf(resource),
+          environmentId: Number.isFinite(environmentId) ? environmentId : undefined,
+          environmentName: Number.isFinite(environmentId)
+            ? environmentNameById.get(environmentId)
+            : undefined
         });
       }
     } catch {
@@ -65,7 +98,11 @@ export async function buildLiveResourceIndex(): Promise<LiveResourceIndex> {
     }
   }
 
-  return { byUuid: new Set(all.map((r) => r.uuid)), all };
+  return {
+    byUuid: new Set(all.map((r) => r.uuid)),
+    all,
+    byUuidResource: new Map(all.map((r) => [r.uuid, r]))
+  };
 }
 
 /**
@@ -94,7 +131,23 @@ export async function reconcileSite(
     }
   }
 
-  // 2. Ensure a staging environment exists when staging is enabled.
+  // 2. Classify the resource: is it a staging counterpart, or missing entirely?
+  //    Persisted by the caller so the UI and backup eligibility read a cheap
+  //    flag instead of re-deriving this per page load.
+  const effectiveUuid = outcome.mappingRepaired?.to ?? currentUuid;
+  const resource = effectiveUuid ? index.byUuidResource?.get(effectiveUuid) : undefined;
+  if (resource) {
+    outcome.resourceMissing = false;
+    if (resource.environmentName !== undefined) {
+      outcome.isStagingResource = isStagingEnvironmentName(resource.environmentName);
+      if (outcome.isStagingResource) outcome.notes.push("staging_resource");
+    }
+  } else if (effectiveUuid) {
+    outcome.resourceMissing = true;
+    outcome.notes.push("resource_missing");
+  }
+
+  // 3. Ensure a staging environment exists when staging is enabled.
   if (site.stagingEnabled && site.coolifyProjectId) {
     try {
       const result = await ensureCoolifyStagingEnvironment(site.coolifyProjectId);
