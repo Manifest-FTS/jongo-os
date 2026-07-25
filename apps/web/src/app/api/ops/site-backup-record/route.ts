@@ -58,7 +58,21 @@ export async function POST(request: Request) {
       }
     });
 
-    return NextResponse.json({ ok: true, backupId: updated.id, status: updated.status });
+    // Retention removed these snapshots from Backblaze, so their catalogue rows
+    // must stop offering a restore that would fail against a missing snapshot.
+    let prunedRows = 0;
+    const forgotten = Array.isArray(body.forgottenSnapshotIds)
+      ? body.forgottenSnapshotIds.map((v) => String(v).trim()).filter(Boolean)
+      : [];
+    if (forgotten.length > 0) {
+      const result = await db.siteBackup.updateMany({
+        where: { resticSnapshotId: { in: forgotten }, status: "success" },
+        data: { status: "pruned" }
+      });
+      prunedRows = result?.count ?? 0;
+    }
+
+    return NextResponse.json({ ok: true, backupId: updated.id, status: updated.status, prunedRows });
   } catch (error) {
     return NextResponse.json(
       { error: `Failed to record backup: ${error instanceof Error ? error.message : "unknown"}` },

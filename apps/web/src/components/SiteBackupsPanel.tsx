@@ -299,6 +299,9 @@ export default function SiteBackupsPanel({
           {backups.map((b) => {
             const running = b.status === "running";
             const failed = b.status === "failed";
+            // Retention removed this snapshot from Backblaze; the row stays as
+            // history but can no longer be restored.
+            const pruned = b.status === "pruned";
             const when = formatDate(b.startedAt);
 
             return (
@@ -323,6 +326,13 @@ export default function SiteBackupsPanel({
                   <div className="bk-metrics">
                     <span className="status-chip unknown bk-pulse">Backing up…</span>
                     <span className="bk-when__time">Capturing files and database to Backblaze</span>
+                  </div>
+                ) : pruned ? (
+                  <div className="bk-metrics">
+                    <span className="status-chip unknown">Expired</span>
+                    <span className="bk-when__time">
+                      Removed by the retention policy, so it can no longer be restored.
+                    </span>
                   </div>
                 ) : failed ? (
                   <div className="bk-metrics">

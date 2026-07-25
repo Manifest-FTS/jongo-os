@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeRestorability } from "@/lib/backup-restorability";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -92,9 +93,10 @@ async function restoreBackup(request: Request, { params }: Params) {
   if (!backup || backup.siteId !== workspace.id) {
     return NextResponse.json({ error: "Backup not found for this app." }, { status: 404 });
   }
-  if (backup.status !== "success" || !backup.resticSnapshotId) {
+  const restorability = describeRestorability(backup);
+  if (!restorability.restorable) {
     return NextResponse.json(
-      { ok: false, reason: "not_restorable", message: "This backup did not complete successfully and cannot be restored." },
+      { ok: false, reason: restorability.reason, message: restorability.message },
       { status: 409 }
     );
   }

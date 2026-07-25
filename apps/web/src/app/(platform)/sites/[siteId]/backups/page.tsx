@@ -1,4 +1,5 @@
 import { getCoolifyAppBackupInventory, isCoolifyWordPressService, hasCoolifyBackupableState, AppBackupInventory } from "@/lib/coolify";
+import { describeRestorability } from "@/lib/backup-restorability";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, BACKUP_WARN_AFTER_HOURS, BACKUP_STALE_AFTER_HOURS } from "@/lib/deploy-guards";
@@ -299,7 +300,10 @@ export default async function BackupsPage({ params, searchParams }: Params) {
           plugins: (row.plugins as number | null) ?? null,
           comments: (row.comments as number | null) ?? null,
           wpVersion: (row.wpVersion as string | null) ?? null,
-          restorable: row.status === "success" && Boolean(row.resticSnapshotId),
+          restorable: describeRestorability({
+            status: typeof row.status === "string" ? row.status : null,
+            resticSnapshotId: typeof row.resticSnapshotId === "string" ? row.resticSnapshotId : null
+          }).restorable,
           error: (row.error as string | null) ?? null,
           restoreStatus: (row.restoreStatus as string | null) ?? null,
           restoreError: (row.restoreError as string | null) ?? null

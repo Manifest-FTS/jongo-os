@@ -290,6 +290,9 @@ try {
     resticSnapshotId: k.SNAPSHOT || null,
     sizeBytes: num(k.SIZE_BYTES),
     resourceType: k.WP_VERSION ? "wordpress" : (num(k.DBCOUNT) && !num(k.VOLCOUNT) ? "database" : "service"),
+    // Snapshots retention just removed; their catalogue rows must stop
+    // advertising a restore that would fail.
+    forgottenSnapshotIds: (k.FORGOTTEN || "").split(",").map((x) => x.trim()).filter(Boolean),
     volumeCount: num(k.VOLCOUNT),
     databaseCount: num(k.DBCOUNT),
     posts: num(k.POSTS),
