@@ -72,10 +72,14 @@ export async function buildLiveResourceIndex(): Promise<LiveResourceIndex> {
   }
 
   const all: LiveResource[] = [];
+  // If ANY resource list fails, absence from the index no longer proves a
+  // resource was deleted — it may just be an API blip. Callers must not treat
+  // an incomplete index as evidence of deletion.
+  let complete = true;
   for (const { kind, path } of kinds) {
     try {
       const payload = await coolifyFetch(path);
-      if (!Array.isArray(payload)) continue;
+      if (!Array.isArray(payload)) { complete = false; continue; }
       for (const raw of payload) {
         if (!raw || typeof raw !== "object") continue;
         const resource = raw as Record<string, unknown>;
@@ -94,14 +98,17 @@ export async function buildLiveResourceIndex(): Promise<LiveResourceIndex> {
         });
       }
     } catch {
-      // A failed kind should not abort the whole run; healing is best-effort.
+      // A failed kind should not abort the whole run, but it does mean the
+      // index is partial.
+      complete = false;
     }
   }
 
   return {
     byUuid: new Set(all.map((r) => r.uuid)),
     all,
-    byUuidResource: new Map(all.map((r) => [r.uuid, r]))
+    byUuidResource: new Map(all.map((r) => [r.uuid, r])),
+    complete
   };
 }
 
@@ -119,7 +126,7 @@ export async function reconcileSite(
   const currentUuid = site.coolifyServiceUuid?.trim() ?? "";
 
   // 1. Heal a stale resource mapping.
-  if (currentUuid && !index.byUuid.has(currentUuid)) {
+  if (currentUuid && !index.byUuid.has(currentUuid) && index.complete !== false) {
     outcome.mappingStale = true;
     const target = findRepairTarget(index, site);
     if (target) {
@@ -142,9 +149,12 @@ export async function reconcileSite(
       outcome.isStagingResource = isStagingEnvironmentName(resource.environmentName);
       if (outcome.isStagingResource) outcome.notes.push("staging_resource");
     }
-  } else if (effectiveUuid) {
+  } else if (effectiveUuid && index.complete !== false) {
     outcome.resourceMissing = true;
     outcome.notes.push("resource_missing");
+  } else if (effectiveUuid) {
+    // Partial index — say nothing rather than falsely flag the resource gone.
+    outcome.notes.push("resource_check_skipped_incomplete_index");
   }
 
   // 3. Ensure a staging environment exists when staging is enabled.
