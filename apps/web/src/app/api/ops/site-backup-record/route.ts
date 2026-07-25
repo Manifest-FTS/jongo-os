@@ -61,9 +61,14 @@ export async function POST(request: Request) {
     // Retention removed these snapshots from Backblaze, so their catalogue rows
     // must stop offering a restore that would fail against a missing snapshot.
     let prunedRows = 0;
+    const { parseForgottenSnapshotIdsFromBase64 } = await import("@/lib/restic-forget");
     const forgotten = Array.isArray(body.forgottenSnapshotIds)
       ? body.forgottenSnapshotIds.map((v) => String(v).trim()).filter(Boolean)
-      : [];
+      // Accept the raw payload too, so the parsing rule has one tested home
+      // even if an older script version posts the base64 directly.
+      : parseForgottenSnapshotIdsFromBase64(
+          typeof body.forgetJsonBase64 === "string" ? body.forgetJsonBase64 : null
+        );
     if (forgotten.length > 0) {
       const result = await db.siteBackup.updateMany({
         where: { resticSnapshotId: { in: forgotten }, status: "success" },

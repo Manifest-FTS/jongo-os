@@ -1,4 +1,4 @@
-import { getCoolifyAppBackupInventory, isCoolifyWordPressService, hasCoolifyBackupableState, AppBackupInventory } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory, isCoolifyWordPressService, describeCoolifyBackupCapability, AppBackupInventory } from "@/lib/coolify";
 import { describeRestorability } from "@/lib/backup-restorability";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
@@ -111,9 +111,10 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   // Backup eligibility: any resource with persistent state (service or database),
   // not just WordPress. isWordPressService is kept only to choose which metric
   // columns to display (posts/pages/plugins vs volumes/databases).
-  const [isWordPressService, hasBackupableState] = appUuid
-    ? await Promise.all([isCoolifyWordPressService(appUuid), hasCoolifyBackupableState(appUuid)])
-    : [false, false];
+  const [isWordPressService, capability] = appUuid
+    ? await Promise.all([isCoolifyWordPressService(appUuid), describeCoolifyBackupCapability(appUuid)])
+    : [false, { backupable: false, reason: "stateless" as const }];
+  const hasBackupableState = capability.backupable;
 
   // Staging resources are restored from their production counterpart, so they
   // do not get their own backups. Flag is maintained by the hourly reconciler.
@@ -432,7 +433,14 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         backups={siteBackupRows}
         canManage={permissionSnapshot.canManageBackups && isBackupable}
         supported={isBackupable}
-        unsupportedReason={isStagingResource ? "staging" : "no_state"}
+        unsupportedReason={
+          isStagingResource
+            ? "staging"
+            : capability.reason === "external_database"
+              ? "external_database"
+              : "no_state"
+        }
+        externalDatabaseHost={"externalHost" in capability ? capability.externalHost : undefined}
         schedule={scheduleSummary}
         page={backupPage}
         pageSize={backupPageSize}

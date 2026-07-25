@@ -255,12 +255,25 @@ echo "SNAPSHOT=$SNAP"
 KEEP_DAILY=${keepDaily}
 KEEP_WEEKLY=${keepWeekly}
 KEEP_MONTHLY=${keepMonthly}
-FORGET_OUT=$(/usr/bin/restic -r "$REPO" forget \\
+# --json because restic's human output prints the KEPT snapshots in the same
+# table shape as removed ones ("keep 1 snapshots:" followed by an id per line).
+# Scraping that marked every brand-new snapshot as forgotten, which would flag
+# each fresh backup as pruned and make it unrestorable the moment it was taken.
+# --group-by host so retention is evaluated per site rather than per path set:
+# the default (host,paths) starts a new group whenever a site's container set
+# changes, and each group would then keep its own full policy. Grouping by tags
+# would be worse still, since backup=<id> is unique per snapshot.
+FORGET_JSON=$(/usr/bin/restic -r "$REPO" forget --json --group-by host \\
   --tag "site=$RUUID" \\
-  --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" 2>&1) || true
-echo "$FORGET_OUT" | grep -oE 'remove [0-9]+ snapshots' | tail -1
-FORGOTTEN=$(echo "$FORGET_OUT" | grep -oE '^[0-9a-f]{8} ' | tr -d ' ' | paste -sd, -)
-[ -n "$FORGOTTEN" ] && echo "FORGOTTEN=$FORGOTTEN"
+  --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" 2>/dev/null) || true
+
+# Hand the raw JSON back for the caller to parse. Doing it here would mean
+# scraping in shell on a host whose tooling we do not control, and it is exactly
+# that scraping which produced the bug this replaced. base64 keeps it to one
+# line so it survives the KEY=VALUE protocol.
+if [ -n "$FORGET_JSON" ]; then
+  echo "FORGET_JSON_B64=$(printf '%s' "$FORGET_JSON" | base64 | tr -d '\\n')"
+fi
 
 echo "RESULT=ok"
 `;
@@ -269,11 +282,48 @@ echo "RESULT=ok"
 function parseKV(stdout) {
   const out = {};
   for (const line of stdout.split(/\r?\n/)) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
+    // Digits matter: FORGET_JSON_B64 would otherwise never be captured.
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
     if (m) out[m[1]] = m[2];
   }
   return out;
 }
+/**
+ * Extract the snapshots `restic forget` actually removed.
+ *
+ * Mirrors apps/web/src/lib/restic-forget.ts, which carries the full rationale
+ * and the unit tests. Duplicated rather than imported because this script runs
+ * standalone under plain node with no bundler and no path aliases.
+ *
+ * Returns nothing when the payload cannot be understood: a wrong id here marks
+ * a good backup unrestorable, while a missing one is corrected by the next run.
+ */
+function parseForgotten(encoded) {
+  const value = String(encoded || "").trim();
+  if (!value) return [];
+  let groups;
+  try {
+    groups = JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(groups)) return [];
+  const ids = [];
+  for (const group of groups) {
+    if (!group || typeof group !== "object") continue;
+    const removed = group.remove; // null, not [], when nothing is removed
+    if (!Array.isArray(removed)) continue;
+    for (const snap of removed) {
+      if (!snap || typeof snap !== "object") continue;
+      const id = typeof snap.short_id === "string" && snap.short_id.trim()
+        ? snap.short_id.trim()
+        : typeof snap.id === "string" ? snap.id.trim().slice(0, 8) : "";
+      if (id) ids.push(id);
+    }
+  }
+  return Array.from(new Set(ids));
+}
+
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 
 try {
@@ -291,8 +341,9 @@ try {
     sizeBytes: num(k.SIZE_BYTES),
     resourceType: k.WP_VERSION ? "wordpress" : (num(k.DBCOUNT) && !num(k.VOLCOUNT) ? "database" : "service"),
     // Snapshots retention just removed; their catalogue rows must stop
-    // advertising a restore that would fail.
-    forgottenSnapshotIds: (k.FORGOTTEN || "").split(",").map((x) => x.trim()).filter(Boolean),
+    // advertising a restore that would fail. Parsed from restic's JSON rather
+    // than its human output, which prints KEPT snapshots in the same shape.
+    forgottenSnapshotIds: parseForgotten(k.FORGET_JSON_B64),
     volumeCount: num(k.VOLCOUNT),
     databaseCount: num(k.DBCOUNT),
     posts: num(k.POSTS),
