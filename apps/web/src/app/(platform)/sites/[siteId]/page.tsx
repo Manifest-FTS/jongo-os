@@ -229,6 +229,8 @@ export default async function SiteOverviewPage({ params }: Params) {
     : null;
 
   const backupReadiness = getBackupReadiness(backupInventory, workspace.coolifyServiceUuid);
+  // Live-derived, so an app added later is judged correctly with no setup.
+  const backupNotApplicable = backupReadiness.code === "backups_not_applicable";
   const backupLockReason = backupReadiness.locked
     ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
     : "Dry-run mode: execution remains disabled in this interface.";
@@ -270,40 +272,55 @@ export default async function SiteOverviewPage({ params }: Params) {
       {
         key: "backup-configured",
         label: "Backups configured",
+        // An app with no databases has no schedule to configure, so flagging it
+        // "not configured" and telling the owner to go add one sends them after
+        // a fault that does not exist. Same verdict the Backups tab uses.
         state: !workspace.coolifyServiceUuid
           ? "not_configured"
           : backupInventory?.source !== "live"
             ? "unknown"
-            : backupInventory?.configured
-              ? "ready"
-              : "not_configured",
+            : backupNotApplicable
+              ? "unknown"
+              : backupInventory?.configured
+                ? "ready"
+                : "not_configured",
         detail: !workspace.coolifyServiceUuid
           ? "No infrastructure app UUID is linked to this app."
           : backupInventory?.source !== "live"
             ? "Could not reach live backup inventory from platform."
-            : backupInventory?.configured
-              ? "At least one active database backup schedule is present."
-              : "No active backup schedules were found.",
-        nextStep: "Open Backups and configure recurring schedules in the platform."
+            : backupNotApplicable
+              ? "This app has no database, so there is no backup schedule to configure."
+              : backupInventory?.configured
+                ? "At least one active database backup schedule is present."
+                : "No active backup schedules were found.",
+        nextStep: backupNotApplicable
+          ? ""
+          : "Open Backups and configure recurring schedules in the platform."
       },
       {
         key: "recent-backup",
         label: "Recent backup",
         state: backupInventory?.source !== "live"
           ? "unknown"
-          : !lastSuccessfulBackup
-            ? "attention"
-            : recentBackupHealthy
-              ? "ready"
-              : "attention",
+          : backupNotApplicable
+            ? "unknown"
+            : !lastSuccessfulBackup
+              ? "attention"
+              : recentBackupHealthy
+                ? "ready"
+                : "attention",
         detail: backupInventory?.source !== "live"
           ? "Recent execution history is unavailable."
-          : !lastSuccessfulBackup
-            ? "No successful backup was found in recent execution history."
-            : recentBackupHealthy
-              ? `Last successful backup was ${formatAgo(lastSuccessfulBackup)}.`
-              : `Last successful backup was ${formatAgo(lastSuccessfulBackup)}, which exceeds 7 days.`,
-        nextStep: "Investigate backup failures and run a fresh successful backup."
+          : backupNotApplicable
+            ? "There is no data to back up for this app, so no backup is expected."
+            : !lastSuccessfulBackup
+              ? "No successful backup was found in recent execution history."
+              : recentBackupHealthy
+                ? `Last successful backup was ${formatAgo(lastSuccessfulBackup)}.`
+                : `Last successful backup was ${formatAgo(lastSuccessfulBackup)}, which exceeds 7 days.`,
+        nextStep: backupNotApplicable
+          ? ""
+          : "Investigate backup failures and run a fresh successful backup."
       },
       {
         key: "offsite-replication",
