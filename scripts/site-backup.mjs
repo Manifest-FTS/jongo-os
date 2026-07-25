@@ -52,6 +52,20 @@ function argValue(name) {
 const resourceUuid = argValue("--resource-uuid");
 const backupId = argValue("--backup-id");
 const label = argValue("--label");
+// Readable identifiers for Backblaze. Without these a snapshot shows only the
+// server hostname and opaque UUIDs, so you cannot tell which site it belongs to.
+const siteSlug = argValue("--site-slug");
+const siteName = argValue("--site-name");
+// restic --host must be a simple hostname-ish token.
+const resticHost = (siteSlug || siteName || "").toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+// Joined into ONE line: emitting these as conditional lines inside a
+// backslash-continued command yields a blank line when they are absent, which
+// ends the command early and breaks the script.
+const resticLabelFlags = [
+  resticHost ? `--host ${resticHost}` : null,
+  siteSlug ? `--tag "slug=${siteSlug}"` : null,
+  siteName ? `--tag ${shQuote(`name=${siteName}`)}` : null
+].filter(Boolean).join(" ");
 
 const sshHost = firstEnvValue(["STAGING_SYNC_SSH_HOST", "COOLIFY_SSH_HOST"]);
 const sshUser = firstEnvValue(["STAGING_SYNC_SSH_USER"]) || "root";
@@ -106,7 +120,7 @@ read_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" 
 CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E "(^|-)$RUUID\\$" || true)
 [ -n "$CONTAINERS" ] || { echo "RESULT=fail_no_containers"; exit 1; }
 
-STAGE="/var/backups/jongo/$RUUID"
+STAGE=${shQuote(`/var/backups/jongo/${siteSlug || "unknown"}`)}
 rm -rf "$STAGE"; mkdir -p "$STAGE"
 PATHS_FILE=$(mktemp)
 VOLCOUNT=0
@@ -192,7 +206,7 @@ REPO="s3:\${B2_ENDPOINT}/\${B2_BUCKET}"
 SIZE_BYTES=$(du -scb $(cat "$PATHS_FILE") 2>/dev/null | tail -1 | cut -f1)
 echo "SIZE_BYTES=\${SIZE_BYTES:-0}"
 
-OUT=$(/usr/bin/restic -r "$REPO" backup \\
+OUT=$(/usr/bin/restic -r "$REPO" backup ${resticLabelFlags} \\
   --tag jongo-backup \\
   --tag "site=$RUUID" \\
   --tag "backup=$BID" \\

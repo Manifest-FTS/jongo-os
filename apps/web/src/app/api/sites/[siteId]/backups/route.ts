@@ -144,6 +144,9 @@ async function createBackup(request: Request, { params }: Params) {
       scriptPath,
       "--resource-uuid", resourceUuid,
       "--backup-id", record.id,
+      // Readable identifiers so Backblaze snapshots show the site, not just UUIDs.
+      "--site-slug", workspace.slug,
+      "--site-name", workspace.name,
       ...(label ? ["--label", label] : [])
     ],
     { cwd: process.cwd(), env: process.env, detached: true, stdio: ["ignore", jobLog, jobLog] }
