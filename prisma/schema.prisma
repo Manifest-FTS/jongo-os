@@ -179,6 +179,9 @@ model Site {
   // path re-checks live before it ever starts a run.
   backupEligible        Boolean?
   backupEligibleAt      DateTime?
+  // Rate limit for scheduled-backup failure email. A site that is broken fails
+  // every night, and a nightly alert trains people to ignore alerts.
+  backupAlertSentAt     DateTime?
   // Note: Site is referred to as "App" in UI/UX language
 
   // Relations
