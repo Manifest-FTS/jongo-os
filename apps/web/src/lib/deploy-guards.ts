@@ -6,6 +6,7 @@ export const BACKUP_STALE_AFTER_HOURS = 168;
 export type BackupGuardCode =
   | "ready"
   | "backup_telemetry_unavailable"
+  | "backups_not_applicable"
   | "backups_not_configured"
   | "no_successful_backup"
   | "backup_stale";
@@ -61,6 +62,25 @@ export function getBackupReadiness(inventory: AppBackupInventory | null, appUuid
       locked: true,
       reason: "Backup telemetry unavailable.",
       nextStep: "Verify Coolify API token scope, endpoint reachability/allowlist policy, and service-database backup endpoint access.",
+      lastSuccessfulBackupAt: null,
+      hoursSinceSuccess: null,
+      warnAfterHours: BACKUP_WARN_AFTER_HOURS,
+      staleAfterHours: BACKUP_STALE_AFTER_HOURS
+    };
+  }
+
+  // An app with no databases has no backup schedule to configure, so backup
+  // readiness cannot be a blocker for it. Without this, every stateless app is
+  // permanently deploy- and staging-locked on a condition it can never satisfy,
+  // and the lock reason tells the owner to go configure a schedule that does
+  // not exist. Derived from live Coolify state, so it covers apps added later
+  // with no per-app setup.
+  if (inventory.note === "no_databases_in_environment") {
+    return {
+      code: "backups_not_applicable",
+      locked: false,
+      reason: "No databases in this app, so there is no backup schedule to configure.",
+      nextStep: "",
       lastSuccessfulBackupAt: null,
       hoursSinceSuccess: null,
       warnAfterHours: BACKUP_WARN_AFTER_HOURS,

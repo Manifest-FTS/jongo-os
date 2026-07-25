@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth.config";
 import RestoreTestButton from "@/components/RestoreTestButton";
 import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPanel";
 import { summarizeBackupSchedule } from "@/lib/backup-schedule";
+import { buildBackupDiagnosis } from "@/lib/backup-diagnosis";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -355,20 +356,31 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       : undefined
   });
 
+  // One verdict drives every backup-health claim on this page, so the cards
+  // cannot contradict each other. Derived from the app's live capability, so a
+  // newly added app is classified with no per-app setup.
+  const diagnosis = buildBackupDiagnosis({
+    backupable: hasBackupableState,
+    capabilityReason: capability.reason,
+    isStagingResource,
+    isConfigured,
+    hasSuccessfulBackup: Boolean(lastSuccessfulBackup)
+  });
+
   const diagnosisItems = [
     {
       label: "Backups configured",
-      tone: isConfigured ? "healthy" : "error",
-      detail: isConfigured
-        ? "Automated schedules are configured."
-        : "No active backup schedules are configured."
+      tone: diagnosis.configuredTone,
+      detail: diagnosis.configuredDetail
     },
     {
       label: "Successful backup",
-      tone: lastSuccessfulBackup ? "healthy" : "error",
+      tone: diagnosis.successTone,
       detail: lastSuccessfulBackup
         ? `Last successful backup: ${lastSuccessfulBackup.relativeTime}`
-        : "No successful backup found."
+        : diagnosis.applicable
+          ? "No successful backup found."
+          : diagnosis.notApplicableDetail
     },
     {
       label: "Backup telemetry",
@@ -379,10 +391,19 @@ export default async function BackupsPage({ params, searchParams }: Params) {
     },
     {
       label: "Backup freshness",
-      tone: backupReadiness.code === "backup_stale" ? "error" : backupReadiness.locked ? "degraded" : "healthy",
-      detail: backupReadiness.code === "backup_stale"
-        ? `Backup stale. Last success exceeds ${BACKUP_STALE_AFTER_HOURS}h.`
-        : `Warning threshold: ${BACKUP_WARN_AFTER_HOURS}h · lock threshold: ${BACKUP_STALE_AFTER_HOURS}h`
+      // "Healthy" would be a lie for an app that has no backups to be fresh.
+      tone: !diagnosis.applicable
+        ? "unknown"
+        : backupReadiness.code === "backup_stale"
+          ? "error"
+          : backupReadiness.locked
+            ? "degraded"
+            : "healthy",
+      detail: !diagnosis.applicable
+        ? diagnosis.notApplicableDetail
+        : backupReadiness.code === "backup_stale"
+          ? `Backup stale. Last success exceeds ${BACKUP_STALE_AFTER_HOURS}h.`
+          : `Warning threshold: ${BACKUP_WARN_AFTER_HOURS}h · lock threshold: ${BACKUP_STALE_AFTER_HOURS}h`
     }
   ];
 
@@ -407,7 +428,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
             </p>
           )}
         </article>
-      ) : !isConfigured && showAdminBackupDiagnostics ? (
+      ) : diagnosis.showNotConfiguredAlarm && showAdminBackupDiagnostics ? (
         <article className="card">
           <h3 className="card-title" style={{ color: "var(--warning, #d97706)" }}>Backups not configured</h3>
           <p className="card-muted">No active backup schedules were found for at least one database in this workspace.</p>
