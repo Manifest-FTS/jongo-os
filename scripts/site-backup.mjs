@@ -117,59 +117,81 @@ read_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" 
 # Discover every running container for this resource. Coolify names them
 # <app>-<uuid> (wordpress-, mariadb-, …) or, for a standalone database, just
 # <uuid>. This replaces the WordPress-only assumption.
-CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E "(^|-)$RUUID\\$" || true)
+# Match the uuid anywhere as a whole segment: Coolify names service containers
+# <app>-<uuid> (uuid last) but APPLICATION containers <uuid>-<deployment-ts>
+# (uuid first). Anchoring only at the end missed every application.
+CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E "(^|-)$RUUID($|-)" || true)
 [ -n "$CONTAINERS" ] || { echo "RESULT=fail_no_containers"; exit 1; }
 
 STAGE=${shQuote(`/var/backups/jongo/${siteSlug || "unknown"}`)}
 rm -rf "$STAGE"; mkdir -p "$STAGE"
 PATHS_FILE=$(mktemp)
+DB_LIST=$(mktemp)
 VOLCOUNT=0
 DBCOUNT=0
 WP_CONTAINER=""
 WP_DB=""
 
+# ── Pass 1: classify containers, collect volumes and database targets ──
 while IFS= read -r c; do
   [ -n "$c" ] || continue
   IMG=$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null)
   NI="$c $IMG"
   case "$c" in wordpress-*) WP_CONTAINER="$c";; esac
 
-  if echo "$NI" | grep -qiE 'postgres'; then
-    # ── PostgreSQL: dump via the container's own credentials ──
+  if echo "$NI" | grep -qiE 'postgres|mariadb|mysql|percona'; then
+    echo "$c" >> "$DB_LIST"
+  else
+    # Application/service container: its named (persistent) volumes.
+    while IFS= read -r src; do
+      [ -n "$src" ] && [ -d "$src" ] && { echo "$src" >> "$PATHS_FILE"; VOLCOUNT=$((VOLCOUNT+1)); }
+    done < <(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Source}}{{end}}{{end}}' "$c" 2>/dev/null)
+
+    # Linked databases: an app reaches its DB on a Coolify internal hostname that
+    # IS the database resource uuid, e.g. postgres://u:p@<db-uuid>:5432/db.
+    # Without this, a stateless app (no volumes) would have nothing to back up
+    # even though its data lives in a database next door.
+    while IFS= read -r h; do
+      [ -n "$h" ] || continue
+      if docker ps --format '{{.Names}}' | grep -qx "$h"; then echo "$h" >> "$DB_LIST"; fi
+    done < <(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" 2>/dev/null \
+      | grep -oiE '^(DATABASE_URL|DATABASE_URI|POSTGRES_URL|MYSQL_URL|DB_URL)=.*' \
+      | sed -E 's#^[^=]+=##; s#^[a-zA-Z+]+://[^@]*@##; s#[:/?].*##' | sort -u)
+  fi
+done <<< "$CONTAINERS"
+
+sort -u "$DB_LIST" -o "$DB_LIST"
+
+# ── Pass 2: dump every database we found (own or linked) ──
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  IMG=$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null)
+  DUMP="$STAGE/db-$c.sql"
+  if echo "$c $IMG" | grep -qiE 'postgres'; then
     PGU=$(read_env "$c" POSTGRES_USER); [ -n "$PGU" ] || PGU=postgres
     PGDB=$(read_env "$c" POSTGRES_DB); [ -n "$PGDB" ] || PGDB="$PGU"
     PGP=$(read_env "$c" POSTGRES_PASSWORD)
-    DUMP="$STAGE/db-$c.sql"
     if docker exec -e PGPASSWORD="$PGP" "$c" sh -lc "pg_dump -U $PGU -d $PGDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
       echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1))
     else rm -f "$DUMP"; fi
-
-  elif echo "$NI" | grep -qiE 'mariadb|mysql|percona'; then
-    # ── MySQL / MariaDB: prefer root creds from the DB container itself ──
+  else
     RU=root
     RP=$(read_env "$c" MARIADB_ROOT_PASSWORD); [ -n "$RP" ] || RP=$(read_env "$c" MYSQL_ROOT_PASSWORD)
     MDB=$(read_env "$c" MARIADB_DATABASE); [ -n "$MDB" ] || MDB=$(read_env "$c" MYSQL_DATABASE)
-    # Fallback to the WordPress app credentials when the DB root pass is not exposed.
     if [ -z "$RP" ] && [ -n "$WP_CONTAINER" ]; then
       RU=$(read_env "$WP_CONTAINER" WORDPRESS_DB_USER)
       RP=$(read_env "$WP_CONTAINER" WORDPRESS_DB_PASSWORD)
       MDB=$(read_env "$WP_CONTAINER" WORDPRESS_DB_NAME)
     fi
     [ -n "$MDB" ] || MDB=wordpress
-    DUMP="$STAGE/db-$c.sql"
     if docker exec "$c" sh -lc "mariadb-dump --single-transaction -u$RU -p$RP $MDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
       echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1)); WP_DB="$c"
     elif docker exec "$c" sh -lc "mysqldump --single-transaction -u$RU -p$RP $MDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
       echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1)); WP_DB="$c"
     else rm -f "$DUMP"; fi
-
-  else
-    # ── Application / service container: back up its named (persistent) volumes ──
-    while IFS= read -r src; do
-      [ -n "$src" ] && [ -d "$src" ] && { echo "$src" >> "$PATHS_FILE"; VOLCOUNT=$((VOLCOUNT+1)); }
-    done < <(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Source}}{{end}}{{end}}' "$c" 2>/dev/null)
   fi
-done <<< "$CONTAINERS"
+done < "$DB_LIST"
+rm -f "$DB_LIST"
 
 sort -u "$PATHS_FILE" -o "$PATHS_FILE"
 [ -s "$PATHS_FILE" ] || { echo "RESULT=fail_nothing_to_backup"; rm -f "$PATHS_FILE"; exit 1; }

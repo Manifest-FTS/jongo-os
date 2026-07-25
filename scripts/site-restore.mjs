@@ -111,7 +111,9 @@ dump_one() { # container engine -> stdout dump (used for the safety snapshot)
   fi
 }
 
-CONTAINERS=$(docker ps -a --format '{{.Names}}' | grep -E "(^|-)$RUUID\\$" || true)
+# Whole-segment match: services are <app>-<uuid> but applications are
+# <uuid>-<deployment-ts>, so anchoring only at the end missed applications.
+CONTAINERS=$(docker ps -a --format '{{.Names}}' | grep -E "(^|-)$RUUID($|-)" || true)
 [ -n "$CONTAINERS" ] || { echo "RESULT=fail_no_containers"; exit 1; }
 
 [ -f /root/.config/restic/b2-credentials.env ] || { echo "RESULT=fail_no_b2_creds"; exit 1; }

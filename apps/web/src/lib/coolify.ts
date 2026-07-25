@@ -1714,7 +1714,36 @@ export async function hasCoolifyBackupableState(serviceUuid: string): Promise<bo
   try {
     const storages = await coolifyFetch(`/api/v1/applications/${encoded}/storages`);
     const persistent = (storages as { persistent_storages?: unknown } | null)?.persistent_storages;
-    return Array.isArray(persistent) && persistent.length > 0;
+    if (Array.isArray(persistent) && persistent.length > 0) {
+      return true;
+    }
+  } catch {
+    // Fall through to the linked-database check.
+  }
+
+  // Application whose data lives in a database ON THIS PLATFORM. Apps reach
+  // their database on a Coolify internal hostname that IS the database resource
+  // uuid, so a connection string pointing at a known resource means there is
+  // something we can back up. Apps pointing at an EXTERNAL provider (Supabase,
+  // Neon, ...) resolve to a public hostname and are correctly excluded — that
+  // data is not ours to capture.
+  try {
+    const envs = await coolifyFetch(`/api/v1/applications/${encoded}/envs`);
+    if (!Array.isArray(envs)) {
+      return false;
+    }
+    for (const raw of envs) {
+      const row = raw as Record<string, unknown>;
+      const key = String(row.key ?? row.name ?? "");
+      if (!/DATABASE_URL|DATABASE_URI|POSTGRES_URL|MYSQL_URL|DB_URL/i.test(key)) continue;
+      const value = String(row.value ?? row.real_value ?? "");
+      const host = value.match(/@([^:/?]+)/)?.[1];
+      // Coolify resource uuids are bare tokens; a dotted host is external.
+      if (host && !host.includes(".")) {
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
   }
