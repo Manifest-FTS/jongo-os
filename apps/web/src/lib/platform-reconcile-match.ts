@@ -132,3 +132,52 @@ export function shouldAbortArchiveBatch(input: {
   }
   return { abort: false, reason: "within_safe_bounds" };
 }
+
+/**
+ * Scheduled backups.
+ *
+ * Load control is the safety-critical part here: backing up many WordPress
+ * sites at once would exhaust the host (a concurrent backup already OOM-killed
+ * a deploy on this server). So the reconciler backs up at most a small number
+ * of sites per hourly pass, most-overdue first, which spreads a daily schedule
+ * naturally across the day.
+ */
+export type ScheduleCandidate = {
+  id: string;
+  slug: string;
+  backupScheduleEnabled: boolean | null;
+  backupFrequencyHours: number | null;
+  lastScheduledBackupAt: Date | null;
+};
+
+export function isBackupDue(
+  site: ScheduleCandidate,
+  opts: { now?: Date; platformDefaultEnabled?: boolean }
+): boolean {
+  const enabled = site.backupScheduleEnabled ?? opts.platformDefaultEnabled ?? false;
+  if (!enabled) return false;
+  if (!site.lastScheduledBackupAt) return true; // never run -> due
+  const hours = site.backupFrequencyHours && site.backupFrequencyHours > 0 ? site.backupFrequencyHours : 24;
+  const now = opts.now ?? new Date();
+  return now.getTime() - site.lastScheduledBackupAt.getTime() >= hours * 60 * 60 * 1000;
+}
+
+/**
+ * Pick which sites to back up this pass: only those due, most-overdue first,
+ * capped so one pass cannot fan out across the whole platform.
+ */
+export function selectDueBackups(
+  sites: ScheduleCandidate[],
+  opts: { now?: Date; platformDefaultEnabled?: boolean; maxPerRun?: number }
+): ScheduleCandidate[] {
+  const now = opts.now ?? new Date();
+  const maxPerRun = opts.maxPerRun ?? 1;
+  return sites
+    .filter((s) => isBackupDue(s, { now, platformDefaultEnabled: opts.platformDefaultEnabled }))
+    .sort((a, b) => {
+      const at = a.lastScheduledBackupAt?.getTime() ?? 0; // never-run sorts first
+      const bt = b.lastScheduledBackupAt?.getTime() ?? 0;
+      return at - bt;
+    })
+    .slice(0, Math.max(0, maxPerRun));
+}

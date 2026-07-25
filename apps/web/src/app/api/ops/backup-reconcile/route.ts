@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
-import { decideSiteArchive, shouldAbortArchiveBatch } from "@/lib/platform-reconcile-match";
+import { decideSiteArchive, shouldAbortArchiveBatch, selectDueBackups } from "@/lib/platform-reconcile-match";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { openJobLog } from "@/lib/job-log";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -170,6 +174,66 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── Scheduled backups ──
+    // At most a few per pass, most-overdue first: backing up many WordPress
+    // sites simultaneously would exhaust the host (a concurrent backup already
+    // OOM-killed a deploy here), and an hourly pass spreads a daily schedule
+    // across the day naturally.
+    const scheduleDefaultOn = (process.env.JONGO_SCHEDULED_BACKUPS || "").trim() === "true";
+    const maxBackupsPerRun = Number(process.env.JONGO_SCHEDULED_BACKUPS_PER_RUN || 1) || 1;
+    const scheduledStarted: string[] = [];
+
+    // Runs unconditionally: selectDueBackups honours per-site opt-in even when
+    // the platform default is off, so a site can enable backups on its own.
+    {
+      const scheduleRows = await db.site.findMany({
+        where: { deletedAt: null, isStagingResource: false, NOT: [{ coolifyServiceUuid: null }] },
+        select: {
+          id: true, slug: true, name: true, coolifyServiceUuid: true,
+          backupScheduleEnabled: true, backupFrequencyHours: true, lastScheduledBackupAt: true
+        }
+      });
+      const due = selectDueBackups(scheduleRows, {
+        platformDefaultEnabled: scheduleDefaultOn,
+        maxPerRun: maxBackupsPerRun
+      });
+
+      const backupScript = [
+        path.join(process.cwd(), "scripts", "site-backup.mjs"),
+        path.join(process.cwd(), "..", "scripts", "site-backup.mjs"),
+        path.join(process.cwd(), "..", "..", "scripts", "site-backup.mjs")
+      ].find((c) => existsSync(c));
+
+      for (const site of due) {
+        if (!backupScript) break;
+        const row = scheduleRows.find((r: { id: string }) => r.id === site.id);
+        const uuid = row?.coolifyServiceUuid?.trim();
+        if (!uuid) continue;
+
+        // Never stack backups for the same site.
+        const running = await (db as any).siteBackup.findFirst({
+          where: { siteId: site.id, status: "running" }
+        });
+        if (running) continue;
+
+        const record = await (db as any).siteBackup.create({
+          data: { siteId: site.id, resourceUuid: uuid, trigger: "scheduled", status: "running" }
+        });
+        // Stamp immediately so a crashed run cannot cause a retry storm.
+        await db.$executeRaw`UPDATE "Site" SET "lastScheduledBackupAt" = now() WHERE id = ${site.id}::uuid`;
+
+        const jobLog = openJobLog("site-backup");
+        const child = spawn(
+          process.execPath,
+          [backupScript, "--resource-uuid", uuid, "--backup-id", record.id,
+           "--site-slug", row.slug, "--site-name", row.name],
+          { cwd: process.cwd(), env: process.env, detached: true, stdio: ["ignore", jobLog, jobLog] }
+        );
+        child.unref();
+        scheduledStarted.push(row.slug);
+      }
+    }
+
     // ── Lifecycle sync: retire sites whose Coolify resource is gone ──
     // Opt-in (JONGO_ARCHIVE_MISSING_SITES=true). Soft delete only, after a
     // grace period, on a complete index, and refused entirely if an implausible
@@ -212,6 +276,11 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       scanned: sites.length,
+      scheduledBackups: {
+        platformDefaultEnabled: scheduleDefaultOn,
+        maxPerRun: maxBackupsPerRun,
+        started: scheduledStarted
+      },
       lifecycle: {
         indexComplete: liveIndex.complete !== false,
         archiveEnabled,
