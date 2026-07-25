@@ -1,5 +1,7 @@
 import { recordCoolifyEndpointCall, recordCoolifyInventoryResult } from "@/lib/diagnostics";
 import { detectResourceType } from "./resource-types";
+import { resolveStagingServerUuid, type ServerResolution } from "./coolify-server-resolve";
+import { encodeComposeForCoolify } from "./compose-encoding";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
 
@@ -2277,33 +2279,19 @@ export async function provisionCoolifyStagingFromProduction(
       return false;
     }
 
+    // Coolify stopped exposing server_uuid on services and id on servers, which
+    // silently broke this. See lib/coolify-server-resolve.ts for the rationale
+    // and the tests; the decision itself is kept pure and out of this closure.
+    let serverResolution: ServerResolution = { uuid: "", source: "unresolved" };
     const resolveServerUuid = async (): Promise<string> => {
-      const directServerUuid =
-        stringValue(sourceService!, ["server_uuid"], "") ||
-        (typeof sourceService!.server === "object" && sourceService!.server !== null
-          ? stringValue(sourceService!.server as Record<string, unknown>, ["uuid"], "")
-          : "");
-      if (directServerUuid) {
-        return directServerUuid;
-      }
-
-      const serverId = stringValue(sourceService!, ["server_id"], "");
-      if (!serverId) {
-        return "";
-      }
-
+      let servers: Array<Record<string, unknown>> = [];
       try {
-        const serversPayload = await coolifyFetch("/api/v1/servers");
-        const servers = ensureArray(serversPayload);
-        const matched = servers.find((server) => stringValue(server, ["id"], "") === serverId);
-        if (!matched) {
-          return "";
-        }
-
-        return stringValue(matched, ["uuid"], "");
+        servers = ensureArray(await coolifyFetch("/api/v1/servers"));
       } catch {
-        return "";
+        servers = [];
       }
+      serverResolution = resolveStagingServerUuid({ service: sourceService, servers });
+      return serverResolution.uuid;
     };
 
     const resolveDestinationUuid = async (serverUuid: string): Promise<string> => {
@@ -2361,6 +2349,16 @@ export async function provisionCoolifyStagingFromProduction(
       : "";
 
     if (!serverUuid || !resolvedProjectId) {
+      // Record WHY. Returning false with no attempt logged is what made this
+      // look like the toggle simply did nothing.
+      provisioningAttempts.push({
+        path: "/api/v1/services",
+        method: "POST",
+        ok: false,
+        error: !serverUuid
+          ? serverResolution.reason ?? "Could not determine which Coolify server to create the staging copy on."
+          : "Could not determine which Coolify project the staging copy belongs to."
+      });
       return false;
     }
 
@@ -2384,9 +2382,13 @@ export async function provisionCoolifyStagingFromProduction(
 
     const candidateBodies: Record<string, unknown>[] = [];
     if (dockerComposeRaw) {
+      // Coolify hands compose back as raw YAML but refuses it on the way in
+      // unless base64 encoded, so posting it verbatim always 422'd and staging
+      // fell through to the one-click template — a fresh service rather than a
+      // copy of production.
       candidateBodies.push({
         ...baseBody,
-        docker_compose_raw: dockerComposeRaw
+        docker_compose_raw: encodeComposeForCoolify(dockerComposeRaw)
       });
     }
     if (serviceType) {
@@ -2394,6 +2396,17 @@ export async function provisionCoolifyStagingFromProduction(
         ...baseBody,
         type: serviceType
       });
+    }
+
+    if (candidateBodies.length === 0) {
+      provisioningAttempts.push({
+        path: "/api/v1/services",
+        method: "POST",
+        ok: false,
+        error:
+          "Coolify did not report a service type or compose file for this app, so there was nothing to copy for staging."
+      });
+      return false;
     }
 
     for (const body of candidateBodies) {
