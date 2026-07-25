@@ -240,6 +240,11 @@ model SiteBackup {
   resourceType  String? // 'wordpress' | 'service' | 'application' | 'database'
   volumeCount   Int?
   databaseCount Int?
+  // Tables actually captured across all dumps. Distinguishes "backed up a
+  // database" from "backed up an EMPTY database": the latter is a valid,
+  // complete, ~600-byte dump that would otherwise be reported as a healthy
+  // restore point holding nothing.
+  databaseTables Int?
 
   // WordPress-only content metadata (null for other resource types).
   posts     Int?
