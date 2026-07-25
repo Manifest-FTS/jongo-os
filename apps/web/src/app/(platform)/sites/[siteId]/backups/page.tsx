@@ -8,6 +8,7 @@ import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { auth } from "@/lib/auth.config";
 import RestoreTestButton from "@/components/RestoreTestButton";
 import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPanel";
+import { summarizeBackupSchedule } from "@/lib/backup-schedule";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -311,6 +312,33 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       })()
     : [];
 
+  // Read the schedule straight from the row rather than threading it through
+  // SiteWorkspaceRecord — a missing field in one of that type's select blocks
+  // fails silently as `undefined`, which would quietly show "off" to a customer
+  // whose backups are actually on.
+  const scheduleSummary = await (async () => {
+    try {
+      const { getDb } = await import("@/lib/db");
+      const prisma = await getDb();
+      if (!prisma) return null;
+      const row = await (prisma as any).site.findUnique({
+        where: { id: workspace.id },
+        select: {
+          backupScheduleEnabled: true,
+          backupFrequencyHours: true,
+          lastScheduledBackupAt: true
+        }
+      });
+      if (!row) return null;
+      return summarizeBackupSchedule({
+        ...row,
+        platformDefaultEnabled: (process.env.JONGO_SCHEDULED_BACKUPS || "").trim() === "true"
+      });
+    } catch {
+      return null;
+    }
+  })();
+
   const ownershipLabel = `${workspace.clientName} / ${workspace.name}`;
   const readModel = buildBackupReadModelSnapshot({
     ownership: ownershipLabel,
@@ -405,6 +433,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         canManage={permissionSnapshot.canManageBackups && isBackupable}
         supported={isBackupable}
         unsupportedReason={isStagingResource ? "staging" : "no_state"}
+        schedule={scheduleSummary}
         page={backupPage}
         pageSize={backupPageSize}
         total={backupTotal}
