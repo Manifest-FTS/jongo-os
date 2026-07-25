@@ -31,6 +31,11 @@ export type LiveResourceIndex = {
   all: LiveResource[];
   /** Direct lookup for per-site checks (staging detection). */
   byUuidResource?: Map<string, LiveResource>;
+  /**
+   * False when any resource list failed to load. Absence from an incomplete
+   * index is NOT evidence that a resource was deleted.
+   */
+  complete?: boolean;
 };
 
 export type SiteForReconcile = {
@@ -67,4 +72,63 @@ export function findRepairTarget(index: LiveResourceIndex, site: SiteForReconcil
     if (inProject.length > 0) candidates = inProject;
   }
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
+ * Lifecycle sync: a Site whose Coolify resource is gone should stop appearing
+ * in jongo. This is deliberately conservative, because the failure mode is
+ * destroying customer records (backup catalogue, collaborators, telemetry) over
+ * a transient API hiccup.
+ *
+ * Three guards:
+ *   1. Only act on a COMPLETE resource index (see LiveResourceIndex.complete).
+ *   2. Require the resource to have been missing continuously for graceDays.
+ *   3. Archive is a SOFT delete, so it is reversible.
+ * A batch-level circuit breaker (see shouldAbortArchiveBatch) is the fourth.
+ */
+export type ArchiveDecision = { archive: boolean; reason: string };
+
+export function decideSiteArchive(input: {
+  missingSince: Date | null;
+  now?: Date;
+  graceDays?: number;
+  indexComplete?: boolean;
+}): ArchiveDecision {
+  const graceDays = input.graceDays ?? 7;
+  const now = input.now ?? new Date();
+
+  if (input.indexComplete === false) {
+    return { archive: false, reason: "index_incomplete" };
+  }
+  if (!input.missingSince) {
+    return { archive: false, reason: "not_missing" };
+  }
+  const ageMs = now.getTime() - input.missingSince.getTime();
+  const graceMs = graceDays * 24 * 60 * 60 * 1000;
+  if (ageMs < graceMs) {
+    return { archive: false, reason: "within_grace_period" };
+  }
+  return { archive: true, reason: "missing_beyond_grace" };
+}
+
+/**
+ * Circuit breaker: if a large share of sites suddenly look deleted, that is far
+ * more likely a Coolify/API problem than a real mass deletion. Refuse the whole
+ * batch rather than cascade.
+ */
+export function shouldAbortArchiveBatch(input: {
+  candidates: number;
+  totalSites: number;
+  maxFraction?: number;
+  minTotal?: number;
+}): { abort: boolean; reason: string } {
+  const maxFraction = input.maxFraction ?? 0.25;
+  const minTotal = input.minTotal ?? 4;
+  if (input.totalSites < minTotal) {
+    return { abort: false, reason: "too_few_sites_to_judge" };
+  }
+  if (input.candidates / input.totalSites > maxFraction) {
+    return { abort: true, reason: "too_many_candidates_suspect_api_failure" };
+  }
+  return { abort: false, reason: "within_safe_bounds" };
 }

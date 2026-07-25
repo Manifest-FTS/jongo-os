@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
+import { decideSiteArchive, shouldAbortArchiveBatch } from "@/lib/platform-reconcile-match";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -169,9 +170,56 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── Lifecycle sync: retire sites whose Coolify resource is gone ──
+    // Opt-in (JONGO_ARCHIVE_MISSING_SITES=true). Soft delete only, after a
+    // grace period, on a complete index, and refused entirely if an implausible
+    // share of sites look deleted at once.
+    const archiveEnabled = (process.env.JONGO_ARCHIVE_MISSING_SITES || "").trim() === "true";
+    const graceDays = Number(process.env.JONGO_ARCHIVE_GRACE_DAYS || 7);
+    let archiveCandidates: Array<{ id: string; slug: string }> = [];
+    let archived = 0;
+    let archiveAborted: string | null = null;
+
+    if (liveIndex.complete !== false) {
+      const stale = await db.site.findMany({
+        where: { deletedAt: null, NOT: [{ resourceMissingSince: null }] },
+        select: { id: true, slug: true, resourceMissingSince: true }
+      });
+      archiveCandidates = stale
+        .filter((row: { resourceMissingSince: Date | null }) =>
+          decideSiteArchive({
+            missingSince: row.resourceMissingSince,
+            graceDays: Number.isFinite(graceDays) ? graceDays : 7,
+            indexComplete: true
+          }).archive
+        )
+        .map((row: { id: string; slug: string }) => ({ id: row.id, slug: row.slug }));
+
+      const breaker = shouldAbortArchiveBatch({
+        candidates: archiveCandidates.length,
+        totalSites: sites.length
+      });
+      if (breaker.abort) {
+        archiveAborted = breaker.reason;
+      } else if (archiveEnabled) {
+        for (const candidate of archiveCandidates) {
+          await db.$executeRaw`UPDATE "Site" SET "deletedAt" = now() WHERE id = ${candidate.id}::uuid AND "deletedAt" IS NULL`;
+          archived += 1;
+        }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       scanned: sites.length,
+      lifecycle: {
+        indexComplete: liveIndex.complete !== false,
+        archiveEnabled,
+        graceDays,
+        candidates: archiveCandidates.map((c) => c.slug),
+        archived,
+        abortedReason: archiveAborted
+      },
       alreadyConfigured,
       autoProvisioned,
       skipped,

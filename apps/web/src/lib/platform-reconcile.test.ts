@@ -63,3 +63,45 @@ describe("findRepairTarget", () => {
     expect(target).toBeNull();
   });
 });
+
+import { decideSiteArchive, shouldAbortArchiveBatch } from "./platform-reconcile-match";
+
+describe("decideSiteArchive", () => {
+  const now = new Date("2026-08-01T00:00:00Z");
+  const daysAgo = (n: number) => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
+
+  it("never archives on an incomplete index, however old the miss", () => {
+    const d = decideSiteArchive({ missingSince: daysAgo(90), now, indexComplete: false });
+    expect(d.archive).toBe(false);
+    expect(d.reason).toBe("index_incomplete");
+  });
+
+  it("does not archive a resource that is present", () => {
+    expect(decideSiteArchive({ missingSince: null, now }).archive).toBe(false);
+  });
+
+  it("waits out the grace period", () => {
+    expect(decideSiteArchive({ missingSince: daysAgo(3), now, graceDays: 7 }).archive).toBe(false);
+  });
+
+  it("archives once missing beyond the grace period", () => {
+    const d = decideSiteArchive({ missingSince: daysAgo(8), now, graceDays: 7 });
+    expect(d.archive).toBe(true);
+    expect(d.reason).toBe("missing_beyond_grace");
+  });
+});
+
+describe("shouldAbortArchiveBatch", () => {
+  it("aborts when a suspiciously large share looks deleted", () => {
+    const r = shouldAbortArchiveBatch({ candidates: 30, totalSites: 45 });
+    expect(r.abort).toBe(true);
+  });
+
+  it("allows a small number of genuine deletions", () => {
+    expect(shouldAbortArchiveBatch({ candidates: 2, totalSites: 45 }).abort).toBe(false);
+  });
+
+  it("does not judge tiny installs", () => {
+    expect(shouldAbortArchiveBatch({ candidates: 2, totalSites: 2 }).abort).toBe(false);
+  });
+});
