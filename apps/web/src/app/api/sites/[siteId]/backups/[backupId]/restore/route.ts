@@ -10,6 +10,19 @@ import { openJobLog } from "@/lib/job-log";
 
 export const runtime = "nodejs";
 
+/**
+ * The database backing jongo itself, derived from its own connection string.
+ * Coolify exposes internal databases on a hostname that IS the resource uuid,
+ * so a dotted host means jongo runs on an external database and no app on the
+ * platform can clobber it.
+ */
+function resolveControlPlaneDatabaseUuid(): string | null {
+  const host = (process.env.DATABASE_URL || "").match(/@([^:/?]+)/)?.[1];
+  return host && !host.includes(".") ? host : null;
+}
+
+
+
 type Params = { params: Promise<{ siteId: string; backupId: string }> };
 
 function resolveScriptPath(name: string): string | null {
@@ -99,6 +112,62 @@ async function restoreBackup(request: Request, { params }: Params) {
       { ok: false, reason: restorability.reason, message: restorability.message },
       { status: 409 }
     );
+  }
+
+  // Blast-radius check. Apps that point at a standalone Coolify database do not
+  // own it, so restoring the app silently rewrites data other apps depend on —
+  // including, for the control-plane app, jongo's own database. Named and
+  // acknowledged, never discovered afterwards.
+  const resourceUuid = workspace.coolifyServiceUuid?.trim() ?? "";
+  if (resourceUuid) {
+    try {
+      const { resolveCoolifyDatabaseUuids } = await import("@/lib/coolify");
+      const { assessSharedDatabaseRestore } = await import("@/lib/shared-database-guard");
+      const databaseUuids = await resolveCoolifyDatabaseUuids(resourceUuid);
+
+      if (databaseUuids.length > 0) {
+        const allSites = await (db as any).site.findMany({
+          where: { deletedAt: null },
+          select: { id: true, slug: true, name: true, coolifyServiceUuid: true }
+        });
+        const assessment = assessSharedDatabaseRestore({
+          site: {
+            id: workspace.id,
+            slug: workspace.slug ?? String(siteId),
+            name: workspace.name ?? "",
+            coolifyServiceUuid: resourceUuid
+          },
+          databaseUuids,
+          allSites: allSites ?? [],
+          controlPlaneDatabaseUuid: resolveControlPlaneDatabaseUuid()
+        });
+
+        if (assessment.shared && body?.acknowledgeSharedDatabase !== true) {
+          return NextResponse.json(
+            {
+              ok: false,
+              reason: "shared_database",
+              message: assessment.warning,
+              affected: assessment.affected,
+              includesControlPlane: assessment.includesControlPlane
+            },
+            { status: 409 }
+          );
+        }
+      }
+    } catch {
+      // A guard that cannot run must not silently disappear: refuse rather than
+      // proceed blind into a restore whose blast radius is unknown.
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "shared_database_check_failed",
+          message:
+            "Could not determine which databases this restore would overwrite, so it was not started. Please try again."
+        },
+        { status: 503 }
+      );
+    }
   }
 
   const scriptPath = resolveScriptPath("site-restore.mjs");
