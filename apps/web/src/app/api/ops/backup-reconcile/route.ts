@@ -68,7 +68,16 @@ export async function POST(request: Request) {
 
     let alreadyConfigured = 0;
     let autoProvisioned = 0;
+    let skipped = 0;
     let failed = 0;
+
+    // Outcomes that are NOT failures: there is simply nothing for Coolify to
+    // schedule. Counting these as failed made 16 benign apps mask 7 real ones.
+    const BENIGN_NOTES = new Set([
+      "no_databases_detected",
+      "no_addressable_databases",
+      "service_databases_not_schedulable"
+    ]);
     const results: Array<{
       siteId: string;
       slug: string;
@@ -133,6 +142,8 @@ export async function POST(request: Request) {
         const reconciliation = await ensureCoolifyAppBackupSchedules(appUuid);
         if (reconciliation.note === "already_configured") {
           alreadyConfigured += 1;
+        } else if (reconciliation.note && BENIGN_NOTES.has(reconciliation.note)) {
+          skipped += 1;
         } else if (reconciliation.configuredAfter) {
           autoProvisioned += 1;
         } else {
@@ -163,6 +174,7 @@ export async function POST(request: Request) {
       scanned: sites.length,
       alreadyConfigured,
       autoProvisioned,
+      skipped,
       failed,
       selfHealing: {
         mappingsRepaired,

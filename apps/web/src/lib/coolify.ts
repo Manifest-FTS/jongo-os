@@ -2726,6 +2726,7 @@ export type BackupScheduleProvisionResult = {
     | "already_configured"
     | "no_databases_detected"
     | "no_addressable_databases"
+    | "service_databases_not_schedulable"
     | "provision_attempted"
     | "provision_failed";
 };
@@ -3058,8 +3059,18 @@ export async function ensureCoolifyAppBackupSchedules(appUuid: string): Promise<
     };
   }
 
+  // Coolify's API cannot schedule backups for service-EMBEDDED databases (a
+  // WordPress site's MariaDB): queryDatabaseByUuidWithinTeam() only iterates
+  // STANDALONE_DATABASE_MODELS, so POST /databases/<service-db-uuid>/backups
+  // answers 404 "Database not found". Attempting them anyway produced a
+  // permanent provision_failed for every WordPress site and masked the real
+  // failures. These sites are protected by jongo's own full-site backups
+  // (files + database to Backblaze) instead, so skip rather than fail.
+  const serviceDatabasesMissing = missingCoverage.filter((item) => item.source === "embedded_service");
+  const schedulableMissing = missingCoverage.filter((item) => item.source !== "embedded_service");
+
   const databaseIds = [...new Set(
-    missingCoverage
+    schedulableMissing
       .map((item) => item.resourceId)
       .filter((value) => value && !value.startsWith("service:"))
   )];
@@ -3074,7 +3085,9 @@ export async function ensureCoolifyAppBackupSchedules(appUuid: string): Promise<
       targetDatabases: [],
       updatedDatabases: [],
       failedDatabases: [],
-      note: "no_addressable_databases"
+      note: serviceDatabasesMissing.length > 0
+        ? "service_databases_not_schedulable"
+        : "no_addressable_databases"
     };
   }
 
@@ -3092,8 +3105,12 @@ export async function ensureCoolifyAppBackupSchedules(appUuid: string): Promise<
   }
 
   const inventoryAfter = await getCoolifyAppBackupInventory(appUuid);
-  const missingAfter = inventoryAfter.databaseCoverage.filter((item) => !item.hasSchedule);
-  const configuredAfter = inventoryAfter.configured && missingAfter.length === 0;
+  // Judge success only on databases Coolify can actually schedule; a leftover
+  // service-embedded database is expected, not a failure.
+  const missingAfter = inventoryAfter.databaseCoverage.filter(
+    (item) => !item.hasSchedule && item.source !== "embedded_service"
+  );
+  const configuredAfter = missingAfter.length === 0;
 
   return {
     appUuid,
