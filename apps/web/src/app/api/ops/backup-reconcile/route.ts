@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules } from "@/lib/coolify";
+import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -47,11 +48,21 @@ export async function POST(request: Request) {
         id: true,
         slug: true,
         name: true,
-        coolifyServiceUuid: true
+        coolifyServiceUuid: true,
+        coolifyProjectId: true,
+        stagingEnabled: true
       },
       orderBy: { updatedAt: "desc" },
       take: limit
     });
+
+    // Platform self-healing runs for EVERY site each pass, so apps created
+    // later are reconciled automatically with no manual step. The live resource
+    // index is fetched once per run rather than per site.
+    const liveIndex = await buildLiveResourceIndex();
+    let mappingsRepaired = 0;
+    let mappingsStaleUnresolved = 0;
+    let stagingEnvsEnsured = 0;
 
     let alreadyConfigured = 0;
     let autoProvisioned = 0;
@@ -65,9 +76,40 @@ export async function POST(request: Request) {
     }> = [];
 
     for (const site of sites) {
-      const appUuid = site.coolifyServiceUuid?.trim();
+      let appUuid = site.coolifyServiceUuid?.trim();
       if (!appUuid) {
         continue;
+      }
+
+      // Self-heal before reconciling backups: a repaired mapping changes which
+      // Coolify resource the backup schedules should be checked against.
+      try {
+        const healed = await reconcileSite(
+          {
+            id: site.id,
+            name: site.name,
+            coolifyServiceUuid: site.coolifyServiceUuid,
+            coolifyProjectId: site.coolifyProjectId,
+            stagingEnabled: site.stagingEnabled
+          },
+          liveIndex,
+          async (siteId, uuid) => {
+            // Raw UPDATE: resilient to schema drift, and touches only this column.
+            await db.$executeRaw`UPDATE "Site" SET "coolifyServiceUuid" = ${uuid}, "updatedAt" = now() WHERE id = ${siteId}::uuid`;
+          }
+        );
+        if (healed.mappingRepaired) {
+          mappingsRepaired += 1;
+          appUuid = healed.mappingRepaired.to;
+        }
+        if (healed.notes.includes("mapping_stale_unresolved")) {
+          mappingsStaleUnresolved += 1;
+        }
+        if (healed.stagingEnvironmentEnsured) {
+          stagingEnvsEnsured += 1;
+        }
+      } catch {
+        // Healing is best-effort; never block backup reconciliation.
       }
 
       try {
@@ -105,6 +147,11 @@ export async function POST(request: Request) {
       alreadyConfigured,
       autoProvisioned,
       failed,
+      selfHealing: {
+        mappingsRepaired,
+        mappingsStaleUnresolved,
+        stagingEnvsEnsured
+      },
       results
     });
   } catch (error) {
