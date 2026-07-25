@@ -78,6 +78,12 @@ async function runReconcileOnce() {
   // Scheduled backups are the whole point of this loop, so they belong in the
   // line. Without them a pass that started nothing, or silently skipped every
   // site, looks identical to a healthy one.
+  // A cold run whose Coolify calls all came back empty reports scanned=43 with
+  // zero of everything and failed=0 — indistinguishable from a healthy pass
+  // unless the completeness flag is on the line.
+  const lifecycle = payload && typeof payload === "object" ? payload.lifecycle : null;
+  const indexComplete = lifecycle && typeof lifecycle === "object" ? lifecycle.indexComplete !== false : true;
+
   const sched = payload && typeof payload === "object" ? payload.scheduledBackups : null;
   const started = sched && Array.isArray(sched.started) ? sched.started : [];
   const skipped = sched && Array.isArray(sched.skipped) ? sched.skipped : [];
@@ -86,7 +92,8 @@ async function runReconcileOnce() {
     `[backup-reconcile] scanned=${scanned} autoProvisioned=${autoProvisioned} ` +
       `alreadyConfigured=${alreadyConfigured} failed=${failed} ` +
       `backupsStarted=${started.length}${started.length ? `(${started.join(",")})` : ""} ` +
-      `backupsSkipped=${skipped.length}${skipped.length ? `(${skipped.join(",")})` : ""}`
+      `backupsSkipped=${skipped.length}${skipped.length ? `(${skipped.join(",")})` : ""}` +
+      (indexComplete ? "" : " WARNING=incomplete_resource_index")
   );
 }
 
