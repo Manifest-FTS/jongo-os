@@ -115,6 +115,11 @@ export default function SiteBackupsPanel({
   const [createComment, setCreateComment] = useState("");
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [savingSchedule, setSavingSchedule] = useState(false);
+  // Set when the API refuses a restore because the database is shared; holds
+  // the blast radius so the second confirmation can name it.
+  const [sharedWarning, setSharedWarning] = useState<
+    { backupId: string; message: string; includesControlPlane: boolean } | null
+  >(null);
 
   // Close the actions menu on outside click / Escape.
   useEffect(() => {
@@ -225,7 +230,7 @@ export default function SiteBackupsPanel({
     }
   }
 
-  async function restore(backupId: string) {
+  async function restore(backupId: string, acknowledgeSharedDatabase = false) {
     setBusy(true);
     try {
       const res = await fetch(
@@ -233,10 +238,20 @@ export default function SiteBackupsPanel({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ confirm: "RESTORE" })
+          body: JSON.stringify({ confirm: "RESTORE", acknowledgeSharedDatabase })
         }
       );
       const data = await res.json().catch(() => ({}));
+      // The restore would also overwrite another app's database. Ask again,
+      // naming what else gets rolled back, rather than reporting a bare error.
+      if (res.status === 409 && data?.reason === "shared_database") {
+        setSharedWarning({
+          backupId,
+          message: String(data.message ?? ""),
+          includesControlPlane: Boolean(data.includesControlPlane)
+        });
+        return;
+      }
       if (!res.ok && res.status !== 202) {
         push({ tone: "error", title: "Couldn't start restore", text: data.message ?? data.error ?? "Please try again.", ttl: 0 });
       } else {
@@ -552,6 +567,26 @@ export default function SiteBackupsPanel({
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={Boolean(sharedWarning)}
+        title={sharedWarning?.includesControlPlane ? "This restore affects all of Jongo" : "This database is shared"}
+        body={sharedWarning?.message ?? ""}
+        warning={
+          sharedWarning?.includesControlPlane
+            ? "Everything on the platform rolls back to this snapshot, including the record of this restore."
+            : "The other apps listed will be rolled back too. There is no separate undo for them."
+        }
+        confirmPhrase="RESTORE"
+        confirmLabel="Restore anyway"
+        busy={busy}
+        onConfirm={() => {
+          const pending = sharedWarning;
+          setSharedWarning(null);
+          if (pending) void restore(pending.backupId, true);
+        }}
+        onCancel={() => setSharedWarning(null)}
+      />
 
       <ConfirmDialog
         open={pendingRestore !== null}

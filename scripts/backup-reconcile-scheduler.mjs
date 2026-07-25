@@ -75,8 +75,18 @@ async function runReconcileOnce() {
     ? payload.failed
     : 0;
 
+  // Scheduled backups are the whole point of this loop, so they belong in the
+  // line. Without them a pass that started nothing, or silently skipped every
+  // site, looks identical to a healthy one.
+  const sched = payload && typeof payload === "object" ? payload.scheduledBackups : null;
+  const started = sched && Array.isArray(sched.started) ? sched.started : [];
+  const skipped = sched && Array.isArray(sched.skipped) ? sched.skipped : [];
+
   console.log(
-    `[backup-reconcile] scanned=${scanned} autoProvisioned=${autoProvisioned} alreadyConfigured=${alreadyConfigured} failed=${failed}`
+    `[backup-reconcile] scanned=${scanned} autoProvisioned=${autoProvisioned} ` +
+      `alreadyConfigured=${alreadyConfigured} failed=${failed} ` +
+      `backupsStarted=${started.length}${started.length ? `(${started.join(",")})` : ""} ` +
+      `backupsSkipped=${skipped.length}${skipped.length ? `(${skipped.join(",")})` : ""}`
   );
 }
 
@@ -88,10 +98,30 @@ async function runWithSchedule() {
   console.log(`[backup-reconcile] scheduler enabled (every ${intervalMinutes} minute(s))`);
 
   if (runImmediate) {
-    try {
-      await runReconcileOnce();
-    } catch (error) {
-      console.error(`[backup-reconcile] initial run failed: ${error instanceof Error ? error.message : String(error)}`);
+    // The scheduler starts alongside the web server, so the first attempt
+    // usually loses the race and 502s. Without a retry the platform is blind
+    // for a full interval after every deploy, which is exactly when a backup
+    // is most likely to be due.
+    const attempts = toPositiveInt(process.env.BACKUP_RECONCILE_STARTUP_ATTEMPTS, 5);
+    const backoffMs = toPositiveInt(process.env.BACKUP_RECONCILE_STARTUP_BACKOFF_MS, 15000);
+    let ran = false;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await runReconcileOnce();
+        ran = true;
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt === attempts) {
+          console.error(`[backup-reconcile] initial run failed after ${attempts} attempts: ${message}`);
+        } else {
+          console.warn(`[backup-reconcile] initial run attempt ${attempt}/${attempts} failed (${message}); retrying in ${backoffMs}ms`);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
+      }
+    }
+    if (ran) {
+      console.log("[backup-reconcile] initial run completed");
     }
   }
 

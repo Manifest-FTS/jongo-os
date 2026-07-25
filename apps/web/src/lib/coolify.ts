@@ -1776,6 +1776,49 @@ export async function describeCoolifyBackupCapability(serviceUuid: string): Prom
   }
 }
 
+/**
+ * The database resource uuids this app would write to on restore.
+ *
+ * Used by the shared-database guard: an app that points at a standalone Coolify
+ * database does not own that database, and restoring the app overwrites it for
+ * everyone else pointing at it too.
+ */
+export async function resolveCoolifyDatabaseUuids(serviceUuid: string): Promise<string[]> {
+  const trimmed = serviceUuid?.trim();
+  if (!trimmed) return [];
+  const encoded = encodeURIComponent(trimmed);
+  const found = new Set<string>();
+
+  // A standalone database resource writes to itself.
+  try {
+    const payload = await coolifyFetch(`/api/v1/databases/${encoded}`);
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      found.add(trimmed);
+    }
+  } catch {
+    // Not a database.
+  }
+
+  // An application writes to whatever internal database its env points at.
+  try {
+    const envs = await coolifyFetch(`/api/v1/applications/${encoded}/envs`);
+    if (Array.isArray(envs)) {
+      for (const raw of envs) {
+        const row = raw as Record<string, unknown>;
+        const key = String(row.key ?? row.name ?? "");
+        if (!/DATABASE_URL|DATABASE_URI|POSTGRES_URL|MYSQL_URL|DB_URL/i.test(key)) continue;
+        const host = String(row.value ?? row.real_value ?? "").match(/@([^:/?]+)/)?.[1];
+        // A dotted host is an external provider, not a resource we would touch.
+        if (host && !host.includes(".")) found.add(host);
+      }
+    }
+  } catch {
+    // Not an application, or envs unavailable.
+  }
+
+  return Array.from(found);
+}
+
 /** Boolean form, for callers that only gate on eligibility. */
 export async function hasCoolifyBackupableState(serviceUuid: string): Promise<boolean> {
   return (await describeCoolifyBackupCapability(serviceUuid)).backupable;
