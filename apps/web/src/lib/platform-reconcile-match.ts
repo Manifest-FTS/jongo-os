@@ -163,6 +163,29 @@ export function isBackupDue(
 }
 
 /**
+ * Every due site, most-overdue first and UNCAPPED.
+ *
+ * The caller walks this in order and applies the cap itself, because whether a
+ * site is actually backupable is only knowable from Coolify (an app with no
+ * volumes and no database has nothing to snapshot). Capping before that check
+ * would let ineligible sites consume the whole per-run budget and starve the
+ * sites that can genuinely be backed up.
+ */
+export function orderDueBackups(
+  sites: ScheduleCandidate[],
+  opts: { now?: Date; platformDefaultEnabled?: boolean }
+): ScheduleCandidate[] {
+  const now = opts.now ?? new Date();
+  return sites
+    .filter((s) => isBackupDue(s, { now, platformDefaultEnabled: opts.platformDefaultEnabled }))
+    .sort((a, b) => {
+      const at = a.lastScheduledBackupAt?.getTime() ?? 0; // never-run sorts first
+      const bt = b.lastScheduledBackupAt?.getTime() ?? 0;
+      return at - bt;
+    });
+}
+
+/**
  * Pick which sites to back up this pass: only those due, most-overdue first,
  * capped so one pass cannot fan out across the whole platform.
  */
@@ -170,14 +193,5 @@ export function selectDueBackups(
   sites: ScheduleCandidate[],
   opts: { now?: Date; platformDefaultEnabled?: boolean; maxPerRun?: number }
 ): ScheduleCandidate[] {
-  const now = opts.now ?? new Date();
-  const maxPerRun = opts.maxPerRun ?? 1;
-  return sites
-    .filter((s) => isBackupDue(s, { now, platformDefaultEnabled: opts.platformDefaultEnabled }))
-    .sort((a, b) => {
-      const at = a.lastScheduledBackupAt?.getTime() ?? 0; // never-run sorts first
-      const bt = b.lastScheduledBackupAt?.getTime() ?? 0;
-      return at - bt;
-    })
-    .slice(0, Math.max(0, maxPerRun));
+  return orderDueBackups(sites, opts).slice(0, Math.max(0, opts.maxPerRun ?? 1));
 }
