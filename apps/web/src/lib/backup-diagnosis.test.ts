@@ -44,6 +44,23 @@ describe("buildBackupDiagnosis", () => {
     expect(d.notApplicableDetail).toMatch(/staging copy/i);
   });
 
+  it("never treats an undetermined answer as nothing to back up", () => {
+    // Coolify rate limits (429) under a platform-wide sweep. Treating that as
+    // "stateless" is what hid backups from apps that have a database.
+    const d = buildBackupDiagnosis({
+      backupable: false,
+      capabilityReason: "unknown",
+      isConfigured: false,
+      hasSuccessfulBackup: false
+    });
+    expect(d.applicable).toBe(true);
+    expect(d.notApplicableDetail).toBe("");
+    expect(d.configuredDetail).toMatch(/could not reach/i);
+    // Must not alarm either: we do not know that anything is wrong.
+    expect(d.showNotConfiguredAlarm).toBe(false);
+    expect(d.successTone).toBe("unknown");
+  });
+
   it("still alarms on a real app that holds data and has no schedule", () => {
     // The alarm must survive: this is the case it exists for.
     const d = buildBackupDiagnosis({

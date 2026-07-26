@@ -2,6 +2,7 @@ import { recordCoolifyEndpointCall, recordCoolifyInventoryResult } from "@/lib/d
 import { detectResourceType } from "./resource-types";
 import { resolveStagingServerUuid, type ServerResolution } from "./coolify-server-resolve";
 import { encodeComposeForCoolify } from "./compose-encoding";
+import { detectDatabaseEnv } from "./database-env-detect";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
 
@@ -1707,21 +1708,34 @@ export type BackupCapability = {
     | "persistent_volumes"
     | "linked_database"
     | "external_database"
-    | "stateless";
+    | "stateless"
+    // Could not be determined — Coolify was unreachable or rate limiting.
+    // MUST NOT be treated as "no data": that hides backups from apps that have
+    // a database, which is how a 429 turned into "this app has nothing to lose".
+    | "unknown";
   /** Hostname only, never the connection string. Set for external_database. */
   externalHost?: string;
 };
 
 export async function describeCoolifyBackupCapability(serviceUuid: string): Promise<BackupCapability> {
   if (!serviceUuid?.trim()) {
-    return { backupable: false, reason: "stateless" };
+    return { backupable: false, reason: "unknown" };
   }
   const encoded = encodeURIComponent(serviceUuid);
 
+  // Every lookup below can fail for reasons that say nothing about the app —
+  // Coolify rate limits (429) under the load of a platform-wide sweep. A failed
+  // probe must end as "unknown", never as "this app has no data".
+  let anyProbeFailed = false;
+
   // Service with application containers?
-  const names = await resolveCoolifyServiceApplicationNames(serviceUuid);
-  if (names.length > 0) {
-    return { backupable: true, reason: "service_containers" };
+  try {
+    const names = await resolveCoolifyServiceApplicationNames(serviceUuid);
+    if (names.length > 0) {
+      return { backupable: true, reason: "service_containers" };
+    }
+  } catch {
+    anyProbeFailed = true;
   }
 
   // Standalone database resource?
@@ -1731,7 +1745,9 @@ export async function describeCoolifyBackupCapability(serviceUuid: string): Prom
       return { backupable: true, reason: "standalone_database" };
     }
   } catch {
-    // Not a database — fall through.
+    // A 404 here legitimately means "not a database", but a 429 does not, and
+    // they are indistinguishable at this layer — so record the doubt.
+    anyProbeFailed = true;
   }
 
   // Application with persistent storage (data volumes)?
@@ -1742,7 +1758,7 @@ export async function describeCoolifyBackupCapability(serviceUuid: string): Prom
       return { backupable: true, reason: "persistent_volumes" };
     }
   } catch {
-    // Fall through to the linked-database check.
+    anyProbeFailed = true;
   }
 
   // Application whose data lives in a database ON THIS PLATFORM. Apps reach
@@ -1753,28 +1769,23 @@ export async function describeCoolifyBackupCapability(serviceUuid: string): Prom
   try {
     const envs = await coolifyFetch(`/api/v1/applications/${encoded}/envs`);
     if (!Array.isArray(envs)) {
-      return { backupable: false, reason: "stateless" };
+      return { backupable: false, reason: "unknown" };
     }
-    let externalHost: string | undefined;
-    for (const raw of envs) {
-      const row = raw as Record<string, unknown>;
-      const key = String(row.key ?? row.name ?? "");
-      if (!/DATABASE_URL|DATABASE_URI|POSTGRES_URL|MYSQL_URL|DB_URL/i.test(key)) continue;
-      const value = String(row.value ?? row.real_value ?? "");
-      const host = value.match(/@([^:/?]+)/)?.[1];
-      if (!host) continue;
-      // Coolify resource uuids are bare tokens; a dotted host is external.
-      if (!host.includes(".")) {
-        return { backupable: true, reason: "linked_database" };
-      }
-      // Keep looking — a local database elsewhere in the list still wins.
-      if (!externalHost) externalHost = host;
+    // See lib/database-env-detect.ts: matching only five exact URL names missed
+    // host-style config and provider-marker-only apps, which showed as "no data
+    // to back up" for apps that very much had data.
+    const detected = detectDatabaseEnv(envs as Array<Record<string, unknown>>);
+    if (detected.kind === "internal") {
+      return { backupable: true, reason: "linked_database" };
     }
-    return externalHost
-      ? { backupable: false, reason: "external_database", externalHost }
-      : { backupable: false, reason: "stateless" };
+    if (detected.kind === "external") {
+      return { backupable: false, reason: "external_database", externalHost: detected.externalHost };
+    }
+    // Only now, having actually read the environment, can "no data" be claimed —
+    // and only if nothing earlier failed.
+    return { backupable: false, reason: anyProbeFailed ? "unknown" : "stateless" };
   } catch {
-    return { backupable: false, reason: "stateless" };
+    return { backupable: false, reason: "unknown" };
   }
 }
 
@@ -1805,13 +1816,11 @@ export async function resolveCoolifyDatabaseUuids(serviceUuid: string): Promise<
   try {
     const envs = await coolifyFetch(`/api/v1/applications/${encoded}/envs`);
     if (Array.isArray(envs)) {
-      for (const raw of envs) {
-        const row = raw as Record<string, unknown>;
-        const key = String(row.key ?? row.name ?? "");
-        if (!/DATABASE_URL|DATABASE_URI|POSTGRES_URL|MYSQL_URL|DB_URL/i.test(key)) continue;
-        const host = String(row.value ?? row.real_value ?? "").match(/@([^:/?]+)/)?.[1];
-        // A dotted host is an external provider, not a resource we would touch.
-        if (host && !host.includes(".")) found.add(host);
+      // Same detector as the capability check: the restore guard must see every
+      // database the backup would write to, or it would under-report the blast
+      // radius for an app wired up host-style.
+      for (const host of detectDatabaseEnv(envs as Array<Record<string, unknown>>).internalHosts) {
+        found.add(host);
       }
     }
   } catch {
