@@ -190,7 +190,13 @@ export async function POST(request: Request) {
     // back up still shows a Backups tab it can do nothing with. One API call
     // per app per day, and it covers apps added later with no extra wiring.
     const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1000;
+    // Bounded per pass and paced, so a 43-app sweep cannot exhaust Coolify's
+    // rate limit. The hourly cadence still refreshes every app well inside the
+    // 24h TTL.
+    const CAPABILITY_MAX_PER_RUN = Number(process.env.JONGO_CAPABILITY_MAX_PER_RUN || 12) || 12;
+    const CAPABILITY_PROBE_DELAY_MS = Number(process.env.JONGO_CAPABILITY_PROBE_DELAY_MS || 400) || 400;
     let capabilityRefreshed = 0;
+    let capabilityUnknown = 0;
     {
       const rows = await db.site.findMany({
         where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
@@ -203,12 +209,23 @@ export async function POST(request: Request) {
         if (Date.now() - checkedAt <= CAPABILITY_TTL_MS) continue;
         try {
           const cap = await describeCoolifyBackupCapability(uuid);
+          // Never persist "unknown". Coolify rate limits (429) under a
+          // platform-wide sweep, and caching that as an answer is what made
+          // apps with a database report having nothing to back up.
+          if (cap.reason === "unknown") {
+            capabilityUnknown += 1;
+            continue;
+          }
           await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${cap.backupable}, "backupCapabilityReason" = ${cap.reason}, "backupEligibleAt" = now() WHERE id = ${row.id}::uuid`;
           capabilityRefreshed += 1;
         } catch {
-          // Leave the previous answer in place rather than caching a guess made
-          // during an API blip — the UI keeps showing what it showed before.
+          capabilityUnknown += 1;
         }
+        // Space the probes out: this loop is the heaviest API user on the
+        // platform, and hammering Coolify is what produced the 429s that made
+        // the answers wrong in the first place.
+        await new Promise((resolve) => setTimeout(resolve, CAPABILITY_PROBE_DELAY_MS));
+        if (capabilityRefreshed + capabilityUnknown >= CAPABILITY_MAX_PER_RUN) break;
       }
     }
 
@@ -217,6 +234,7 @@ export async function POST(request: Request) {
     // app and listed beside the app whose data it holds. Rebuilt each pass from
     // live links, so it self-corrects and covers apps added later.
     let databasesNested = 0;
+    let nestingProbes = 0;
     try {
       const all = await db.site.findMany({
         where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
@@ -244,9 +262,12 @@ export async function POST(request: Request) {
       for (const row of all) {
         const uuid = row.coolifyServiceUuid?.trim();
         if (!uuid) continue;
+        if (nestingProbes >= CAPABILITY_MAX_PER_RUN) break; // same API budget
         let linked: string[] = [];
         try {
           linked = await resolveCoolifyDatabaseUuids(uuid);
+          nestingProbes += 1;
+          await new Promise((resolve) => setTimeout(resolve, CAPABILITY_PROBE_DELAY_MS));
         } catch {
           continue; // leave existing nesting alone rather than unparent on a blip
         }
@@ -395,6 +416,7 @@ export async function POST(request: Request) {
         started: scheduledStarted,
         skipped: scheduleSkipped,
         capabilityRefreshed,
+        capabilityUnknown,
         databasesNested
       },
       lifecycle: {

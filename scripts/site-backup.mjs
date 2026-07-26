@@ -160,8 +160,9 @@ while IFS= read -r c; do
       [ -n "$h" ] || continue
       if docker ps --format '{{.Names}}' | grep -qx "$h"; then echo "$h" >> "$DB_LIST"; fi
     done < <(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" 2>/dev/null \
-      | grep -oiE '^(DATABASE_URL|DATABASE_URI|POSTGRES_URL|MYSQL_URL|DB_URL)=.*' \
-      | sed -E 's#^[^=]+=##; s#^[a-zA-Z+]+://[^@]*@##; s#[:/?].*##' | sort -u)
+      | grep -oiE '^[A-Z0-9_]*(DATABASE|POSTGRES|POSTGRESQL|MYSQL|MARIADB|MONGO|DB)[A-Z0-9_]*_(URL|URI|HOST|HOSTNAME)=.*' \\
+      | grep -viE '^REDIS' \\
+      | sed -E 's#^[^=]+=##; s#^[a-zA-Z+]+://[^@]*@##; s#^[a-zA-Z+]+://##; s#[:/?].*##' | sort -u)
   fi
 done <<< "$CONTAINERS"
 

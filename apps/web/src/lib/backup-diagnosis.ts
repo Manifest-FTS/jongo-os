@@ -25,7 +25,8 @@ export type BackupCapabilityReason =
   | "persistent_volumes"
   | "linked_database"
   | "external_database"
-  | "stateless";
+  | "stateless"
+  | "unknown";
 
 export type BackupDiagnosis = {
   /** False when backup health is not a meaningful question for this app. */
@@ -63,6 +64,20 @@ export function buildBackupDiagnosis(input: {
       configuredTone: "unknown",
       configuredDetail: "Not applicable to staging copies.",
       successTone: "unknown"
+    };
+  }
+
+  // Undetermined (Coolify unreachable or rate limiting) is NOT "nothing to back
+  // up". Keep the normal checks so nothing is hidden or declared safe on a gap
+  // in information.
+  if (!input.backupable && input.capabilityReason === "unknown") {
+    return {
+      applicable: true,
+      showNotConfiguredAlarm: false,
+      notApplicableDetail: "",
+      configuredTone: "unknown",
+      configuredDetail: "Could not reach the platform to check this app's backup configuration.",
+      successTone: input.hasSuccessfulBackup ? "healthy" : "unknown"
     };
   }
 
