@@ -59,13 +59,38 @@ export default async function SiteWorkspaceLayout({
   const primaryEnvironmentLabel = isStagingWorkspace ? "Staging" : "Prod";
   const showStagingReadyTag = !isStagingWorkspace && showStagingTab;
 
+  // Whether to offer backup features at all. Read from the cached columns the
+  // hourly reconciler maintains, so this costs no Coolify call per page load.
+  //
+  // Hidden only when we positively KNOW there is nothing to back up. A null
+  // (never evaluated) or an app whose data lives in an external database keeps
+  // the tab: the first must not make features vanish on an unknown, and the
+  // second needs somewhere to be told its data is NOT backed up here.
+  const backupCapability = await (async () => {
+    try {
+      const { getDb } = await import("@/lib/db");
+      const prisma = await getDb();
+      if (!prisma) return null;
+      return await (prisma as any).site.findUnique({
+        where: { id: site.id },
+        select: { backupEligible: true, backupCapabilityReason: true, isStagingResource: true }
+      });
+    } catch {
+      return null;
+    }
+  })();
+  const showBackupsTab = !(
+    backupCapability?.isStagingResource === true ||
+    (backupCapability?.backupEligible === false && backupCapability?.backupCapabilityReason === "stateless")
+  );
+
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/apps/${siteId}`, match: "exact" },
     ...(!isWordPress ? [{ name: "Deployments", href: `/apps/${siteId}/deployments` } as WorkspaceTab] : []),
     ...(!isWordPress && isAdminViewer ? [{ name: "Integrations", href: `/apps/${siteId}/integrations` } as WorkspaceTab] : []),
     ...(isWordPress ? [{ name: "Plugins", href: `/apps/${siteId}/plugins` } as WorkspaceTab] : []),
     ...(showStagingTab ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
-    { name: "Backups", href: `/apps/${siteId}/backups` },
+    ...(showBackupsTab ? [{ name: "Backups", href: `/apps/${siteId}/backups` } as WorkspaceTab] : []),
     ...(isAdminViewer ? [{ name: "Analytics", href: `/apps/${siteId}/analytics` } as WorkspaceTab] : []),
     { name: "Advanced", href: `/apps/${siteId}/settings` }
   ];

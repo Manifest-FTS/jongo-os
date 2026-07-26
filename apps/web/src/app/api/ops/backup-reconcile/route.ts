@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoolifyBackupCapability } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
 import { decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
@@ -184,6 +184,97 @@ export async function POST(request: Request) {
     const scheduledStarted: string[] = [];
     const scheduleSkipped: string[] = [];
 
+    // Keep every app's backup capability fresh, not just ones due for a backup.
+    // The UI reads these cached columns to decide whether to offer backup
+    // features at all, so a stale or absent value means an app with nothing to
+    // back up still shows a Backups tab it can do nothing with. One API call
+    // per app per day, and it covers apps added later with no extra wiring.
+    const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1000;
+    let capabilityRefreshed = 0;
+    {
+      const rows = await db.site.findMany({
+        where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
+        select: { id: true, coolifyServiceUuid: true, backupEligibleAt: true }
+      });
+      for (const row of rows) {
+        const uuid = row.coolifyServiceUuid?.trim();
+        if (!uuid) continue;
+        const checkedAt = row.backupEligibleAt ? new Date(row.backupEligibleAt).getTime() : 0;
+        if (Date.now() - checkedAt <= CAPABILITY_TTL_MS) continue;
+        try {
+          const cap = await describeCoolifyBackupCapability(uuid);
+          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${cap.backupable}, "backupCapabilityReason" = ${cap.reason}, "backupEligibleAt" = now() WHERE id = ${row.id}::uuid`;
+          capabilityRefreshed += 1;
+        } catch {
+          // Leave the previous answer in place rather than caching a guess made
+          // during an API blip — the UI keeps showing what it showed before.
+        }
+      }
+    }
+
+    // Nest database resources inside the app that owns them. Coolify registers
+    // a standalone database as its own resource, so it was imported as a peer
+    // app and listed beside the app whose data it holds. Rebuilt each pass from
+    // live links, so it self-corrects and covers apps added later.
+    let databasesNested = 0;
+    try {
+      const all = await db.site.findMany({
+        where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
+        select: {
+          id: true,
+          coolifyServiceUuid: true,
+          parentSiteId: true,
+          backupCapabilityReason: true
+        }
+      });
+      const siteByUuid = new Map<string, { id: string; parentSiteId: string | null; reason: string | null }>();
+      for (const row of all) {
+        const uuid = row.coolifyServiceUuid?.trim();
+        if (uuid) {
+          siteByUuid.set(uuid, {
+            id: row.id,
+            parentSiteId: row.parentSiteId ?? null,
+            reason: row.backupCapabilityReason ?? null
+          });
+        }
+      }
+
+      const { resolveCoolifyDatabaseUuids } = await import("@/lib/coolify");
+      const desiredParent = new Map<string, string>(); // db site id -> owning site id
+      for (const row of all) {
+        const uuid = row.coolifyServiceUuid?.trim();
+        if (!uuid) continue;
+        let linked: string[] = [];
+        try {
+          linked = await resolveCoolifyDatabaseUuids(uuid);
+        } catch {
+          continue; // leave existing nesting alone rather than unparent on a blip
+        }
+        for (const dbUuid of linked) {
+          if (dbUuid === uuid) continue; // a database does not own itself
+          const target = siteByUuid.get(dbUuid);
+          if (!target) continue;
+          // Only ever nest a resource Coolify calls a standalone database.
+          // Nesting hides it from the app list, so a wrong parent would make a
+          // real app disappear; requiring a positive database classification
+          // means an unknown resource stays visible at the top level.
+          if (target.reason !== "standalone_database") continue;
+          // First app to claim it wins; a shared database keeps a stable home
+          // rather than flipping between owners on every pass.
+          if (!desiredParent.has(target.id)) desiredParent.set(target.id, row.id);
+        }
+      }
+
+      for (const [dbSiteId, ownerId] of desiredParent) {
+        const current = all.find((r: { id: string }) => r.id === dbSiteId)?.parentSiteId ?? null;
+        if (current === ownerId) continue;
+        await db.$executeRaw`UPDATE "Site" SET "parentSiteId" = ${ownerId}::uuid WHERE id = ${dbSiteId}::uuid`;
+        databasesNested += 1;
+      }
+    } catch {
+      // Nesting is presentational; never let it break reconciliation.
+    }
+
     // Runs unconditionally: orderDueBackups honours per-site opt-in even when
     // the platform default is off, so a site can enable backups on its own.
     {
@@ -302,7 +393,9 @@ export async function POST(request: Request) {
         platformDefaultEnabled: scheduleDefaultOn,
         maxPerRun: maxBackupsPerRun,
         started: scheduledStarted,
-        skipped: scheduleSkipped
+        skipped: scheduleSkipped,
+        capabilityRefreshed,
+        databasesNested
       },
       lifecycle: {
         indexComplete: liveIndex.complete !== false,
