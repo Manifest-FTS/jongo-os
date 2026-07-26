@@ -212,6 +212,69 @@ export async function POST(request: Request) {
       }
     }
 
+    // Nest database resources inside the app that owns them. Coolify registers
+    // a standalone database as its own resource, so it was imported as a peer
+    // app and listed beside the app whose data it holds. Rebuilt each pass from
+    // live links, so it self-corrects and covers apps added later.
+    let databasesNested = 0;
+    try {
+      const all = await db.site.findMany({
+        where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
+        select: {
+          id: true,
+          coolifyServiceUuid: true,
+          parentSiteId: true,
+          backupCapabilityReason: true
+        }
+      });
+      const siteByUuid = new Map<string, { id: string; parentSiteId: string | null; reason: string | null }>();
+      for (const row of all) {
+        const uuid = row.coolifyServiceUuid?.trim();
+        if (uuid) {
+          siteByUuid.set(uuid, {
+            id: row.id,
+            parentSiteId: row.parentSiteId ?? null,
+            reason: row.backupCapabilityReason ?? null
+          });
+        }
+      }
+
+      const { resolveCoolifyDatabaseUuids } = await import("@/lib/coolify");
+      const desiredParent = new Map<string, string>(); // db site id -> owning site id
+      for (const row of all) {
+        const uuid = row.coolifyServiceUuid?.trim();
+        if (!uuid) continue;
+        let linked: string[] = [];
+        try {
+          linked = await resolveCoolifyDatabaseUuids(uuid);
+        } catch {
+          continue; // leave existing nesting alone rather than unparent on a blip
+        }
+        for (const dbUuid of linked) {
+          if (dbUuid === uuid) continue; // a database does not own itself
+          const target = siteByUuid.get(dbUuid);
+          if (!target) continue;
+          // Only ever nest a resource Coolify calls a standalone database.
+          // Nesting hides it from the app list, so a wrong parent would make a
+          // real app disappear; requiring a positive database classification
+          // means an unknown resource stays visible at the top level.
+          if (target.reason !== "standalone_database") continue;
+          // First app to claim it wins; a shared database keeps a stable home
+          // rather than flipping between owners on every pass.
+          if (!desiredParent.has(target.id)) desiredParent.set(target.id, row.id);
+        }
+      }
+
+      for (const [dbSiteId, ownerId] of desiredParent) {
+        const current = all.find((r: { id: string }) => r.id === dbSiteId)?.parentSiteId ?? null;
+        if (current === ownerId) continue;
+        await db.$executeRaw`UPDATE "Site" SET "parentSiteId" = ${ownerId}::uuid WHERE id = ${dbSiteId}::uuid`;
+        databasesNested += 1;
+      }
+    } catch {
+      // Nesting is presentational; never let it break reconciliation.
+    }
+
     // Runs unconditionally: orderDueBackups honours per-site opt-in even when
     // the platform default is off, so a site can enable backups on its own.
     {
@@ -331,7 +394,8 @@ export async function POST(request: Request) {
         maxPerRun: maxBackupsPerRun,
         started: scheduledStarted,
         skipped: scheduleSkipped,
-        capabilityRefreshed
+        capabilityRefreshed,
+        databasesNested
       },
       lifecycle: {
         indexComplete: liveIndex.complete !== false,

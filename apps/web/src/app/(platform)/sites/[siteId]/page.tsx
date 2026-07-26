@@ -257,6 +257,24 @@ export default async function SiteOverviewPage({ params }: Params) {
       : undefined
   });
 
+  // Databases nested under this app by the reconciler. Coolify registers a
+  // standalone database as its own resource, so without this it appeared as a
+  // separate app beside the one whose data it holds.
+  const nestedDatabases = await (async () => {
+    try {
+      const { getDb } = await import("@/lib/db");
+      const prisma = await getDb();
+      if (!prisma) return [];
+      return await (prisma as any).site.findMany({
+        where: { parentSiteId: workspace.id, deletedAt: null },
+        select: { id: true, slug: true, name: true, coolifyServiceUuid: true, status: true },
+        orderBy: { name: "asc" }
+      });
+    } catch {
+      return [];
+    }
+  })();
+
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
@@ -376,6 +394,40 @@ export default async function SiteOverviewPage({ params }: Params) {
     <div style={{ display: "grid", gap: "1rem" }}>
       <section style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
         <div style={{ flex: "3 1 680px", minWidth: "320px" }}>
+          {nestedDatabases.length > 0 ? (
+            <article className="card" style={{ marginBottom: "1rem" }}>
+              <h3 className="card-title">
+                {nestedDatabases.length === 1 ? "Database" : "Databases"}
+              </h3>
+              <p className="card-muted" style={{ marginTop: "0.25rem" }}>
+                {nestedDatabases.length === 1
+                  ? "This app stores its data here. It is backed up as part of this app."
+                  : "This app stores its data here. They are backed up as part of this app."}
+              </p>
+              <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem" }}>
+                {nestedDatabases.map((entry: { id: string; slug: string | null; name: string; status?: string | null }) => (
+                  <div
+                    key={entry.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "0.75rem",
+                      border: "1px solid var(--border)",
+                      borderRadius: "10px",
+                      padding: "0.6rem 0.8rem"
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{entry.name}</span>
+                    <span className={`status-chip ${entry.status === "healthy" ? "healthy" : "unknown"}`}>
+                      {entry.status === "healthy" ? "Healthy" : "Database"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ) : null}
+
           <article className="card">
             <h3 className="card-title">Domains</h3>
             <div style={{ display: "grid", gap: "0.8rem", marginTop: "0.8rem" }}>

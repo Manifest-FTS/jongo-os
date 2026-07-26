@@ -183,6 +183,13 @@ model Site {
   // backupEligible so the UI can decide what to show without a Coolify call on
   // every page load.
   backupCapabilityReason String?
+  // Set on a database resource that belongs to another app: Coolify registers
+  // standalone databases as their own resources, so they were imported as
+  // peer apps and listed next to the app that owns them. Maintained by the
+  // hourly reconciler from live Coolify links, so apps added later nest with
+  // no manual step. Deliberately a plain id, not a relation, to avoid a
+  // self-referential cascade on a table that is soft-deleted.
+  parentSiteId          String?   @db.Uuid
   // Rate limit for scheduled-backup failure email. A site that is broken fails
   // every night, and a nightly alert trains people to ignore alerts.
   backupAlertSentAt     DateTime?

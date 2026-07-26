@@ -1463,7 +1463,9 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
 
     // --- DB sites (user-scoped) ---
     const orgWhere: any = { deletedAt: null };
-    const siteWhere: any = { deletedAt: null };
+    // Standalone databases that belong inside an app are nested there by the
+    // reconciler and must not also appear as peer apps in the directory.
+    const siteWhere: any = { deletedAt: null, parentSiteId: null };
     if (scopeApplied && scopedUserId) {
       orgWhere.OR = [
         { ownerId: scopedUserId },
