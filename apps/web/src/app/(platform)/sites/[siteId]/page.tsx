@@ -359,6 +359,16 @@ export default async function SiteOverviewPage({ params }: Params) {
         nextStep: "Verify platform API tokens and base URL runtime env values."
       }
     ];
+
+    // An app with no data to back up should not be asked backup questions at
+    // all. Leaving the rows in as "unknown" still reads as an unfinished setup
+    // step, which is the thing being fixed.
+    if (backupNotApplicable) {
+      readinessChecks = readinessChecks.filter(
+        (check) => check.key !== "backup-configured" && check.key !== "recent-backup"
+      );
+    }
+
     readinessSummary = summarizeReadiness(readinessChecks);
   }
 

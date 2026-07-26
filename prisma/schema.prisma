@@ -179,6 +179,10 @@ model Site {
   // path re-checks live before it ever starts a run.
   backupEligible        Boolean?
   backupEligibleAt      DateTime?
+  // Why: "stateless", "external_database", "linked_database", ... Cached beside
+  // backupEligible so the UI can decide what to show without a Coolify call on
+  // every page load.
+  backupCapabilityReason String?
   // Rate limit for scheduled-backup failure email. A site that is broken fails
   // every night, and a nightly alert trains people to ignore alerts.
   backupAlertSentAt     DateTime?

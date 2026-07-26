@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoolifyBackupCapability } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
 import { decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
@@ -184,6 +184,34 @@ export async function POST(request: Request) {
     const scheduledStarted: string[] = [];
     const scheduleSkipped: string[] = [];
 
+    // Keep every app's backup capability fresh, not just ones due for a backup.
+    // The UI reads these cached columns to decide whether to offer backup
+    // features at all, so a stale or absent value means an app with nothing to
+    // back up still shows a Backups tab it can do nothing with. One API call
+    // per app per day, and it covers apps added later with no extra wiring.
+    const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1000;
+    let capabilityRefreshed = 0;
+    {
+      const rows = await db.site.findMany({
+        where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
+        select: { id: true, coolifyServiceUuid: true, backupEligibleAt: true }
+      });
+      for (const row of rows) {
+        const uuid = row.coolifyServiceUuid?.trim();
+        if (!uuid) continue;
+        const checkedAt = row.backupEligibleAt ? new Date(row.backupEligibleAt).getTime() : 0;
+        if (Date.now() - checkedAt <= CAPABILITY_TTL_MS) continue;
+        try {
+          const cap = await describeCoolifyBackupCapability(uuid);
+          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${cap.backupable}, "backupCapabilityReason" = ${cap.reason}, "backupEligibleAt" = now() WHERE id = ${row.id}::uuid`;
+          capabilityRefreshed += 1;
+        } catch {
+          // Leave the previous answer in place rather than caching a guess made
+          // during an API blip — the UI keeps showing what it showed before.
+        }
+      }
+    }
+
     // Runs unconditionally: orderDueBackups honours per-site opt-in even when
     // the platform default is off, so a site can enable backups on its own.
     {
@@ -302,7 +330,8 @@ export async function POST(request: Request) {
         platformDefaultEnabled: scheduleDefaultOn,
         maxPerRun: maxBackupsPerRun,
         started: scheduledStarted,
-        skipped: scheduleSkipped
+        skipped: scheduleSkipped,
+        capabilityRefreshed
       },
       lifecycle: {
         indexComplete: liveIndex.complete !== false,
