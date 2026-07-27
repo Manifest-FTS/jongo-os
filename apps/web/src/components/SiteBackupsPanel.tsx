@@ -55,6 +55,8 @@ type Props = {
   externalDatabaseHost?: string;
   /** Automatic-backup schedule; null when it could not be read. */
   schedule?: ScheduleSummary | null;
+  /** Set when the action is offered without having verified what the app holds. */
+  unverifiedNote?: string;
   page: number;
   pageSize: number;
   total: number;
@@ -102,6 +104,7 @@ export default function SiteBackupsPanel({
   unsupportedReason = "no_state",
   externalDatabaseHost,
   schedule = null,
+  unverifiedNote,
   page,
   pageSize,
   total
@@ -321,6 +324,15 @@ export default function SiteBackupsPanel({
           </button>
         ) : null}
       </div>
+
+      {unverifiedNote ? (
+        <div className="bk-schedule" style={{ marginBottom: "0.9rem" }}>
+          <div className="bk-schedule__text">
+            <span className="status-chip unknown">Not verified</span>
+            <span className="bk-schedule__detail">{unverifiedNote}</span>
+          </div>
+        </div>
+      ) : null}
 
       {supported && schedule ? (
         <div className="bk-schedule">
