@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { openJobLog } from "@/lib/job-log";
+import { isRateLimitError } from "@/lib/coolify-rate-limit";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -91,6 +92,65 @@ export async function POST(request: Request) {
       note?: string;
     }> = [];
 
+    // Capability first, deliberately. Coolify allows 200 requests/minute per
+    // token and a full pass exceeds that, so whatever runs last gets nothing but
+    // 429s. This is what the UI reads to decide whether to offer backups at all,
+    // so it takes the budget before the schedule sweep, which can wait an hour.
+    // Keep every app's backup capability fresh, not just ones due for a backup.
+    // The UI reads these cached columns to decide whether to offer backup
+    // features at all, so a stale or absent value means an app with nothing to
+    // back up still shows a Backups tab it can do nothing with. One API call
+    // per app per day, and it covers apps added later with no extra wiring.
+    const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1000;
+    // Bounded per pass and paced, so a 43-app sweep cannot exhaust Coolify's
+    // rate limit. The hourly cadence still refreshes every app well inside the
+    // 24h TTL.
+    const CAPABILITY_MAX_PER_RUN = Number(process.env.JONGO_CAPABILITY_MAX_PER_RUN || 20) || 20;
+    const CAPABILITY_PROBE_DELAY_MS = Number(process.env.JONGO_CAPABILITY_PROBE_DELAY_MS || 400) || 400;
+    let capabilityRefreshed = 0;
+    let capabilityUnknown = 0;
+    // True when Coolify's 200/min limit was hit; the pass stops early and the
+    // next hourly run continues where this one left off.
+    let rateLimited = false;
+    {
+      const rows = await db.site.findMany({
+        where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
+        select: { id: true, coolifyServiceUuid: true, backupEligibleAt: true }
+      });
+      for (const row of rows) {
+        const uuid = row.coolifyServiceUuid?.trim();
+        if (!uuid) continue;
+        const checkedAt = row.backupEligibleAt ? new Date(row.backupEligibleAt).getTime() : 0;
+        if (Date.now() - checkedAt <= CAPABILITY_TTL_MS) continue;
+        try {
+          const cap = await describeCoolifyBackupCapability(uuid);
+          // Never persist "unknown". Coolify rate limits (429) under a
+          // platform-wide sweep, and caching that as an answer is what made
+          // apps with a database report having nothing to back up.
+          if (cap.reason === "unknown") {
+            capabilityUnknown += 1;
+            continue;
+          }
+          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${cap.backupable}, "backupCapabilityReason" = ${cap.reason}, "backupEligibleAt" = now() WHERE id = ${row.id}::uuid`;
+          capabilityRefreshed += 1;
+        } catch (error) {
+          capabilityUnknown += 1;
+          // Once rate limited, every further probe is wasted and keeps the
+          // limiter pinned. Stop and let the next hourly pass continue.
+          if (isRateLimitError(error)) {
+            rateLimited = true;
+            break;
+          }
+        }
+        // Space the probes out: this loop is the heaviest API user on the
+        // platform, and hammering Coolify is what produced the 429s that made
+        // the answers wrong in the first place.
+        await new Promise((resolve) => setTimeout(resolve, CAPABILITY_PROBE_DELAY_MS));
+        if (capabilityRefreshed + capabilityUnknown >= CAPABILITY_MAX_PER_RUN) break;
+      }
+    }
+
+
     for (const site of sites) {
       let appUuid = site.coolifyServiceUuid?.trim();
       if (!appUuid) {
@@ -162,7 +222,12 @@ export async function POST(request: Request) {
           configuredAfter: reconciliation.configuredAfter,
           note: reconciliation.note
         });
-      } catch {
+      } catch (error) {
+        if (isRateLimitError(error)) {
+          rateLimited = true;
+          results.push({ siteId: site.id, slug: site.slug, appUuid, configuredAfter: false, note: "rate_limited" });
+          break;
+        }
         failed += 1;
         results.push({
           siteId: site.id,
@@ -183,51 +248,6 @@ export async function POST(request: Request) {
     const maxBackupsPerRun = Number(process.env.JONGO_SCHEDULED_BACKUPS_PER_RUN || 1) || 1;
     const scheduledStarted: string[] = [];
     const scheduleSkipped: string[] = [];
-
-    // Keep every app's backup capability fresh, not just ones due for a backup.
-    // The UI reads these cached columns to decide whether to offer backup
-    // features at all, so a stale or absent value means an app with nothing to
-    // back up still shows a Backups tab it can do nothing with. One API call
-    // per app per day, and it covers apps added later with no extra wiring.
-    const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1000;
-    // Bounded per pass and paced, so a 43-app sweep cannot exhaust Coolify's
-    // rate limit. The hourly cadence still refreshes every app well inside the
-    // 24h TTL.
-    const CAPABILITY_MAX_PER_RUN = Number(process.env.JONGO_CAPABILITY_MAX_PER_RUN || 20) || 20;
-    const CAPABILITY_PROBE_DELAY_MS = Number(process.env.JONGO_CAPABILITY_PROBE_DELAY_MS || 400) || 400;
-    let capabilityRefreshed = 0;
-    let capabilityUnknown = 0;
-    {
-      const rows = await db.site.findMany({
-        where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
-        select: { id: true, coolifyServiceUuid: true, backupEligibleAt: true }
-      });
-      for (const row of rows) {
-        const uuid = row.coolifyServiceUuid?.trim();
-        if (!uuid) continue;
-        const checkedAt = row.backupEligibleAt ? new Date(row.backupEligibleAt).getTime() : 0;
-        if (Date.now() - checkedAt <= CAPABILITY_TTL_MS) continue;
-        try {
-          const cap = await describeCoolifyBackupCapability(uuid);
-          // Never persist "unknown". Coolify rate limits (429) under a
-          // platform-wide sweep, and caching that as an answer is what made
-          // apps with a database report having nothing to back up.
-          if (cap.reason === "unknown") {
-            capabilityUnknown += 1;
-            continue;
-          }
-          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${cap.backupable}, "backupCapabilityReason" = ${cap.reason}, "backupEligibleAt" = now() WHERE id = ${row.id}::uuid`;
-          capabilityRefreshed += 1;
-        } catch {
-          capabilityUnknown += 1;
-        }
-        // Space the probes out: this loop is the heaviest API user on the
-        // platform, and hammering Coolify is what produced the 429s that made
-        // the answers wrong in the first place.
-        await new Promise((resolve) => setTimeout(resolve, CAPABILITY_PROBE_DELAY_MS));
-        if (capabilityRefreshed + capabilityUnknown >= CAPABILITY_MAX_PER_RUN) break;
-      }
-    }
 
     // Nest database resources inside the app that owns them. Coolify registers
     // a standalone database as its own resource, so it was imported as a peer
@@ -268,7 +288,8 @@ export async function POST(request: Request) {
           linked = await resolveCoolifyDatabaseUuids(uuid);
           nestingProbes += 1;
           await new Promise((resolve) => setTimeout(resolve, CAPABILITY_PROBE_DELAY_MS));
-        } catch {
+        } catch (error) {
+          if (isRateLimitError(error)) { rateLimited = true; break; }
           continue; // leave existing nesting alone rather than unparent on a blip
         }
         for (const dbUuid of linked) {
@@ -417,7 +438,8 @@ export async function POST(request: Request) {
         skipped: scheduleSkipped,
         capabilityRefreshed,
         capabilityUnknown,
-        databasesNested
+        databasesNested,
+        rateLimited
       },
       lifecycle: {
         indexComplete: liveIndex.complete !== false,
