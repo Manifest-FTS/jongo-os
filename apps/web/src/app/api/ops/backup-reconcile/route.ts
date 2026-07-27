@@ -193,7 +193,7 @@ export async function POST(request: Request) {
     // Bounded per pass and paced, so a 43-app sweep cannot exhaust Coolify's
     // rate limit. The hourly cadence still refreshes every app well inside the
     // 24h TTL.
-    const CAPABILITY_MAX_PER_RUN = Number(process.env.JONGO_CAPABILITY_MAX_PER_RUN || 12) || 12;
+    const CAPABILITY_MAX_PER_RUN = Number(process.env.JONGO_CAPABILITY_MAX_PER_RUN || 20) || 20;
     const CAPABILITY_PROBE_DELAY_MS = Number(process.env.JONGO_CAPABILITY_PROBE_DELAY_MS || 400) || 400;
     let capabilityRefreshed = 0;
     let capabilityUnknown = 0;

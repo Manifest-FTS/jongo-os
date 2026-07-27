@@ -10,6 +10,7 @@ import RestoreTestButton from "@/components/RestoreTestButton";
 import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPanel";
 import { summarizeBackupSchedule } from "@/lib/backup-schedule";
 import { buildBackupDiagnosis } from "@/lib/backup-diagnosis";
+import { resolveBackupViewCapability } from "@/lib/backup-view-capability";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -112,15 +113,54 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   // Backup eligibility: any resource with persistent state (service or database),
   // not just WordPress. isWordPressService is kept only to choose which metric
   // columns to display (posts/pages/plugins vs volumes/databases).
-  const [isWordPressService, capability] = appUuid
-    ? await Promise.all([isCoolifyWordPressService(appUuid), describeCoolifyBackupCapability(appUuid)])
-    : [false, { backupable: false, reason: "stateless" as const }];
-  const hasBackupableState = capability.backupable;
+  const isWordPressService = appUuid ? await isCoolifyWordPressService(appUuid) : false;
 
   // Staging resources are restored from their production counterpart, so they
   // do not get their own backups. Flag is maintained by the hourly reconciler.
   const isStagingResource = Boolean(workspace.isStagingResource);
-  const isBackupable = hasBackupableState && !isStagingResource;
+
+  // Prefer the answer the reconciler cached: it costs no Coolify call, and this
+  // page probing live on every render is what made a rate-limited moment look
+  // like "this app has nothing to back up". Only probe when nothing is cached.
+  const cachedCapability = await (async () => {
+    try {
+      const { getDb } = await import("@/lib/db");
+      const prisma = await getDb();
+      if (!prisma) return null;
+      return await (prisma as any).site.findUnique({
+        where: { id: workspace.id },
+        select: { backupEligible: true, backupCapabilityReason: true }
+      });
+    } catch {
+      return null;
+    }
+  })();
+
+  const needsLiveProbe =
+    !isStagingResource &&
+    Boolean(appUuid) &&
+    (typeof cachedCapability?.backupEligible !== "boolean" ||
+      !cachedCapability?.backupCapabilityReason ||
+      cachedCapability.backupCapabilityReason === "unknown");
+
+  const liveCapability = needsLiveProbe && appUuid
+    ? await describeCoolifyBackupCapability(appUuid)
+    : null;
+
+  const view = resolveBackupViewCapability({
+    cachedBackupable: cachedCapability?.backupEligible ?? null,
+    cachedReason: cachedCapability?.backupCapabilityReason ?? null,
+    liveBackupable: liveCapability?.backupable ?? null,
+    liveReason: liveCapability?.reason ?? null,
+    isStagingResource
+  });
+
+  const capability = { backupable: view.backupable, reason: view.reason, externalHost: liveCapability?.externalHost };
+  const hasBackupableState = view.backupable;
+  // Show the section when there is something to show, and allow the action
+  // whenever we are not certain there is nothing — the create API arbitrates.
+  const isBackupable = view.showBackupFeatures;
+  const allowBackupAction = view.allowBackupAction;
   const backupReadiness = getBackupReadiness(inventory, appUuid);
 
   const isConfigured = inventory?.configured ?? false;
@@ -453,7 +493,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       <SiteBackupsPanel
         siteId={siteId}
         backups={siteBackupRows}
-        canManage={permissionSnapshot.canManageBackups && isBackupable}
+        canManage={permissionSnapshot.canManageBackups && allowBackupAction}
         supported={isBackupable}
         unsupportedReason={
           isStagingResource
@@ -464,6 +504,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         }
         externalDatabaseHost={"externalHost" in capability ? capability.externalHost : undefined}
         schedule={scheduleSummary}
+        unverifiedNote={view.unverifiedNote}
         page={backupPage}
         pageSize={backupPageSize}
         total={backupTotal}
