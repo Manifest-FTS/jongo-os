@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { openJobLog } from "@/lib/job-log";
-import { isRateLimitError } from "@/lib/coolify-rate-limit";
+import { isRateLimitError, isRateLimited } from "@/lib/coolify-rate-limit";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -66,7 +66,17 @@ export async function POST(request: Request) {
     // Platform self-healing runs for EVERY site each pass, so apps created
     // later are reconciled automatically with no manual step. The live resource
     // index is fetched once per run rather than per site.
+    // True when Coolify's 200/min limit was hit; the pass stops early and the
+    // next hourly run continues where this one left off.
+    let rateLimited = false;
+
     const liveIndex = await buildLiveResourceIndex();
+    // An incomplete index means Coolify was already refusing calls before this
+    // pass began. Everything downstream would be guesswork, so record it up
+    // front instead of reporting a sweep that could not have worked.
+    if (liveIndex.complete === false && isRateLimited()) {
+      rateLimited = true;
+    }
     let mappingsRepaired = 0;
     let mappingsStaleUnresolved = 0;
     let stagingEnvsEnsured = 0;
@@ -109,13 +119,16 @@ export async function POST(request: Request) {
     // backups at all, so it takes the budget before the schedule sweep, which
     // can wait an hour. Bounded and paced for the same reason.
     const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1000;
-    const CAPABILITY_MAX_PER_RUN = Number(process.env.JONGO_CAPABILITY_MAX_PER_RUN || 20) || 20;
-    const CAPABILITY_PROBE_DELAY_MS = Number(process.env.JONGO_CAPABILITY_PROBE_DELAY_MS || 400) || 400;
+    // Sized against the real limit rather than by feel. Coolify allows 200
+    // requests/minute (~3.3/sec) and one capability probe costs up to 4 calls,
+    // so probes must not exceed roughly one per 1.2s. The previous 400ms spacing
+    // was about three times over budget, which is why a pass still ended in 429s
+    // even after it was "paced". 12 per pass refreshes all 43 apps in about four
+    // hourly runs, well inside the 24h TTL.
+    const CAPABILITY_MAX_PER_RUN = Number(process.env.JONGO_CAPABILITY_MAX_PER_RUN || 12) || 12;
+    const CAPABILITY_PROBE_DELAY_MS = Number(process.env.JONGO_CAPABILITY_PROBE_DELAY_MS || 1500) || 1500;
     let capabilityRefreshed = 0;
     let capabilityUnknown = 0;
-    // True when Coolify's 200/min limit was hit; the pass stops early and the
-    // next hourly run continues where this one left off.
-    let rateLimited = false;
     {
       const rows = await db.site.findMany({
         where: { deletedAt: null, NOT: [{ coolifyServiceUuid: null }] },
@@ -133,6 +146,14 @@ export async function POST(request: Request) {
           // apps with a database report having nothing to back up.
           if (cap.reason === "unknown") {
             capabilityUnknown += 1;
+            // describeCoolifyBackupCapability deliberately swallows probe
+            // errors so page renders cannot throw, which means a rate limit
+            // reaches us as a plain "unknown". Ask the breaker directly rather
+            // than grinding through every remaining app learning nothing.
+            if (isRateLimited()) {
+              rateLimited = true;
+              break;
+            }
             continue;
           }
           await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${cap.backupable}, "backupCapabilityReason" = ${cap.reason}, "backupEligibleAt" = now() WHERE id = ${row.id}::uuid`;
