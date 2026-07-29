@@ -66,3 +66,27 @@ export function noteRateLimited(retryAfterSeconds?: number | null, now: number =
 export function resetRateLimit(): void {
   openUntil = 0;
 }
+
+/**
+ * A non-2xx response that is NOT a rate limit.
+ *
+ * The status matters: asking whether a resource is a service or a database is
+ * done by fetching it, so a 404 is a legitimate "no, it is not that kind of
+ * thing" and must not be mistaken for "we could not find out". Conflating the
+ * two made every ordinary application report as undetermined, which meant its
+ * capability could never be established or cached.
+ */
+export class CoolifyHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, path: string) {
+    super(`Coolify request failed (${status}) for ${path}`);
+    this.name = "CoolifyHttpError";
+    this.status = status;
+  }
+}
+
+/** True when the failure says the resource is not there, rather than that we could not ask. */
+export function isNotFoundError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && (error as { status?: number }).status === 404);
+}

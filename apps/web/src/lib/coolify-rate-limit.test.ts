@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  CoolifyHttpError,
+  isNotFoundError,
   CoolifyRateLimitError,
   isRateLimitError,
   isRateLimited,
@@ -69,5 +71,27 @@ describe("the breaker", () => {
       noteRateLimited(value, now);
       expect(rateLimitCooldownRemaining(now)).toBe(60_000);
     }
+  });
+});
+
+describe("CoolifyHttpError", () => {
+  it("distinguishes a 404 from a failure to ask", () => {
+    // Probing "is this a service?" is done by fetching it, so a 404 is the
+    // answer "no". Treating it as doubt made every ordinary application
+    // undetermined forever, so nothing could be cached.
+    expect(isNotFoundError(new CoolifyHttpError(404, "/api/v1/services/x"))).toBe(true);
+    expect(isNotFoundError(new CoolifyHttpError(500, "/api/v1/services/x"))).toBe(false);
+    expect(isNotFoundError(new CoolifyRateLimitError(60_000))).toBe(false);
+    expect(isNotFoundError(new Error("boom"))).toBe(false);
+    expect(isNotFoundError(null)).toBe(false);
+  });
+
+  it("carries the status for callers to branch on", () => {
+    expect(new CoolifyHttpError(404, "/p").status).toBe(404);
+    expect(new CoolifyHttpError(503, "/p").status).toBe(503);
+  });
+
+  it("is not mistaken for a rate limit", () => {
+    expect(isRateLimitError(new CoolifyHttpError(404, "/p"))).toBe(false);
   });
 });
