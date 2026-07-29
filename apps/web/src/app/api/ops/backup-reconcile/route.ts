@@ -56,7 +56,8 @@ export async function POST(request: Request) {
         name: true,
         coolifyServiceUuid: true,
         coolifyProjectId: true,
-        stagingEnabled: true
+        stagingEnabled: true,
+        scheduleCheckedAt: true
       },
       orderBy: { updatedAt: "desc" },
       take: limit
@@ -71,6 +72,15 @@ export async function POST(request: Request) {
     let stagingEnvsEnsured = 0;
     let stagingResourcesFlagged = 0;
     let resourcesMissing = 0;
+
+    // Budget for the schedule sweep. Deliberately smaller than the capability
+    // sweep's: this data changes rarely, the UI does not read it live, and it
+    // was the loop starving everything else.
+    const SCHEDULE_TTL_MS = Number(process.env.JONGO_SCHEDULE_TTL_HOURS || 24) * 60 * 60 * 1000;
+    const SCHEDULE_MAX_PER_RUN = Number(process.env.JONGO_SCHEDULE_MAX_PER_RUN || 8) || 8;
+    let scheduleChecked = 0;
+    let scheduleFresh = 0;
+    let scheduleDeferred = 0;
 
     let alreadyConfigured = 0;
     let autoProvisioned = 0;
@@ -93,18 +103,12 @@ export async function POST(request: Request) {
     }> = [];
 
     // Capability first, deliberately. Coolify allows 200 requests/minute per
-    // token and a full pass exceeds that, so whatever runs last gets nothing but
-    // 429s. This is what the UI reads to decide whether to offer backups at all,
-    // so it takes the budget before the schedule sweep, which can wait an hour.
-    // Keep every app's backup capability fresh, not just ones due for a backup.
-    // The UI reads these cached columns to decide whether to offer backup
-    // features at all, so a stale or absent value means an app with nothing to
-    // back up still shows a Backups tab it can do nothing with. One API call
-    // per app per day, and it covers apps added later with no extra wiring.
+    // token and a full pass exceeds that, so whatever ran last received nothing
+    // but 429s — which is how apps with databases came to be recorded as having
+    // nothing to back up. This is what the UI reads to decide whether to offer
+    // backups at all, so it takes the budget before the schedule sweep, which
+    // can wait an hour. Bounded and paced for the same reason.
     const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1000;
-    // Bounded per pass and paced, so a 43-app sweep cannot exhaust Coolify's
-    // rate limit. The hourly cadence still refreshes every app well inside the
-    // 24h TTL.
     const CAPABILITY_MAX_PER_RUN = Number(process.env.JONGO_CAPABILITY_MAX_PER_RUN || 20) || 20;
     const CAPABILITY_PROBE_DELAY_MS = Number(process.env.JONGO_CAPABILITY_PROBE_DELAY_MS || 400) || 400;
     let capabilityRefreshed = 0;
@@ -203,8 +207,24 @@ export async function POST(request: Request) {
         // Healing is best-effort; never block backup reconciliation.
       }
 
+      // Coolify's schedules do not change on their own, so re-checking every
+      // app hourly spent the whole rate-limit budget to learn nothing. A day's
+      // TTL plus a per-pass cap keeps it correct and affordable; self-healing
+      // above still runs for every app on every pass, because that is cheap.
+      const scheduleCheckedAt = site.scheduleCheckedAt ? new Date(site.scheduleCheckedAt).getTime() : 0;
+      if (Date.now() - scheduleCheckedAt <= SCHEDULE_TTL_MS) {
+        scheduleFresh += 1;
+        continue;
+      }
+      if (scheduleChecked >= SCHEDULE_MAX_PER_RUN) {
+        scheduleDeferred += 1;
+        continue;
+      }
+
       try {
         const reconciliation = await ensureCoolifyAppBackupSchedules(appUuid);
+        scheduleChecked += 1;
+        await db.$executeRaw`UPDATE "Site" SET "scheduleCheckedAt" = now() WHERE id = ${site.id}::uuid`;
         if (reconciliation.note === "already_configured") {
           alreadyConfigured += 1;
         } else if (reconciliation.note && BENIGN_NOTES.has(reconciliation.note)) {
@@ -431,6 +451,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       scanned: sites.length,
+      scheduleSweep: { checked: scheduleChecked, freshSkipped: scheduleFresh, deferred: scheduleDeferred },
       scheduledBackups: {
         platformDefaultEnabled: scheduleDefaultOn,
         maxPerRun: maxBackupsPerRun,

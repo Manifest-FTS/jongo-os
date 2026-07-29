@@ -190,6 +190,10 @@ model Site {
   // no manual step. Deliberately a plain id, not a relation, to avoid a
   // self-referential cascade on a table that is soft-deleted.
   parentSiteId          String?   @db.Uuid
+  // When Coolify's backup schedules were last reconciled for this app. The
+  // sweep re-checked all 43 apps every hour, which alone exceeds Coolify's
+  // 200 requests/minute, starving everything that ran after it.
+  scheduleCheckedAt     DateTime?
   // Rate limit for scheduled-backup failure email. A site that is broken fails
   // every night, and a nightly alert trains people to ignore alerts.
   backupAlertSentAt     DateTime?
