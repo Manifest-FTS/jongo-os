@@ -120,6 +120,9 @@ export default function SiteBackupsPanel({
   const [savingSchedule, setSavingSchedule] = useState(false);
   // Set when the API refuses a restore because the database is shared; holds
   // the blast radius so the second confirmation can name it.
+  // Editing a note after the fact: the reason a snapshot matters is usually
+  // discovered later, not at the moment it is taken.
+  const [editingNote, setEditingNote] = useState<{ id: string; value: string } | null>(null);
   const [sharedWarning, setSharedWarning] = useState<
     { backupId: string; message: string; includesControlPlane: boolean } | null
   >(null);
@@ -206,6 +209,32 @@ export default function SiteBackupsPanel({
       push({ tone: "error", title: "Network error", text: "Could not reach the schedule API.", ttl: 0 });
     } finally {
       setSavingSchedule(false);
+    }
+  }
+
+  async function saveNote(backupId: string, label: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `/api/sites/${encodeURIComponent(siteId)}/backups/${encodeURIComponent(backupId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label })
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        push({ tone: "error", title: "Couldn't save the note", text: data.error ?? "Please try again.", ttl: 0 });
+      } else {
+        push({ tone: "success", title: data.label ? "Note saved" : "Note removed", text: data.label ?? "" });
+        setEditingNote(null);
+        router.refresh();
+      }
+    } catch {
+      push({ tone: "error", title: "Network error", text: "Could not reach the backup API.", ttl: 0 });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -414,7 +443,30 @@ export default function SiteBackupsPanel({
                     {formatTimeUtc(b.startedAt)} · {relativeAge(b.startedAt)}
                   </p>
                   {b.trigger === "manual" ? <span className="bk-tag">Manual</span> : null}
-                  {b.label ? (
+                  {editingNote?.id === b.id ? (
+                    <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.35rem", flexWrap: "wrap" }}>
+                      <input
+                        className="bk-schedule__select"
+                        style={{ flex: "1 1 220px", minWidth: 0 }}
+                        value={editingNote.value}
+                        autoFocus
+                        maxLength={200}
+                        placeholder="e.g. before the plugin upgrade"
+                        aria-label="Backup note"
+                        onChange={(e) => setEditingNote({ id: b.id, value: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void saveNote(b.id, editingNote.value);
+                          if (e.key === "Escape") setEditingNote(null);
+                        }}
+                      />
+                      <button type="button" className="bk-btn" disabled={busy} onClick={() => void saveNote(b.id, editingNote.value)}>
+                        Save
+                      </button>
+                      <button type="button" className="bk-btn" disabled={busy} onClick={() => setEditingNote(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : b.label ? (
                     <p className="bk-when__time" style={{ marginTop: "0.25rem" }}>{b.label}</p>
                   ) : null}
                 </div>
@@ -480,6 +532,18 @@ export default function SiteBackupsPanel({
                       </button>
                       {openMenu === b.id ? (
                         <div className="bk-menu" role="menu">
+                          <button
+                            type="button"
+                            className="bk-btn"
+                            onClick={() => {
+                              setOpenMenu(null);
+                              setEditingNote({ id: b.id, value: b.label ?? "" });
+                            }}
+                            disabled={busy}
+                            role="menuitem"
+                          >
+                            {b.label ? "Edit note" : "Add a note"}
+                          </button>
                           <button
                             type="button"
                             className="bk-btn bk-btn--danger"

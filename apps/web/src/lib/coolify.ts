@@ -3,6 +3,7 @@ import { detectResourceType } from "./resource-types";
 import { resolveStagingServerUuid, type ServerResolution } from "./coolify-server-resolve";
 import { encodeComposeForCoolify } from "./compose-encoding";
 import { detectDatabaseEnv } from "./database-env-detect";
+import { CoolifyRateLimitError, noteRateLimited, rateLimitCooldownRemaining } from "./coolify-rate-limit";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
 
@@ -498,6 +499,15 @@ export async function coolifyFetch(path: string): Promise<unknown> {
     throw new Error("Missing Coolify API environment variables.");
   }
 
+  // Coolify allows 200 requests/minute per token. Once that is hit, every
+  // further call is wasted and keeps the limiter pinned, so stop until the
+  // window rolls over. Callers get a distinguishable error rather than one they
+  // might mistake for "this resource does not exist".
+  const cooldown = rateLimitCooldownRemaining();
+  if (cooldown > 0) {
+    throw new CoolifyRateLimitError(cooldown);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
@@ -526,6 +536,10 @@ export async function coolifyFetch(path: string): Promise<unknown> {
         error: `Coolify request failed (${response.status})`
       });
       callLogged = true;
+      if (response.status === 429) {
+        const waited = noteRateLimited(Number(response.headers.get("retry-after")));
+        throw new CoolifyRateLimitError(waited);
+      }
       throw new Error(`Coolify request failed (${response.status}) for ${path}`);
     }
 
