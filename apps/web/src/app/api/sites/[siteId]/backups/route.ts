@@ -7,6 +7,7 @@ import { getSiteWorkspace } from "@/lib/repositories";
 import { hasCoolifyBackupableState } from "@/lib/coolify";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { openJobLog } from "@/lib/job-log";
+import { normalizeBackupNote } from "@/lib/backup-note";
 
 export const runtime = "nodejs";
 
@@ -102,7 +103,8 @@ async function createBackup(request: Request, { params }: Params) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const label = typeof body?.label === "string" && body.label.trim() ? body.label.trim().slice(0, 200) : null;
+  // Same rule as editing a note afterwards, so the two paths cannot disagree.
+  const label = normalizeBackupNote(body?.label).value;
 
   const { getDb } = await import("@/lib/db");
   const db = await getDb();
