@@ -3,7 +3,7 @@ import { detectResourceType } from "./resource-types";
 import { resolveStagingServerUuid, type ServerResolution } from "./coolify-server-resolve";
 import { encodeComposeForCoolify } from "./compose-encoding";
 import { detectDatabaseEnv } from "./database-env-detect";
-import { CoolifyRateLimitError, noteRateLimited, rateLimitCooldownRemaining } from "./coolify-rate-limit";
+import { CoolifyRateLimitError, CoolifyHttpError, isNotFoundError, isRateLimitError, noteRateLimited, rateLimitCooldownRemaining } from "./coolify-rate-limit";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
 
@@ -540,7 +540,7 @@ export async function coolifyFetch(path: string): Promise<unknown> {
         const waited = noteRateLimited(Number(response.headers.get("retry-after")));
         throw new CoolifyRateLimitError(waited);
       }
-      throw new Error(`Coolify request failed (${response.status}) for ${path}`);
+      throw new CoolifyHttpError(response.status, path);
     }
 
     const payload = await response.json();
@@ -1675,7 +1675,11 @@ export async function resolveCoolifyServiceApplicationNames(serviceUuid: string)
       .filter((value) => value.length > 0);
 
     return [...new Set(names)];
-  } catch {
+  } catch (error) {
+    // A 404 means this uuid is not a service, which callers read correctly as
+    // an empty list. A rate limit means we do not know, and returning [] for
+    // that is how a busy moment became "this app has no containers".
+    if (isRateLimitError(error)) throw error;
     return [];
   }
 }
@@ -1748,8 +1752,9 @@ export async function describeCoolifyBackupCapability(serviceUuid: string): Prom
     if (names.length > 0) {
       return { backupable: true, reason: "service_containers" };
     }
-  } catch {
-    anyProbeFailed = true;
+  } catch (error) {
+    // A 404 means "not a service", which is an answer, not a failure.
+    if (!isNotFoundError(error)) anyProbeFailed = true;
   }
 
   // Standalone database resource?
@@ -1758,10 +1763,8 @@ export async function describeCoolifyBackupCapability(serviceUuid: string): Prom
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
       return { backupable: true, reason: "standalone_database" };
     }
-  } catch {
-    // A 404 here legitimately means "not a database", but a 429 does not, and
-    // they are indistinguishable at this layer — so record the doubt.
-    anyProbeFailed = true;
+  } catch (error) {
+    if (!isNotFoundError(error)) anyProbeFailed = true;
   }
 
   // Application with persistent storage (data volumes)?
@@ -1771,8 +1774,9 @@ export async function describeCoolifyBackupCapability(serviceUuid: string): Prom
     if (Array.isArray(persistent) && persistent.length > 0) {
       return { backupable: true, reason: "persistent_volumes" };
     }
-  } catch {
-    anyProbeFailed = true;
+  } catch (error) {
+    // 404 = not an application with storages, which is an answer.
+    if (!isNotFoundError(error)) anyProbeFailed = true;
   }
 
   // Application whose data lives in a database ON THIS PLATFORM. Apps reach
