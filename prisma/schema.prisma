@@ -261,12 +261,21 @@ model SiteBackup {
   // restore point holding nothing.
   databaseTables Int?
 
-  // WordPress-only content metadata (null for other resource types).
+  // WordPress-only content metadata (null for other resource types). Kept as
+  // columns because they hold real history and the UI reads them; new stacks
+  // use contentSummary rather than adding a column per framework.
   posts     Int?
   pages     Int?
   plugins   Int?
   comments  Int?
   wpVersion String?
+
+  // Stack-agnostic record of what the host found: { stack, markers }, read by
+  // lib/backup-stack.ts. A Next.js app reports a framework version where
+  // WordPress reports posts and plugins, without either needing to know about
+  // the other. Stores the MARKERS rather than the rendered metrics, so a later
+  // fix to a label reaches existing backups instead of only new ones.
+  contentSummary Json?
 
   error       String?
   startedAt   DateTime  @default(now())

@@ -88,11 +88,29 @@ async function runReconcileOnce() {
   const started = sched && Array.isArray(sched.started) ? sched.started : [];
   const skipped = sched && Array.isArray(sched.skipped) ? sched.skipped : [];
 
+  // Runs abandoned by the stale sweep. A site whose backup job died without
+  // reporting is blocked from backing up until this clears it, so a pass that
+  // had to clear one is worth seeing: a number that keeps climbing means jobs
+  // are dying, not that the sweep is working.
+  const abandoned = payload && typeof payload === "object" ? payload.abandonedRuns : null;
+  const abandonedBackups = abandoned && typeof abandoned.backups === "number" ? abandoned.backups : 0;
+  const abandonedRestores = abandoned && typeof abandoned.restores === "number" ? abandoned.restores : 0;
+
+  const rehearsal = payload && typeof payload === "object" ? payload.rehearsal : null;
+
   console.log(
     `[backup-reconcile] scanned=${scanned} autoProvisioned=${autoProvisioned} ` +
       `alreadyConfigured=${alreadyConfigured} failed=${failed} ` +
       `backupsStarted=${started.length}${started.length ? `(${started.join(",")})` : ""} ` +
       `backupsSkipped=${skipped.length}${skipped.length ? `(${skipped.join(",")})` : ""}` +
+      (abandonedBackups || abandonedRestores
+        ? ` abandoned=${abandonedBackups}backup/${abandonedRestores}restore`
+        : "") +
+      // Which backup was rehearsed, and how many are still unproven. A due
+      // count that never falls means rehearsals are not keeping up.
+      (rehearsal && rehearsal.enabled
+        ? ` rehearsal=${rehearsal.started || "none"}(due:${rehearsal.due ?? 0})`
+        : "") +
       (indexComplete ? "" : " WARNING=incomplete_resource_index")
   );
 }

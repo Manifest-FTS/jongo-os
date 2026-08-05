@@ -7,6 +7,7 @@ import { ToastStack, useToasts } from "@/components/Toasts";
 import { describeBackupError } from "@/lib/backup-messages";
 import { BACKUP_FREQUENCY_CHOICES, type ScheduleSummary } from "@/lib/backup-schedule";
 import { describeBackupContent } from "@/lib/backup-content";
+import { summarizeBackupContent, type StackMarkers } from "@/lib/backup-stack";
 
 export type SiteBackupRow = {
   id: string;
@@ -25,6 +26,8 @@ export type SiteBackupRow = {
   plugins: number | null;
   comments: number | null;
   wpVersion: string | null;
+  /** Stack markers from the recipe; null for backups taken before it existed. */
+  contentMarkers: StackMarkers | null;
   restorable: boolean;
   error: string | null;
   restoreStatus: string | null;
@@ -500,7 +503,20 @@ export default function SiteBackupsPanel({
                       {describeBackupError(b.error) ?? "This backup did not complete."}
                     </span>
                   </div>
+                ) : b.contentMarkers ? (
+                  // Backups taken by the stack recipe: which metrics to show is
+                  // the recipe's decision, so WordPress and Next.js rows differ
+                  // without this component knowing either exists.
+                  <div className="bk-metrics">
+                    {summarizeBackupContent(b.contentMarkers, {
+                      formattedSize: formatBytes(b.sizeBytes)
+                    }).metrics.map((metric) => (
+                      <Metric key={metric.label} value={metric.value} label={metric.label} />
+                    ))}
+                  </div>
                 ) : b.resourceType === "wordpress" || b.posts !== null || b.wpVersion !== null ? (
+                  // Taken before markers existed. Rendered from the columns it
+                  // does have rather than showing an emptier row than before.
                   <div className="bk-metrics">
                     <Metric value={b.posts} label="Posts" />
                     <Metric value={b.pages} label="Pages" />

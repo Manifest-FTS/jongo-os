@@ -11,6 +11,7 @@ import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPa
 import { summarizeBackupSchedule } from "@/lib/backup-schedule";
 import { buildBackupDiagnosis } from "@/lib/backup-diagnosis";
 import { resolveBackupViewCapability } from "@/lib/backup-view-capability";
+import { type StackMarkers } from "@/lib/backup-stack";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -18,6 +19,21 @@ type Params = {
   params: Promise<{ siteId: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
+
+/**
+ * Pull the stack markers out of a SiteBackup.contentSummary column.
+ *
+ * The column holds `{ stack, markers }` and is JSON, so it can be anything —
+ * including a shape written by a future version. Anything unexpected reads as
+ * "no markers", which falls the row back to the WordPress columns rather than
+ * throwing while rendering someone's backup list.
+ */
+function extractContentMarkers(value: unknown): StackMarkers | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const markers = (value as { markers?: unknown }).markers;
+  if (!markers || typeof markers !== "object" || Array.isArray(markers)) return null;
+  return markers as StackMarkers;
+}
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -344,6 +360,9 @@ export default async function BackupsPage({ params, searchParams }: Params) {
           plugins: (row.plugins as number | null) ?? null,
           comments: (row.comments as number | null) ?? null,
           wpVersion: (row.wpVersion as string | null) ?? null,
+          // Markers recorded by the stack recipe. Null for backups taken before
+          // it existed — those still render from the WordPress columns above.
+          contentMarkers: extractContentMarkers(row.contentSummary),
           restorable: describeRestorability({
             status: typeof row.status === "string" ? row.status : null,
             resticSnapshotId: typeof row.resticSnapshotId === "string" ? row.resticSnapshotId : null

@@ -36,6 +36,7 @@
     "ops:backup-reconcile": "node ./scripts/backup-reconcile-scheduler.mjs --once",
     "ops:site-backup": "node ./scripts/site-backup.mjs",
     "ops:site-restore": "node ./scripts/site-restore.mjs",
+    "ops:backup-rehearsal": "node ./scripts/backup-rehearsal.mjs",
     "ops:verify-backup": "node ./scripts/verify-jongo-backup.mjs",
     "ops:verify-backup:restore-test": "node ./scripts/verify-jongo-backup.mjs --restore-test",
     "ops:backup-reconcile:scheduler": "node ./scripts/backup-reconcile-scheduler.mjs",

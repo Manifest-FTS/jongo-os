@@ -39,13 +39,30 @@ export async function POST(request: Request) {
   try {
     const { db } = await import("@/lib/db");
     const sizeBytes = int(body.sizeBytes);
+
+    // Classify the stack here rather than trusting the script's own guess: the
+    // rule lives in lib/backup-stack.ts where it is unit tested, and the script
+    // deliberately reports only raw findings. Markers are absent when an older
+    // script version posts, in which case the script's resourceType stands.
+    //
+    // The MARKERS are stored, not the rendered metrics. Storing the rendering
+    // would freeze each row's presentation at the moment it was taken, so a
+    // later fix to a label or a unit would never reach existing backups.
+    const markers = body.stackMarkers;
+    let content: { stack: string; markers: unknown } | null = null;
+    if (markers && typeof markers === "object" && !Array.isArray(markers)) {
+      const { detectStack } = await import("@/lib/backup-stack");
+      content = { stack: detectStack(markers as Record<string, never>), markers };
+    }
+
     const updated = await db.siteBackup.update({
       where: { id: backupId },
       data: {
         status,
         resticSnapshotId: str(body.resticSnapshotId),
         sizeBytes: sizeBytes === null ? null : BigInt(sizeBytes),
-        resourceType: str(body.resourceType),
+        contentSummary: content ?? undefined,
+        resourceType: content?.stack ?? str(body.resourceType),
         volumeCount: int(body.volumeCount),
         databaseCount: int(body.databaseCount),
         databaseTables: int(body.databaseTables),
