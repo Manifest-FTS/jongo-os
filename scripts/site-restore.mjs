@@ -54,6 +54,11 @@ function argValue(name) {
 const resourceUuid = argValue("--resource-uuid");
 const snapshotId = argValue("--snapshot-id");
 const backupId = argValue("--backup-id");
+// How many tables the backup recorded capturing. Used only to catch the
+// unambiguous failure — the databases coming back empty when the backup held
+// data — because an exact match is not guaranteed (views, stored code) and a
+// false "restore failed" on a restore that worked is its own kind of damage.
+const expectTables = Number(argValue("--expect-tables")) || 0;
 
 const sshHost = firstEnvValue(["STAGING_SYNC_SSH_HOST", "COOLIFY_SSH_HOST"]);
 const sshUser = firstEnvValue(["STAGING_SYNC_SSH_USER"]) || "root";
@@ -100,14 +105,43 @@ SNAP=${shQuote(snapshotId)}
 
 read_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" 2>/dev/null | awk -F= -v k="$2" '$1==k{print substr($0,index($0,"=")+1)}' | tail -n 1; }
 engine_of() { local i; i=$(docker inspect -f '{{.Config.Image}}' "$1" 2>/dev/null); if echo "$1 $i" | grep -qiE 'postgres'; then echo postgres; else echo mysql; fi; }
+# Resolve MySQL/MariaDB credentials for a database container. Emits
+# "user<TAB>password<TAB>database".
+#
+# MUST stay identical to mysql_creds_for in scripts/site-backup.mjs. Coolify
+# does not always set a root password on a WordPress stack's database, and the
+# only working credentials then live on the WordPress container. This side
+# checked root only, so for those stacks the backup succeeded while both the
+# safety snapshot and the restore silently produced nothing — the exact case
+# where the safety net is supposed to catch you.
+mysql_creds_for() {
+  local c="$1" wp="$2"
+  local u=root p d
+  p=$(read_env "$c" MARIADB_ROOT_PASSWORD); [ -n "$p" ] || p=$(read_env "$c" MYSQL_ROOT_PASSWORD)
+  d=$(read_env "$c" MARIADB_DATABASE); [ -n "$d" ] || d=$(read_env "$c" MYSQL_DATABASE)
+  if [ -z "$p" ] && [ -n "$wp" ]; then
+    u=$(read_env "$wp" WORDPRESS_DB_USER)
+    p=$(read_env "$wp" WORDPRESS_DB_PASSWORD)
+    d=$(read_env "$wp" WORDPRESS_DB_NAME)
+  fi
+  [ -n "$u" ] || u=root
+  [ -n "$d" ] || d=wordpress
+  printf '%s\\t%s\\t%s\\n' "$u" "$p" "$d"
+}
+
 dump_one() { # container engine -> stdout dump (used for the safety snapshot)
   local c="$1" e="$2"
   if [ "$e" = postgres ]; then
     local u p d; u=$(read_env "$c" POSTGRES_USER); [ -n "$u" ] || u=postgres; p=$(read_env "$c" POSTGRES_PASSWORD); d=$(read_env "$c" POSTGRES_DB); [ -n "$d" ] || d="$u"
-    docker exec -e PGPASSWORD="$p" "$c" sh -lc "pg_dump -U $u -d $d" 2>/dev/null
+    # Same --clean --if-exists as the backup path: a safety snapshot that cannot
+    # be replayed over the restored state is not a rollback.
+    docker exec -e PGPASSWORD="$p" "$c" sh -lc "pg_dump --clean --if-exists --no-owner --no-acl -U $u -d $d" 2>/dev/null
   else
-    local u p d; u=root; p=$(read_env "$c" MARIADB_ROOT_PASSWORD); [ -n "$p" ] || p=$(read_env "$c" MYSQL_ROOT_PASSWORD); d=$(read_env "$c" MARIADB_DATABASE); [ -n "$d" ] || d=$(read_env "$c" MYSQL_DATABASE); [ -n "$d" ] || d=wordpress
-    docker exec "$c" sh -lc "mariadb-dump --single-transaction -u$u -p$p $d" 2>/dev/null || docker exec "$c" sh -lc "mysqldump --single-transaction -u$u -p$p $d" 2>/dev/null
+    local creds u p d
+    creds=$(mysql_creds_for "$c" "$WP_CONTAINER")
+    u=$(printf '%s' "$creds" | cut -f1); p=$(printf '%s' "$creds" | cut -f2); d=$(printf '%s' "$creds" | cut -f3)
+    docker exec -e MYSQL_PWD="$p" "$c" sh -lc "mariadb-dump --single-transaction --quick --default-character-set=utf8mb4 --routines --triggers -u$u $d" 2>/dev/null \\
+      || docker exec -e MYSQL_PWD="$p" "$c" sh -lc "mysqldump --single-transaction --quick --default-character-set=utf8mb4 -u$u $d" 2>/dev/null
   fi
 }
 
@@ -115,6 +149,10 @@ dump_one() { # container engine -> stdout dump (used for the safety snapshot)
 # <uuid>-<deployment-ts>, so anchoring only at the end missed applications.
 CONTAINERS=$(docker ps -a --format '{{.Names}}' | grep -E "(^|-)$RUUID($|-)" || true)
 [ -n "$CONTAINERS" ] || { echo "RESULT=fail_no_containers"; exit 1; }
+
+# Resolved before anything calls dump_one, which needs it for the credential
+# fallback. set -u is on, so it must exist even when there is no WordPress here.
+WP_CONTAINER=$(echo "$CONTAINERS" | grep -m1 '^wordpress-' || true)
 
 [ -f /root/.config/restic/b2-credentials.env ] || { echo "RESULT=fail_no_b2_creds"; exit 1; }
 set -a; . /root/.config/restic/b2-credentials.env; set +a
@@ -147,7 +185,10 @@ rm -f "$SAFE_PATHS"; rm -rf "$STAGE"
 echo "SAFETY_SNAPSHOT=$SAFE_SNAP"
 
 # ── 2. Restore target snapshot to a staging dir; verify before touching live data ──
-TARGET="/tmp/jongo-restore-$RUUID-$$"
+# Staged under /var/backups rather than /tmp: /tmp is tmpfs on many hosts, so a
+# large site was being restored into RAM and took the box down with it. Sitting
+# on the same filesystem as /var/lib/docker/volumes also keeps the copy local.
+TARGET="/var/backups/jongo/restore-$RUUID-$$"
 rm -rf "$TARGET"; mkdir -p "$TARGET"
 /usr/bin/restic -r "$REPO" restore "$SNAP" --target "$TARGET" >/dev/null 2>&1 || { echo "RESULT=fail_restic_restore"; rm -rf "$TARGET"; exit 1; }
 # The snapshot must contain at least one volume dir or a db dump.
@@ -167,6 +208,13 @@ if [ -n "$STAGED_VOLS" ]; then
   while IFS= read -r staged; do
     [ -n "$staged" ] || continue
     live="\${staged#$TARGET}"                       # strip the staging prefix -> live path
+    # Everything below this line deletes. "live" is derived by string-stripping,
+    # so a prefix that fails to match would point the delete somewhere real —
+    # at worst "/". Refuse anything that is not a docker volume data directory.
+    case "$live" in
+      /var/lib/docker/volumes/*/_data) ;;
+      *) echo "SKIPPED_UNSAFE_PATH=$live"; continue ;;
+    esac
     [ -d "$live" ] || { mkdir -p "$live"; }
     if command -v rsync >/dev/null 2>&1; then
       rsync -a --delete "$staged/" "$live/" && VOLS_RESTORED=$((VOLS_RESTORED+1))
@@ -180,6 +228,10 @@ echo "FILES_RESTORED=$VOLS_RESTORED"
 
 # ── 4. Restore each database dump into its container (mapped by filename) ──
 DBS_RESTORED=0
+# Counted from the live databases AFTER the replay, not from the dump. This is
+# the check that would have caught the silent no-op restore described above:
+# the command exiting 0 is not evidence that anything landed.
+TABLES_AFTER=0
 if [ -n "$STAGED_DUMPS" ]; then
   while IFS= read -r dump; do
     [ -s "$dump" ] || continue
@@ -197,14 +249,26 @@ if [ -n "$STAGED_DUMPS" ]; then
     E=$(engine_of "$cont")
     if [ "$E" = postgres ]; then
       U=$(read_env "$cont" POSTGRES_USER); [ -n "$U" ] || U=postgres; P=$(read_env "$cont" POSTGRES_PASSWORD); D=$(read_env "$cont" POSTGRES_DB); [ -n "$D" ] || D="$U"
-      docker exec -i -e PGPASSWORD="$P" "$cont" sh -lc "psql -U $U -d $D" < "$dump" >/dev/null 2>&1 && DBS_RESTORED=$((DBS_RESTORED+1))
+      # ON_ERROR_STOP=1 is the whole point. psql's default is to report an error
+      # and carry on, so replaying a dump into a database that already has these
+      # tables logged one failure per object and still exited 0 — a restore that
+      # changed nothing and reported success. --single-transaction then makes it
+      # all-or-nothing, so a failure leaves the database as it was rather than
+      # half-dropped.
+      docker exec -i -e PGPASSWORD="$P" "$cont" sh -lc "psql -v ON_ERROR_STOP=1 --single-transaction -U $U -d $D" < "$dump" >/dev/null 2>&1 && DBS_RESTORED=$((DBS_RESTORED+1))
+      n=$(docker exec -e PGPASSWORD="$P" "$cont" sh -lc "psql -tAc \\"SELECT count(*) FROM information_schema.tables WHERE table_type='BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema')\\" -U $U -d $D" 2>/dev/null | tr -dc '0-9')
+      TABLES_AFTER=$((TABLES_AFTER + \${n:-0}))
     else
-      U=root; P=$(read_env "$cont" MARIADB_ROOT_PASSWORD); [ -n "$P" ] || P=$(read_env "$cont" MYSQL_ROOT_PASSWORD); D=$(read_env "$cont" MARIADB_DATABASE); [ -n "$D" ] || D=$(read_env "$cont" MYSQL_DATABASE); [ -n "$D" ] || D=wordpress
-      { docker exec -i "$cont" sh -lc "mariadb -u$U -p$P $D" < "$dump" >/dev/null 2>&1 || docker exec -i "$cont" sh -lc "mysql -u$U -p$P $D" < "$dump" >/dev/null 2>&1; } && DBS_RESTORED=$((DBS_RESTORED+1))
+      CREDS=$(mysql_creds_for "$cont" "$WP_CONTAINER")
+      U=$(printf '%s' "$CREDS" | cut -f1); P=$(printf '%s' "$CREDS" | cut -f2); D=$(printf '%s' "$CREDS" | cut -f3)
+      { docker exec -i -e MYSQL_PWD="$P" "$cont" sh -lc "mariadb -u$U $D" < "$dump" >/dev/null 2>&1 || docker exec -i -e MYSQL_PWD="$P" "$cont" sh -lc "mysql -u$U $D" < "$dump" >/dev/null 2>&1; } && DBS_RESTORED=$((DBS_RESTORED+1))
+      n=$(docker exec -e MYSQL_PWD="$P" "$cont" sh -lc "mariadb -N -B -u$U -e \\"SELECT COUNT(*) FROM information_schema.tables WHERE table_type='BASE TABLE' AND table_schema='$D'\\"" 2>/dev/null | tr -dc '0-9')
+      TABLES_AFTER=$((TABLES_AFTER + \${n:-0}))
     fi
   done <<< "$STAGED_DUMPS"
 fi
 echo "DB_RESTORED=$DBS_RESTORED"
+echo "DB_TABLES_AFTER=$TABLES_AFTER"
 
 # ── 5. Restart app containers ──
 for ac in $APP_CONTAINERS; do docker start "$ac" >/dev/null 2>&1 || true; done
@@ -213,10 +277,54 @@ echo "RESULT=ok"
 `;
 }
 
+/**
+ * Judge whether the restore actually put the data back.
+ *
+ * Mirrors apps/web/src/lib/restore-outcome.ts, which carries the full rationale
+ * and the unit tests. Duplicated rather than imported because this script runs
+ * standalone under plain node with no bundler and no path aliases — the same
+ * arrangement as parseForgotten in scripts/site-backup.mjs.
+ */
+function describeRestoreOutcome({ result, volumesRestored, databasesRestored, tablesAfter, expectedTables }) {
+  const count = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0; };
+  const volumes = count(volumesRestored);
+  const databases = count(databasesRestored);
+  const expected = count(expectedTables);
+  const after = tablesAfter === null || tablesAfter === undefined || tablesAfter === ""
+    ? null
+    : (Number.isFinite(Number(tablesAfter)) ? Math.trunc(Number(tablesAfter)) : null);
+
+  if (String(result ?? "").trim() !== "ok") {
+    return {
+      ok: false,
+      reason: "script_failed",
+      message: "The restore did not complete. The site was left as it was and the safety snapshot is unused."
+    };
+  }
+  if (volumes === 0 && databases === 0) {
+    return {
+      ok: false,
+      reason: "nothing_applied",
+      message: "The restore ran but put nothing back — no files and no database were applied."
+    };
+  }
+  if (databases > 0 && expected > 0 && after === 0) {
+    return {
+      ok: false,
+      reason: "databases_empty",
+      message:
+        "The restore reported applying the database, but the database is empty afterwards. The site has NOT been rolled back — use the safety snapshot before making further changes."
+    };
+  }
+  return { ok: true, reason: "restored", message: "" };
+}
+
 function parseKV(stdout) {
   const out = {};
   for (const line of stdout.split(/\r?\n/)) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
+    // Digits included so a key like DB_TABLES_AFTER2 could never be dropped —
+    // the same omission was already a live bug in scripts/site-backup.mjs.
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
     if (m) out[m[1]] = m[2];
   }
   return out;
@@ -231,18 +339,33 @@ try {
 
   const filesRestored = Number(k.FILES_RESTORED || 0);
   const dbsRestored = Number(k.DB_RESTORED || 0);
-  // Success = the snapshot was applied. At least one volume or database must
-  // have been put back (some resources are db-only or files-only).
-  const ok = k.RESULT === "ok" && (filesRestored > 0 || dbsRestored > 0);
+  const tablesAfter = k.DB_TABLES_AFTER === undefined ? null : Number(k.DB_TABLES_AFTER);
+  const outcome = describeRestoreOutcome({
+    result: k.RESULT,
+    volumesRestored: filesRestored,
+    databasesRestored: dbsRestored,
+    tablesAfter,
+    expectedTables: expectTables
+  });
+  const ok = outcome.ok;
   const summary = {
     backupId: backupId || null,
     resourceUuid,
     snapshotId,
     volumesRestored: filesRestored,
     databasesRestored: dbsRestored,
+    tablesAfter,
+    expectedTables: expectTables || null,
+    outcome: outcome.reason,
     safetySnapshot: k.SAFETY_SNAPSHOT || null,
     result: k.RESULT || "unknown"
   };
+  if (k.SKIPPED_UNSAFE_PATH) {
+    console.error(`WARN: refused to restore into an unexpected path: ${k.SKIPPED_UNSAFE_PATH}`);
+  }
+  if (!ok) {
+    console.error(`RESTORE NOT OK (${outcome.reason}): ${outcome.message}`);
+  }
   console.log(`SITE_RESTORE_RESULT=${JSON.stringify(summary)}`);
   if (summary.safetySnapshot) {
     console.log(`Pre-restore state saved as restic snapshot ${summary.safetySnapshot} (use it to roll back).`);
@@ -259,7 +382,10 @@ try {
         body: JSON.stringify({
           backupId,
           status: ok ? "success" : "failed",
-          error: ok ? null : (k.RESULT || "unknown failure"),
+          // The rule's own message, not the raw RESULT code: "databases_empty"
+          // tells the operator nothing, and this is the one failure where what
+          // they do next (roll back from the safety snapshot) actually matters.
+          error: ok ? null : (outcome.message || k.RESULT || "unknown failure"),
           safetySnapshot: summary.safetySnapshot
         })
       });

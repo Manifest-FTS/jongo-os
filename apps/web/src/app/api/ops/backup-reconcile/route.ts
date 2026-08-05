@@ -8,6 +8,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { openJobLog } from "@/lib/job-log";
 import { isRateLimitError, isRateLimited } from "@/lib/coolify-rate-limit";
+import { decideStaleRun, DEFAULT_STALE_RUN_HOURS } from "@/lib/stale-run";
+import { orderDueRehearsals, DEFAULT_REHEARSAL_INTERVAL_DAYS } from "@/lib/backup-rehearsal";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -280,6 +282,62 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── Abandon runs that died without reporting ──
+    // Must come before scheduled backups: the create path refuses to start
+    // while a run says "running", so one orphaned row silently ends backups for
+    // that site forever. Backup and restore jobs are detached children of this
+    // process, so a deploy or an OOM kill orphans them with no other trace.
+    const staleAfterHours = Number(process.env.JONGO_STALE_RUN_HOURS || DEFAULT_STALE_RUN_HOURS) || DEFAULT_STALE_RUN_HOURS;
+    let backupsAbandoned = 0;
+    let restoresAbandoned = 0;
+    try {
+      const now = new Date();
+      const inFlight = await (db as any).siteBackup.findMany({
+        where: { OR: [{ status: "running" }, { restoreStatus: "running" }] },
+        select: { id: true, status: true, startedAt: true, restoreStatus: true, restoreStartedAt: true }
+      });
+
+      for (const run of inFlight ?? []) {
+        const backupDecision = decideStaleRun({
+          status: run.status,
+          startedAt: run.startedAt,
+          now,
+          staleAfterHours
+        });
+        if (backupDecision.abandon) {
+          await (db as any).siteBackup.update({
+            where: { id: run.id },
+            data: {
+              status: "failed",
+              completedAt: now,
+              error: `Backup stopped reporting after ${backupDecision.ageHours}h and was marked failed. It may have been interrupted by a deploy or restart.`
+            }
+          });
+          backupsAbandoned += 1;
+        }
+
+        const restoreDecision = decideStaleRun({
+          status: run.restoreStatus,
+          startedAt: run.restoreStartedAt,
+          now,
+          staleAfterHours
+        });
+        if (restoreDecision.abandon) {
+          await (db as any).siteBackup.update({
+            where: { id: run.id },
+            data: {
+              restoreStatus: "failed",
+              restoreCompletedAt: now,
+              restoreError: `Restore stopped reporting after ${restoreDecision.ageHours}h and was marked failed. Check the site before retrying — it may have been interrupted part-way through.`
+            }
+          });
+          restoresAbandoned += 1;
+        }
+      }
+    } catch {
+      // Never let the sweep break reconciliation; it retries next pass.
+    }
+
     // ── Scheduled backups ──
     // At most a few per pass, most-overdue first: backing up many WordPress
     // sites simultaneously would exhaust the host (a concurrent backup already
@@ -430,6 +488,93 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── Backup rehearsal ──
+    // Restores one backup into a throwaway container to find out whether it
+    // would actually restore. Nothing else on the platform verifies the restic
+    // snapshots the catalogue advertises: restore-test-resource.mjs checks
+    // Coolify's own dumps, which is a different artifact entirely.
+    //
+    // Opt-in, and one per pass. It starts a database container on the
+    // production host, so the blast radius stays small and predictable until
+    // it has proven itself in place.
+    const rehearsalEnabled = (process.env.JONGO_BACKUP_REHEARSAL || "").trim() === "true";
+    const rehearsalIntervalDays = Number(process.env.JONGO_REHEARSAL_INTERVAL_DAYS || DEFAULT_REHEARSAL_INTERVAL_DAYS)
+      || DEFAULT_REHEARSAL_INTERVAL_DAYS;
+    let rehearsalStarted: string | null = null;
+    let rehearsalsDue = 0;
+    if (rehearsalEnabled) {
+      try {
+        const rehearsalScript = [
+          path.join(process.cwd(), "scripts", "backup-rehearsal.mjs"),
+          path.join(process.cwd(), "..", "scripts", "backup-rehearsal.mjs"),
+          path.join(process.cwd(), "..", "..", "scripts", "backup-rehearsal.mjs")
+        ].find((c) => existsSync(c));
+
+        if (rehearsalScript) {
+          const rehearsalSites = await db.site.findMany({
+            where: { deletedAt: null, isStagingResource: false, NOT: [{ coolifyServiceUuid: null }] },
+            select: { id: true, slug: true, coolifyServiceUuid: true }
+          });
+
+          // Most recent restorable backup per site. Ordered newest-first and
+          // reduced in JS: the alternative is one query per site, and this loop
+          // already shares Coolify's rate-limit budget with everything above.
+          const recent = await (db as any).siteBackup.findMany({
+            where: { status: "success", NOT: [{ resticSnapshotId: null }] },
+            orderBy: { completedAt: "desc" },
+            select: { id: true, siteId: true, resticSnapshotId: true },
+            take: 500
+          });
+          const latestBySite = new Map<string, { id: string; resticSnapshotId: string }>();
+          for (const row of recent ?? []) {
+            if (!latestBySite.has(row.siteId)) {
+              latestBySite.set(row.siteId, { id: row.id, resticSnapshotId: row.resticSnapshotId });
+            }
+          }
+
+          const verifications = await (db as any).backupRestoreVerification.findMany({
+            select: { resourceUuid: true, lastVerifiedAt: true }
+          });
+          const verifiedAt = new Map<string, Date>();
+          for (const v of verifications ?? []) verifiedAt.set(v.resourceUuid, v.lastVerifiedAt);
+
+          const due = orderDueRehearsals(
+            rehearsalSites.map((site: { id: string; slug: string; coolifyServiceUuid: string | null }) => {
+              const latest = latestBySite.get(site.id);
+              return {
+                resourceUuid: site.coolifyServiceUuid?.trim() ?? "",
+                slug: site.slug,
+                lastVerifiedAt: verifiedAt.get(site.coolifyServiceUuid?.trim() ?? "") ?? null,
+                backupId: latest?.id ?? null,
+                snapshotId: latest?.resticSnapshotId ?? null
+              };
+            }),
+            { intervalDays: rehearsalIntervalDays }
+          );
+          rehearsalsDue = due.length;
+
+          const next = due[0];
+          if (next) {
+            const jobLog = openJobLog("backup-rehearsal");
+            const child = spawn(
+              process.execPath,
+              [
+                rehearsalScript,
+                "--snapshot-id", String(next.snapshotId),
+                "--resource-uuid", next.resourceUuid,
+                "--backup-id", String(next.backupId)
+              ],
+              { cwd: process.cwd(), env: process.env, detached: true, stdio: ["ignore", jobLog, jobLog] }
+            );
+            child.unref();
+            rehearsalStarted = next.slug ?? next.resourceUuid;
+          }
+        }
+      } catch {
+        // Verification must never break the pass that produces the backups.
+      }
+    }
+
     // ── Lifecycle sync: retire sites whose Coolify resource is gone ──
     // Opt-in (JONGO_ARCHIVE_MISSING_SITES=true). Soft delete only, after a
     // grace period, on a complete index, and refused entirely if an implausible
@@ -473,6 +618,13 @@ export async function POST(request: Request) {
       ok: true,
       scanned: sites.length,
       scheduleSweep: { checked: scheduleChecked, freshSkipped: scheduleFresh, deferred: scheduleDeferred },
+      abandonedRuns: { backups: backupsAbandoned, restores: restoresAbandoned, staleAfterHours },
+      rehearsal: {
+        enabled: rehearsalEnabled,
+        intervalDays: rehearsalIntervalDays,
+        due: rehearsalsDue,
+        started: rehearsalStarted
+      },
       scheduledBackups: {
         platformDefaultEnabled: scheduleDefaultOn,
         maxPerRun: maxBackupsPerRun,

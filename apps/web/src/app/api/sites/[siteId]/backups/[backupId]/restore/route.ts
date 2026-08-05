@@ -197,7 +197,14 @@ async function restoreBackup(request: Request, { params }: Params) {
       scriptPath,
       "--resource-uuid", backup.resourceUuid,
       "--snapshot-id", backup.resticSnapshotId,
-      "--backup-id", backup.id
+      "--backup-id", backup.id,
+      // What this backup recorded capturing, so the script can tell a restore
+      // that worked from one that exited 0 having applied nothing. Omitted for
+      // backups taken before table counting existed — there is nothing to
+      // compare against, and a guess would be worse than no check.
+      ...(Number(backup.databaseTables) > 0
+        ? ["--expect-tables", String(Math.trunc(Number(backup.databaseTables)))]
+        : [])
     ],
     { cwd: process.cwd(), env: process.env, detached: true, stdio: ["ignore", jobLog, jobLog] }
   );

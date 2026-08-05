@@ -66,6 +66,35 @@ const keepDaily = Number(process.env.JONGO_BACKUP_KEEP_DAILY || 7) || 7;
 const keepWeekly = Number(process.env.JONGO_BACKUP_KEEP_WEEKLY || 4) || 4;
 const keepMonthly = Number(process.env.JONGO_BACKUP_KEEP_MONTHLY || 6) || 6;
 
+/**
+ * Paths never worth capturing, whatever the stack.
+ *
+ * Mirrors BACKUP_EXCLUDES in apps/web/src/lib/backup-stack.ts, which carries
+ * the rationale and the tests. Duplicated rather than imported for the same
+ * reason as parseForgotten below: this script runs standalone under plain node
+ * with no bundler and no path aliases.
+ *
+ * Applied as one superset because excludes must be chosen before restic runs,
+ * while stack detection only completes afterwards. Safe because every entry is
+ * regenerable build or cache output.
+ */
+const BACKUP_EXCLUDES = [
+  "**/wp-content/cache",
+  "**/wp-content/*cache*/**",
+  "**/wp-content/upgrade",
+  "**/node_modules/.cache",
+  "**/.next/cache",
+  "**/.nuxt/cache",
+  "**/.turbo",
+  "**/.parcel-cache",
+  "**/.vite",
+  "**/tmp/cache",
+  "**/*.log"
+];
+// Joined on one line for the same reason as resticLabelFlags: a blank line
+// inside a backslash-continued command ends it early.
+const resticExcludeFlags = BACKUP_EXCLUDES.map((pattern) => `--exclude ${shQuote(pattern)}`).join(" ");
+
 const resticLabelFlags = [
   resticHost ? `--host ${resticHost}` : null,
   siteSlug ? `--tag "slug=${siteSlug}"` : null,
@@ -119,6 +148,58 @@ BID=${shQuote(backupId)}
 
 read_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" 2>/dev/null | awk -F= -v k="$2" '$1==k{print substr($0,index($0,"=")+1)}' | tail -n 1; }
 
+# Dump a MySQL/MariaDB database.
+#
+# --routines --triggers --events: stored code is part of the data. Without them
+# a "complete" backup silently omits every trigger and stored procedure, which
+# nobody notices until a restore produces a database that no longer works.
+# They need extra privileges, so a bare flag set is tried second: a dump missing
+# stored code beats no dump at all.
+#
+# --default-character-set=utf8mb4: the client default is utf8mb3, which mangles
+# 4-byte characters (emoji, many CJK glyphs) on the way out of the database.
+#
+# Password via MYSQL_PWD rather than -p"$p": the command line of a docker exec
+# is visible in the container's process list. It also fixes the empty-password
+# case, where -p with no value makes the client prompt and the dump just hangs.
+mysql_dump_to() {
+  local c="$1" u="$2" p="$3" d="$4" out="$5"
+  local base="--single-transaction --quick --default-character-set=utf8mb4"
+  local full="$base --routines --triggers --events"
+  local bin flags
+  for bin in mariadb-dump mysqldump; do
+    for flags in "$full" "$base"; do
+      if docker exec -e MYSQL_PWD="$p" "$c" sh -lc "$bin $flags -u$u $d" > "$out" 2>/dev/null && [ -s "$out" ]; then
+        return 0
+      fi
+    done
+  done
+  rm -f "$out"
+  return 1
+}
+
+# Resolve MySQL/MariaDB credentials for a database container.
+#
+# Emits "user<TAB>password<TAB>database". Coolify does not always set a root
+# password on a WordPress stack's database, in which case the only working
+# credentials live on the WordPress container. site-restore.mjs resolves
+# credentials the same way — when the two disagree, backups succeed and
+# restores silently do nothing.
+mysql_creds_for() {
+  local c="$1" wp="$2"
+  local u=root p d
+  p=$(read_env "$c" MARIADB_ROOT_PASSWORD); [ -n "$p" ] || p=$(read_env "$c" MYSQL_ROOT_PASSWORD)
+  d=$(read_env "$c" MARIADB_DATABASE); [ -n "$d" ] || d=$(read_env "$c" MYSQL_DATABASE)
+  if [ -z "$p" ] && [ -n "$wp" ]; then
+    u=$(read_env "$wp" WORDPRESS_DB_USER)
+    p=$(read_env "$wp" WORDPRESS_DB_PASSWORD)
+    d=$(read_env "$wp" WORDPRESS_DB_NAME)
+  fi
+  [ -n "$u" ] || u=root
+  [ -n "$d" ] || d=wordpress
+  printf '%s\\t%s\\t%s\\n' "$u" "$p" "$d"
+}
+
 # Discover every running container for this resource. Coolify names them
 # <app>-<uuid> (wordpress-, mariadb-, …) or, for a standalone database, just
 # <uuid>. This replaces the WordPress-only assumption.
@@ -136,6 +217,9 @@ VOLCOUNT=0
 DBCOUNT=0
 WP_CONTAINER=""
 WP_DB=""
+# App (non-database) containers, kept so stack detection has something to probe
+# after the dumps are done.
+APP_CONTAINERS=""
 
 # ── Pass 1: classify containers, collect volumes and database targets ──
 while IFS= read -r c; do
@@ -147,6 +231,7 @@ while IFS= read -r c; do
   if echo "$NI" | grep -qiE 'postgres|mariadb|mysql|percona'; then
     echo "$c" >> "$DB_LIST"
   else
+    APP_CONTAINERS="$APP_CONTAINERS $c"
     # Application/service container: its named (persistent) volumes.
     while IFS= read -r src; do
       [ -n "$src" ] && [ -d "$src" ] && { echo "$src" >> "$PATHS_FILE"; VOLCOUNT=$((VOLCOUNT+1)); }
@@ -177,24 +262,23 @@ while IFS= read -r c; do
     PGU=$(read_env "$c" POSTGRES_USER); [ -n "$PGU" ] || PGU=postgres
     PGDB=$(read_env "$c" POSTGRES_DB); [ -n "$PGDB" ] || PGDB="$PGU"
     PGP=$(read_env "$c" POSTGRES_PASSWORD)
-    if docker exec -e PGPASSWORD="$PGP" "$c" sh -lc "pg_dump -U $PGU -d $PGDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
+    # --clean --if-exists is what makes this dump RESTORABLE. Plain pg_dump
+    # emits no DROP statements, so replaying it into a database that already
+    # has tables fails on every object; psql without ON_ERROR_STOP shrugs those
+    # off and exits 0, so the restore reports success having changed nothing.
+    # --no-owner --no-acl so the dump also replays into a target whose roles
+    # differ, which is what restoring into a staging clone does.
+    if docker exec -e PGPASSWORD="$PGP" "$c" sh -lc "pg_dump --clean --if-exists --no-owner --no-acl -U $PGU -d $PGDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
       echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1))
     else rm -f "$DUMP"; fi
   else
-    RU=root
-    RP=$(read_env "$c" MARIADB_ROOT_PASSWORD); [ -n "$RP" ] || RP=$(read_env "$c" MYSQL_ROOT_PASSWORD)
-    MDB=$(read_env "$c" MARIADB_DATABASE); [ -n "$MDB" ] || MDB=$(read_env "$c" MYSQL_DATABASE)
-    if [ -z "$RP" ] && [ -n "$WP_CONTAINER" ]; then
-      RU=$(read_env "$WP_CONTAINER" WORDPRESS_DB_USER)
-      RP=$(read_env "$WP_CONTAINER" WORDPRESS_DB_PASSWORD)
-      MDB=$(read_env "$WP_CONTAINER" WORDPRESS_DB_NAME)
+    CREDS=$(mysql_creds_for "$c" "$WP_CONTAINER")
+    RU=$(printf '%s' "$CREDS" | cut -f1)
+    RP=$(printf '%s' "$CREDS" | cut -f2)
+    MDB=$(printf '%s' "$CREDS" | cut -f3)
+    if mysql_dump_to "$c" "$RU" "$RP" "$MDB" "$DUMP"; then
+      echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1)); WP_DB="$c"
     fi
-    [ -n "$MDB" ] || MDB=wordpress
-    if docker exec "$c" sh -lc "mariadb-dump --single-transaction -u$RU -p$RP $MDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
-      echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1)); WP_DB="$c"
-    elif docker exec "$c" sh -lc "mysqldump --single-transaction -u$RU -p$RP $MDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
-      echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1)); WP_DB="$c"
-    else rm -f "$DUMP"; fi
   fi
 done < "$DB_LIST"
 rm -f "$DB_LIST"
@@ -238,6 +322,38 @@ if [ -n "$WP_CONTAINER" ] && [ -n "$WP_DB" ]; then
   echo "COMMENTS=$(q "SELECT COUNT(*) FROM \${PREFIX}comments WHERE comment_approved='1'")"
 fi
 
+# ── Stack markers ──
+# Raw findings only. What they MEAN is decided by lib/backup-stack.ts on the
+# server, where the rule can be unit tested, rather than in bash on a host whose
+# tooling we do not control.
+NODE_FRAMEWORK=""
+APP_NAME=""
+APP_VERSION=""
+for ac in $APP_CONTAINERS; do
+  [ -n "$ac" ] || continue
+  for root in /app /usr/src/app /srv/app /var/www/html; do
+    PKG=$(docker exec "$ac" sh -lc "cat $root/package.json" 2>/dev/null) || continue
+    [ -n "$PKG" ] || continue
+    # Matched as dependency KEYS. A substring search for "next" would classify
+    # any app whose description or a transitive package name mentions it.
+    if printf '%s' "$PKG" | grep -qE '"next"[[:space:]]*:'; then NODE_FRAMEWORK=next
+    elif printf '%s' "$PKG" | grep -qE '"nuxt3?"[[:space:]]*:'; then NODE_FRAMEWORK=nuxt
+    else NODE_FRAMEWORK=node
+    fi
+    APP_NAME=$(printf '%s' "$PKG" | grep -m1 -E '"name"[[:space:]]*:' | sed -E 's/.*"name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\\1/')
+    APP_VERSION=$(printf '%s' "$PKG" | grep -m1 -E '"version"[[:space:]]*:' | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]*)".*/\\1/')
+    break
+  done
+  [ -n "$NODE_FRAMEWORK" ] && break
+done
+[ -n "$NODE_FRAMEWORK" ] && echo "NODE_FRAMEWORK=$NODE_FRAMEWORK"
+[ -n "$APP_NAME" ] && echo "APP_NAME=$APP_NAME"
+[ -n "$APP_VERSION" ] && echo "APP_VERSION=$APP_VERSION"
+# base64 because the list is multi-line and the protocol here is one KEY=VALUE
+# per line. Container names are what let the server recognise a stack whose
+# in-container probe failed.
+echo "CONTAINERS_B64=$(printf '%s' "$CONTAINERS" | base64 | tr -d '\\n')"
+
 # ── One restic snapshot to B2: all volumes + all dumps, tagged with backup id ──
 [ -f /root/.config/restic/b2-credentials.env ] || { echo "RESULT=fail_no_b2_creds"; rm -f "$PATHS_FILE"; exit 1; }
 set -a; . /root/.config/restic/b2-credentials.env; set +a
@@ -245,16 +361,17 @@ export AWS_ACCESS_KEY_ID="\${B2_KEY_ID:-}" AWS_SECRET_ACCESS_KEY="\${B2_APPLICAT
 REPO="s3:\${B2_ENDPOINT}/\${B2_BUCKET}"
 
 # Total on-disk size of everything going into the snapshot (approximate).
-SIZE_BYTES=$(du -scb $(cat "$PATHS_FILE") 2>/dev/null | tail -1 | cut -f1)
+# Fed NUL-separated rather than as arguments: an unquoted $(cat …) splits paths
+# containing spaces into separate arguments, and a site with many volumes can
+# overflow the argument list entirely.
+SIZE_BYTES=$(tr '\\n' '\\0' < "$PATHS_FILE" | du -scb --files0-from=- 2>/dev/null | tail -1 | cut -f1)
 echo "SIZE_BYTES=\${SIZE_BYTES:-0}"
 
 OUT=$(/usr/bin/restic -r "$REPO" backup ${resticLabelFlags} \\
   --tag jongo-backup \\
   --tag "site=$RUUID" \\
   --tag "backup=$BID" \\
-  --exclude '**/wp-content/cache' \\
-  --exclude '**/wp-content/*cache*/**' \\
-  --exclude '**/wp-content/upgrade' \\
+  ${resticExcludeFlags} \\
   --files-from "$PATHS_FILE" 2>&1)
 rm -f "$PATHS_FILE"
 echo "$OUT" | tail -5
@@ -280,7 +397,12 @@ KEEP_MONTHLY=${keepMonthly}
 # would be worse still, since backup=<id> is unique per snapshot.
 FORGET_JSON=$(/usr/bin/restic -r "$REPO" forget --json --group-by host \\
   --tag "site=$RUUID" \\
-  --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" 2>/dev/null) || true
+  --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" 2>/dev/null)
+# Retention that quietly stops working is a bill nobody reads until it is large.
+# forget fails on repo lock contention, which is exactly what concurrent backups
+# produce, so the failure has to leave a trace rather than vanish into || true.
+FORGET_STATUS=$?
+[ "$FORGET_STATUS" -eq 0 ] || echo "FORGET_FAILED=$FORGET_STATUS"
 
 # Hand the raw JSON back for the caller to parse. Doing it here would mean
 # scraping in shell on a host whose tooling we do not control, and it is exactly
@@ -341,6 +463,17 @@ function parseForgotten(encoded) {
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 
+/** Container names, sent base64 because the KEY=VALUE protocol is line-based. */
+function decodeContainers(encoded) {
+  const value = String(encoded || "").trim();
+  if (!value) return [];
+  try {
+    return Buffer.from(value, "base64").toString("utf8").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 try {
   console.log(`[site-backup] host=${sshHost} resource=${resourceUuid} backup=${backupId}`);
   const r = runSsh(buildScript());
@@ -354,7 +487,26 @@ try {
     status: ok ? "success" : "failed",
     resticSnapshotId: k.SNAPSHOT || null,
     sizeBytes: num(k.SIZE_BYTES),
+    // Fallback only. The server classifies from stackMarkers below using
+    // lib/backup-stack.ts; this crude rule stays so an older server that does
+    // not read markers still records something sensible.
     resourceType: k.WP_VERSION ? "wordpress" : (num(k.DBCOUNT) && !num(k.VOLCOUNT) ? "database" : "service"),
+    // Raw findings for server-side stack detection. Deliberately not classified
+    // here: the rule belongs somewhere it can be tested.
+    stackMarkers: {
+      containers: decodeContainers(k.CONTAINERS_B64),
+      wpVersion: k.WP_VERSION || null,
+      posts: num(k.POSTS),
+      pages: num(k.PAGES),
+      plugins: num(k.PLUGINS),
+      comments: num(k.COMMENTS),
+      nodeFramework: k.NODE_FRAMEWORK || null,
+      appName: k.APP_NAME || null,
+      appVersion: k.APP_VERSION || null,
+      volumeCount: num(k.VOLCOUNT),
+      databaseCount: num(k.DBCOUNT),
+      databaseTables: num(k.DB_TABLES)
+    },
     // Snapshots retention just removed; their catalogue rows must stop
     // advertising a restore that would fail. Parsed from restic's JSON rather
     // than its human output, which prints KEPT snapshots in the same shape.
