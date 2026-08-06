@@ -26,9 +26,26 @@ export type CacheFlushInput = {
   redis?: CacheTargetStatus | null;
 };
 
+export type CacheFlushReason =
+  /** Something was cleared. */
+  | "flushed"
+  /** Something was cleared, but not everything that was tried. */
+  | "flushed_partial"
+  /** Nothing to clear — this site has no caching layer. Not a failure. */
+  | "nothing_to_flush"
+  /** There was a cache, and clearing it failed. */
+  | "flush_failed";
+
 export type CacheFlushOutcome = {
   /** True only when something was genuinely cleared. */
   flushed: boolean;
+  /**
+   * Lets the caller tell "nothing to do" apart from "it broke". Both leave
+   * `flushed` false — neither may be shown as a success — but only one of them
+   * is a problem, and rendering them identically makes a normal site look
+   * broken.
+   */
+  reason: CacheFlushReason;
   /** Sentence for the operator. Never claims more than happened. */
   message: string;
   /** Per-target detail, for the expanded view. */
@@ -59,14 +76,19 @@ export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
     if (failedTargets.length > 0) {
       return {
         flushed: false,
+        reason: "flush_failed",
         message: `The cache could not be flushed (${failedTargets.join(", ")} failed). Nothing was cleared.`,
         details
       };
     }
     return {
       flushed: false,
-      message:
-        "No cache was found to flush. This site has no object cache, no page cache files and no Redis, so there was nothing to clear.",
+      // Deliberately NOT phrased as a failure. This site simply has no caching
+      // layer installed, which is a normal way for a WordPress site to be, and
+      // the caller renders it as a note rather than an error. It still is not a
+      // success: reporting "flushed" here is the exact bug this replaced.
+      reason: "nothing_to_flush",
+      message: "Nothing to flush — this site has no caching plugin, object cache or Redis.",
       details
     };
   }
@@ -76,6 +98,7 @@ export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
   if (failedTargets.length > 0) {
     return {
       flushed: true,
+      reason: "flushed_partial",
       message: `Flushed ${joinList(flushedTargets)}, but ${joinList(failedTargets)} could not be cleared.`,
       details
     };
@@ -83,6 +106,7 @@ export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
 
   return {
     flushed: true,
+    reason: "flushed",
     message: `Flushed ${joinList(flushedTargets)}.`,
     details
   };

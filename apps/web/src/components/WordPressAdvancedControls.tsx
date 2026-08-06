@@ -108,6 +108,7 @@ export default function WordPressAdvancedControls({
   const [domainError, setDomainError] = useState<string | null>(null);
   const [flushingCache, setFlushingCache] = useState(false);
   const [cacheError, setCacheError] = useState<string | null>(null);
+  const [cacheNote, setCacheNote] = useState<string | null>(null);
 
   const normalizedSlug = useMemo(() => normalizeTemporaryDomainSlug(domainSlug) || "", [domainSlug]);
   const previewDomain = useMemo(
@@ -127,12 +128,20 @@ export default function WordPressAdvancedControls({
   async function flushCache() {
     setFlushingCache(true);
     setCacheError(null);
+    setCacheNote(null);
 
     try {
       const response = await fetch(`/api/sites/${siteId}/cache/flush`, { method: "POST" });
       const payload = await response.json().catch(() => null);
 
       if (!response.ok || !payload?.ok) {
+        // "This site has no cache" is a normal state, not a malfunction.
+        // Showing it in red made a stock WordPress install look broken, so it
+        // reads as a note. It still is not a success — nothing was cleared.
+        if (payload?.reason === "nothing_to_flush") {
+          setCacheNote(payload.message);
+          return;
+        }
         setCacheError(payload?.message ?? "The cache could not be flushed.");
         return;
       }
@@ -229,6 +238,7 @@ export default function WordPressAdvancedControls({
                 Clear this app&apos;s object cache, page cache files and Redis.
               </p>
               {cacheError ? <p className="form-error" style={{ margin: "0.35rem 0 0" }}>{cacheError}</p> : null}
+              {cacheNote ? <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>{cacheNote}</p> : null}
             </div>
             <button
               type="button"
