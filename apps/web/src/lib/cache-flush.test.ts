@@ -23,23 +23,40 @@ describe("describeCacheFlush", () => {
   it("does NOT report success when nothing was flushed", () => {
     const outcome = describeCacheFlush({ wpCli: "absent", fileCache: "absent", redis: "absent" });
     expect(outcome.flushed).toBe(false);
-    expect(outcome.message).toContain("No cache was found to flush");
+    expect(outcome.reason).toBe("nothing_to_flush");
   });
 
   it("does not report success when every target failed", () => {
     const outcome = describeCacheFlush({ wpCli: "failed", fileCache: "failed", redis: "absent" });
     expect(outcome.flushed).toBe(false);
+    expect(outcome.reason).toBe("flush_failed");
     expect(outcome.message).toContain("could not be flushed");
   });
 
   it("distinguishes 'nothing there' from 'tried and failed'", () => {
     // These call for completely different next steps, so they must not read
-    // the same.
+    // the same — and the caller renders only one of them as an error.
     const absent = describeCacheFlush({ wpCli: "absent", fileCache: "absent", redis: "absent" });
     const failed = describeCacheFlush({ wpCli: "failed", fileCache: "absent", redis: "absent" });
     expect(absent.message).not.toBe(failed.message);
+    expect(absent.reason).toBe("nothing_to_flush");
+    expect(failed.reason).toBe("flush_failed");
     expect(absent.flushed).toBe(false);
     expect(failed.flushed).toBe(false);
+  });
+
+  it("does not phrase a site with no caching layer as a failure", () => {
+    // A stock WordPress install has no cache. Rendering that in red made a
+    // perfectly healthy site look broken.
+    const outcome = describeCacheFlush({ wpCli: "absent", fileCache: "absent", redis: "absent" });
+    expect(outcome.message).not.toMatch(/fail|error|could not/i);
+    expect(outcome.message).toContain("Nothing to flush");
+  });
+
+  it("tags the reason on every outcome so the caller never re-derives it", () => {
+    expect(describeCacheFlush({ fileCache: "flushed" }).reason).toBe("flushed");
+    expect(describeCacheFlush({ fileCache: "flushed", redis: "failed" }).reason).toBe("flushed_partial");
+    expect(describeCacheFlush({}).reason).toBe("nothing_to_flush");
   });
 
   it("reports a partial failure alongside the success", () => {

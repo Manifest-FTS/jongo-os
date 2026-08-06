@@ -97,8 +97,9 @@ async function flushCache({ params }: Params) {
       [scriptPath, "--resource-uuid", resourceUuid],
       { cwd: process.cwd(), env: process.env, timeout: 120_000, maxBuffer: 8 * 1024 * 1024 },
       (error, stdout, stderr) => {
-        // A non-zero exit is expected when nothing could be flushed, so the
-        // payload below is what decides the outcome — not the exit code.
+        // The exit code is deliberately not consulted: the payload below is the
+        // authority on what happened, and it distinguishes outcomes the exit
+        // code cannot (nothing to flush vs. a flush that failed).
         resolve({ stdout: stdout ?? "", stderr: stderr ?? "", failed: Boolean(error) });
       }
     );

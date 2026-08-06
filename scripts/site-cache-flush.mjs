@@ -253,19 +253,19 @@ function describeCacheFlush(input) {
 
   if (flushed.length === 0) {
     if (failed.length > 0) {
-      return { flushed: false, message: `The cache could not be flushed (${failed.join(", ")} failed). Nothing was cleared.`, details };
+      return { flushed: false, reason: "flush_failed", message: `The cache could not be flushed (${failed.join(", ")} failed). Nothing was cleared.`, details };
     }
     return {
       flushed: false,
-      message:
-        "No cache was found to flush. This site has no object cache, no page cache files and no Redis, so there was nothing to clear.",
+      reason: "nothing_to_flush",
+      message: "Nothing to flush — this site has no caching plugin, object cache or Redis.",
       details
     };
   }
   if (failed.length > 0) {
-    return { flushed: true, message: `Flushed ${join(flushed)}, but ${join(failed)} could not be cleared.`, details };
+    return { flushed: true, reason: "flushed_partial", message: `Flushed ${join(flushed)}, but ${join(failed)} could not be cleared.`, details };
   }
-  return { flushed: true, message: `Flushed ${join(flushed)}.`, details };
+  return { flushed: true, reason: "flushed", message: `Flushed ${join(flushed)}.`, details };
 }
 
 console.log(`[site-cache-flush] host=${sshHost} resource=${resourceUuid}`);
@@ -291,14 +291,20 @@ try {
   const outcome = describeCacheFlush({ wpCli: k.WP_CLI, fileCache: k.FILE_CACHE, redis: k.REDIS });
   const payload = {
     ok: outcome.flushed,
-    reason: outcome.flushed ? "flushed" : "nothing_flushed",
+    reason: outcome.reason,
     message: outcome.message,
     details: outcome.details,
     entriesRemoved: k.FILE_CACHE_ENTRIES ? Number(k.FILE_CACHE_ENTRIES) : null
   };
   console.log(`SITE_CACHE_FLUSH_RESULT=${JSON.stringify(payload)}`);
-  console.log(outcome.flushed ? "\nRESULT: PASS" : "\nRESULT: FAIL");
-  process.exit(outcome.flushed ? 0 : 1);
+
+  // A site with no caching layer is not a failed run. Exiting non-zero here
+  // would fail any CI step that flushes caches across a fleet, and printing
+  // FAIL against a perfectly healthy stock WordPress install is the same
+  // misreporting this script was written to remove — just one layer down.
+  const cliOk = outcome.flushed || outcome.reason === "nothing_to_flush";
+  console.log(outcome.flushed ? "\nRESULT: PASS" : cliOk ? "\nRESULT: NOTHING TO FLUSH" : "\nRESULT: FAIL");
+  process.exit(cliOk ? 0 : 1);
 } finally {
   if (cleanupDir) { try { fs.rmSync(cleanupDir, { recursive: true, force: true }); } catch { /* ignore */ } }
 }
