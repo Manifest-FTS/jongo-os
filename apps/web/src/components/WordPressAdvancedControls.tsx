@@ -106,12 +106,44 @@ export default function WordPressAdvancedControls({
   const [domainSuffix, setDomainSuffix] = useState(initialDomainSuffix ?? DEFAULT_TEMPORARY_DOMAIN_SUFFIX);
   const [savingDomain, setSavingDomain] = useState(false);
   const [domainError, setDomainError] = useState<string | null>(null);
+  const [flushingCache, setFlushingCache] = useState(false);
+  const [cacheError, setCacheError] = useState<string | null>(null);
 
   const normalizedSlug = useMemo(() => normalizeTemporaryDomainSlug(domainSlug) || "", [domainSlug]);
   const previewDomain = useMemo(
     () => buildTemporaryProductionDomain({ slug: normalizedSlug || "site", suffix: domainSuffix }),
     [normalizedSlug, domainSuffix]
   );
+
+  /**
+   * Flush the site's caches.
+   *
+   * The success toast reports what the SERVER says was cleared, never a fixed
+   * string. This button used to show "Cache flush request queued." with no
+   * request behind it, so anyone debugging a stale page would rule out caching
+   * on the strength of a message that meant nothing. A flush that finds nothing
+   * to clear is surfaced as an error, because it is not a success.
+   */
+  async function flushCache() {
+    setFlushingCache(true);
+    setCacheError(null);
+
+    try {
+      const response = await fetch(`/api/sites/${siteId}/cache/flush`, { method: "POST" });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok || !payload?.ok) {
+        setCacheError(payload?.message ?? "The cache could not be flushed.");
+        return;
+      }
+
+      showSuccessToast(payload.message ?? "Cache flushed.");
+    } catch {
+      setCacheError("The cache could not be flushed — the request did not complete.");
+    } finally {
+      setFlushingCache(false);
+    }
+  }
 
   async function saveDomainSettings() {
     setSavingDomain(true);
@@ -193,14 +225,18 @@ export default function WordPressAdvancedControls({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
             <div>
               <h4 style={{ margin: 0, fontSize: "0.95rem" }}>Flush Cache</h4>
-              <p className="card-muted" style={{ margin: "0.25rem 0 0" }}>Flush this environment's cache.</p>
+              <p className="card-muted" style={{ margin: "0.25rem 0 0" }}>
+                Clear this app&apos;s object cache, page cache files and Redis.
+              </p>
+              {cacheError ? <p className="form-error" style={{ margin: "0.35rem 0 0" }}>{cacheError}</p> : null}
             </div>
             <button
               type="button"
               className="btn"
-              onClick={() => showSuccessToast("Cache flush request queued.")}
+              onClick={flushCache}
+              disabled={!canManageDomainSlug || flushingCache}
             >
-              Flush Cache
+              {flushingCache ? "Flushing..." : "Flush Cache"}
             </button>
           </div>
         </div>
