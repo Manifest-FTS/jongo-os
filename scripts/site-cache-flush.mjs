@@ -142,29 +142,57 @@ fi
 # Counted before deleting so the result reports real work rather than the exit
 # status of an rm that matched nothing. Only the CONTENTS go: the directory
 # itself is often plugin-owned with specific permissions.
-CACHE_DIR="$ROOT/wp-content/cache"
-if docker exec "$WP" sh -lc "[ -d $CACHE_DIR ]" >/dev/null 2>&1; then
-  BEFORE=$(docker exec "$WP" sh -lc "find $CACHE_DIR -mindepth 1 | wc -l" 2>/dev/null | tr -dc '0-9')
-  if [ "\${BEFORE:-0}" -gt 0 ]; then
-    if docker exec "$WP" sh -lc "find $CACHE_DIR -mindepth 1 -maxdepth 1 -exec rm -rf {} +" >/dev/null 2>&1; then
-      echo "FILE_CACHE=flushed"
-      echo "FILE_CACHE_ENTRIES=\${BEFORE:-0}"
-    else
-      echo "FILE_CACHE=failed"
-    fi
+#
+# More than one directory because not every plugin uses wp-content/cache.
+# LiteSpeed writes to wp-content/litespeed, so a site using it was reported as
+# having no page cache at all while serving stale pages from one.
+CACHE_DIRS="$ROOT/wp-content/cache $ROOT/wp-content/litespeed"
+FC_TOTAL=0
+FC_FAILED=0
+for d in $CACHE_DIRS; do
+  docker exec "$WP" sh -lc "[ -d $d ]" >/dev/null 2>&1 || continue
+  n=$(docker exec "$WP" sh -lc "find $d -mindepth 1 | wc -l" 2>/dev/null | tr -dc '0-9')
+  [ "\${n:-0}" -gt 0 ] || continue
+  if docker exec "$WP" sh -lc "find $d -mindepth 1 -maxdepth 1 -exec rm -rf {} +" >/dev/null 2>&1; then
+    FC_TOTAL=$((FC_TOTAL + \${n:-0}))
   else
-    # Directory exists but is already empty — nothing to do, and saying
-    # "flushed" would overstate it.
-    echo "FILE_CACHE=absent"
+    FC_FAILED=1
   fi
+done
+if [ "$FC_TOTAL" -gt 0 ]; then
+  echo "FILE_CACHE=flushed"
+  echo "FILE_CACHE_ENTRIES=$FC_TOTAL"
+  [ "$FC_FAILED" = 1 ] && echo "FILE_CACHE_PARTIAL=1"
+elif [ "$FC_FAILED" = 1 ]; then
+  echo "FILE_CACHE=failed"
 else
+  # No cache directory, or one that is already empty. Saying "flushed" here
+  # would overstate it.
   echo "FILE_CACHE=absent"
 fi
 
-# ── 3. Linked Redis object cache ──
-# The host is a Coolify internal name that IS the redis resource, so it is
-# reachable as a container on this host.
+# ── 3. Persistent object cache (Redis) ──
+# The object-cache.php drop-in is the RELIABLE signal that a persistent object
+# cache exists. Env vars are not: WordPress is normally pointed at Redis from
+# wp-config.php, so an env-only probe reports "no Redis" for a site that very
+# much has one — and "absent" would then be a lie about a cache still serving
+# stale data.
+DROPIN=0
+docker exec "$WP" sh -lc '[ -f /var/www/html/wp-content/object-cache.php ]' >/dev/null 2>&1 && DROPIN=1
+
 RHOST=$(read_env "$WP" WP_REDIS_HOST); [ -n "$RHOST" ] || RHOST=$(read_env "$WP" REDIS_HOST)
+if [ -z "$RHOST" ]; then
+  # Parsed on THIS side of the exec so awk can split on the PHP string
+  # delimiter without nested-quote gymnastics.
+  # define('WP_REDIS_HOST', 'host') -> field 4.
+  #
+  # ^[^/#]* rejects commented-out defines. A plain match would happily return
+  # the host from a commented-out define -- a stale name the site does not use,
+  # and if a container answers to it we would be flushing somebody else's Redis.
+  RCONF=$(docker exec "$WP" sh -lc 'grep -m1 -E "^[^/#]*WP_REDIS_HOST" /var/www/html/wp-config.php' 2>/dev/null)
+  RHOST=$(printf '%s' "$RCONF" | awk -F"'" '{print $4}')
+fi
+
 if [ -n "$RHOST" ] && docker ps --format '{{.Names}}' | grep -qx "$RHOST"; then
   RPASS=$(read_env "$WP" WP_REDIS_PASSWORD); [ -n "$RPASS" ] || RPASS=$(read_env "$RHOST" REDIS_PASSWORD)
   if [ -n "$RPASS" ]; then
@@ -173,6 +201,12 @@ if [ -n "$RHOST" ] && docker ps --format '{{.Names}}' | grep -qx "$RHOST"; then
     OK=$(docker exec "$RHOST" sh -lc "redis-cli FLUSHALL" 2>/dev/null | tr -d '\\r')
   fi
   if [ "$OK" = "OK" ]; then echo "REDIS=flushed"; else echo "REDIS=failed"; fi
+elif [ "$DROPIN" = 1 ]; then
+  # A persistent object cache IS installed, but its backend could not be
+  # resolved to a container here. Reporting "absent" would tell the operator
+  # there is no object cache when there is one they cannot clear.
+  echo "REDIS=failed"
+  echo "REDIS_NOTE=object_cache_dropin_present_backend_unresolved"
 else
   echo "REDIS=absent"
 fi
