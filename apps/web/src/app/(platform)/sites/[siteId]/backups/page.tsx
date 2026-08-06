@@ -418,12 +418,21 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   // One verdict drives every backup-health claim on this page, so the cards
   // cannot contradict each other. Derived from the app's live capability, so a
   // newly added app is classified with no per-app setup.
+  // Split the missing schedules by whether Coolify could create them at all.
+  // Its API only schedules standalone databases, so a WordPress stack's
+  // embedded MariaDB can never have one — telling the owner to go and
+  // configure it is an instruction nobody can follow.
+  const missingUnschedulable = uncoveredDatabases.filter((entry) => entry.source === "embedded_service").length;
+  const missingSchedulable = uncoveredDatabases.length - missingUnschedulable;
+
   const diagnosis = buildBackupDiagnosis({
     backupable: hasBackupableState,
     capabilityReason: capability.reason,
     isStagingResource,
     isConfigured,
-    hasSuccessfulBackup: Boolean(lastSuccessfulBackup)
+    hasSuccessfulBackup: Boolean(lastSuccessfulBackup),
+    missingSchedulable,
+    missingUnschedulable
   });
 
   const diagnosisItems = [
@@ -491,9 +500,16 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         <article className="card">
           <h3 className="card-title" style={{ color: "var(--warning, #d97706)" }}>Backups not configured</h3>
           <p className="card-muted">No active backup schedules were found for at least one database in this workspace.</p>
-          {uncoveredDatabases.length > 0 ? (
+          {/* Only the databases Coolify could actually schedule. Listing an
+              embedded service database here named a thing the reader has no
+              way to fix. */}
+          {uncoveredDatabases.some((entry) => entry.source !== "embedded_service") ? (
             <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-              Missing schedules: {uncoveredDatabases.map((entry) => entry.resourceName).join(", ")}
+              Missing schedules:{" "}
+              {uncoveredDatabases
+                .filter((entry) => entry.source !== "embedded_service")
+                .map((entry) => entry.resourceName)
+                .join(", ")}
             </p>
           ) : null}
           <p className="card-muted" style={{ marginBottom: 0 }}>
