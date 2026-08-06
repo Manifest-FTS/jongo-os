@@ -52,6 +52,20 @@ export function buildBackupDiagnosis(input: {
   isConfigured: boolean;
   /** Whether any backup has ever succeeded. */
   hasSuccessfulBackup: boolean;
+  /**
+   * Missing schedules Coolify could actually create, and missing schedules its
+   * API cannot create at all.
+   *
+   * Coolify can only schedule STANDALONE databases. A WordPress stack's MariaDB
+   * is embedded in a service, and POST /databases/<uuid>/backups answers 404
+   * for it — see ensureCoolifyAppBackupSchedules, which skips them deliberately
+   * and relies on Jongo's own full-site backups instead. Without this
+   * distinction the page told every WordPress site on the platform to "contact
+   * your platform administrator to configure automated database backups", an
+   * instruction no administrator can carry out.
+   */
+  missingSchedulable?: number;
+  missingUnschedulable?: number;
 }): BackupDiagnosis {
   const staging = Boolean(input.isStagingResource);
 
@@ -96,6 +110,29 @@ export function buildBackupDiagnosis(input: {
       // Never "error": there is no successful backup because there is nothing
       // to back up, which is not a fault.
       successTone: "unknown"
+    };
+  }
+
+  // Schedules are missing, but every one of them is a database Coolify's API
+  // physically cannot schedule. Alarming here is not just unhelpful, it is
+  // unactionable: the only fix would be for Coolify to grow a feature. These
+  // apps are covered by Jongo's own full-site backups, so the honest health
+  // signal is whether one of THOSE has succeeded — which successTone already
+  // reports. Same rule as the docstring above: alarming on a thing nobody can
+  // fix is how people learn to ignore alarms that matter.
+  if (
+    !input.isConfigured &&
+    (input.missingUnschedulable ?? 0) > 0 &&
+    (input.missingSchedulable ?? 0) === 0
+  ) {
+    return {
+      applicable: true,
+      showNotConfiguredAlarm: false,
+      notApplicableDetail: "",
+      configuredTone: "unknown",
+      configuredDetail:
+        "This app's database is embedded in a service, which Coolify cannot schedule backups for. It is covered by Jongo's own full-site backups instead.",
+      successTone: input.hasSuccessfulBackup ? "healthy" : "error"
     };
   }
 

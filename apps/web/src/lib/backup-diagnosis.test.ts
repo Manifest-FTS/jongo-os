@@ -1,4 +1,63 @@
 import { describe, expect, it } from "vitest";
+
+describe("service-embedded databases Coolify cannot schedule", () => {
+  const wordpressStack = {
+    backupable: true,
+    capabilityReason: "service_containers" as const,
+    isConfigured: false,
+    hasSuccessfulBackup: false
+  };
+
+  it("does not alarm when the only missing schedule is unschedulable", () => {
+    // A WordPress stack's MariaDB is embedded in a service, and Coolify's API
+    // answers 404 for it. "Contact your platform administrator" is an
+    // instruction nobody can carry out.
+    const diagnosis = buildBackupDiagnosis({
+      ...wordpressStack,
+      missingSchedulable: 0,
+      missingUnschedulable: 1
+    });
+    expect(diagnosis.showNotConfiguredAlarm).toBe(false);
+    expect(diagnosis.configuredDetail).toContain("embedded in a service");
+  });
+
+  it("still alarms when a schedulable database is missing its schedule", () => {
+    const diagnosis = buildBackupDiagnosis({
+      ...wordpressStack,
+      missingSchedulable: 1,
+      missingUnschedulable: 1
+    });
+    expect(diagnosis.showNotConfiguredAlarm).toBe(true);
+  });
+
+  it("reports no successful backup as an error even when scheduling is impossible", () => {
+    // Coolify being unable to schedule is not a reason to call the app healthy:
+    // if Jongo has never backed it up either, nothing is protecting it.
+    const diagnosis = buildBackupDiagnosis({
+      ...wordpressStack,
+      missingSchedulable: 0,
+      missingUnschedulable: 1
+    });
+    expect(diagnosis.successTone).toBe("error");
+  });
+
+  it("reports healthy once Jongo's own backup has succeeded", () => {
+    const diagnosis = buildBackupDiagnosis({
+      ...wordpressStack,
+      hasSuccessfulBackup: true,
+      missingSchedulable: 0,
+      missingUnschedulable: 1
+    });
+    expect(diagnosis.successTone).toBe("healthy");
+    expect(diagnosis.showNotConfiguredAlarm).toBe(false);
+  });
+
+  it("keeps the old behaviour when the caller passes no counts", () => {
+    // Callers that have not been updated must not silently lose the alarm.
+    const diagnosis = buildBackupDiagnosis(wordpressStack);
+    expect(diagnosis.showNotConfiguredAlarm).toBe(true);
+  });
+});
 import { buildBackupDiagnosis } from "./backup-diagnosis";
 
 describe("buildBackupDiagnosis", () => {
