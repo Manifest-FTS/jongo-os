@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, getCoolifyOverview, provisionCoolifyWordPressService } from "@/lib/coolify";
 import { isAdminRole } from "@/lib/roles";
 import {
+  buildTemporaryProductionDomain,
   normalizeTemporaryDomainSlug,
   resolveTemporaryDomainSuffix
 } from "@/lib/temporary-domains";
@@ -183,14 +184,23 @@ export async function POST(req: Request, { params }: Params) {
     // in Jongo and nowhere else.
     let coolifyServiceUuid = body.coolifyServiceUuid?.trim() || null;
     let provisionMessage: string | null = null;
+    let provisionDomainApplied: boolean | null = null;
 
     if (body.provisionWordPress === true && !coolifyServiceUuid) {
       // Reuses the org loaded above, which is already access-checked; a second
       // lookup here would bypass that check and shadow the outer binding.
+      // The same domain the operator sees in the form. Building it here rather
+      // than letting Coolify assign a generated host is the whole point: the
+      // site should come up on the address it was created with.
+      const desiredDomain = buildTemporaryProductionDomain({
+        slug: pinnedTemporarySlug,
+        suffix: pinnedTemporarySuffix
+      });
       const provision = await provisionCoolifyWordPressService({
         name,
         projectUuid: org.coolifyProjectId ?? null,
-        environmentName: "production"
+        environmentName: "production",
+        domain: desiredDomain ?? null
       });
       if (!provision.ok || !provision.uuid) {
         // Refuse rather than fall back to creating a row with no infrastructure
@@ -202,6 +212,9 @@ export async function POST(req: Request, { params }: Params) {
       }
       coolifyServiceUuid = provision.uuid;
       provisionMessage = provision.message;
+      // Not fatal — the site exists — but the caller must be told, or someone
+      // goes looking for a domain that was never applied.
+      provisionDomainApplied = provision.domainApplied ?? null;
     }
 
     let coolifyProjectId: string | null = null;
