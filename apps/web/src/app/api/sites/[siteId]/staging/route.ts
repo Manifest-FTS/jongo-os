@@ -20,6 +20,22 @@ import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { StagingProvisioningPipeline } from "@/orchestration/staging";
 
+/**
+ * One matching rule for the whole staging lifecycle.
+ *
+ * provisionCoolifyStagingFromProduction() CREATES the staging resource under
+ * relaxed matching, but the route used to re-probe with strict matching. The
+ * audit log shows the cost exactly: stagingCandidateCount 1,
+ * stagingMatchedCandidateCount 0 — the service had just been created (POST
+ * /api/v1/services -> 201) and was then invisible, so applicationUuid stayed
+ * empty and BOTH the domain application and the deploy were skipped. Staging
+ * came up undeployed on a generated host, every time.
+ *
+ * Create, detect, deploy and destroy now share this constant so they cannot
+ * drift apart again.
+ */
+const STAGING_MATCH = { relaxedTargetMatch: true } as const;
+
 type Params = { params: Promise<{ siteId: string }> };
 
 type StagingContentProbe = {
@@ -942,7 +958,7 @@ export async function GET(_req: Request, { params }: Params) {
 
   const [stagingCapability, backupInventory] = appUuid
     ? await Promise.all([
-        getCoolifyAppStagingCapability(appUuid, projectId),
+        getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH),
         getCoolifyAppBackupInventory(appUuid)
       ])
     : [null, null];
@@ -1243,7 +1259,7 @@ export async function POST(req: Request, { params }: Params) {
 
   if (body.enabled) {
     if (!site.stagingEnabled && appUuid) {
-      const residualCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+      const residualCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
       if (residualCapability.applicationUuid) {
         const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
         return NextResponse.json({
@@ -1281,7 +1297,7 @@ export async function POST(req: Request, { params }: Params) {
       });
     }
 
-    const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+    const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
     const currentStagingTargetResolved = Boolean(currentCapability.detected && currentCapability.applicationUuid);
     if (currentStagingTargetResolved) {
       let capabilityAfterExistingCheck = currentCapability;
@@ -1321,7 +1337,7 @@ export async function POST(req: Request, { params }: Params) {
         try {
           await triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid, "staging");
           stagingDeployTriggered = true;
-          const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+          const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
           capabilityAfterExistingCheck = refreshedCapability;
           currentStagingRunning = refreshedCapability.status === "healthy";
         } catch { }
@@ -1449,11 +1465,11 @@ export async function POST(req: Request, { params }: Params) {
     });
     const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
 
-    let capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId);
+    let capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
     if (!capabilityAfterProvision.applicationUuid) {
       for (const retryDelayMs of [250, 500]) {
         await sleep(retryDelayMs);
-        const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+        const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
         capabilityAfterProvision = retriedCapability;
         if (retriedCapability.applicationUuid) {
           break;
@@ -1499,7 +1515,7 @@ export async function POST(req: Request, { params }: Params) {
         await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
         stagingDeployTriggered = true;
         stagingDeployError = null;
-        const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+        const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
         capabilityAfterProvision = refreshedCapability;
       } catch (error) {
         stagingDeployError = error instanceof Error ? error.message : "Coolify rejected the staging deploy.";
@@ -1677,7 +1693,14 @@ export async function POST(req: Request, { params }: Params) {
     try {
       capability = await getCoolifyAppStagingCapability(
         appUuid,
-        projectId
+        projectId,
+        // Same matching rule provisioning used to CREATE this resource. Without
+        // it, a staging copy that only relaxed matching could identify is
+        // invisible here — so jongo creates resources it then refuses to
+        // remove, and disabling staging silently leaves them running in
+        // Coolify. Whatever we were willing to provision, we must be willing
+        // to clean up.
+        STAGING_MATCH
       );
     } catch {
       capability = null;
@@ -1693,9 +1716,15 @@ export async function POST(req: Request, { params }: Params) {
           await sleep(500);
         }
 
+        // Relaxed here too, and for a sharper reason than symmetry: this probe
+        // decides whether the destroy SUCCEEDED. Under strict matching a
+        // resource that survived deletion but is only findable via relaxed
+        // matching reads as "no longer attached", turning a failed cleanup into
+        // a reported success — and leaving an orphan nobody goes looking for.
         const afterDestroyProbe = await getCoolifyAppStagingCapability(
           appUuid,
-          projectId
+          projectId,
+          STAGING_MATCH
         );
 
         if (!afterDestroyProbe.applicationUuid) {
@@ -1720,6 +1749,20 @@ export async function POST(req: Request, { params }: Params) {
           message: "Staging target cleanup could not be verified automatically."
         };
       }
+    }
+
+    // Cleanup was asked for but there was nothing to act on. Distinguish it
+    // from a cleanup that ran and failed: "we could not find it" and "we tried
+    // and Coolify refused" send the operator to completely different places,
+    // and reporting neither is what let orphaned staging resources accumulate
+    // unnoticed.
+    if (Boolean(body.burnExisting) && !shouldDestroy) {
+      destroyResult = {
+        ok: false,
+        message: capability?.detected
+          ? "Staging was disabled, but Coolify did not report a resource id for the staging target, so nothing could be removed."
+          : "Staging was disabled, but no staging resource could be found in Coolify to remove. If one exists, delete it manually."
+      };
     }
 
     // Intentionally do not auto-delete the shared staging environment here.
@@ -1824,7 +1867,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Coolify service UUID is not linked." }, { status: 409 });
   }
 
-  const capability = await getCoolifyAppStagingCapability(appUuid, projectId);
+  const capability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
   if (!capability.detected || !capability.applicationUuid) {
     return NextResponse.json({
       error: "Staging application is not detected yet. Enable staging and verify the staging resource exists first."
