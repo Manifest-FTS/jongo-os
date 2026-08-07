@@ -1215,15 +1215,22 @@ export async function POST(req: Request, { params }: Params) {
   const appUuid = site.coolifyServiceUuid?.trim() || "";
   const projectId = site.coolifyProjectId?.trim() || undefined;
   let temporaryDomainSlug: string | null = null;
+  // The suffix was never read in this path, only the slug — which is the whole
+  // reason a provisioned staging copy came up on a generated Coolify host. Both
+  // columns are gated by the same hasTemporaryDomainColumns() check, so there
+  // was never a reason to fetch one without the other.
+  let temporaryDomainSuffix: string | null = null;
   if (await hasTemporaryDomainColumns(db)) {
     try {
       const temporaryDomainValues = await db.site.findUnique({
         where: { id: site.id },
         select: {
-          temporaryDomainSlug: true
+          temporaryDomainSlug: true,
+          temporaryDomainSuffix: true
         }
       });
       temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
+      temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? null;
     } catch (error) {
       if (!isPrismaSchemaMismatchError(error)) {
         throw error;
@@ -1285,7 +1292,13 @@ export async function POST(req: Request, { params }: Params) {
 
       const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
         siteSlug: temporaryDomainSlug ?? site.slug ?? site.id,
-        siteName: site.name
+        siteName: site.name,
+        // The suffix the owner chose in app settings. It was loaded above and
+        // then dropped: without it the derive falls through to
+        // STAGING_DOMAIN_SUFFIX, and with neither set it returns undefined —
+        // which silently skips BOTH the domain application and the deploy,
+        // because they share the `if (preferredStagingDomain)` guard.
+        domainSuffix: temporaryDomainSuffix
       });
 
       if (capabilityAfterExistingCheck.resourceKind === "service" && capabilityAfterExistingCheck.applicationUuid && preferredStagingDomain) {
@@ -1428,7 +1441,11 @@ export async function POST(req: Request, { params }: Params) {
 
     const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
       siteSlug: temporaryDomainSlug ?? site.slug ?? site.id,
-      siteName: site.name
+      siteName: site.name,
+      // See the note on the other call site: omitting this is why a newly
+      // provisioned staging copy came up on a generated Coolify host and was
+      // never deployed.
+      domainSuffix: temporaryDomainSuffix
     });
     const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
 
@@ -1448,6 +1465,11 @@ export async function POST(req: Request, { params }: Params) {
 
     let stagingDomainApplied = false;
     let stagingDeployTriggered = false;
+    // Why the deploy did not happen. Without this, a Coolify error and "we
+    // never tried" both surface as stagingDeployTriggered:false, which is what
+    // made this fail silently — the caller could see that staging was not
+    // running but had nothing to act on.
+    let stagingDeployError: string | null = null;
 
     if (preferredStagingDomain && capabilityAfterProvision.applicationUuid) {
       if (capabilityAfterProvision.resourceKind === "service") {
@@ -1466,7 +1488,9 @@ export async function POST(req: Request, { params }: Params) {
         try {
           await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
           stagingDeployTriggered = true;
-        } catch { }
+        } catch (error) {
+          stagingDeployError = error instanceof Error ? error.message : "Coolify rejected the staging deploy.";
+        }
       }
     }
 
@@ -1474,9 +1498,18 @@ export async function POST(req: Request, { params }: Params) {
       try {
         await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
         stagingDeployTriggered = true;
+        stagingDeployError = null;
         const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
         capabilityAfterProvision = refreshedCapability;
-      } catch { }
+      } catch (error) {
+        stagingDeployError = error instanceof Error ? error.message : "Coolify rejected the staging deploy.";
+      }
+    } else if (!capabilityAfterProvision.applicationUuid && !stagingDeployTriggered) {
+      // Nothing to deploy: Coolify has not surfaced the staging resource yet.
+      // Naming that is the difference between "retry in a moment" and "this is
+      // broken", which the caller previously had no way to tell apart.
+      stagingDeployError =
+        "Coolify has not reported the staging resource yet, so no deploy could be started. Retry shortly.";
     }
 
     const targetLabel = stagingTargetLabel(capabilityAfterProvision?.resourceKind);
@@ -1556,6 +1589,7 @@ export async function POST(req: Request, { params }: Params) {
         preferredStagingDomain: preferredStagingDomain ?? null,
         stagingDomainApplied,
         stagingDeployTriggered,
+        stagingDeployError,
         preferredStagingHost: domainConvergence.preferredHost ?? null,
         reportedStagingHosts: domainConvergence.reportedHosts,
         preferredStagingDomainConverged: domainConvergence.converged,
@@ -1619,6 +1653,7 @@ export async function POST(req: Request, { params }: Params) {
       reportedStagingHosts: domainConvergence.reportedHosts,
       stagingDomainApplied,
       stagingDeployTriggered,
+      stagingDeployError,
       stagingRunning,
       stagingContentProbe: stagingProbeResult.probe,
       autoContentSync,

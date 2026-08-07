@@ -25,6 +25,49 @@ export async function POST(request: Request) {
   if (!backupId) {
     return NextResponse.json({ error: "backupId is required." }, { status: 400 });
   }
+  // A deferred run yielded to a deploy or to another backup before doing any
+  // work. Nothing was attempted, so the placeholder row is removed rather than
+  // recorded: keeping it as "failed" would both litter the catalogue and email
+  // the owner an alert about a backup that was simply being polite.
+  //
+  // The scheduler stamps lastScheduledBackupAt BEFORE spawning the script (so a
+  // crashed run cannot cause a retry storm), which means a deferral would
+  // otherwise push the site out by a full backupFrequencyHours — a one-minute
+  // deploy costing a day of protection. Rewinding it to the last backup that
+  // actually succeeded makes the site due again on the next hourly pass, which
+  // is the whole point of deferring rather than failing.
+  if (status === "deferred") {
+    try {
+      const { db } = await import("@/lib/db");
+      const row = await db.siteBackup.findUnique({
+        where: { id: backupId },
+        select: { siteId: true, status: true }
+      });
+      const deleted = await db.siteBackup.deleteMany({ where: { id: backupId, status: "running" } });
+
+      let rewound = false;
+      if (row?.siteId && (deleted?.count ?? 0) > 0) {
+        const lastSuccess = await db.siteBackup.findFirst({
+          where: { siteId: row.siteId, status: "success" },
+          orderBy: { completedAt: "desc" },
+          select: { completedAt: true }
+        });
+        await db.site.update({
+          where: { id: row.siteId },
+          data: { lastScheduledBackupAt: lastSuccess?.completedAt ?? null }
+        });
+        rewound = true;
+      }
+
+      return NextResponse.json({ ok: true, backupId, status, removed: deleted?.count ?? 0, rewound });
+    } catch (error) {
+      return NextResponse.json(
+        { error: `Failed to clear deferred backup: ${error instanceof Error ? error.message : "unknown"}` },
+        { status: 500 }
+      );
+    }
+  }
+
   if (status !== "success" && status !== "failed") {
     return NextResponse.json({ error: "status must be 'success' or 'failed'." }, { status: 400 });
   }

@@ -146,6 +146,23 @@ function buildScript() {
 RUUID=${shQuote(resourceUuid)}
 BID=${shQuote(backupId)}
 
+# One jongo backup at a time on this host. Several concurrent restic runs each
+# staging multi-GB dumps is how a 46-site platform exhausts a box that has
+# already shown it will kill a build under pressure. Non-blocking on purpose:
+# an hourly scheduler should skip and retry, not queue up and pile on. The fd
+# is released automatically when this shell exits.
+#
+# Guarded on flock existing. A bare "flock -n 9 || defer" turns a missing
+# binary into every backup deferring forever, silently — protection that
+# quietly disables all protection. Absent flock, run unserialised: an
+# occasional collision beats no backups at all.
+if command -v flock >/dev/null 2>&1; then
+  exec 9>/run/jongo-backup.lock
+  flock -n 9 || { echo "RESULT=deferred_backup_in_progress"; exit 0; }
+else
+  echo "LOCK=unavailable"
+fi
+
 read_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" 2>/dev/null | awk -F= -v k="$2" '$1==k{print substr($0,index($0,"=")+1)}' | tail -n 1; }
 
 # Dump a MySQL/MariaDB database.
@@ -206,6 +223,21 @@ mysql_creds_for() {
 # Match the uuid anywhere as a whole segment: Coolify names service containers
 # <app>-<uuid> (uuid last) but APPLICATION containers <uuid>-<deployment-ts>
 # (uuid first). Anchoring only at the end missed every application.
+# ── Yield to deploys, and to other backups ──
+# Going from a couple of opt-in sites to the whole platform means backups stop
+# being rare. Two things then collide on one host: backup vs backup (several
+# multi-GB restic runs at once) and backup vs deploy — the latter already
+# OOM-killed a build here, and a Docker image export is the peak memory moment
+# of a deploy.
+#
+# A backup is the interruptible one: it runs hourly and skipping a pass costs
+# nothing, whereas a failed deploy costs a release. So defer, and let the next
+# pass pick it up.
+if docker ps --format '{{.Names}} {{.Image}}' | grep -qE 'coolify-helper'; then
+  echo "RESULT=deferred_deploy_in_progress"
+  exit 0
+fi
+
 CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E "(^|-)$RUUID($|-)" || true)
 [ -n "$CONTAINERS" ] || { echo "RESULT=fail_no_containers"; exit 1; }
 
@@ -480,6 +512,31 @@ try {
   if (r.stderr.trim()) console.error(r.stderr.trim());
   console.log(r.stdout.trim());
   const k = parseKV(r.stdout);
+
+  // A deferred run is not a failed one: nothing was attempted, so it must not
+  // become a failed catalogue row (which would also email the owner an alert
+  // about a backup that simply yielded to a deploy). The record endpoint
+  // removes the placeholder row instead, and the next hourly pass retries.
+  const deferred = String(k.RESULT || "").startsWith("deferred_");
+  if (deferred) {
+    console.log(`[site-backup] deferred: ${k.RESULT}`);
+    const appBase = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
+    const token = firstEnvValue(["BACKUP_RECONCILE_TOKEN", "OWNERSHIP_SYNC_TOKEN"]);
+    if (appBase && token) {
+      try {
+        const res = await fetch(`${appBase}/api/ops/site-backup-record`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ backupId, status: "deferred", error: k.RESULT })
+        });
+        console.log(`recorded deferral -> ${res.status}`);
+      } catch (e) {
+        console.error(`WARN: failed to record deferral: ${e instanceof Error ? e.message : "unknown"}`);
+      }
+    }
+    console.log("\nRESULT: DEFERRED");
+    process.exit(0);
+  }
 
   const ok = k.RESULT === "ok" && Boolean(k.SNAPSHOT);
   const payload = {
