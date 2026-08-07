@@ -1,4 +1,5 @@
 import { recordCoolifyEndpointCall, recordCoolifyInventoryResult } from "@/lib/diagnostics";
+import { deriveStageDomain, parsePlatformSuffixes } from "@/lib/stage-domain";
 import { detectResourceType } from "./resource-types";
 import { resolveStagingServerUuid, type ServerResolution } from "./coolify-server-resolve";
 import { encodeComposeForCoolify } from "./compose-encoding";
@@ -1527,15 +1528,17 @@ export async function deriveCoolifyStagingDomainFromProduction(
   try {
     // Prefer deterministic site metadata first so retries do not drift across
     // unrelated Coolify resource domains when API payloads contain noisy values.
-    const deterministicDomain = deriveStagingDomainFromTemplate({
+    // Kept only as a LAST RESORT. It builds a hostname out of the Coolify
+    // resource slug, which produced staging URLs like
+    // wordpress-with-mariadb-<uuid>.staging.mfts.link — a name unrelated to the
+    // site it belongs to. The staging URL should be the production domain with
+    // a stage. prefix, so the production domains are consulted first below.
+    const templateFallback = deriveStagingDomainFromTemplate({
       appUuid,
       siteSlug: options?.siteSlug,
       siteName: options?.siteName,
       domainSuffix: options?.domainSuffix
     });
-    if (deterministicDomain) {
-      return deterministicDomain;
-    }
 
     const candidates: string[] = [];
 
@@ -1581,9 +1584,43 @@ export async function deriveCoolifyStagingDomainFromProduction(
         for (const nestedDomain of extractStagingDomainList(resource)) {
           candidates.push(nestedDomain);
         }
+
+        // A Coolify SERVICE keeps the site's real domain on its nested
+        // application rows: service.fqdn is undefined while
+        // service.applications[0].fqdn is "https://site.example.com". Every
+        // WordPress stack here is a service, so missing this meant domain
+        // derivation had nothing to work with and fell back to a slug
+        // template — which is exactly how staging ended up named after the
+        // Coolify resource instead of the site.
+        for (const nestedKey of ["applications", "databases"]) {
+          const nested = (resource as Record<string, unknown>)[nestedKey];
+          if (!Array.isArray(nested)) continue;
+          for (const entry of nested) {
+            if (!entry || typeof entry !== "object") continue;
+            const row = entry as Record<string, unknown>;
+            for (const field of ["fqdn", "domains", "url", "urls"]) {
+              const value = row[field];
+              const extracted = extractCoolifyDomainCandidates(value);
+              if (extracted.length > 0) {
+                candidates.push(...extracted);
+              } else if (typeof value === "string" && value.trim().length > 0) {
+                candidates.push(value.trim());
+              }
+            }
+          }
+        }
       } catch {
         // Continue to next endpoint.
       }
+    }
+
+    // stage.{main production domain} — the format the platform actually wants.
+    // Platform-controlled suffixes win because their DNS is wildcarded here, so
+    // the staging URL resolves the instant it is created; prefixing a
+    // customer's own domain yields a URL that fails until they add a record.
+    const stage = deriveStageDomain(candidates, parsePlatformSuffixes(process.env.JONGO_PLATFORM_DOMAIN_SUFFIXES));
+    if (stage.host) {
+      return toHttpsUrl(stage.host);
     }
 
     for (const candidate of candidates) {
@@ -1610,7 +1647,11 @@ export async function deriveCoolifyStagingDomainFromProduction(
       }
     }
 
-    return undefined;
+    // Nothing usable came back from Coolify — a resource with no domain set at
+    // all, or an API that would not answer. The slug template is worse than a
+    // production-derived name but better than provisioning with no domain,
+    // which skips the deploy entirely.
+    return templateFallback;
   } catch {
     return undefined;
   }

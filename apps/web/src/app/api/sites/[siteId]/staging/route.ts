@@ -937,12 +937,10 @@ export async function GET(_req: Request, { params }: Params) {
       const temporaryDomainValues = await db.site.findUnique({
         where: { id: site.id },
         select: {
-          temporaryDomainSlug: true,
-          temporaryDomainSuffix: true
+          temporaryDomainSlug: true
         }
       });
       temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
-      temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? null;
     } catch (error) {
       if (!isPrismaSchemaMismatchError(error)) {
         throw error;
@@ -1231,22 +1229,15 @@ export async function POST(req: Request, { params }: Params) {
   const appUuid = site.coolifyServiceUuid?.trim() || "";
   const projectId = site.coolifyProjectId?.trim() || undefined;
   let temporaryDomainSlug: string | null = null;
-  // The suffix was never read in this path, only the slug — which is the whole
-  // reason a provisioned staging copy came up on a generated Coolify host. Both
-  // columns are gated by the same hasTemporaryDomainColumns() check, so there
-  // was never a reason to fetch one without the other.
-  let temporaryDomainSuffix: string | null = null;
   if (await hasTemporaryDomainColumns(db)) {
     try {
       const temporaryDomainValues = await db.site.findUnique({
         where: { id: site.id },
         select: {
-          temporaryDomainSlug: true,
-          temporaryDomainSuffix: true
+          temporaryDomainSlug: true
         }
       });
       temporaryDomainSlug = temporaryDomainValues?.temporaryDomainSlug ?? null;
-      temporaryDomainSuffix = temporaryDomainValues?.temporaryDomainSuffix ?? null;
     } catch (error) {
       if (!isPrismaSchemaMismatchError(error)) {
         throw error;
@@ -1308,13 +1299,14 @@ export async function POST(req: Request, { params }: Params) {
 
       const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
         siteSlug: temporaryDomainSlug ?? site.slug ?? site.id,
-        siteName: site.name,
-        // The suffix the owner chose in app settings. It was loaded above and
-        // then dropped: without it the derive falls through to
-        // STAGING_DOMAIN_SUFFIX, and with neither set it returns undefined —
-        // which silently skips BOTH the domain application and the deploy,
-        // because they share the `if (preferredStagingDomain)` guard.
-        domainSuffix: temporaryDomainSuffix
+        siteName: site.name
+        // Deliberately NO domainSuffix. temporaryDomainSuffix is the
+        // PRODUCTION temporary-domain suffix ("Preferred Domain" in app
+        // settings); passing it here derived staging URLs on the production
+        // apex — site.manifest-fts.com instead of site.staging.mfts.link.
+        // Staging's suffix is STAGING_DOMAIN_SUFFIX, which the derive falls
+        // back to on its own. There is no per-site staging suffix today; if
+        // one is added, it belongs here — the production one never does.
       });
 
       if (capabilityAfterExistingCheck.resourceKind === "service" && capabilityAfterExistingCheck.applicationUuid && preferredStagingDomain) {
@@ -1457,11 +1449,9 @@ export async function POST(req: Request, { params }: Params) {
 
     const preferredStagingDomain = await deriveCoolifyStagingDomainFromProduction(appUuid, {
       siteSlug: temporaryDomainSlug ?? site.slug ?? site.id,
-      siteName: site.name,
-      // See the note on the other call site: omitting this is why a newly
-      // provisioned staging copy came up on a generated Coolify host and was
-      // never deployed.
-      domainSuffix: temporaryDomainSuffix
+      siteName: site.name
+      // See the note on the other call site: the production suffix must not
+      // leak into staging URLs.
     });
     const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
 
