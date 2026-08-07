@@ -1,5 +1,6 @@
 import { recordCoolifyEndpointCall, recordCoolifyInventoryResult } from "@/lib/diagnostics";
 import { deriveStageDomain, parsePlatformSuffixes } from "@/lib/stage-domain";
+import { buildWordPressServiceRequest, type WordPressProvisionInput } from "@/lib/wordpress-provision";
 import { detectResourceType } from "./resource-types";
 import { resolveStagingServerUuid, type ServerResolution } from "./coolify-server-resolve";
 import { encodeComposeForCoolify } from "./compose-encoding";
@@ -1655,6 +1656,89 @@ export async function deriveCoolifyStagingDomainFromProduction(
   } catch {
     return undefined;
   }
+}
+
+export type WordPressProvisionResult = {
+  ok: boolean;
+  /** Coolify uuid of the created service, when it worked. */
+  uuid?: string;
+  message: string;
+  reason?: string;
+};
+
+/**
+ * Create a WordPress site in Coolify.
+ *
+ * The counterpart to Jongo only ever writing a database row: adding an app used
+ * to leave Coolify untouched, so the site existed in the UI and nowhere else.
+ *
+ * Placement is resolved rather than guessed. The project comes from the
+ * client's Coolify project link, and the server from the same resolver staging
+ * uses — which falls back to "the only server" when there is exactly one, and
+ * REFUSES when there are several and no signal. Creating a customer's site on
+ * an arbitrary server is worse than not creating it, and the caller surfaces
+ * the reason instead of failing mute.
+ */
+export async function provisionCoolifyWordPressService(
+  input: Omit<WordPressProvisionInput, "serverUuid"> & { serverUuid?: string | null }
+): Promise<WordPressProvisionResult> {
+  const baseUrl = process.env.COOLIFY_API_BASE_URL;
+  const token = process.env.COOLIFY_API_TOKEN;
+  if (!baseUrl || !token) {
+    return { ok: false, message: "Coolify credentials are missing, so the app cannot be created.", reason: "credentials_missing" };
+  }
+
+  let serverUuid = (input.serverUuid ?? "").trim();
+  if (!serverUuid) {
+    try {
+      const servers = await coolifyFetch("/api/v1/servers");
+      // No source service exists yet — this is a brand new app — so resolution
+      // rests entirely on the only-server case, which is the honest answer for
+      // a single-server install and a refusal otherwise.
+      const resolution = resolveStagingServerUuid({
+        service: null,
+        servers: Array.isArray(servers) ? (servers as Array<Record<string, unknown>>) : []
+      });
+      serverUuid = resolution.uuid;
+      if (!serverUuid) {
+        return {
+          ok: false,
+          reason: "server_unresolved",
+          message: resolution.reason ?? "Could not determine which Coolify server to create the app on."
+        };
+      }
+    } catch {
+      return { ok: false, reason: "server_unresolved", message: "Could not reach Coolify to determine which server to use." };
+    }
+  }
+
+  const request = buildWordPressServiceRequest({ ...input, serverUuid });
+  if (!request.ok) {
+    return { ok: false, reason: request.reason, message: request.message };
+  }
+
+  const response = await coolifyMutateWithResponse("/api/v1/services", "POST", request.body);
+  if (!response.ok) {
+    return {
+      ok: false,
+      reason: "create_failed",
+      message: `Coolify refused to create the app (HTTP ${response.status ?? "unknown"}).`
+    };
+  }
+
+  const payload = (response.body ?? {}) as Record<string, unknown>;
+  const uuid = stringValue(payload, ["uuid", "id"], "");
+  if (!uuid) {
+    // Created but unidentifiable. Say so plainly: the resource exists in
+    // Coolify and the caller must not silently record a site pointing nowhere.
+    return {
+      ok: false,
+      reason: "created_without_uuid",
+      message: "Coolify created the app but did not return its id. Check Coolify before retrying, or a duplicate will be made."
+    };
+  }
+
+  return { ok: true, uuid, message: "App created in Coolify." };
 }
 
 export async function applyCoolifyApplicationDomains(appUuid: string, input: string | string[]): Promise<boolean> {
