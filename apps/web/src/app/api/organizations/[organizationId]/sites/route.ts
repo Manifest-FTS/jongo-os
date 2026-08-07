@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { ensureCoolifyAppBackupSchedules, getCoolifyOverview } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, getCoolifyOverview, provisionCoolifyWordPressService } from "@/lib/coolify";
 import { isAdminRole } from "@/lib/roles";
 import {
   normalizeTemporaryDomainSlug,
@@ -124,6 +124,8 @@ export async function POST(req: Request, { params }: Params) {
     name?: string;
     description?: string;
     coolifyServiceUuid?: string;
+    /** Create a new WordPress site in Coolify instead of linking an existing one. */
+    provisionWordPress?: boolean;
     gitRepositoryUrl?: string;
     temporaryDomainSlug?: string;
     temporaryDomainSuffix?: string;
@@ -175,7 +177,33 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: "Only admins can create apps" }, { status: 403 });
     }
 
-    const coolifyServiceUuid = body.coolifyServiceUuid?.trim() || null;
+    // Two different intents share this endpoint: ADOPT an existing Coolify
+    // resource (paste its uuid), or CREATE one. Only the first ever worked —
+    // adding an app wrote a row and left Coolify untouched, so the app existed
+    // in Jongo and nowhere else.
+    let coolifyServiceUuid = body.coolifyServiceUuid?.trim() || null;
+    let provisionMessage: string | null = null;
+
+    if (body.provisionWordPress === true && !coolifyServiceUuid) {
+      // Reuses the org loaded above, which is already access-checked; a second
+      // lookup here would bypass that check and shadow the outer binding.
+      const provision = await provisionCoolifyWordPressService({
+        name,
+        projectUuid: org.coolifyProjectId ?? null,
+        environmentName: "production"
+      });
+      if (!provision.ok || !provision.uuid) {
+        // Refuse rather than fall back to creating a row with no infrastructure
+        // behind it — that is the very state this feature exists to end.
+        return NextResponse.json(
+          { error: provision.message, reason: provision.reason ?? "provision_failed" },
+          { status: 502 }
+        );
+      }
+      coolifyServiceUuid = provision.uuid;
+      provisionMessage = provision.message;
+    }
+
     let coolifyProjectId: string | null = null;
     let coolifyProjectName: string | null = null;
 

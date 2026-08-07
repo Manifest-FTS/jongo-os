@@ -28,6 +28,10 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  // Two genuinely different intents shared one form: ADOPT a Coolify resource
+  // that already exists, or CREATE one. Only adopting ever worked, so "Add App"
+  // silently produced a Jongo record with no infrastructure behind it.
+  const [mode, setMode] = useState<"link" | "create">("link");
 
   const selectedApp = useMemo(
     () => availableApps.find((app) => app.id === selectedAppId),
@@ -86,8 +90,10 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim() || undefined,
-          coolifyServiceUuid: coolifyUuid.trim() || undefined,
-          gitRepositoryUrl: gitUrl.trim() || undefined,
+          // In create mode the uuid does not exist yet — Coolify assigns it.
+          coolifyServiceUuid: mode === "link" ? coolifyUuid.trim() || undefined : undefined,
+          gitRepositoryUrl: mode === "link" ? gitUrl.trim() || undefined : undefined,
+          provisionWordPress: mode === "create",
           temporaryDomainSlug: normalizeTemporaryDomainSlug(temporaryDomainSlug) || undefined,
           temporaryDomainSuffix
         })
@@ -131,8 +137,31 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
           No linked Coolify apps were found. Enter details manually or link a project in Settings first.
         </p>
       )}
+      <div role="radiogroup" aria-label="How to add this app" style={{ display: "flex", gap: "0.5rem", marginBottom: "0.9rem", flexWrap: "wrap" }}>
+        {([
+          ["link", "Link existing app", "Adopt a resource that already exists in Coolify."],
+          ["create", "Create WordPress site", "Provision a new WordPress + MariaDB service in Coolify."]
+        ] as const).map(([value, label, help]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={mode === value}
+            className={`btn${mode === value ? "" : " btn-secondary"}`}
+            onClick={() => setMode(value)}
+            title={help}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="card-muted" style={{ marginBottom: "0.9rem" }}>
+        {mode === "create"
+          ? "A new WordPress + MariaDB service is created in Coolify and deployed. It is added here once Coolify confirms it."
+          : "Adopts an app that already exists in Coolify. Nothing new is created."}
+      </p>
       <form onSubmit={handleSubmit} className="form-stack">
-        {availableApps.length > 0 ? (
+        {mode === "link" && availableApps.length > 0 ? (
           <div>
             <label className="form-label">Coolify App Picker</label>
             <select
@@ -176,6 +205,8 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
             className="form-input"
           />
         </div>
+        {mode === "link" ? (
+        <>
         <div>
           <label className="form-label">
             Coolify Service UUID
@@ -198,6 +229,8 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
             className="form-input"
           />
         </div>
+        </>
+        ) : null}
         <div>
           <label className="form-label">Temporary Domain Slug</label>
           <input
