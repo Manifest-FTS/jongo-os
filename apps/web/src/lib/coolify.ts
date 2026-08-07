@@ -1584,6 +1584,31 @@ export async function deriveCoolifyStagingDomainFromProduction(
         for (const nestedDomain of extractStagingDomainList(resource)) {
           candidates.push(nestedDomain);
         }
+
+        // A Coolify SERVICE keeps the site's real domain on its nested
+        // application rows: service.fqdn is undefined while
+        // service.applications[0].fqdn is "https://site.example.com". Every
+        // WordPress stack here is a service, so missing this meant domain
+        // derivation had nothing to work with and fell back to a slug
+        // template — which is exactly how staging ended up named after the
+        // Coolify resource instead of the site.
+        for (const nestedKey of ["applications", "databases"]) {
+          const nested = (resource as Record<string, unknown>)[nestedKey];
+          if (!Array.isArray(nested)) continue;
+          for (const entry of nested) {
+            if (!entry || typeof entry !== "object") continue;
+            const row = entry as Record<string, unknown>;
+            for (const field of ["fqdn", "domains", "url", "urls"]) {
+              const value = row[field];
+              const extracted = extractCoolifyDomainCandidates(value);
+              if (extracted.length > 0) {
+                candidates.push(...extracted);
+              } else if (typeof value === "string" && value.trim().length > 0) {
+                candidates.push(value.trim());
+              }
+            }
+          }
+        }
       } catch {
         // Continue to next endpoint.
       }
