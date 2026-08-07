@@ -3,6 +3,7 @@ type Params = { params: Promise<{ siteId: string }> };
 import SiteInfoForm from "@/components/SiteInfoForm";
 import SiteStagingToggle from "@/components/SiteStagingToggle";
 import WordPressAdvancedControls from "@/components/WordPressAdvancedControls";
+import SiteDangerZone from "@/components/SiteDangerZone";
 import PageAutoRefresh from "@/components/PageAutoRefresh";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
@@ -243,6 +244,16 @@ export default async function SiteSettingsPage({ params }: Params) {
         </article>
       </details>
       ) : null}
+
+      {/* Last on the page on purpose: destructive controls should never sit
+          next to routine settings someone is clicking through quickly. */}
+      <SiteDangerZone
+        siteId={siteId}
+        siteSlug={workspace.slug ?? String(siteId)}
+        siteName={workspace.name || workspace.slug || String(siteId)}
+        canDelete={permissionSnapshot.role === "admin"}
+        hasCoolifyResource={Boolean(workspace.coolifyServiceUuid?.trim())}
+      />
     </div>
   );
 }
