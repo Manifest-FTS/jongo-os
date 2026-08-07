@@ -1664,6 +1664,10 @@ export type WordPressProvisionResult = {
   uuid?: string;
   message: string;
   reason?: string;
+  /** The domain requested for the new site, if any. */
+  domain?: string;
+  /** Whether Coolify accepted that domain. False means it is on a generated host. */
+  domainApplied?: boolean;
 };
 
 /**
@@ -1680,7 +1684,7 @@ export type WordPressProvisionResult = {
  * the reason instead of failing mute.
  */
 export async function provisionCoolifyWordPressService(
-  input: Omit<WordPressProvisionInput, "serverUuid"> & { serverUuid?: string | null }
+  input: Omit<WordPressProvisionInput, "serverUuid"> & { serverUuid?: string | null; domain?: string | null }
 ): Promise<WordPressProvisionResult> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
@@ -1738,7 +1742,38 @@ export async function provisionCoolifyWordPressService(
     };
   }
 
-  return { ok: true, uuid, message: "App created in Coolify." };
+  const domain = (input.domain ?? "").trim();
+  if (!domain) {
+    return { ok: true, uuid, message: "App created in Coolify." };
+  }
+
+  // Applied AFTER creation, not as part of it: Coolify needs the compose file
+  // parsed before it knows the service key that urls[].name must reference, and
+  // that does not happen synchronously. Retried a few times for the same
+  // reason — a brand new service is the case most likely to be unparsed.
+  let domainApplied = false;
+  let domainMessage = "";
+  for (let attempt = 0; attempt < 4 && !domainApplied; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
+    const applied = await applyCoolifyServiceDomains(uuid, domain);
+    domainApplied = applied.ok;
+    domainMessage = applied.message;
+    // A domain another resource already claims will never succeed on retry.
+    if (!applied.ok && applied.reason === "conflict") break;
+  }
+
+  return {
+    ok: true,
+    uuid,
+    domain,
+    domainApplied,
+    // The site exists either way, so this is not a failed creation — but saying
+    // "created" while it sits on a generated host is the kind of half-truth
+    // that has someone hunting for a domain that was never set.
+    message: domainApplied
+      ? `App created in Coolify at ${domain}.`
+      : `App created in Coolify, but the domain ${domain} could not be applied${domainMessage ? `: ${domainMessage}` : ""}. Set it in Coolify.`
+  };
 }
 
 export async function applyCoolifyApplicationDomains(appUuid: string, input: string | string[]): Promise<boolean> {
