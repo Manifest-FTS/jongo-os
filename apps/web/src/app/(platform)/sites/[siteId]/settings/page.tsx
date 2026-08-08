@@ -57,7 +57,7 @@ export default async function SiteSettingsPage({ params }: Params) {
   const canViewInternalMetadata = permissionSnapshot.canViewInternalMetadata;
   const isWordPress = workspace.siteType === "wordpress" || workspace.resourceType === "WordPress";
   const stagingCapability = workspace?.coolifyServiceUuid
-    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined)
+    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
     : null;
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);

@@ -225,7 +225,7 @@ export default async function SiteOverviewPage({ params }: Params) {
     : null;
 
   const stagingCapability = workspace.coolifyServiceUuid
-    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined)
+    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
     : null;
 
   const backupReadiness = getBackupReadiness(backupInventory, workspace.coolifyServiceUuid);

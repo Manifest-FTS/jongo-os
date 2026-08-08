@@ -112,7 +112,7 @@ export default async function DeploymentsPage({ params }: Params) {
   const coolifyId = workspace?.coolifyServiceUuid ?? siteId;
   const site = overview.sites.find((item) => item.id === coolifyId || item.deployTargetId === coolifyId);
   const stagingCapability = workspace?.coolifyServiceUuid
-    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace?.coolifyProjectId ?? undefined)
+    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace?.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
     : null;
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
