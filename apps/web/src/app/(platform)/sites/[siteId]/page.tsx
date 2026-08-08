@@ -265,11 +265,30 @@ export default async function SiteOverviewPage({ params }: Params) {
       const { getDb } = await import("@/lib/db");
       const prisma = await getDb();
       if (!prisma) return [];
-      return await (prisma as any).site.findMany({
-        where: { parentSiteId: workspace.id, deletedAt: null },
-        select: { id: true, slug: true, name: true, coolifyServiceUuid: true, status: true },
-        orderBy: { name: "asc" }
-      });
+
+      const readNestedDatabases = async (useParentSiteId: boolean) => {
+        const where: Record<string, unknown> = { deletedAt: null };
+        if (useParentSiteId) {
+          where.parentSiteId = workspace.id;
+        }
+
+        return (prisma as any).site.findMany({
+          where,
+          select: { id: true, slug: true, name: true, coolifyServiceUuid: true },
+          orderBy: { name: "asc" }
+        });
+      };
+
+      try {
+        return await readNestedDatabases(true);
+      } catch (error) {
+        const message = String((error as { message?: string })?.message ?? "").toLowerCase();
+        if (!message.includes("unknown argument `parentsiteid`")) {
+          throw error;
+        }
+
+        return [];
+      }
     } catch {
       return [];
     }
@@ -405,7 +424,7 @@ export default async function SiteOverviewPage({ params }: Params) {
                   : "This app stores its data here. They are backed up as part of this app."}
               </p>
               <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem" }}>
-                {nestedDatabases.map((entry: { id: string; slug: string | null; name: string; status?: string | null }) => (
+                {nestedDatabases.map((entry: { id: string; slug: string | null; name: string }) => (
                   <div
                     key={entry.id}
                     style={{
@@ -419,9 +438,7 @@ export default async function SiteOverviewPage({ params }: Params) {
                     }}
                   >
                     <span style={{ fontWeight: 600 }}>{entry.name}</span>
-                    <span className={`status-chip ${entry.status === "healthy" ? "healthy" : "unknown"}`}>
-                      {entry.status === "healthy" ? "Healthy" : "Database"}
-                    </span>
+                    <span className="status-chip unknown">Database</span>
                   </div>
                 ))}
               </div>

@@ -85,11 +85,7 @@ export default async function ClientAppsPage({ params }: Params) {
             clientHref: `/clients/${clientId}`,
             resourceType: app.resourceType,
             showInternalMetadata: canManageClient,
-            isStagingResource:
-              app.coolifyEnvironmentName?.toLowerCase().includes("staging")
-              || app.name.toLowerCase().includes("staging")
-              || app.slug?.toLowerCase().includes("staging")
-              || false
+            isStagingResource: Boolean(app.isStagingResource)
           }))}
         />
       )}

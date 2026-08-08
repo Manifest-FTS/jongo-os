@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 import { auth } from "@/lib/auth.config";
-import { getClientWorkspace, isClientAdmin } from "@/lib/repositories";
+import { getClientWorkspace, isClientAdmin, listSiteDirectory } from "@/lib/repositories";
 
 type LayoutProps = {
   children: ReactNode;
@@ -28,6 +28,13 @@ export default async function ClientWorkspaceLayout({ children, params }: Layout
     client.dbId &&
     await isClientAdmin(client.dbId, session.user.id)
   );
+  const viewer = {
+    userId: session?.user?.id,
+    email: session?.user?.email
+  };
+  const visibleSiteCount = client.dataSource === "db"
+    ? (await listSiteDirectory(viewer)).filter((site) => site.clientId === client.id).length
+    : client.siteCount;
 
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/clients/${clientId}`, match: "exact" },
@@ -51,7 +58,7 @@ export default async function ClientWorkspaceLayout({ children, params }: Layout
           </div>
 
           <div className="workspace-hero-chips">
-            <span className="tag">{client.siteCount} app{client.siteCount === 1 ? "" : "s"}</span>
+            <span className="tag">{visibleSiteCount} app{visibleSiteCount === 1 ? "" : "s"}</span>
             <span className="tag">{client.memberCount} team member{client.memberCount === 1 ? "" : "s"}</span>
           </div>
         </div>

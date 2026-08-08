@@ -57,6 +57,7 @@ export default async function DashboardPage() {
   const visibleOverviewSites = overview.sites.filter((site) => visibleSitesByName.has(site.name.trim().toLowerCase()));
   const wordpressSites = visibleOverviewSites.filter((site) => site.siteType === "wordpress");
   const healthySites = visibleSiteDirectory.filter((site) => site.status === "healthy").length;
+  const degradedSites = visibleSiteDirectory.filter((site) => site.status === "degraded" || site.status === "error").length;
   const unknownSites = visibleSiteDirectory.filter((site) => site.status === "unknown").length;
   const uniqueClientDbIds = [...new Set(clients.map((client) => client.dbId).filter((id): id is string => Boolean(id)))];
   const memberLists = await Promise.all(uniqueClientDbIds.map((clientDbId) => getClientTeamMembers(clientDbId)));
@@ -111,10 +112,16 @@ export default async function DashboardPage() {
           <p className="metric-value">{healthySites}</p>
           <p className="metric-label">Healthy</p>
         </article>
+        {degradedSites > 0 && (
+          <article className="card metric-card metric-card--compact">
+            <p className="metric-value metric-value--muted">{degradedSites}</p>
+            <p className="metric-label">Needs Review</p>
+          </article>
+        )}
         {unknownSites > 0 && (
           <article className="card metric-card metric-card--compact">
             <p className="metric-value metric-value--muted">{unknownSites}</p>
-            <p className="metric-label">Offline</p>
+            <p className="metric-label">Unknown</p>
           </article>
         )}
       </section>
@@ -132,7 +139,8 @@ export default async function DashboardPage() {
 
             <p className="card-muted" style={{ marginTop: 0 }}>
               {healthySites} app{healthySites === 1 ? " is" : "s are"} healthy right now.
-              {unknownSites > 0 ? ` ${unknownSites} app${unknownSites === 1 ? " is" : "s are"} offline or restarting.` : ""}
+              {degradedSites > 0 ? ` ${degradedSites} app${degradedSites === 1 ? " is" : "s are"} degraded or failed.` : ""}
+              {unknownSites > 0 ? ` ${unknownSites} app${unknownSites === 1 ? " has" : "s have"} unavailable live status.` : ""}
             </p>
 
             <p className="card-muted" style={{ marginBottom: 0 }}>
@@ -176,11 +184,7 @@ export default async function DashboardPage() {
                   clientHref: site.ownershipState === "mapped" ? `/clients/${site.clientId}` : undefined,
                   resourceType: site.resourceType,
                   showInternalMetadata: hasAdminClientAccess,
-                  isStagingResource:
-                    site.coolifyEnvironmentName?.toLowerCase().includes("staging")
-                    || site.name.toLowerCase().includes("staging")
-                    || site.slug?.toLowerCase().includes("staging")
-                    || false
+                  isStagingResource: Boolean(site.isStagingResource)
                 }))}
               />
             )}

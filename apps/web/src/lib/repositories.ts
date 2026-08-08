@@ -65,6 +65,16 @@ function isPrismaUnknownFieldError(error: unknown, fieldName: string): boolean {
   return message.includes("unknown field") && message.includes(fieldName.toLowerCase());
 }
 
+function isPrismaUnknownArgumentError(error: unknown, fieldName: string): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { message?: string; meta?: { message?: string } };
+  const message = `${e.message ?? ""} ${e.meta?.message ?? ""}`.toLowerCase();
+  return message.includes("unknown argument") && message.includes(fieldName.toLowerCase());
+}
+
 function isLegacySchemaMissingError(error: unknown): boolean {
   if (!error || typeof error !== "object") {
     return false;
@@ -176,6 +186,8 @@ export type SiteDirectoryRecord = {
   coolifyProjectName?: string;
   coolifyEnvironmentId?: string;
   coolifyEnvironmentName?: string;
+  isStagingResource?: boolean;
+  resourceMissingSince?: string;
   description?: string;
     resourceType?: string;
 };
@@ -281,6 +293,50 @@ function stripStagingAffixes(name: string): string {
     .replace(/^staging[.\-_\s]+/, "")
     .replace(/[.\-_\s]+staging$/, "")
     .trim();
+}
+
+function isLikelyStagingSite(site: { name: string; coolifyEnvironmentName?: string | null }): boolean {
+  if (isLikelyStagingEnvironmentName(site.coolifyEnvironmentName ?? undefined)) {
+    return true;
+  }
+
+  const nameKey = normalizedKey(site.name);
+  if (!nameKey) {
+    return false;
+  }
+
+  return /(^|[.\-_\s])(staging|stage|stg|preview|dev)([.\-_\s]|$)/.test(nameKey);
+}
+
+function looksLikeDomainName(value?: string | null): boolean {
+  const normalized = normalizedKey(value);
+  return Boolean(normalized && normalized.includes("."));
+}
+
+function scoreDirectoryRecord(record: SiteDirectoryRecord): number {
+  let score = 0;
+
+  if (!record.resourceMissingSince) {
+    score += 100;
+  }
+
+  if (!record.isStagingResource) {
+    score += 40;
+  }
+
+  if (looksLikeDomainName(record.name)) {
+    score += 15;
+  }
+
+  if (looksLikeDomainName(record.slug)) {
+    score += 10;
+  }
+
+  if (record.coolifyProjectId) {
+    score += 5;
+  }
+
+  return score;
 }
 
 function shouldSuppressStagingSiblingRecord(
@@ -1436,7 +1492,9 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
         return [];
       }
 
-      const records = resolvedOverview.sites.map((site) => {
+      const records = resolvedOverview.sites
+        .filter((site) => !isLikelyStagingSite(site))
+        .map((site) => {
         const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode);
         return {
           id: site.id,
@@ -1453,7 +1511,8 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           coolifyProjectId: site.coolifyProjectId,
           coolifyProjectName: site.coolifyProjectName,
           coolifyEnvironmentId: site.coolifyEnvironmentId,
-          coolifyEnvironmentName: site.coolifyEnvironmentName
+          coolifyEnvironmentName: site.coolifyEnvironmentName,
+          isStagingResource: false
         };
       });
 
@@ -1465,22 +1524,33 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
     const orgWhere: any = { deletedAt: null };
     // Standalone databases that belong inside an app are nested there by the
     // reconciler and must not also appear as peer apps in the directory.
-    const siteWhere: any = { deletedAt: null, parentSiteId: null };
+    const siteWhereBase: any = { deletedAt: null };
     if (scopeApplied && scopedUserId) {
       orgWhere.OR = [
         { ownerId: scopedUserId },
         { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
       ];
-      siteWhere.OR = [
+      siteWhereBase.OR = [
         { organization: orgWhere },
         { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
       ];
     }
 
     try {
-      const dbSites: any[] = await prisma.site.findMany({
-        where: siteWhere,
-        select: {
+      let hasParentSiteIdFilter = true;
+      let hasIsStagingResourceField = true;
+      let hasResourceMissingSinceField = true;
+
+      const readDbSites = async () => {
+        const siteWhere: any = { ...siteWhereBase };
+        if (hasParentSiteIdFilter) {
+          siteWhere.parentSiteId = null;
+        }
+        if (hasIsStagingResourceField) {
+          siteWhere.isStagingResource = false;
+        }
+
+        const select: any = {
           id: true,
           organizationId: true,
           slug: true,
@@ -1489,9 +1559,40 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           coolifyServiceUuid: true,
           coolifyProjectId: true,
           organization: { select: { id: true, slug: true, name: true } }
-        },
-        orderBy: { name: "asc" }
-      });
+        };
+        if (hasIsStagingResourceField) {
+          select.isStagingResource = true;
+        }
+        if (hasResourceMissingSinceField) {
+          select.resourceMissingSince = true;
+        }
+
+        return prisma.site.findMany({
+          where: siteWhere,
+          select,
+          orderBy: { name: "asc" }
+        });
+      };
+
+      let dbSites: any[];
+      try {
+        dbSites = await readDbSites();
+      } catch (error) {
+        const parentUnsupported = isPrismaUnknownArgumentError(error, "parentSiteId");
+        const stagingUnsupported =
+          isPrismaUnknownArgumentError(error, "isStagingResource") ||
+          isPrismaUnknownFieldError(error, "isStagingResource");
+        const missingSinceUnsupported = isPrismaUnknownFieldError(error, "resourceMissingSince");
+
+        if (!parentUnsupported && !stagingUnsupported && !missingSinceUnsupported) {
+          throw error;
+        }
+
+        hasParentSiteIdFilter = !parentUnsupported;
+        hasIsStagingResourceField = !stagingUnsupported;
+        hasResourceMissingSinceField = !missingSinceUnsupported;
+        dbSites = await readDbSites();
+      }
 
       let visibleOrganizations: any[];
       try {
@@ -1535,6 +1636,12 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
         const coolifyMatch = s.coolifyServiceUuid
           ? resolvedOverview.sites.find((cs) => cs.deployTargetId === s.coolifyServiceUuid || cs.id === s.coolifyServiceUuid)
           : undefined;
+        const isStagingRecord = hasIsStagingResourceField
+          ? Boolean(s.isStagingResource)
+          : isLikelyStagingSite({
+              name: s.name,
+              coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName ?? undefined
+            });
 
         return {
           id: s.id,
@@ -1554,8 +1661,24 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           coolifyProjectName: coolifyMatch?.coolifyProjectName,
           coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
           coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
+          isStagingResource: isStagingRecord,
+          resourceMissingSince: s.resourceMissingSince ? new Date(s.resourceMissingSince).toISOString() : undefined,
           resourceType: coolifyMatch?.resourceType
         };
+      }).filter((record) => {
+        if (record.resourceMissingSince) {
+          return false;
+        }
+
+        if (record.isStagingResource) {
+          return false;
+        }
+
+        if (!hasParentSiteIdFilter && record.resourceType === "Database") {
+          return false;
+        }
+
+        return true;
       });
 
       const dbMappedProjectIds = new Set(
@@ -1567,6 +1690,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
 
       // --- Coolify-only sites (not linked to any DB record) ---
       const coolifyOnlyRecords: SiteDirectoryRecord[] = resolvedOverview.sites
+        .filter((cs) => !isLikelyStagingSite(cs))
         .filter((cs) => !coveredCoolifyUuids.has(cs.id) && !coveredCoolifyUuids.has(cs.deployTargetId))
         .filter((cs) => !shouldSuppressStagingSiblingRecord(cs, dbMappedProjectIds, dbNameKeys))
         .map((site) => {
@@ -1588,6 +1712,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
             coolifyProjectName: site.coolifyProjectName,
             coolifyEnvironmentId: site.coolifyEnvironmentId,
             coolifyEnvironmentName: site.coolifyEnvironmentName,
+            isStagingResource: false,
             resourceType: site.resourceType
           };
         })
@@ -1617,6 +1742,11 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
         // Prefer DB-backed records when duplicates represent the same app.
         if (existing.source === "coolify" && record.source === "db") {
           mergedByKey.set(key, record);
+          continue;
+        }
+
+        if (existing.source === record.source && scoreDirectoryRecord(record) > scoreDirectoryRecord(existing)) {
+          mergedByKey.set(key, record);
         }
       }
 
@@ -1631,6 +1761,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
       const coolifyRecords: SiteDirectoryRecord[] = scopeApplied
         ? []
         : resolvedOverview.sites
+            .filter((site) => !isLikelyStagingSite(site))
             .filter((site) => !legacyNames.has(normalizedKey(site.name)))
             .map((site) => {
               const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode);
@@ -1650,7 +1781,8 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
                 coolifyProjectId: site.coolifyProjectId,
                 coolifyProjectName: site.coolifyProjectName,
                 coolifyEnvironmentId: site.coolifyEnvironmentId,
-                coolifyEnvironmentName: site.coolifyEnvironmentName
+                coolifyEnvironmentName: site.coolifyEnvironmentName,
+                isStagingResource: false
               };
             });
 
@@ -1688,24 +1820,27 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
       return [];
     }
 
-    const fallbackRecords = resolvedOverview.sites.map((site) => {
-      const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode);
-      return {
-        id: site.id,
-        name: site.name,
-        deployTargetId: site.deployTargetId,
-        clientId: ownership.clientId,
-        clientName: ownership.clientName,
-        status: site.status,
-        ownershipState: ownership.ownershipState,
-        ownershipDiagnostic: ownership.ownershipDiagnostic,
-        source: "coolify" as const,
-        coolifyProjectId: site.coolifyProjectId,
-        coolifyProjectName: site.coolifyProjectName,
-        coolifyEnvironmentId: site.coolifyEnvironmentId,
-        coolifyEnvironmentName: site.coolifyEnvironmentName
-      };
-    });
+    const fallbackRecords = resolvedOverview.sites
+      .filter((site) => !isLikelyStagingSite(site))
+      .map((site) => {
+        const ownership = resolveOwnershipForCoolifySite(site, resolvedOverview.mode);
+        return {
+          id: site.id,
+          name: site.name,
+          deployTargetId: site.deployTargetId,
+          clientId: ownership.clientId,
+          clientName: ownership.clientName,
+          status: site.status,
+          ownershipState: ownership.ownershipState,
+          ownershipDiagnostic: ownership.ownershipDiagnostic,
+          source: "coolify" as const,
+          coolifyProjectId: site.coolifyProjectId,
+          coolifyProjectName: site.coolifyProjectName,
+          coolifyEnvironmentId: site.coolifyEnvironmentId,
+          coolifyEnvironmentName: site.coolifyEnvironmentName,
+          isStagingResource: false
+        };
+      });
 
     recordSiteDirectoryDiagnostics(fallbackRecords, true, "top_level_exception_coolify_only");
     return fallbackRecords;

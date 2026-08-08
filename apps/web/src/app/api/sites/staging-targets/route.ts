@@ -61,6 +61,7 @@ export async function GET(req: Request) {
   const rows = await db.site.findMany({
     where: {
       deletedAt: null,
+      isStagingResource: false,
       ...scopeFilter,
       ...accessFilter
     },
