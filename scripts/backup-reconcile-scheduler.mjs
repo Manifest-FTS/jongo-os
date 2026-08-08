@@ -30,6 +30,35 @@ function resolveReconcileUrl() {
   return `http://127.0.0.1:${port}/api/ops/backup-reconcile`;
 }
 
+/**
+ * Heartbeat to Uptime Kuma after a healthy pass.
+ *
+ * The same method coolify-infrastructure already uses (see
+ * scripts/check-jongo-backup-freshness.sh): push on success, stay SILENT on
+ * failure, and let Kuma flag the missed heartbeat. Kuma owns the notification
+ * routing — Slack and email are already configured and validated there — so
+ * this needs no webhook of its own and inherits Kuma's resend policy instead of
+ * inventing another way to spam a channel.
+ *
+ * It also covers the one case a webhook cannot: if jongo is down, nothing is
+ * left to send an alert, and only an absent heartbeat reveals it.
+ */
+async function heartbeat(status, message) {
+  const url = (process.env.JONGO_BACKUP_KUMA_PUSH_URL || "").trim();
+  if (!url) return;
+  if (status !== "up") return; // Silence IS the signal.
+  try {
+    const sep = url.includes("?") ? "&" : "?";
+    await fetch(`${url}${sep}status=up&msg=${encodeURIComponent(message)}`, {
+      method: "GET",
+      signal: AbortSignal.timeout(15000)
+    });
+  } catch {
+    // A failed heartbeat must never break the reconcile loop. Kuma will treat
+    // it as a miss, which is the correct conservative outcome.
+  }
+}
+
 async function runReconcileOnce() {
   const url = resolveReconcileUrl();
   const token = (process.env.BACKUP_RECONCILE_TOKEN || "").trim();
@@ -97,6 +126,14 @@ async function runReconcileOnce() {
   const abandonedRestores = abandoned && typeof abandoned.restores === "number" ? abandoned.restores : 0;
 
   const rehearsal = payload && typeof payload === "object" ? payload.rehearsal : null;
+
+  // A pass that could not see the platform is not a healthy pass, even though
+  // it "succeeded" — reporting up here would mask exactly the blindness the
+  // incomplete-index warning exists to surface.
+  await heartbeat(
+    indexComplete && failed === 0 ? "up" : "down",
+    `scanned=${scanned} started=${started.length} failed=${failed}`
+  );
 
   console.log(
     `[backup-reconcile] scanned=${scanned} autoProvisioned=${autoProvisioned} ` +

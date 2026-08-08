@@ -149,7 +149,7 @@ async function buildDirectoryStagingPosture(
           appUuid,
           DIRECTORY_STAGING_POSTURE_TTL_MS,
           async (): Promise<DirectoryStagingPosture> => {
-            const capability = await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined);
+            const capability = await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true });
             return {
               environmentReady: Boolean(capability.detected),
               targetAttached: Boolean(capability.applicationUuid),

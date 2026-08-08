@@ -47,7 +47,7 @@ export default async function SiteWorkspaceLayout({
 
   const appUuid = site.coolifyServiceUuid?.trim() || "";
   const stagingCapability = (site.stagingEnabled && appUuid)
-    ? await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined)
+    ? await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
     : null;
 
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);

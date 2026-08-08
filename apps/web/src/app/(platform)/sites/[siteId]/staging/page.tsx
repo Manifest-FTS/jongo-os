@@ -286,7 +286,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
 
   const [stagingCapability, backupInventory] = appUuid
     ? await Promise.all([
-      getCoolifyAppStagingCapability(appUuid, projectId ?? undefined),
+      getCoolifyAppStagingCapability(appUuid, projectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true }),
       getCoolifyAppBackupInventory(appUuid)
     ])
     : [null, null];

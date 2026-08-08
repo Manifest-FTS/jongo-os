@@ -142,20 +142,113 @@ export async function POST(request: Request) {
     // believe they are protected while they are not. Alert on that; on-demand
     // failures already surface as a toast to whoever pressed the button.
     let alerted = false;
+    let slackSent = 0;
     try {
       alerted = await maybeAlertOnFailure(db, updated);
+
+      // Slack gets the empty-capture case too, which the email path does not
+      // cover: a backup that succeeded while capturing nothing is the state
+      // most likely to be believed, because every other signal says healthy.
+      if (updated.status === "failed" && updated.trigger === "scheduled") {
+        slackSent = await notifySlack(db, updated, "backup_failed");
+      } else if (updated.status === "success") {
+        const { describeBackupContent } = await import("@/lib/backup-content");
+        const verdict = describeBackupContent({
+          volumeCount: updated.volumeCount,
+          databaseCount: updated.databaseCount,
+          databaseTables: updated.databaseTables
+        });
+        if (!verdict.hasContent) {
+          slackSent = await notifySlack(db, { ...updated, error: verdict.detail }, "backup_empty");
+        }
+      }
     } catch {
       // Never let alerting failure mask a successfully recorded backup —
       // the catalogue row is the thing that must not be lost.
     }
 
-    return NextResponse.json({ ok: true, backupId: updated.id, status: updated.status, prunedRows, alerted });
+    return NextResponse.json({ ok: true, backupId: updated.id, status: updated.status, prunedRows, alerted, slackSent });
   } catch (error) {
     return NextResponse.json(
       { error: `Failed to record backup: ${error instanceof Error ? error.message : "unknown"}` },
       { status: 500 }
     );
   }
+}
+
+/**
+ * Post a backup event to Slack.
+ *
+ * Runs alongside the email rather than replacing it: the email reaches the
+ * organisation owner, Slack reaches whoever is actually on duty. Failures here
+ * are swallowed on purpose — a notification that cannot be delivered must never
+ * stop the catalogue row being recorded, which is the thing that matters.
+ */
+async function notifySlack(db: any, backup: any, kind: "backup_failed" | "backup_empty"): Promise<number> {
+  const { buildBackupSlackMessage, resolveSlackWebhooks } = await import("@/lib/backup-slack");
+
+  const site = await db.site.findUnique({
+    where: { id: backup.siteId },
+    select: { id: true, slug: true, name: true, organizationId: true }
+  });
+  if (!site) return 0;
+
+  let orgWebhooks: string[] = [];
+  try {
+    const channels = await db.notificationChannel.findMany({
+      where: { organizationId: site.organizationId, provider: "slack", enabled: true },
+      select: { config: true }
+    });
+    orgWebhooks = (channels ?? []).map((c: { config: unknown }) =>
+      c.config && typeof c.config === "object" ? (c.config as { webhookUrl?: string }).webhookUrl ?? "" : ""
+    );
+  } catch {
+    // Table missing or unreadable: the platform webhook alone still works.
+  }
+
+  const webhooks = resolveSlackWebhooks({
+    platformWebhook: process.env.JONGO_SLACK_WEBHOOK_URL,
+    orgWebhooks
+  });
+  if (webhooks.length === 0) return 0;
+
+  const base = (process.env.NEXTAUTH_URL || process.env.APP_BASE_URL || "").replace(/\/+$/, "");
+  const siteUrl = `${base}/apps/${encodeURIComponent(site.slug)}/backups`;
+  const siteName = site.name || site.slug;
+
+  let lastSuccessAt: Date | null = null;
+  if (kind === "backup_failed") {
+    const last = await db.siteBackup.findFirst({
+      where: { siteId: site.id, status: "success" },
+      orderBy: { completedAt: "desc" },
+      select: { completedAt: true }
+    });
+    lastSuccessAt = last?.completedAt ?? null;
+  }
+
+  const message =
+    kind === "backup_failed"
+      ? buildBackupSlackMessage({ kind, siteName, siteUrl, error: backup.error, lastSuccessAt })
+      : buildBackupSlackMessage({ kind, siteName, siteUrl, detail: backup.error });
+
+  let sent = 0;
+  for (const webhook of webhooks) {
+    try {
+      const res = await fetch(webhook, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attachments: [
+            { color: message.color, title: message.title, text: message.text, fields: message.fields }
+          ]
+        })
+      });
+      if (res.ok) sent += 1;
+    } catch {
+      // Next webhook.
+    }
+  }
+  return sent;
 }
 
 /**
