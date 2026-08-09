@@ -10,6 +10,8 @@ import { openJobLog } from "@/lib/job-log";
 import { isRateLimitError, isRateLimited } from "@/lib/coolify-rate-limit";
 import { decideStaleRun, DEFAULT_STALE_RUN_HOURS } from "@/lib/stale-run";
 import { orderDueRehearsals, DEFAULT_REHEARSAL_INTERVAL_DAYS } from "@/lib/backup-rehearsal";
+import { scheduledBackupsDefaultEnabled } from "@/lib/backup-schedule";
+import { notifyBackupEvent } from "@/lib/backup-notify";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -343,7 +345,7 @@ export async function POST(request: Request) {
     // sites simultaneously would exhaust the host (a concurrent backup already
     // OOM-killed a deploy here), and an hourly pass spreads a daily schedule
     // across the day naturally.
-    const scheduleDefaultOn = (process.env.JONGO_SCHEDULED_BACKUPS || "").trim() === "true";
+    const scheduleDefaultOn = scheduledBackupsDefaultEnabled();
     const maxBackupsPerRun = Number(process.env.JONGO_SCHEDULED_BACKUPS_PER_RUN || 1) || 1;
     const scheduledStarted: string[] = [];
     const scheduleSkipped: string[] = [];
@@ -485,6 +487,12 @@ export async function POST(request: Request) {
         );
         child.unref();
         scheduledStarted.push(row.slug);
+
+        // This path creates its own siteBackup row rather than going through
+        // startSiteBackup, so the started notification has to be emitted here
+        // too — otherwise the scheduled backups, which are most of them, would
+        // be the only ones that never announced themselves.
+        await notifyBackupEvent({ siteId: site.id, event: "backup_started", trigger: "scheduled" });
       }
     }
 

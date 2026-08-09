@@ -153,6 +153,16 @@ export async function startSiteBackup(input: {
   );
   child.unref();
 
+  // Awaited rather than fired and forgotten: on a serverless-style runtime work
+  // left running after the response is not guaranteed to finish. notifyBackupEvent
+  // swallows its own errors, so this cannot fail the backup it is reporting.
+  const { notifyBackupEvent } = await import("@/lib/backup-notify");
+  await notifyBackupEvent({
+    siteId: input.site.id,
+    event: "backup_started",
+    trigger: input.trigger
+  });
+
   return {
     ok: true,
     backupId: record.id,

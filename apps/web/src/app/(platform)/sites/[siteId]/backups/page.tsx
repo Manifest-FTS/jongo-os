@@ -8,7 +8,7 @@ import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { auth } from "@/lib/auth.config";
 import RestoreTestButton from "@/components/RestoreTestButton";
 import SiteBackupsPanel, { type SiteBackupRow } from "@/components/SiteBackupsPanel";
-import { summarizeBackupSchedule } from "@/lib/backup-schedule";
+import { scheduledBackupsDefaultEnabled, summarizeBackupSchedule } from "@/lib/backup-schedule";
 import { buildBackupDiagnosis } from "@/lib/backup-diagnosis";
 import { resolveBackupViewCapability } from "@/lib/backup-view-capability";
 import { type StackMarkers } from "@/lib/backup-stack";
@@ -394,7 +394,7 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       if (!row) return null;
       return summarizeBackupSchedule({
         ...row,
-        platformDefaultEnabled: (process.env.JONGO_SCHEDULED_BACKUPS || "").trim() === "true"
+        platformDefaultEnabled: scheduledBackupsDefaultEnabled()
       });
     } catch {
       return null;

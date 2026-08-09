@@ -18,6 +18,28 @@ export function isValidBackupFrequency(hours: unknown): boolean {
   return BACKUP_FREQUENCY_CHOICES.some((c) => c.hours === hours);
 }
 
+/** The 24h schedule every site gets unless it has chosen otherwise. */
+export const DEFAULT_BACKUP_FREQUENCY_HOURS = 24;
+
+/**
+ * Whether a site that has made no choice of its own gets automatic backups.
+ *
+ * Defaults to ON. It used to be `JONGO_SCHEDULED_BACKUPS === "true"`, which
+ * meant an unset variable silently left every site in the fleet with no restore
+ * point — the failure mode being that nothing looks wrong until someone needs a
+ * backup that was never taken. Protection should not depend on remembering to
+ * set a variable, so the opt-OUT is now the explicit one.
+ *
+ * Takes the raw value as a parameter so this is testable without touching
+ * process.env, keeping this module import-free.
+ */
+export function scheduledBackupsDefaultEnabled(
+  raw: string | undefined = process.env.JONGO_SCHEDULED_BACKUPS
+): boolean {
+  const value = (raw ?? "").trim().toLowerCase();
+  return !(value === "false" || value === "0" || value === "off" || value === "no");
+}
+
 export function describeBackupFrequency(hours: number | null | undefined): string {
   const match = BACKUP_FREQUENCY_CHOICES.find((c) => c.hours === hours);
   if (match) return match.label;
