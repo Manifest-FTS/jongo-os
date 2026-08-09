@@ -1711,7 +1711,23 @@ export async function provisionCoolifyWordPressService(
           message: resolution.reason ?? "Could not determine which Coolify server to create the app on."
         };
       }
-    } catch {
+    } catch (error) {
+      // "Could not reach Coolify" is wrong — and expensively so — when Coolify
+      // answered and refused us. A 401/403 here is almost always the API token
+      // or, more often, Coolify's own API IP allowlist (Settings -> API ->
+      // Allowed IPs) not containing the address Jongo calls from. Reporting that
+      // as unreachable sends whoever is debugging to look at networking.
+      const status = error instanceof CoolifyHttpError ? error.status : undefined;
+      if (status === 401 || status === 403) {
+        return {
+          ok: false,
+          reason: "coolify_api_forbidden",
+          message: `Coolify refused the API request (HTTP ${status}). Check the API token, and that Coolify's API allowed-IPs list includes the address Jongo calls from.`
+        };
+      }
+      if (isRateLimitError(error)) {
+        return { ok: false, reason: "rate_limited", message: "Coolify's API rate limit is in effect. Try again shortly." };
+      }
       return { ok: false, reason: "server_unresolved", message: "Could not reach Coolify to determine which server to use." };
     }
   }
