@@ -2407,3 +2407,271 @@ main {
     50% { opacity: 1; }
   }
 }
+
+/* ============================================================
+   DESIGN SYSTEM REFINEMENT
+   ------------------------------------------------------------
+   Appended deliberately: every page already uses .card, .btn,
+   .status-chip and .form-input, so refining them here lifts the
+   whole app at once instead of restyling each page. Later rules
+   win in CSS, so this layer overrides without editing what is
+   above it.
+
+   The brand accent is kept. What changes is everything around
+   it — neutrals, depth, rhythm and motion — which is usually
+   what separates a product that feels considered from one that
+   feels assembled.
+   ============================================================ */
+
+:root {
+  /* Neutrals rebuilt on a single cool-grey hue. The previous set
+     drifted between green-grey and blue-grey, which is what made
+     surfaces read as slightly muddy next to the accent. */
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-alt: #fafbfc;
+  --surface-sunken: #f1f3f5;
+  --text: #101828;
+  --text-soft: #344054;
+  --muted: #667085;
+  --muted-strong: #475467;
+  --border: #e4e7ec;
+  --border-strong: #d0d5dd;
+
+  /* Depth as a scale, not one blunt shadow. Two layers each: a
+     tight contact shadow plus a wider ambient one, which is what
+     makes a surface look lifted rather than smudged. */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 2px 4px rgba(16, 24, 40, 0.04), 0 4px 12px rgba(16, 24, 40, 0.06);
+  --shadow-lg: 0 4px 8px rgba(16, 24, 40, 0.04), 0 12px 28px rgba(16, 24, 40, 0.08);
+  --shadow: var(--shadow-md);
+
+  /* One radius scale, so nothing is 6px next to 10px by accident. */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-pill: 999px;
+
+  /* Spacing on a 4px grid. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* Motion. Short and eased-out: UI should feel responsive, not
+     animated. Anything above ~200ms starts to feel like latency. */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration: 180ms;
+
+  --ring: 0 0 0 3px rgba(158, 200, 119, 0.35);
+}
+
+/* ── Typography ─────────────────────────────────────────────── */
+
+body {
+  background:
+    radial-gradient(900px 400px at 100% -10%, rgba(158, 200, 119, 0.06), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+}
+
+h1, h2, h3, h4 {
+  /* Display type tightens as it grows; body type does not. Without
+     this, large headings read as loose and amateur. */
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-wrap: balance;
+}
+
+h1 { font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.1rem); line-height: 1.15; }
+h2 { font-size: clamp(1.15rem, 1rem + 0.5vw, 1.35rem); line-height: 1.25; }
+h3 { font-size: 1.05rem; line-height: 1.3; }
+
+p { text-wrap: pretty; }
+
+.card-title {
+  letter-spacing: -0.01em;
+  font-weight: 650;
+}
+
+.card-muted {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+/* ── Surfaces ───────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+  transition:
+    box-shadow var(--duration) var(--ease),
+    border-color var(--duration) var(--ease),
+    transform var(--duration) var(--ease);
+}
+
+/* Lift only where a card is genuinely interactive. A hover effect on
+   a static panel is noise that teaches people to ignore hover. */
+a .card:hover,
+.card--interactive:hover,
+button .card:hover {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+
+.btn {
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  box-shadow: var(--shadow-xs);
+  transition:
+    background-color var(--duration-fast) var(--ease),
+    border-color var(--duration-fast) var(--ease),
+    box-shadow var(--duration-fast) var(--ease),
+    transform var(--duration-fast) var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+/* Press feedback. The button meeting the cursor is most of what makes
+   a control feel physical rather than painted on. */
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ── Focus ──────────────────────────────────────────────────── */
+
+/* focus-visible, not focus: keyboard users get a clear ring, mouse
+   users do not get one on every click. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-color: var(--accent-strong);
+}
+
+/* ── Forms ──────────────────────────────────────────────────── */
+
+.form-input {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  transition:
+    border-color var(--duration-fast) var(--ease),
+    box-shadow var(--duration-fast) var(--ease);
+}
+
+.form-input:hover:not(:disabled) { border-color: var(--muted); }
+.form-input:disabled { background: var(--surface-sunken); color: var(--muted); cursor: not-allowed; }
+
+.form-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  letter-spacing: 0.005em;
+}
+
+.form-help, .form-error { font-size: 0.82rem; line-height: 1.5; }
+
+/* ── Status chips ───────────────────────────────────────────── */
+
+.status-chip {
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.2rem 0.6rem 0.2rem 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* A coloured dot carries the state at a glance and, unlike colour
+   alone, survives being read by someone with colour-blindness. */
+.status-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  flex: none;
+}
+
+.status-chip.healthy  { background: #ecfdf3; color: #027a48; border-color: #abefc6; }
+.status-chip.degraded { background: #fffaeb; color: #b54708; border-color: #fedf89; }
+.status-chip.error    { background: #fef3f2; color: #b42318; border-color: #fecdca; }
+.status-chip.unknown  { background: var(--surface-sunken); color: var(--muted-strong); border-color: var(--border); }
+
+/* ── Motion ─────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  /* Two-column panel layouts collapse rather than crushing the
+     right-hand column to an unreadable strip. */
+  .card { padding: var(--space-4); }
+}
+
+/* Wide content must scroll inside its own container so the page
+   body never scrolls sideways on a phone. */
+.card table,
+.card pre {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Two-column panel layout: content left, reference right.
+   A class rather than an inline grid, because inline styles beat media
+   queries — a hard-coded 2fr/1fr crushes the right column to an
+   unreadable strip on a phone and nothing in CSS can rescue it. */
+.split-2 {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .split-2 { grid-template-columns: minmax(0, 1fr); }
+}
