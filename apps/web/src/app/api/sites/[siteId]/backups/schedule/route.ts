@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
-import { isValidBackupFrequency, summarizeBackupSchedule } from "@/lib/backup-schedule";
+import { isValidBackupFrequency, scheduledBackupsDefaultEnabled, summarizeBackupSchedule } from "@/lib/backup-schedule";
 
 export const runtime = "nodejs";
 
@@ -87,6 +87,14 @@ export async function PATCH(request: Request, { params }: Params) {
       );
     }
 
+    // Read the resolved on/off BEFORE the write so the notification fires only
+    // on an actual transition. Without this, saving the same settings twice
+    // emails the whole team twice about a change that did not happen.
+    const before = await (db as any).site.findUnique({
+      where: { id: workspace.id },
+      select: { backupScheduleEnabled: true, backupFrequencyHours: true, lastScheduledBackupAt: true }
+    });
+
     const updated = await (db as any).site.update({
       where: { id: workspace.id },
       select: {
@@ -97,13 +105,25 @@ export async function PATCH(request: Request, { params }: Params) {
       data
     });
 
-    return NextResponse.json({
-      ok: true,
-      schedule: summarizeBackupSchedule({
-        ...updated,
-        platformDefaultEnabled: (process.env.JONGO_SCHEDULED_BACKUPS || "").trim() === "true"
-      })
+    const schedule = summarizeBackupSchedule({
+      ...updated,
+      platformDefaultEnabled: scheduledBackupsDefaultEnabled()
     });
+
+    const wasEnabled = before
+      ? summarizeBackupSchedule({ ...before, platformDefaultEnabled: scheduledBackupsDefaultEnabled() }).enabled
+      : null;
+
+    if (wasEnabled !== null && wasEnabled !== schedule.enabled) {
+      const { notifyBackupEvent } = await import("@/lib/backup-notify");
+      await notifyBackupEvent({
+        siteId: workspace.id,
+        event: schedule.enabled ? "schedule_enabled" : "schedule_disabled",
+        frequencyLabel: schedule.frequencyLabel
+      });
+    }
+
+    return NextResponse.json({ ok: true, schedule });
   } catch (error) {
     return NextResponse.json(
       { error: `Could not update the schedule: ${error instanceof Error ? error.message : "unknown error"}` },

@@ -138,13 +138,28 @@ export async function POST(request: Request) {
       prunedRows = result?.count ?? 0;
     }
 
-    // A scheduled backup fails into a log nobody reads, so a customer can
-    // believe they are protected while they are not. Alert on that; on-demand
-    // failures already surface as a toast to whoever pressed the button.
+    // Every finished backup emails the app's whole team — owner, org
+    // collaborators and app collaborators — on both outcomes. This replaced the
+    // former owner-only, scheduled-failures-only, once-per-24h email; keeping
+    // both would have double-mailed the owner on every failure.
     let alerted = false;
     let slackSent = 0;
     try {
-      alerted = await maybeAlertOnFailure(db, updated);
+      // Only the two terminal outcomes are events. Guarding on the exact values
+      // rather than treating "not success" as failure keeps a future status
+      // (pruned, cancelled) from mailing everyone a false failure.
+      if (updated.status === "success" || updated.status === "failed") {
+        const { notifyBackupEvent } = await import("@/lib/backup-notify");
+        const notified = await notifyBackupEvent({
+          siteId: updated.siteId,
+          event: updated.status === "success" ? "backup_succeeded" : "backup_failed",
+          at: updated.completedAt ? new Date(updated.completedAt) : new Date(),
+          error: updated.error,
+          trigger: updated.trigger,
+          sizeBytes: updated.sizeBytes ? Number(updated.sizeBytes) : null
+        });
+        alerted = notified.sent > 0;
+      }
 
       // Slack gets the empty-capture case too, which the email path does not
       // cover: a backup that succeeded while capturing nothing is the state
@@ -251,58 +266,7 @@ async function notifySlack(db: any, backup: any, kind: "backup_failed" | "backup
   return sent;
 }
 
-/**
- * Email the organisation owner when a scheduled backup fails. Returns whether
- * an email was actually sent, which the caller reports for observability.
- */
-async function maybeAlertOnFailure(db: any, backup: any): Promise<boolean> {
-  const { shouldAlertOnBackupFailure, buildBackupFailureEmail } = await import("@/lib/backup-alert");
-
-  const site = await db.site.findUnique({
-    where: { id: backup.siteId },
-    select: {
-      id: true,
-      slug: true,
-      name: true,
-      backupAlertSentAt: true,
-      organization: { select: { owner: { select: { email: true } } } }
-    }
-  });
-  if (!site) return false;
-
-  const decision = shouldAlertOnBackupFailure({
-    status: backup.status,
-    trigger: backup.trigger,
-    lastAlertAt: site.backupAlertSentAt
-  });
-  if (!decision.alert) return false;
-
-  const to = site.organization?.owner?.email?.trim();
-  if (!to) return false;
-
-  // Point at the most recent snapshot they CAN still restore, so the email
-  // answers "am I exposed right now?" and not just "something broke".
-  const lastSuccess = await db.siteBackup.findFirst({
-    where: { siteId: site.id, status: "success" },
-    orderBy: { completedAt: "desc" },
-    select: { completedAt: true }
-  });
-
-  const base = (process.env.NEXTAUTH_URL || process.env.APP_BASE_URL || "").replace(/\/+$/, "");
-  const { sendTransactionalEmail } = await import("@/lib/email");
-  const message = buildBackupFailureEmail({
-    siteName: site.name || site.slug,
-    siteUrl: `${base}/apps/${encodeURIComponent(site.slug)}/backups`,
-    failedAt: backup.completedAt ? new Date(backup.completedAt) : new Date(),
-    error: backup.error,
-    lastSuccessAt: lastSuccess?.completedAt ?? null
-  });
-
-  const result = await sendTransactionalEmail({ to, subject: message.subject, text: message.text });
-  if (!result.sent) return false;
-
-  // Only stamp on a send that actually happened, so a misconfigured mailer
-  // does not silently burn the alert for the next 24 hours.
-  await db.site.update({ where: { id: site.id }, data: { backupAlertSentAt: new Date() } });
-  return true;
-}
+// maybeAlertOnFailure lived here: an owner-only failure email, suppressed to one
+// per site per 24h. Superseded by notifyBackupEvent above, which mails the whole
+// team on every terminal outcome. Removed rather than left dormant so there is
+// only one place backup email is sent from.

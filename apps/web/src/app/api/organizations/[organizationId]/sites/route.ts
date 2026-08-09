@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, getCoolifyOverview, provisionCoolifyWordPressService } from "@/lib/coolify";
 import { isAdminRole } from "@/lib/roles";
+import { DEFAULT_BACKUP_FREQUENCY_HOURS } from "@/lib/backup-schedule";
 import {
   buildTemporaryProductionDomain,
   normalizeTemporaryDomainSlug,
@@ -272,6 +273,10 @@ export async function POST(req: Request, { params }: Params) {
           coolifyProjectId,
           stagingEnabled: false,
           gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
+          // Protected from the moment it exists, rather than inheriting a
+          // platform default that a later config change could quietly flip off.
+          backupScheduleEnabled: true,
+          backupFrequencyHours: DEFAULT_BACKUP_FREQUENCY_HOURS,
           temporaryDomainSlug: pinnedTemporarySlug,
           temporaryDomainSuffix: pinnedTemporarySuffix,
           environments: {
@@ -311,6 +316,8 @@ export async function POST(req: Request, { params }: Params) {
           coolifyProjectId,
           stagingEnabled: false,
           gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
+          backupScheduleEnabled: true,
+          backupFrequencyHours: DEFAULT_BACKUP_FREQUENCY_HOURS,
           environments: {
             create: [
               { name: "production", isProductionLike: true },

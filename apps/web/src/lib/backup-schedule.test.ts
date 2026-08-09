@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isValidBackupFrequency,
   describeBackupFrequency,
+  scheduledBackupsDefaultEnabled,
   summarizeBackupSchedule
 } from "./backup-schedule";
 
@@ -114,5 +115,25 @@ describe("summarizeBackupSchedule", () => {
     expect(s.lastRunAt).toBeNull();
     expect(s.nextRunAt).toBeNull();
     expect(s.detail).toMatch(/first automatic backup/);
+  });
+});
+
+describe("scheduledBackupsDefaultEnabled", () => {
+  it("defaults to ON when the variable is unset or blank", () => {
+    // The old rule was `=== "true"`, so an unset variable left the whole fleet
+    // with no restore point and nothing looking wrong.
+    expect(scheduledBackupsDefaultEnabled(undefined)).toBe(true);
+    expect(scheduledBackupsDefaultEnabled("")).toBe(true);
+    expect(scheduledBackupsDefaultEnabled("   ")).toBe(true);
+  });
+
+  it("honours an explicit opt-out", () => {
+    for (const value of ["false", "FALSE", " false ", "0", "off", "no"]) {
+      expect(scheduledBackupsDefaultEnabled(value)).toBe(false);
+    }
+  });
+
+  it("stays on for an explicit true", () => {
+    expect(scheduledBackupsDefaultEnabled("true")).toBe(true);
   });
 });
