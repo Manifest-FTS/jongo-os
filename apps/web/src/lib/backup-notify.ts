@@ -19,6 +19,12 @@
  * so they can be tested without a database or a mail provider.
  */
 
+import {
+  renderTransactionalEmail,
+  type EmailDetailRow,
+  type EmailTone
+} from "./email-layout";
+
 export type BackupEvent =
   | "backup_started"
   | "backup_succeeded"
@@ -131,88 +137,164 @@ function describeTrigger(trigger?: string | null): string {
 }
 
 /**
- * The email body. Plain and specific: what happened, when, and the one thing
- * the reader might need to do about it.
+ * One event, described once, rendered twice.
+ *
+ * The subject, the detail rows and the callout are built as data and then handed
+ * to the HTML shell and flattened for the text part. Writing the two bodies
+ * separately is how they drift, and the text part is the one nobody looks at
+ * until a client refuses to render HTML.
  */
-export function buildBackupEventEmail(input: BackupEventEmailInput): { subject: string; text: string } {
+type EventCopy = {
+  subject: string;
+  preheader: string;
+  badge: { tone: EmailTone; label: string };
+  title: string;
+  intro: string;
+  rows: EmailDetailRow[];
+  callout?: { tone: EmailTone; title?: string; body: string };
+  footnote: string;
+};
+
+function buildEventCopy(input: BackupEventEmailInput): EventCopy {
   const when = formatUtc(input.at);
   const rawLast = input.lastSuccessAt ? new Date(input.lastSuccessAt) : null;
   const lastSuccess = rawLast && !Number.isNaN(rawLast.getTime()) ? rawLast : null;
-
-  const footer = ["", `Open backups: ${input.siteUrl}`];
+  const footnote = `You are receiving this because you have access to ${input.siteName} in Jongo.`;
 
   switch (input.event) {
     case "backup_started":
       return {
         subject: `Backup started for ${input.siteName}`,
-        text: [
-          `A ${describeTrigger(input.trigger)} has started for ${input.siteName}.`,
-          "",
-          `Started at: ${when}`,
-          "You will get another email when it finishes. No action is needed.",
-          ...footer
-        ].join("\n")
+        preheader: `A ${describeTrigger(input.trigger)} is running. No action needed.`,
+        badge: { tone: "info", label: "Backup started" },
+        title: `Backup started for ${input.siteName}`,
+        intro: `A ${describeTrigger(input.trigger)} has started. You will get another email when it finishes — no action is needed.`,
+        rows: [
+          { label: "App", value: input.siteName },
+          { label: "Started", value: when },
+          { label: "Type", value: describeTrigger(input.trigger) }
+        ],
+        footnote
       };
 
     case "backup_succeeded": {
       const size = formatSize(input.sizeBytes);
       return {
         subject: `Backup completed for ${input.siteName}`,
-        text: [
-          `The ${describeTrigger(input.trigger)} for ${input.siteName} completed successfully.`,
-          "",
-          `Completed at: ${when}`,
-          size ? `Size: ${size}` : "Size: not reported.",
-          "Files and database are stored offsite. This is a restore point you can roll back to.",
-          ...footer
-        ].join("\n")
+        preheader: `Completed ${when}${size ? ` · ${size}` : ""}. A new restore point is available.`,
+        badge: { tone: "success", label: "Backup completed" },
+        title: `Backup completed for ${input.siteName}`,
+        intro: "Files and database were captured and stored offsite. This is a restore point you can roll back to.",
+        rows: [
+          { label: "App", value: input.siteName },
+          { label: "Completed", value: when },
+          { label: "Size", value: size ?? "Not reported" },
+          { label: "Type", value: describeTrigger(input.trigger) }
+        ],
+        footnote
       };
     }
 
     case "backup_failed":
       return {
         subject: `Backup failed for ${input.siteName}`,
-        text: [
-          `The ${describeTrigger(input.trigger)} for ${input.siteName} did not complete.`,
-          "",
-          `Failed at: ${when}`,
-          input.error ? `Reason: ${input.error}` : "Reason: not reported.",
-          lastSuccess
-            ? `Last successful backup: ${formatUtc(lastSuccess)} — you can still restore from that one.`
-            : "There is no earlier successful backup for this app, so it currently has no restore point.",
-          "",
-          "Automatic backups will be retried on the next scheduled run. If this keeps failing, take a backup manually from that page to see the error in full.",
-          ...footer
-        ].join("\n")
+        preheader: lastSuccess
+          ? `Failed ${when}. You can still restore from ${formatUtc(lastSuccess)}.`
+          : `Failed ${when}. This app currently has no restore point.`,
+        badge: { tone: "danger", label: "Backup failed" },
+        title: `Backup failed for ${input.siteName}`,
+        intro: `The ${describeTrigger(input.trigger)} did not complete.`,
+        rows: [
+          { label: "App", value: input.siteName },
+          { label: "Failed", value: when },
+          { label: "Reason", value: input.error?.trim() || "Not reported" },
+          { label: "Type", value: describeTrigger(input.trigger) }
+        ],
+        callout: lastSuccess
+          ? {
+              tone: "warning",
+              title: "You can still restore",
+              body: `The most recent successful backup was ${formatUtc(lastSuccess)}. Automatic backups retry on the next scheduled run; if this keeps failing, take one by hand to see the full error.`
+            }
+          : {
+              tone: "danger",
+              title: "No restore point",
+              body: "There is no earlier successful backup for this app, so nothing can be restored right now. Take a backup by hand to see the full error."
+            },
+        footnote
       };
 
     case "schedule_enabled":
       return {
         subject: `Automatic backups turned on for ${input.siteName}`,
-        text: [
-          `Automatic backups are now on for ${input.siteName}.`,
-          "",
-          `Frequency: ${input.frequencyLabel ?? "Daily"}`,
-          `Changed at: ${when}`,
-          ...footer
-        ].join("\n")
+        preheader: `${input.frequencyLabel ?? "Daily"} automatic backups are now on.`,
+        badge: { tone: "success", label: "Schedule on" },
+        title: `Automatic backups are on for ${input.siteName}`,
+        intro: "This app will now be backed up on a schedule, and each run will be reported here.",
+        rows: [
+          { label: "App", value: input.siteName },
+          { label: "Frequency", value: input.frequencyLabel ?? "Daily" },
+          { label: "Changed", value: when }
+        ],
+        footnote
       };
 
     case "schedule_disabled":
       return {
         subject: `Automatic backups turned off for ${input.siteName}`,
-        text: [
-          `Automatic backups have been turned off for ${input.siteName}.`,
-          "",
-          `Changed at: ${when}`,
-          "No new restore points will be created until they are turned back on. You can still take a backup at any time.",
-          lastSuccess
-            ? `Most recent backup: ${formatUtc(lastSuccess)}.`
-            : "This app has no successful backup yet.",
-          ...footer
-        ].join("\n")
+        preheader: "No new restore points will be created until they are turned back on.",
+        badge: { tone: "warning", label: "Schedule off" },
+        title: `Automatic backups are off for ${input.siteName}`,
+        intro: "You can still take a backup at any time from the Backups tab.",
+        rows: [
+          { label: "App", value: input.siteName },
+          { label: "Changed", value: when },
+          { label: "Most recent backup", value: lastSuccess ? formatUtc(lastSuccess) : "None yet" }
+        ],
+        callout: {
+          tone: "warning",
+          title: "No new restore points",
+          body: "Nothing will be backed up automatically until the schedule is turned back on."
+        },
+        footnote
       };
   }
+}
+
+/**
+ * The email body, in both parts. Plain and specific: what happened, when, and
+ * the one thing the reader might need to do about it.
+ */
+export function buildBackupEventEmail(
+  input: BackupEventEmailInput
+): { subject: string; text: string; html: string } {
+  const copy = buildEventCopy(input);
+
+  const text = [
+    copy.title,
+    "",
+    copy.intro,
+    "",
+    ...copy.rows.map((row) => `${row.label}: ${row.value}`),
+    ...(copy.callout ? ["", copy.callout.title ? `${copy.callout.title}: ${copy.callout.body}` : copy.callout.body] : []),
+    "",
+    `Open backups: ${input.siteUrl}`,
+    "",
+    copy.footnote
+  ].join("\n");
+
+  const html = renderTransactionalEmail({
+    preheader: copy.preheader,
+    badge: copy.badge,
+    title: copy.title,
+    intro: copy.intro,
+    rows: copy.rows,
+    callout: copy.callout,
+    cta: { label: "View backups", url: input.siteUrl },
+    footnote: copy.footnote
+  });
+
+  return { subject: copy.subject, text, html };
 }
 
 export type NotifyResult = {
@@ -307,7 +389,12 @@ export async function notifyBackupEvent(input: {
     let sent = 0;
     for (const to of recipients) {
       try {
-        const result = await sendTransactionalEmail({ to, subject: message.subject, text: message.text });
+        const result = await sendTransactionalEmail({
+          to,
+          subject: message.subject,
+          text: message.text,
+          html: message.html
+        });
         if (result.sent) sent += 1;
       } catch {
         // Next recipient — one bad address must not silence the rest.
