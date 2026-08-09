@@ -1751,10 +1751,22 @@ export async function provisionCoolifyWordPressService(
   // parsed before it knows the service key that urls[].name must reference, and
   // that does not happen synchronously. Retried a few times for the same
   // reason — a brand new service is the case most likely to be unparsed.
+  //
+  // Bounded by a wall-clock DEADLINE, not just an attempt count. Each attempt
+  // makes several Coolify calls at up to 8s each, so four attempts plus backoff
+  // could exceed 60s — and this runs inside the HTTP request that created the
+  // site. Cloudflare cuts the connection at ~100s and returns 502 while the
+  // origin is still working, so the caller sees a failure for a site that was
+  // in fact created.
+  const domainDeadline = Date.now() + 35_000;
   let domainApplied = false;
   let domainMessage = "";
-  for (let attempt = 0; attempt < 4 && !domainApplied; attempt += 1) {
-    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
+  for (let attempt = 0; attempt < 3 && !domainApplied; attempt += 1) {
+    if (Date.now() > domainDeadline) {
+      domainMessage = "timed out waiting for Coolify to accept the domain";
+      break;
+    }
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1500));
     const applied = await applyCoolifyServiceDomains(uuid, domain);
     domainApplied = applied.ok;
     domainMessage = applied.message;
