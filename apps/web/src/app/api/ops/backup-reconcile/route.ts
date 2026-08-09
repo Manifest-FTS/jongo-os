@@ -496,6 +496,74 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── WordPress plugin inventory ──
+    // Reads each WordPress app's plugins straight from its container, so the
+    // Plugins page works for apps that have no REST application password (which
+    // was all but a handful of them). Capped per run and ordered stalest-first:
+    // each probe is an SSH round trip, and the whole fleet every hour would put
+    // more load on the host than the page is worth.
+    let pluginInventoryRefreshed = 0;
+    let pluginInventoryFailed = 0;
+    const pluginInventorySkipped: string[] = [];
+    try {
+      const PLUGIN_INVENTORY_MAX_PER_RUN = Number(process.env.JONGO_PLUGIN_INVENTORY_MAX_PER_RUN || 12) || 12;
+      const { isSshHostConfigured } = await import("@/lib/ssh-exec");
+
+      if (!isSshHostConfigured()) {
+        pluginInventorySkipped.push("ssh_host_not_configured");
+      } else {
+        const { refreshPluginInventory, PLUGIN_INVENTORY_REFRESH_AFTER_MINUTES } = await import(
+          "@/lib/wordpress-plugin-inventory"
+        );
+        const staleBefore = new Date(Date.now() - PLUGIN_INVENTORY_REFRESH_AFTER_MINUTES * 60_000);
+
+        const baseWhere = { deletedAt: null, isStagingResource: false, NOT: [{ coolifyServiceUuid: null }] };
+        const selection = { id: true, slug: true, coolifyServiceUuid: true };
+
+        // Two queries rather than one OR with an ordered relation: Postgres sorts
+        // NULLS LAST on an ascending order, so a never-collected app would rank
+        // behind every stale one and a newly added site could wait a long time
+        // for its first reading. Asking for the missing ones explicitly first is
+        // both correct and obvious.
+        const missing = await db.site.findMany({
+          where: { ...baseWhere, wordpressPluginInventory: { is: null } },
+          select: selection,
+          take: PLUGIN_INVENTORY_MAX_PER_RUN
+        });
+
+        const remaining = PLUGIN_INVENTORY_MAX_PER_RUN - missing.length;
+        const stale = remaining > 0
+          ? await db.site.findMany({
+              where: { ...baseWhere, wordpressPluginInventory: { collectedAt: { lt: staleBefore } } },
+              select: selection,
+              orderBy: { wordpressPluginInventory: { collectedAt: "asc" } },
+              take: remaining
+            })
+          : [];
+
+        const candidates = [...missing, ...stale];
+
+        for (const candidate of candidates) {
+          const uuid = candidate.coolifyServiceUuid?.trim();
+          if (!uuid) continue;
+          const result = await refreshPluginInventory({ siteDbId: candidate.id, resourceUuid: uuid });
+          if (result.status === "ok") pluginInventoryRefreshed += 1;
+          else if (result.status === "deferred_deploy_in_progress") pluginInventorySkipped.push(`${candidate.slug}:deferred`);
+          else pluginInventoryFailed += 1;
+        }
+
+        // Say what was left out. A capped sweep that reports only successes reads
+        // as "the fleet is covered" when it is not.
+        if (candidates.length >= PLUGIN_INVENTORY_MAX_PER_RUN) {
+          pluginInventorySkipped.push(`per_run_cap_reached:${PLUGIN_INVENTORY_MAX_PER_RUN}`);
+        }
+      }
+    } catch (error) {
+      pluginInventorySkipped.push(
+        `error:${error instanceof Error ? error.message.slice(0, 120) : "unknown"}`
+      );
+    }
+
     // ── Backup rehearsal ──
     // Restores one backup into a throwaway container to find out whether it
     // would actually restore. Nothing else on the platform verifies the restic
@@ -642,6 +710,11 @@ export async function POST(request: Request) {
         capabilityUnknown,
         databasesNested,
         rateLimited
+      },
+      pluginInventory: {
+        refreshed: pluginInventoryRefreshed,
+        failed: pluginInventoryFailed,
+        skipped: pluginInventorySkipped
       },
       lifecycle: {
         indexComplete: liveIndex.complete !== false,

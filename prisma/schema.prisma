@@ -62,12 +62,12 @@ model User {
 }
 
 model UserProfileSettings {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String   @unique @db.Uuid
-  username    String?  @unique
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @unique @db.Uuid
+  username    String?   @unique
   profileRole String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -170,15 +170,15 @@ model Site {
   // Scheduled backups. backupScheduleEnabled is nullable on purpose: null means
   // "follow the platform default", so the feature can be rolled out globally
   // without writing a row per site, while still allowing per-site opt-out.
-  backupScheduleEnabled Boolean?
-  backupFrequencyHours  Int       @default(24)
-  lastScheduledBackupAt DateTime?
+  backupScheduleEnabled  Boolean?
+  backupFrequencyHours   Int       @default(24)
+  lastScheduledBackupAt  DateTime?
   // Cached answer to "does this resource have anything worth snapshotting?".
   // Null = never evaluated. Cached because the scheduler must not fan out an
   // API call per site every hour, and stale-by-a-day is harmless: the on-demand
   // path re-checks live before it ever starts a run.
-  backupEligible        Boolean?
-  backupEligibleAt      DateTime?
+  backupEligible         Boolean?
+  backupEligibleAt       DateTime?
   // Why: "stateless", "external_database", "linked_database", ... Cached beside
   // backupEligible so the UI can decide what to show without a Coolify call on
   // every page load.
@@ -189,14 +189,14 @@ model Site {
   // hourly reconciler from live Coolify links, so apps added later nest with
   // no manual step. Deliberately a plain id, not a relation, to avoid a
   // self-referential cascade on a table that is soft-deleted.
-  parentSiteId          String?   @db.Uuid
+  parentSiteId           String?   @db.Uuid
   // When Coolify's backup schedules were last reconciled for this app. The
   // sweep re-checked all 43 apps every hour, which alone exceeds Coolify's
   // 200 requests/minute, starving everything that ran after it.
-  scheduleCheckedAt     DateTime?
+  scheduleCheckedAt      DateTime?
   // Rate limit for scheduled-backup failure email. A site that is broken fails
   // every night, and a nightly alert trains people to ignore alerts.
-  backupAlertSentAt     DateTime?
+  backupAlertSentAt      DateTime?
   // Note: Site is referred to as "App" in UI/UX language
 
   // Relations
@@ -205,6 +205,7 @@ model Site {
   collaborators            SiteCollaborator[]
   invitations              Invitation[]
   wordpressTelemetryConfig WordPressTelemetryConfig?
+  wordpressPluginInventory WordPressPluginInventory?
   backups                  SiteBackup[]
 
   createdAt DateTime  @default(now())
@@ -235,6 +236,40 @@ model WordPressTelemetryConfig {
   @@index([siteId])
 }
 
+// Cached plugin inventory, read straight from the WordPress container.
+//
+// The REST collector (WordPressTelemetryConfig above) needs a per-site
+// application password and had only ever been set up for a handful of apps, so
+// the Plugins page was empty for most of the fleet. This is the credential-free
+// path: a SHORTINIT probe over SSH + docker exec. Cached because the read costs
+// an SSH round trip and a page render must not pay for it.
+model WordPressPluginInventory {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId String @unique @db.Uuid
+
+  collectedAt DateTime
+  /// 'container_probe' today; named so a future source is distinguishable.
+  source      String
+  /// 'ok' when plugins were read; otherwise why not.
+  status      String
+  error       String?
+
+  wpVersion           String?
+  /// From WordPress's update_plugins transient. Old means "Up to date" is a
+  /// stale cache rather than a fact — surfaced instead of silently trusted.
+  updateDataCheckedAt DateTime?
+
+  /// ProbedPlugin[] — see lib/wordpress-plugin-probe.ts.
+  plugins Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([collectedAt])
+}
+
 // One row per site backup (Flywheel-style catalog entry). Each backup is a
 // single restic snapshot in Backblaze B2 containing BOTH the WordPress files
 // and a database dump, so it is independently restorable offsite.
@@ -255,9 +290,9 @@ model SiteBackup {
   sizeBytes        BigInt?
 
   // What was captured (generalized beyond WordPress).
-  resourceType  String? // 'wordpress' | 'service' | 'application' | 'database'
-  volumeCount   Int?
-  databaseCount Int?
+  resourceType   String? // 'wordpress' | 'service' | 'application' | 'database'
+  volumeCount    Int?
+  databaseCount  Int?
   // Tables actually captured across all dumps. Distinguishes "backed up a
   // database" from "backed up an EMPTY database": the latter is a valid,
   // complete, ~600-byte dump that would otherwise be reported as a healthy

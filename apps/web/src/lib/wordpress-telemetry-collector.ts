@@ -258,6 +258,23 @@ export async function getWordPressTelemetrySnapshotFromCollector(input: {
     return mergeCollectorSnapshot(input.fallback, directStoredSnapshot);
   }
 
+  // No REST credentials for this app. Fall back to the cached container probe,
+  // which needs none — this is what makes the Plugins page work for the apps
+  // nobody ever set an application password up for. REST stays preferred above:
+  // it reads the site as WordPress itself sees it, including anything a plugin
+  // filters, which a database-level read cannot see.
+  if (isUuid(input.workspace.id)) {
+    try {
+      const { readCachedPluginInventory, toPluginCollectorPayload } = await import("@/lib/wordpress-plugin-inventory");
+      const cached = await readCachedPluginInventory(input.workspace.id);
+      if (cached) {
+        return mergeCollectorSnapshot(input.fallback, toPluginCollectorPayload(cached));
+      }
+    } catch {
+      // Fall through to the external collector.
+    }
+  }
+
   const endpoint = process.env.WORDPRESS_TELEMETRY_COLLECTOR_URL?.trim();
   if (!endpoint) {
     return null;

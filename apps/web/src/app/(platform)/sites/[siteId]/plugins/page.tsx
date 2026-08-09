@@ -4,12 +4,24 @@ import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import WordPressTelemetryConnectionPanel from "@/components/WordPressTelemetryConnectionPanel";
+import RefreshPluginInventoryButton from "@/components/RefreshPluginInventoryButton";
 import { getWordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
 import { getWordPressTelemetrySnapshotFromCollector } from "@/lib/wordpress-telemetry-collector";
+import { readCachedPluginInventory } from "@/lib/wordpress-plugin-inventory";
+import { describeUpdateDataFreshness } from "@/lib/wordpress-plugin-probe";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ siteId: string }> };
+
+function formatAgo(value: Date): string {
+  const mins = Math.floor((Date.now() - value.getTime()) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
 function normalizeWordPressAdminUrl(siteUrl: string): string | null {
   const trimmed = siteUrl.trim();
@@ -148,6 +160,18 @@ export default async function SitePluginsPage({ params }: Params) {
   const adminPluginsUrl = policy.siteUrl ? normalizeWordPressAdminUrl(policy.siteUrl) : null;
   const inventoryUnavailable = pluginCount === 0 && policy.signals.pluginStatus !== "healthy";
 
+  // The container probe caches its result, so say how old the reading is rather
+  // than presenting stale counts as current.
+  const cachedInventory = await readCachedPluginInventory(workspace.id);
+  const collectedLabel = cachedInventory ? `Inventory read ${formatAgo(cachedInventory.collectedAt)}.` : null;
+  const updateFreshness = cachedInventory?.status === "ok"
+    ? describeUpdateDataFreshness(
+        cachedInventory.updateDataCheckedAt
+          ? Math.floor(cachedInventory.updateDataCheckedAt.getTime() / 1000)
+          : null
+      )
+    : null;
+
   return (
     <div className="page-stack">
       <article className="card">
@@ -184,6 +208,27 @@ export default async function SitePluginsPage({ params }: Params) {
             </>
           ) : null}
         </div>
+        <div style={{ marginTop: "0.85rem" }}>
+          <RefreshPluginInventoryButton siteId={siteId} collectedLabel={collectedLabel} />
+        </div>
+        {updateFreshness?.stale ? (
+          // "Up to date" comes from WordPress's own update cache. If wp-cron has
+          // stopped, every row reads as current — reassuring and wrong — so the
+          // age of that cache is stated rather than trusted.
+          <p
+            style={{
+              margin: "0.7rem 0 0",
+              padding: "0.55rem 0.7rem",
+              borderRadius: "8px",
+              border: "1px solid rgba(214, 146, 44, 0.28)",
+              background: "rgba(214, 146, 44, 0.1)",
+              fontSize: "0.8rem",
+              color: "#b86a00"
+            }}
+          >
+            {updateFreshness.detail}
+          </p>
+        ) : null}
       </article>
 
       <article className="card">
