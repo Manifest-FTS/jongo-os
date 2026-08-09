@@ -1,5 +1,6 @@
 /**
- * The staging URL for a site: `stage.` prefixed to its main production domain.
+ * The staging URL for a site: the site's label, then `stage`, then the platform
+ * domain — site.stage.example.com.
  *
  * This replaces a slug-plus-suffix template that built staging hostnames out of
  * the Coolify resource slug — which produced things like
@@ -33,6 +34,12 @@ export type StageDomainResult = {
 export const STAGE_PREFIX = "stage";
 
 /**
+ * The `stage` label sits before the platform domain rather than in front of the
+ * whole production host. Cloudflare's Universal SSL covers example.com and
+ * *.example.com and nothing deeper, so stage.site.example.com resolves in DNS
+ * and then fails the TLS handshake with no certificate at all. Nesting instead
+ * of prefixing means a single *.stage.example.com record covers every site.
+ *
  * @param productionHosts every domain Coolify reports for the production resource
  * @param platformSuffixes domains the platform controls DNS for, most specific first
  */
@@ -45,8 +52,10 @@ export function deriveStageDomain(
     return { host: "", from: "", reason: "none" };
   }
 
-  // Already a staging host — never build stage.stage.example.com.
-  const existingStage = hosts.find((h) => h === STAGE_PREFIX || h.startsWith(`${STAGE_PREFIX}.`));
+  // Already a staging host — never build a second stage label into it.
+  const existingStage = hosts.find(
+    (h) => h === STAGE_PREFIX || h.startsWith(`${STAGE_PREFIX}.`) || h.includes(`.${STAGE_PREFIX}.`)
+  );
   if (existingStage) {
     return { host: existingStage, from: existingStage, reason: "already_stage" };
   }
@@ -56,9 +65,25 @@ export function deriveStageDomain(
 
   if (platform.length > 0) {
     const chosen = shortest(platform);
-    return { host: `${STAGE_PREFIX}.${chosen}`, from: chosen, reason: "platform_alias" };
+    const suffix = suffixes.find((s) => chosen === s || chosen.endsWith(`.${s}`)) ?? "";
+    // `stage` goes in as its own label BEFORE the platform domain —
+    // site.stage.example.com, not stage.site.example.com.
+    //
+    // Not cosmetic: Cloudflare's Universal SSL covers example.com and
+    // *.example.com, one level only. stage.site.example.com is two labels deep,
+    // so the TLS handshake fails outright with no certificate — DNS resolves
+    // and the site is simply unreachable. This shape matches a single
+    // *.stage.example.com record, which can be served DNS-only so the origin
+    // issues its own certificate at any depth.
+    const label = chosen === suffix ? "" : chosen.slice(0, chosen.length - suffix.length - 1);
+    const host = label ? `${label}.${STAGE_PREFIX}.${suffix}` : `${STAGE_PREFIX}.${suffix}`;
+    return { host, from: chosen, reason: "platform_alias" };
   }
 
+  // No platform alias to nest under, so fall back to prefixing the customer's
+  // own domain. This needs a DNS record on THEIR side, and inherits whatever
+  // certificate depth limits their provider has — which is exactly why a
+  // platform alias is preferred above.
   if (hosts.length === 1) {
     return { host: `${STAGE_PREFIX}.${hosts[0]}`, from: hosts[0], reason: "only_domain" };
   }

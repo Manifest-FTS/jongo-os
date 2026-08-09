@@ -14,7 +14,7 @@ describe("deriveStageDomain", () => {
     // The platform domain is wildcard-DNS'd here, so staging resolves
     // immediately instead of waiting on the customer's DNS.
     const r = deriveStageDomain(["millenionfitness.com", "millenion-fitness.manifest-fts.com"], PLATFORM);
-    expect(r.host).toBe("stage.millenion-fitness.manifest-fts.com");
+    expect(r.host).toBe("millenion-fitness.stage.manifest-fts.com");
     expect(r.reason).toBe("platform_alias");
   });
 
@@ -31,7 +31,7 @@ describe("deriveStageDomain", () => {
       ],
       PLATFORM
     );
-    expect(r.host).toBe("stage.jengobudget.manifest-fts.com");
+    expect(r.host).toBe("jengobudget.stage.manifest-fts.com");
   });
 
   it("ignores www aliases entirely", () => {
@@ -56,18 +56,18 @@ describe("deriveStageDomain", () => {
     // Inherited from production by design: the fix is to give the site a real
     // domain, not to invent a hostname here.
     const r = deriveStageDomain(["wordpress-xilqqxd9cqmtk47axxo9uvel.manifest-fts.com"], PLATFORM);
-    expect(r.host).toBe("stage.wordpress-xilqqxd9cqmtk47axxo9uvel.manifest-fts.com");
+    expect(r.host).toBe("wordpress-xilqqxd9cqmtk47axxo9uvel.stage.manifest-fts.com");
   });
 
   it("never double-prefixes an existing stage host", () => {
-    const r = deriveStageDomain(["stage.millenionfitness.com"], PLATFORM);
-    expect(r.host).toBe("stage.millenionfitness.com");
+    const r = deriveStageDomain(["millenionfitness.stage.manifest-fts.com"], PLATFORM);
+    expect(r.host).toBe("millenionfitness.stage.manifest-fts.com");
     expect(r.reason).toBe("already_stage");
   });
 
   it("strips scheme, port, path and trailing dots", () => {
     const r = deriveStageDomain(["https://Millenion-Fitness.Manifest-FTS.com:443/wp-admin"], PLATFORM);
-    expect(r.host).toBe("stage.millenion-fitness.manifest-fts.com");
+    expect(r.host).toBe("millenion-fitness.stage.manifest-fts.com");
   });
 
   it("returns nothing when there are no usable domains", () => {
