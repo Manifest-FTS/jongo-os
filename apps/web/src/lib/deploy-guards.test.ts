@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getBackupReadiness } from "./deploy-guards";
+import { getBackupReadiness, BACKUP_STALE_AFTER_HOURS } from "./deploy-guards";
 import type { AppBackupInventory } from "./coolify";
 
 function inventory(overrides: Partial<AppBackupInventory> = {}): AppBackupInventory {
@@ -57,5 +57,45 @@ describe("getBackupReadiness", () => {
     );
     expect(r.code).toBe("backups_not_applicable");
     expect(r.locked).toBe(false);
+  });
+});
+
+describe("getBackupReadiness with Jongo's own backups", () => {
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
+
+  // The bug this fixes: Coolify cannot see backups for service-embedded
+  // databases, so every WordPress app was permanently locked on "telemetry
+  // unavailable" no matter how many successful Jongo backups existed.
+  it("unlocks on a recent Jongo backup even when Coolify telemetry is unavailable", () => {
+    const r = getBackupReadiness(null, "uuid-1", { lastSuccessAt: hoursAgo(2) });
+    expect(r.locked).toBe(false);
+    expect(r.code).toBe("ready");
+    expect(r.hoursSinceSuccess).toBe(2);
+  });
+
+  it("locks when the only Jongo backup is beyond the stale window", () => {
+    const r = getBackupReadiness(null, "uuid-1", { lastSuccessAt: hoursAgo(BACKUP_STALE_AFTER_HOURS + 24) });
+    expect(r.locked).toBe(true);
+    expect(r.code).toBe("backup_stale");
+  });
+
+  it("says the app has never been backed up, rather than blaming Coolify", () => {
+    // The operator's next step is one button, not a support ticket about API scope.
+    const r = getBackupReadiness(null, "uuid-1", { lastSuccessAt: null });
+    expect(r.locked).toBe(true);
+    expect(r.code).toBe("no_successful_backup");
+    expect(r.reason).toContain("never been backed up");
+    expect(r.nextStep).toContain("Backups tab");
+  });
+
+  it("falls back to the Coolify rule when no Jongo state is supplied", () => {
+    // Existing callers must behave exactly as before.
+    expect(getBackupReadiness(null, "uuid-1").code).toBe("backup_telemetry_unavailable");
+  });
+
+  it("ignores an unparseable timestamp rather than unlocking on it", () => {
+    const r = getBackupReadiness(null, "uuid-1", { lastSuccessAt: "not a date" });
+    expect(r.locked).toBe(true);
+    expect(r.code).toBe("no_successful_backup");
   });
 });

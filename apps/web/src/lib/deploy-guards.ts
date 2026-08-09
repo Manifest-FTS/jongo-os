@@ -42,7 +42,86 @@ function getHoursSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60);
 }
 
-export function getBackupReadiness(inventory: AppBackupInventory | null, appUuid?: string): BackupReadiness {
+/**
+ * Jongo's own backup history for this app — the restic snapshots it takes
+ * itself, as opposed to anything Coolify schedules.
+ */
+export type JongoBackupState = {
+  /** When Jongo last completed a successful backup of this app. */
+  lastSuccessAt?: Date | string | null;
+};
+
+export function getBackupReadiness(
+  inventory: AppBackupInventory | null,
+  appUuid?: string,
+  jongo?: JongoBackupState | null
+): BackupReadiness {
+  // Jongo's own backups are consulted FIRST, and they can unlock on their own.
+  //
+  // This guard exists to answer one question: if the promote goes wrong, can I
+  // undo it? A recent Jongo snapshot answers that — it captures files AND the
+  // database, which is more than a Coolify database schedule does.
+  //
+  // Consulting Coolify alone made the guard unsatisfiable for the entire
+  // WordPress fleet. Coolify's API cannot see backups for service-embedded
+  // databases (see ensureCoolifyAppBackupSchedules), so its telemetry is
+  // permanently "unavailable" for those apps and promote could never unlock,
+  // however many successful backups Jongo had taken. A safety check that can
+  // never pass does not get satisfied, it gets removed — and then nothing
+  // guards the promote at all.
+  const jongoLast = toIso(jongo?.lastSuccessAt);
+  if (jongoLast) {
+    const hours = getHoursSince(jongoLast);
+    if (hours <= BACKUP_STALE_AFTER_HOURS) {
+      return {
+        code: "ready",
+        locked: false,
+        reason: null,
+        nextStep: null,
+        lastSuccessfulBackupAt: jongoLast,
+        hoursSinceSuccess: Math.round(hours),
+        warnAfterHours: BACKUP_WARN_AFTER_HOURS,
+        staleAfterHours: BACKUP_STALE_AFTER_HOURS
+      };
+    }
+    return {
+      code: "backup_stale",
+      locked: true,
+      reason: `The most recent backup is ${Math.round(hours)}h old.`,
+      nextStep: "Take a backup before promoting, so this can be rolled back.",
+      lastSuccessfulBackupAt: jongoLast,
+      hoursSinceSuccess: Math.round(hours),
+      warnAfterHours: BACKUP_WARN_AFTER_HOURS,
+      staleAfterHours: BACKUP_STALE_AFTER_HOURS
+    };
+  }
+
+  // Jongo has never backed this app up. Say THAT, rather than blaming Coolify
+  // API scope — the operator's next step is one button, not a support ticket.
+  if (jongo) {
+    return {
+      code: "no_successful_backup",
+      locked: true,
+      reason: "This app has never been backed up, so a promotion could not be rolled back.",
+      nextStep: "Take a backup from the Backups tab, then promote.",
+      lastSuccessfulBackupAt: null,
+      hoursSinceSuccess: null,
+      warnAfterHours: BACKUP_WARN_AFTER_HOURS,
+      staleAfterHours: BACKUP_STALE_AFTER_HOURS
+    };
+  }
+
+  return getCoolifyBackupReadiness(inventory, appUuid);
+}
+
+function toIso(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+/** The original Coolify-only rule, kept for callers with no Jongo state. */
+function getCoolifyBackupReadiness(inventory: AppBackupInventory | null, appUuid?: string): BackupReadiness {
   if (!appUuid || !inventory || inventory.source !== "live") {
     return {
       code: "backup_telemetry_unavailable",

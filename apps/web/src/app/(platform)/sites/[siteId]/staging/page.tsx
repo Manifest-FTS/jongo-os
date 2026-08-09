@@ -300,7 +300,27 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingTargetRunning = stagingCapability?.status === "healthy";
   const stagingConfigured = Boolean(stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
-  const backupReadiness = getBackupReadiness(backupInventory, appUuid);
+  // Jongo's own backup history: the restic snapshots that are the actual
+  // protection for a WordPress stack, which Coolify's telemetry cannot see.
+  const jongoBackupState = await (async () => {
+    try {
+      const { getDb } = await import("@/lib/db");
+      const prisma = await getDb();
+      if (!prisma || !("siteBackup" in prisma)) return null;
+      const last = await (prisma as any).siteBackup.findFirst({
+        where: { siteId: workspace.id, status: "success" },
+        orderBy: { completedAt: "desc" },
+        select: { completedAt: true }
+      });
+      return { lastSuccessAt: last?.completedAt ?? null };
+    } catch {
+      // Unknown is not "never": fall back to the Coolify rule rather than
+      // locking on a database hiccup.
+      return null;
+    }
+  })();
+
+  const backupReadiness = getBackupReadiness(backupInventory, appUuid, jongoBackupState);
   const prodToStagingPreflight = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
   const stagingToProdPreflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
   const promoteLockedReason = !canManageDomains
