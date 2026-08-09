@@ -26,12 +26,18 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
   const [temporaryDomainSuffix, setTemporaryDomainSuffix] = useState<string>(DEFAULT_TEMPORARY_DOMAIN_SUFFIX);
   const [selectedAppId, setSelectedAppId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   // Two genuinely different intents shared one form: ADOPT a Coolify resource
   // that already exists, or CREATE one. Only adopting ever worked, so "Add App"
   // silently produced a Jongo record with no infrastructure behind it.
-  const [mode, setMode] = useState<"link" | "create">("link");
+  //
+  // Defaults to CREATE. Adding an app is overwhelmingly "make me a new site",
+  // and with link as the default that path produced a Jongo row and nothing in
+  // Coolify — the exact phantom-record failure this form was reworked to end.
+  // Adopting is a migration activity; it costs one click to select.
+  const [mode, setMode] = useState<"link" | "create">("create");
 
   const selectedApp = useMemo(
     () => availableApps.find((app) => app.id === selectedAppId),
@@ -71,6 +77,12 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
     setError(null);
   }
 
+  function handlePickMode(value: "link" | "create") {
+    setMode(value);
+    setError(null);
+    setNotice(null);
+  }
+
   const derivedTemporarySlug = normalizeTemporaryDomainSlug(name);
   const effectiveTemporarySlug = normalizeTemporaryDomainSlug(temporaryDomainSlug) || derivedTemporarySlug;
   const temporaryDomainPreview = buildTemporaryProductionDomain({
@@ -81,6 +93,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setLoading(true);
 
     try {
@@ -106,6 +119,13 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
         return;
       }
 
+      // Creation can half-succeed: Coolify made the service but refused or timed
+      // out on the domain. The site is real, so this is not an error — but it
+      // must not be swallowed, or the domain looks set when it is not.
+      if (data?.provision && data.provision.domainApplied === false) {
+        setNotice(data.provision.message ?? "App created, but its domain could not be applied. Set it in Coolify.");
+      }
+
       resetForm();
       setOpen(false);
       router.refresh();
@@ -118,10 +138,20 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
 
   if (!open) {
     return (
-      <button className="btn" onClick={() => setOpen(true)}>
-        <PlusIcon className="btn-icon" />
-        Add App
-      </button>
+      <div style={{ display: "grid", gap: "0.5rem", justifyItems: "start" }}>
+        <button className="btn" onClick={() => setOpen(true)}>
+          <PlusIcon className="btn-icon" />
+          Add App
+        </button>
+        {notice ? (
+          <p className="form-help" role="status" style={{ margin: 0 }}>
+            {notice}{" "}
+            <button type="button" className="btn btn-secondary" onClick={() => setNotice(null)}>
+              Dismiss
+            </button>
+          </p>
+        ) : null}
+      </div>
     );
   }
 
@@ -148,7 +178,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
             role="radio"
             aria-checked={mode === value}
             className={`btn${mode === value ? "" : " btn-secondary"}`}
-            onClick={() => setMode(value)}
+            onClick={() => handlePickMode(value)}
             title={help}
           >
             {label}
@@ -253,7 +283,11 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
             ))}
           </select>
           <p className="form-help">
-            {temporaryDomainPreview ? `Temporary production URL: https://${temporaryDomainPreview}` : "Temporary production URL preview unavailable"}
+            {temporaryDomainPreview
+              ? mode === "create"
+                ? `Temporary production URL: https://${temporaryDomainPreview} — applied to the new Coolify service.`
+                : `Temporary production URL: https://${temporaryDomainPreview} — recorded in Jongo only; the adopted app keeps the domain it already has in Coolify.`
+              : "Temporary production URL preview unavailable"}
           </p>
         </div>
         {error && <p className="form-error">{error}</p>}

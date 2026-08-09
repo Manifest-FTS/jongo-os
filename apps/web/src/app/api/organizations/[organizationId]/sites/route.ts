@@ -185,6 +185,8 @@ export async function POST(req: Request, { params }: Params) {
     let coolifyServiceUuid = body.coolifyServiceUuid?.trim() || null;
     let provisionMessage: string | null = null;
     let provisionDomainApplied: boolean | null = null;
+    let provisionDomain: string | null = null;
+    let provisionedProjectUuid: string | null = null;
 
     if (body.provisionWordPress === true && !coolifyServiceUuid) {
       // Reuses the org loaded above, which is already access-checked; a second
@@ -215,6 +217,8 @@ export async function POST(req: Request, { params }: Params) {
       // Not fatal — the site exists — but the caller must be told, or someone
       // goes looking for a domain that was never applied.
       provisionDomainApplied = provision.domainApplied ?? null;
+      provisionDomain = provision.domain ?? desiredDomain ?? null;
+      provisionedProjectUuid = org.coolifyProjectId ?? null;
     }
 
     let coolifyProjectId: string | null = null;
@@ -225,7 +229,12 @@ export async function POST(req: Request, { params }: Params) {
       const matched = overview.sites.find(
         (site) => site.id === coolifyServiceUuid || site.deployTargetId === coolifyServiceUuid
       );
-      coolifyProjectId = matched?.coolifyProjectId ?? null;
+      // The overview is cached (COOLIFY_OVERVIEW_TTL_MS, 5s by default) and a
+      // service created moments ago may not be in it yet. When we provisioned it
+      // ourselves the project is not a guess — it is the one we asked Coolify to
+      // create in — so fall back to it rather than storing null and leaving the
+      // site unable to resolve its own project later.
+      coolifyProjectId = matched?.coolifyProjectId ?? provisionedProjectUuid ?? null;
       coolifyProjectName = matched?.coolifyProjectName ?? null;
 
       if (coolifyProjectId && !org.coolifyProjectId) {
@@ -349,7 +358,14 @@ export async function POST(req: Request, { params }: Params) {
         organizationId: site.organizationId,
         environments: site.environments,
         createdAt: site.createdAt,
-        backupReconciliation
+        backupReconciliation,
+        // Provisioning can half-succeed: the service is created but the domain
+        // is refused or times out. Reporting 201 without this reads as complete
+        // success and leaves the site on a Coolify-generated host with nobody
+        // aware of it.
+        provision: provisionMessage
+          ? { message: provisionMessage, domain: provisionDomain, domainApplied: provisionDomainApplied }
+          : null
       },
       { status: 201 }
     );
