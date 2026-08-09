@@ -490,14 +490,14 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const backupInventoryPromise = getCoolifyAppBackupInventory(appUuid);
-  let stagingCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+  let stagingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, /* Relaxed: the staging route CREATES under this rule and the pages DISPLAY under it. Strict here made promote disagree with a UI that said 'Target Attached', blocking on 'Staging is not configured'. */ { relaxedTargetMatch: true });
 
   // Coolify reads can intermittently fail even when staging exists.
   // Retry unresolved capability briefly before treating preflight as blocked.
   if (site.stagingEnabled && !stagingCapability.applicationUuid) {
     for (const retryDelayMs of [250, 500]) {
       await sleep(retryDelayMs);
-      const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId);
+      const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, /* Relaxed: the staging route CREATES under this rule and the pages DISPLAY under it. Strict here made promote disagree with a UI that said 'Target Attached', blocking on 'Staging is not configured'. */ { relaxedTargetMatch: true });
       stagingCapability = retriedCapability;
       if (retriedCapability.applicationUuid) {
         break;
