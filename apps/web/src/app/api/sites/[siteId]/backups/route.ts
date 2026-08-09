@@ -1,30 +1,13 @@
 import { NextResponse } from "next/server";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { spawn } from "node:child_process";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
-import { hasCoolifyBackupableState } from "@/lib/coolify";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
-import { openJobLog } from "@/lib/job-log";
 import { normalizeBackupNote } from "@/lib/backup-note";
+import { startSiteBackup } from "@/lib/site-backup-start";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ siteId: string }> };
-
-function hasValue(value?: string | null): boolean {
-  return Boolean(value && value.trim().length > 0);
-}
-
-function resolveScriptPath(name: string): string | null {
-  const cwd = process.cwd();
-  return [
-    path.join(cwd, "scripts", name),
-    path.join(cwd, "..", "scripts", name),
-    path.join(cwd, "..", "..", "scripts", name)
-  ].find((candidate) => existsSync(candidate)) ?? null;
-}
 
 /**
  * Create an on-demand backup ("+"): captures WordPress files + a database dump
@@ -71,97 +54,46 @@ async function createBackup(request: Request, { params }: Params) {
     return NextResponse.json({ error: "You do not have permission to create backups" }, { status: 403 });
   }
 
-  const resourceUuid = workspace.coolifyServiceUuid?.trim();
-  if (!resourceUuid) {
-    return NextResponse.json({ error: "This app is not linked to a Coolify resource." }, { status: 409 });
-  }
-
-  // The backup captures whatever persistent state a resource has (files volumes
-  // and/or databases). Reject only resources with neither — the script is the
-  // final arbiter and will report "nothing to back up" if it finds nothing.
-  if (!(await hasCoolifyBackupableState(resourceUuid))) {
-    return NextResponse.json(
-      {
-        ok: false,
-        reason: "unsupported_resource_type",
-        message: "This resource has no files or database to back up."
-      },
-      { status: 412 }
-    );
-  }
-
-  if (!hasValue(process.env.STAGING_SYNC_SSH_HOST) && !hasValue(process.env.COOLIFY_SSH_HOST)) {
-    return NextResponse.json(
-      { ok: false, reason: "missing_config", message: "SSH host is not configured for server-side backups." },
-      { status: 412 }
-    );
-  }
-
-  const scriptPath = resolveScriptPath("site-backup.mjs");
-  if (!scriptPath) {
-    return NextResponse.json({ error: "Backup script not found." }, { status: 500 });
-  }
-
   const body = await request.json().catch(() => ({}));
   // Same rule as editing a note afterwards, so the two paths cannot disagree.
   const label = normalizeBackupNote(body?.label).value;
 
-  const { getDb } = await import("@/lib/db");
-  const db = await getDb();
-  if (!db || !("siteBackup" in db)) {
-    return NextResponse.json(
-      { ok: false, reason: "feature_unavailable", message: "Site backup records are not available in this environment yet." },
-      { status: 503 }
-    );
-  }
-
-  // Refuse to stack concurrent backups for the same site.
-  const running = await (db as any).siteBackup.findFirst({
-    where: { siteId: workspace.id, status: "running" }
-  });
-  if (running) {
-    return NextResponse.json(
-      { ok: false, reason: "already_running", message: "A backup is already running for this app." },
-      { status: 409 }
-    );
-  }
-
-  const record = await (db as any).siteBackup.create({
-    data: {
-      siteId: workspace.id,
-      resourceUuid,
-      label,
-      trigger: "manual",
-      status: "running"
-    }
-  });
-
-  // Keep the job detached but preserve its output for diagnosis.
-
-  const jobLog = openJobLog("site-backup");
-
-  const child = spawn(
-    process.execPath,
-    [
-      scriptPath,
-      "--resource-uuid", resourceUuid,
-      "--backup-id", record.id,
-      // Readable identifiers so Backblaze snapshots show the site, not just UUIDs.
-      "--site-slug", workspace.slug,
-      "--site-name", workspace.name,
-      ...(label ? ["--label", label] : [])
-    ],
-    { cwd: process.cwd(), env: process.env, detached: true, stdio: ["ignore", jobLog, jobLog] }
-  );
-  child.unref();
-
-  return NextResponse.json(
-    {
-      ok: true,
-      status: "started",
-      backupId: record.id,
-      message: "Backup started — files and database are being captured to Backblaze. It will appear in the list shortly."
+  const started = await startSiteBackup({
+    site: {
+      id: workspace.id,
+      slug: workspace.slug,
+      name: workspace.name,
+      coolifyServiceUuid: workspace.coolifyServiceUuid
     },
-    { status: 202 }
-  );
+    trigger: "manual",
+    label
+  });
+
+  if (started.ok) {
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "started",
+        backupId: started.backupId,
+        message: started.message
+      },
+      { status: 202 }
+    );
+  }
+
+  // Response shapes are preserved per reason: the Backups panel branches on
+  // `reason`, and two of these predate it and report via `error` instead.
+  switch (started.reason) {
+    case "not_linked":
+      return NextResponse.json({ error: started.message }, { status: 409 });
+    case "script_missing":
+      return NextResponse.json({ error: started.message }, { status: 500 });
+    case "unsupported_resource_type":
+    case "missing_config":
+      return NextResponse.json({ ok: false, reason: started.reason, message: started.message }, { status: 412 });
+    case "feature_unavailable":
+      return NextResponse.json({ ok: false, reason: started.reason, message: started.message }, { status: 503 });
+    case "already_running":
+      return NextResponse.json({ ok: false, reason: started.reason, message: started.message }, { status: 409 });
+  }
 }
