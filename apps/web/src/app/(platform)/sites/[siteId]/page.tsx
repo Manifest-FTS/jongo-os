@@ -267,7 +267,11 @@ export default async function SiteOverviewPage({ params }: Params) {
       if (!prisma) return [];
       return await (prisma as any).site.findMany({
         where: { parentSiteId: workspace.id, deletedAt: null },
-        select: { id: true, slug: true, name: true, coolifyServiceUuid: true, status: true },
+        // No `status` here: Site has no such column — health is derived from
+        // Coolify, not stored. Selecting it made Prisma reject the query, and
+        // the catch below swallowed it, so nested databases silently never
+        // appeared while the error filled the logs.
+        select: { id: true, slug: true, name: true, coolifyServiceUuid: true },
         orderBy: { name: "asc" }
       });
     } catch {
