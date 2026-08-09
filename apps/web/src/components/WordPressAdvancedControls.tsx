@@ -20,75 +20,29 @@ type Props = {
   hasDetectedStagingTarget: boolean;
 };
 
+/**
+ * A control that is not built yet.
+ *
+ * This replaces a toggle that flipped, showed "WP_DEBUG enabled", and wrote
+ * nothing anywhere. Someone debugging a site would turn it on, see it
+ * confirmed, and rule the setting out — the toggle actively cost them time.
+ * Rendered disabled and labelled, it costs them nothing.
+ */
 function StubToggle({
   label,
-  help,
-  initialEnabled = false
+  help
 }: {
   label: string;
   help: string;
   initialEnabled?: boolean;
 }) {
-  const [enabled, setEnabled] = useState(initialEnabled);
-
   return (
     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
       <div>
         <h4 style={{ margin: 0, fontSize: "0.95rem" }}>{label}</h4>
         <p className="card-muted" style={{ margin: "0.25rem 0 0" }}>{help}</p>
       </div>
-      <button
-        type="button"
-        aria-label={`Toggle ${label}`}
-        aria-pressed={enabled}
-        style={{
-          width: "58px",
-          height: "32px",
-          borderRadius: "999px",
-          border: `1px solid ${enabled ? "var(--accent)" : "var(--border)"}`,
-          background: enabled ? "var(--accent)" : "var(--surface-alt)",
-          position: "relative",
-          cursor: "pointer",
-          transition: "background 0.2s ease, border-color 0.2s ease"
-        }}
-        onClick={() => {
-          const next = !enabled;
-          setEnabled(next);
-          showSuccessToast(`${label} ${next ? "enabled" : "disabled"}.`);
-        }}
-      >
-        <span
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: enabled ? "flex-start" : "flex-end",
-            padding: "0 9px",
-            color: "#fff",
-            fontSize: "0.75rem",
-            fontWeight: 700,
-            letterSpacing: "0.02em"
-          }}
-        >
-          {enabled ? "ON" : "OFF"}
-        </span>
-        <span
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            top: "3px",
-            left: enabled ? "30px" : "3px",
-            width: "24px",
-            height: "24px",
-            borderRadius: "999px",
-            background: "#fff",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
-            transition: "left 0.2s ease"
-          }}
-        />
-      </button>
+      <span className="status-chip unknown" style={{ flexShrink: 0 }}>Not available yet</span>
     </div>
   );
 }

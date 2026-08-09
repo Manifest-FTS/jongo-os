@@ -7,6 +7,7 @@ import { getCoolifyAppBackupInventory } from "@/lib/coolify";
 import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import PromoteToProductionCard from "@/components/PromoteToProductionCard";
+import StagingActionsPanel from "@/components/StagingActionsPanel";
 import PageAutoRefresh from "@/components/PageAutoRefresh";
 import StagingDomainForm from "@/components/StagingDomainForm";
 import StagingAuditHistory from "@/components/StagingAuditHistory";
@@ -467,6 +468,14 @@ export default async function StagingPage({ params, searchParams }: Params) {
             preflightLabel={stagingToProdPreflight.label}
             preflightTone={stagingToProdPreflight.tone}
           />
+
+          <div style={{ marginTop: "1rem" }}>
+            <StagingActionsPanel
+              siteId={siteId}
+              stagingReady={stagingConfigured}
+              canManage={permissionSnapshot.canManageStaging}
+            />
+          </div>
         </article>
       ) : null}
 

@@ -32,9 +32,9 @@ function resolveScriptPath(name: string): string | null {
  * what was actually cleared. Answering "started" would recreate the bug it
  * replaces — a button that reports success before anything has happened.
  */
-export async function POST(_request: Request, ctx: Params) {
+export async function POST(request: Request, ctx: Params) {
   try {
-    return await flushCache(ctx);
+    return await flushCache(request, ctx);
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: `Cache flush failed: ${error instanceof Error ? error.message : "unknown error"}` },
@@ -43,7 +43,7 @@ export async function POST(_request: Request, ctx: Params) {
   }
 }
 
-async function flushCache({ params }: Params) {
+async function flushCache(request: Request, { params }: Params) {
   const { siteId } = await params;
   const session = await auth();
   if (!session?.user?.id) {
@@ -71,7 +71,40 @@ async function flushCache({ params }: Params) {
     );
   }
 
-  const resourceUuid = workspace.coolifyServiceUuid?.trim();
+  // Which copy of the site to flush. Staging has its own containers and its
+  // own cache; flushing production when the operator asked for staging would
+  // clear the wrong site AND leave the stale pages they were looking at.
+  const body = await request.json().catch(() => ({}));
+  const target = body?.target === "staging" ? "staging" : "production";
+
+  let resourceUuid = workspace.coolifyServiceUuid?.trim();
+
+  if (target === "staging") {
+    if (!resourceUuid) {
+      return NextResponse.json(
+        { ok: false, message: "This app is not linked to a Coolify resource." },
+        { status: 409 }
+      );
+    }
+    const { getCoolifyAppStagingCapability } = await import("@/lib/coolify");
+    const capability = await getCoolifyAppStagingCapability(
+      resourceUuid,
+      workspace.coolifyProjectId ?? undefined,
+      { relaxedTargetMatch: true }
+    );
+    const stagingUuid = capability?.applicationUuid?.trim();
+    if (!stagingUuid) {
+      // Never silently fall back to production: the operator asked for
+      // staging, and flushing the live site instead would be both wrong and
+      // invisible.
+      return NextResponse.json(
+        { ok: false, message: "No staging copy was found for this app, so there is no staging cache to flush." },
+        { status: 409 }
+      );
+    }
+    resourceUuid = stagingUuid;
+  }
+
   if (!resourceUuid) {
     return NextResponse.json(
       { ok: false, message: "This app is not linked to a Coolify resource." },
