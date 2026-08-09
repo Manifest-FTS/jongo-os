@@ -301,7 +301,18 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingTargetRunning = stagingCapability?.status === "healthy";
-  const stagingConfigured = Boolean(stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
+  // Whether Coolify could be reached at all for this render. A lookup that
+  // could not answer must never render as "staging is not configured" — that
+  // is what made this page flip between two states every refresh.
+  const { isRateLimited } = await import("@/lib/coolify-rate-limit");
+  const { resolveStagingViewState } = await import("@/lib/staging-view-state");
+  const stagingView = resolveStagingViewState({
+    environmentReady: stagingEnvironmentReady,
+    targetAttached: stagingTargetAttached,
+    stagingEnabled: Boolean(stagingEnabled),
+    probeFailed: !stagingCapability || isRateLimited()
+  });
+  const stagingConfigured = stagingView.configured;
   // Jongo's own backup history: the restic snapshots that are the actual
   // protection for a WordPress stack, which Coolify's telemetry cannot see.
   const jongoBackupState = await (async () => {
@@ -334,6 +345,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const debugViewEnabled = canManageDomains && (debugRequested || debugDefaultEnabled);
   const enableDebugHref = `/sites/${siteId}/staging?debug=1${initialAttemptId ? `&attemptId=${encodeURIComponent(initialAttemptId)}` : ""}`;
   const disableDebugHref = `/sites/${siteId}/staging${initialAttemptId ? `?attemptId=${encodeURIComponent(initialAttemptId)}` : ""}`;
+
   const reportedStagingDomains = parseDomainValues(stagingCapability?.fqdn ?? stagingCapability?.stagingUrl);
   const preferredDomainValue = preferredStagingUrl ? parseDomainValues(preferredStagingUrl)[0] : undefined;
   const preferredDomainConverged = preferredDomainValue
@@ -410,7 +422,10 @@ export default async function StagingPage({ params, searchParams }: Params) {
 
   return (
     <div className="page-stack">
-      <PageAutoRefresh intervalMs={12000} />
+      {/* Was 12s. Each render re-probes Coolify, and at 5 sequences a
+          minute per open tab this page was a major consumer of the 200/min
+          budget — rate-limiting itself into reporting staging as missing. */}
+      <PageAutoRefresh intervalMs={60000} />
       {/* Status header */}
       <article className="card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
