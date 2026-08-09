@@ -374,7 +374,7 @@ export default function SiteBackupsPanel({
             </span>
             <span className="bk-schedule__detail">{schedule.detail}</span>
           </div>
-          {canManage ? (
+          {/* {canManage ? (
             <div className="bk-schedule__controls">
               <select
                 className="bk-schedule__select"
@@ -398,7 +398,7 @@ export default function SiteBackupsPanel({
                 {savingSchedule ? "Saving…" : schedule.enabled ? "Turn off" : "Turn on"}
               </button>
             </div>
-          ) : null}
+          ) : null} */}
         </div>
       ) : null}
 
