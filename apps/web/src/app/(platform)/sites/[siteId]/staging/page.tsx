@@ -487,7 +487,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
 
           {/* Two columns, matching the reference layout: actions on the left,
               reference facts on the right. */}
-          <div className="split-2" style={{ marginTop: "1rem" }}>
+          <div className="split-2 split-2--spaced">
             <StagingActionsPanel
               siteId={siteId}
               stagingReady={stagingConfigured}
