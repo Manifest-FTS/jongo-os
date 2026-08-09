@@ -8,6 +8,7 @@ import { getStagingDetectionMessage } from "@/lib/reason-messages";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import PromoteToProductionCard from "@/components/PromoteToProductionCard";
 import StagingActionsPanel from "@/components/StagingActionsPanel";
+import StagingSiteFacts from "@/components/StagingSiteFacts";
 import PageAutoRefresh from "@/components/PageAutoRefresh";
 import StagingDomainForm from "@/components/StagingDomainForm";
 import StagingAuditHistory from "@/components/StagingAuditHistory";
@@ -469,11 +470,25 @@ export default async function StagingPage({ params, searchParams }: Params) {
             preflightTone={stagingToProdPreflight.tone}
           />
 
-          <div style={{ marginTop: "1rem" }}>
+          {/* Two columns, matching the reference layout: actions on the left,
+              reference facts on the right. */}
+          <div
+            style={{
+              marginTop: "1rem",
+              display: "grid",
+              gap: "1rem",
+              gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+              alignItems: "start"
+            }}
+          >
             <StagingActionsPanel
               siteId={siteId}
               stagingReady={stagingConfigured}
               canManage={permissionSnapshot.canManageStaging}
+            />
+            <StagingSiteFacts
+              siteId={siteId}
+              stagingUrl={reportedStagingDomains[0] ?? preferredDomainValue ?? null}
             />
           </div>
         </article>
