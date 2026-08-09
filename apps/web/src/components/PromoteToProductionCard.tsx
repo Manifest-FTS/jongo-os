@@ -12,7 +12,9 @@ type Props = {
   preflightTone: "healthy" | "degraded" | "error" | "unknown";
 };
 
-type PromoteStatus = "idle" | "pending" | "success" | "error";
+// "backup-wait" is deliberately not "error": promote was declined, but the
+// backup it was waiting on is now running, and the message must not read red.
+type PromoteStatus = "idle" | "pending" | "success" | "error" | "backup-wait";
 
 type DeploymentStatus = {
   id: string;
@@ -58,8 +60,15 @@ type PromoteResponse = {
   replayed?: boolean;
   idempotencyKey?: string;
   retryAfterSeconds?: number;
-  blockingReason?: "promote_cooldown" | "production_deployment_in_progress" | "staging_to_production_preflight_blocked";
+  blockingReason?:
+    | "promote_cooldown"
+    | "production_deployment_in_progress"
+    | "staging_to_production_preflight_blocked"
+    | "promote_backup_started"
+    | "promote_backup_in_progress";
   actionHint?: string;
+  backupId?: string;
+  backupStarted?: boolean;
   blockingDeployment?: {
     id?: string;
     status?: string;
@@ -67,8 +76,25 @@ type PromoteResponse = {
   };
 };
 
+/**
+ * A backup being taken for us is not a failure — promote just has to be asked
+ * again once it lands. Rendering it in the error tone made the safest path look
+ * like something had gone wrong.
+ */
+function isBackupWaitReason(payload: PromoteResponse): boolean {
+  return (
+    payload.blockingReason === "promote_backup_started" ||
+    payload.blockingReason === "promote_backup_in_progress"
+  );
+}
+
 function formatPromoteError(payload: PromoteResponse): string {
   const base = payload.error ?? "Unable to promote staging to production.";
+
+  if (isBackupWaitReason(payload)) {
+    const hintSuffix = payload.actionHint ? ` ${payload.actionHint}` : "";
+    return `${base}${hintSuffix}`.trim();
+  }
 
   if (payload.blockingReason === "promote_cooldown") {
     const retrySuffix = (payload.retryAfterSeconds ?? 0) > 0
@@ -312,6 +338,19 @@ export default function PromoteToProductionCard({
         if ((payload?.retryAfterSeconds ?? 0) > 0 || payload?.blockingReason === "promote_cooldown") {
           const retrySeconds = Math.max(1, payload?.retryAfterSeconds ?? 0);
           setCooldownUntil(Date.now() + retrySeconds * 1_000);
+        }
+
+        // A first-run backup is now running on our behalf. Dismiss the
+        // confirmation rather than leaving a typed PROMOTE sitting there for a
+        // wait of unknown length, and refresh so the Backups tab shows it.
+        if (isBackupWaitReason(payload)) {
+          setStatus("backup-wait");
+          setMessage(formatPromoteError(payload));
+          setShowConfirm(false);
+          setConfirmationPhrase("");
+          setPromoteIdempotencyKey("");
+          router.refresh();
+          return;
         }
 
         setStatus("error");

@@ -5,8 +5,12 @@ import {
   getCoolifyAppStagingCapability,
   triggerCoolifyDeploy
 } from "@/lib/coolify";
-import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
+import { getBackupReadiness, getPathPreflight, shouldAutoBackupBeforePromote } from "@/lib/deploy-guards";
 import { listSiteDeployments } from "@/lib/repositories";
+import { startSiteBackup } from "@/lib/site-backup-start";
+
+// Promote spawns the first-run backup as a detached child process.
+export const runtime = "nodejs";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -18,7 +22,9 @@ type PromoteBody = {
 type BlockingReason =
   | "promote_cooldown"
   | "production_deployment_in_progress"
-  | "staging_to_production_preflight_blocked";
+  | "staging_to_production_preflight_blocked"
+  | "promote_backup_started"
+  | "promote_backup_in_progress";
 
 type BlockingDeploymentPayload = {
   id: string;
@@ -134,6 +140,8 @@ function blockedPromoteResponse(params: {
   blockingDeployment?: BlockingDeploymentPayload;
   preflight?: Record<string, unknown>;
   previousBlockedAt?: string;
+  backupId?: string;
+  backupStarted?: boolean;
 }) {
   return NextResponse.json({
     error: params.error,
@@ -144,7 +152,9 @@ function blockedPromoteResponse(params: {
     retryAfterSeconds: params.retryAfterSeconds,
     blockingDeployment: params.blockingDeployment,
     preflight: params.preflight,
-    previousBlockedAt: params.previousBlockedAt
+    previousBlockedAt: params.previousBlockedAt,
+    backupId: params.backupId,
+    backupStarted: params.backupStarted
   }, { status: params.status });
 }
 
@@ -532,6 +542,111 @@ export async function POST(req: Request, { params }: Params) {
   const preflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
   const stagingUrl = normalizePublicUrl(stagingCapability.stagingUrl ?? stagingCapability.fqdn);
   const productionUrl = normalizePublicUrl(site.name) ?? normalizePublicUrl(site.slug);
+
+  // Never backed up, but otherwise ready to promote: take the backup instead of
+  // sending the operator to another tab to press a different button. The guard
+  // exists so a bad promote can be undone, and the only thing standing between
+  // this site and that is one backup nobody has run yet.
+  //
+  // The backup does NOT block this request. It runs detached and can take many
+  // minutes for a large site, and Cloudflare cuts the connection at ~100s — so
+  // waiting for it here would turn a working promote into a 502. Promote is
+  // therefore declined once, with the backup already running, and succeeds on
+  // the retry. Not resuming automatically is also the safer reading: promote
+  // overwrites production behind a typed confirmation, and that confirmation
+  // should not carry across an unattended gap of unknown length.
+  if (
+    shouldAutoBackupBeforePromote({
+      preflightTone: preflight.tone,
+      stagingConfigured,
+      backupCode: backupReadiness.code
+    })
+  ) {
+    const started = await startSiteBackup({
+      site: {
+        id: site.id,
+        slug: site.slug,
+        name: site.name,
+        coolifyServiceUuid: site.coolifyServiceUuid
+      },
+      trigger: "promote",
+      label: "Pre-promotion backup (first backup for this app)"
+    });
+
+    // A backup already in flight is the same waiting game, not a new problem —
+    // and starting a second one over it is exactly what the concurrency guard
+    // in startSiteBackup exists to prevent.
+    const backupInFlight = started.ok || started.reason === "already_running";
+
+    if (backupInFlight) {
+      const backupId = started.ok ? started.backupId : started.runningBackupId;
+      const error = started.ok
+        ? "This app had never been backed up, so a backup was started first. Promotion will be available once it completes."
+        : "A backup is already running for this app. Promotion will be available once it completes.";
+
+      await recordStagingAuditLog({
+        organizationId: site.organizationId,
+        actorId,
+        actionType: "staging_promote_backup_started",
+        resourceId: site.id,
+        details: {
+          promoteAttemptId,
+          idempotencyKey,
+          appUuid,
+          preflight,
+          backupId,
+          backupStarted: started.ok,
+          message: error
+        },
+        req
+      });
+
+      return blockedPromoteResponse({
+        status: 409,
+        error,
+        promoteAttemptId,
+        // idempotencyKey is left off the payload because no promote was
+        // triggered under it and echoing it invites the client to treat it as
+        // settled. Retrying with the same key is safe either way: the replay
+        // cache only matches `staging_promote_triggered` audit entries, and this
+        // attempt is logged as `staging_promote_backup_started`.
+        blockingReason: started.ok ? "promote_backup_started" : "promote_backup_in_progress",
+        actionHint: "Wait for the backup to finish in the Backups tab, then promote again.",
+        preflight,
+        backupId,
+        backupStarted: started.ok
+      });
+    }
+
+    // The backup could not be started at all (no SSH host, nothing backupable,
+    // records unavailable). Fall through to the normal blocked response, but say
+    // why the automatic attempt failed rather than repeating "take a backup".
+    await recordStagingAuditLog({
+      organizationId: site.organizationId,
+      actorId,
+      actionType: "staging_promote_blocked",
+      resourceId: site.id,
+      details: {
+        promoteAttemptId,
+        idempotencyKey,
+        appUuid,
+        preflight,
+        backupStartFailureReason: started.reason,
+        message: `Staging-to-production promote blocked: this app has never been backed up and the automatic backup could not be started (${started.reason}).`
+      },
+      req
+    });
+
+    return blockedPromoteResponse({
+      status: 409,
+      error: `This app has never been backed up, and the automatic backup could not be started: ${started.message}`,
+      promoteAttemptId,
+      idempotencyKey,
+      blockingReason: "staging_to_production_preflight_blocked",
+      actionHint: "Resolve the backup problem, take a backup, then retry promotion.",
+      preflight
+    });
+  }
 
   if (preflight.tone === "error") {
     await recordStagingAuditLog({

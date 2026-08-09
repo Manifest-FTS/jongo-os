@@ -233,6 +233,34 @@ export function getDeployLockReason(inventory: AppBackupInventory | null, appUui
     : readiness.reason;
 }
 
+/**
+ * Whether promote should take the backup itself instead of refusing and telling
+ * the operator to go press a different button.
+ *
+ * Narrow on purpose. It fires only when a backup is the ONE thing missing:
+ *
+ * - Staging must already be configured. If staging is the blocker, a backup
+ *   changes nothing and taking one would be busywork dressed as progress.
+ * - Only for `no_successful_backup` — never backed up at all. A STALE backup is
+ *   deliberately excluded: a restore point exists, so the operator gets to
+ *   decide whether it is good enough rather than having a long job started for
+ *   them.
+ * - Never when telemetry is merely unavailable. "We could not find out" is not
+ *   "there is nothing", and backing up on an unknown would fire on every
+ *   Coolify API hiccup.
+ */
+export function shouldAutoBackupBeforePromote(input: {
+  preflightTone: PreflightTone;
+  stagingConfigured: boolean;
+  backupCode: BackupGuardCode;
+}): boolean {
+  return (
+    input.preflightTone === "error" &&
+    input.stagingConfigured &&
+    input.backupCode === "no_successful_backup"
+  );
+}
+
 export function getPathPreflight(path: PreflightPath, readiness: BackupReadiness, stagingConfigured: boolean): PathPreflight {
   if (!stagingConfigured) {
     return {

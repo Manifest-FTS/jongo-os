@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getBackupReadiness, BACKUP_STALE_AFTER_HOURS } from "./deploy-guards";
+import { getBackupReadiness, shouldAutoBackupBeforePromote, BACKUP_STALE_AFTER_HOURS } from "./deploy-guards";
 import type { AppBackupInventory } from "./coolify";
 
 function inventory(overrides: Partial<AppBackupInventory> = {}): AppBackupInventory {
@@ -97,5 +97,43 @@ describe("getBackupReadiness with Jongo's own backups", () => {
     const r = getBackupReadiness(null, "uuid-1", { lastSuccessAt: "not a date" });
     expect(r.locked).toBe(true);
     expect(r.code).toBe("no_successful_backup");
+  });
+});
+
+describe("shouldAutoBackupBeforePromote", () => {
+  const base = {
+    preflightTone: "error" as const,
+    stagingConfigured: true,
+    backupCode: "no_successful_backup" as const
+  };
+
+  it("takes the backup when that is the only thing missing", () => {
+    expect(shouldAutoBackupBeforePromote(base)).toBe(true);
+  });
+
+  it("does not fire when staging is the blocker", () => {
+    // A backup would not unblock this, so starting one is busywork.
+    expect(shouldAutoBackupBeforePromote({ ...base, stagingConfigured: false })).toBe(false);
+  });
+
+  it("does not fire for a stale backup", () => {
+    // A restore point exists; whether it is recent enough is the operator's call.
+    expect(shouldAutoBackupBeforePromote({ ...base, backupCode: "backup_stale" })).toBe(false);
+  });
+
+  it("does not fire when backup telemetry is merely unavailable", () => {
+    // "Could not find out" is not "there is nothing" — otherwise every Coolify
+    // API hiccup would kick off a full backup.
+    expect(
+      shouldAutoBackupBeforePromote({ ...base, backupCode: "backup_telemetry_unavailable" })
+    ).toBe(false);
+  });
+
+  it("does not fire when promote is not blocked at all", () => {
+    expect(shouldAutoBackupBeforePromote({ ...base, preflightTone: "healthy", backupCode: "ready" })).toBe(false);
+  });
+
+  it("does not fire for an app with nothing to back up", () => {
+    expect(shouldAutoBackupBeforePromote({ ...base, backupCode: "backups_not_applicable" })).toBe(false);
   });
 });

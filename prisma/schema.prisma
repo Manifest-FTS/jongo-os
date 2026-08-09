@@ -244,7 +244,10 @@ model SiteBackup {
   resourceUuid String // Coolify service UUID this backup belongs to
 
   label   String? // optional operator note
-  trigger String // 'manual' | 'scheduled'
+  // 'promote' is an on-demand backup that promote-to-production started itself
+  // because the app had no restore point yet. Distinct from 'manual' so the
+  // history shows who asked for it, and so failure alerting can tell them apart.
+  trigger String // 'manual' | 'scheduled' | 'promote'
   status  String // 'running' | 'success' | 'failed'
 
   // Offsite locator: the restic snapshot in B2 that holds files + db dump.
