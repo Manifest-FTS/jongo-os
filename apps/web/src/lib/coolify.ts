@@ -1668,6 +1668,14 @@ export type WordPressProvisionResult = {
   domain?: string;
   /** Whether Coolify accepted that domain. False means it is on a generated host. */
   domainApplied?: boolean;
+  /**
+   * Whether the post-domain restart was accepted. Coolify only regenerates
+   * Traefik labels and SERVICE_FQDN_* env on deploy, so without this the app runs
+   * on the host it was deployed with and needs a manual restart to work.
+   */
+  restarted?: boolean;
+  /** Coolify reports the requested domain as authoritative after the restart. */
+  domainConverged?: boolean;
 };
 
 /**
@@ -1790,18 +1798,56 @@ export async function provisionCoolifyWordPressService(
     if (!applied.ok && applied.reason === "conflict") break;
   }
 
+  // The PATCH above only stores the domain. Coolify regenerates Traefik labels
+  // and the container's SERVICE_FQDN_* environment from the stored fqdn at DEPLOY
+  // time, so until the service restarts the new app is still running on whatever
+  // host it was deployed with. That is why a freshly created app needed a manual
+  // restart before it worked: everything was configured correctly and nothing had
+  // re-read it. The staging flow has always done this; creation never did.
+  let restarted = false;
+  let domainConverged = false;
+
+  if (domainApplied) {
+    const restartResponse = await restartCoolifyService(uuid);
+    restarted = restartResponse.ok;
+
+    // Coolify queues the restart, so this confirms only that Coolify now treats
+    // the domain as authoritative — not that Traefik is already serving it.
+    const converged = await readCoolifyServiceDomains(uuid);
+    const wanted = normalizeProvisionHost(domain);
+    domainConverged = converged.some((value) => normalizeProvisionHost(value) === wanted);
+  }
+
+  const restartNote = !domainApplied
+    ? ""
+    : restarted
+      ? " Restarted so the domain takes effect."
+      : " The domain was saved but Coolify did not accept the restart, so it may need one before the site answers on it.";
+
   return {
     ok: true,
     uuid,
     domain,
     domainApplied,
+    restarted,
+    domainConverged,
     // The site exists either way, so this is not a failed creation — but saying
     // "created" while it sits on a generated host is the kind of half-truth
     // that has someone hunting for a domain that was never set.
     message: domainApplied
-      ? `App created in Coolify at ${domain}.`
+      ? `App created in Coolify at ${domain}.${restartNote}`
       : `App created in Coolify, but the domain ${domain} could not be applied${domainMessage ? `: ${domainMessage}` : ""}. Set it in Coolify.`
   };
+}
+
+/** Host-only comparison, so https://x/ and X match when confirming convergence. */
+function normalizeProvisionHost(value: string): string {
+  try {
+    const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+    return url.hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return "";
+  }
 }
 
 export async function applyCoolifyApplicationDomains(appUuid: string, input: string | string[]): Promise<boolean> {
