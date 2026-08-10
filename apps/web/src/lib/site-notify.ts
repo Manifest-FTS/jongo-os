@@ -1,19 +1,20 @@
 /**
- * Backup lifecycle notifications for an app's team.
+ * Site lifecycle notifications for an app's team.
  *
  * Every backup event emails everyone attached to the app: the owning
  * organisation's owner, its admins, and the app's own collaborators — "admin
  * and contributor" in the language the request used, which maps onto the two
  * roles this codebase actually has (`admin` and `collaborator`).
  *
- * This deliberately has NO cooldown. The previous rule emailed only failures,
- * only the owner, and at most once per site per 24h, on the reasoning that a
- * nightly email trains people to filter alerts. That was traded away on purpose:
- * the ask was every event to everyone. Volume is therefore bounded only by the
- * schedule — on a 24h schedule expect roughly two mails per site per day
- * (started + finished) per recipient. If that turns out to be too much, the
- * lever is EVENT_DEFAULTS below, not a silent suppression that makes some
- * events vanish without explanation.
+ * What is mailed is deliberately narrow: the things a human decides to do
+ * (creating staging, syncing it either way) and the one thing that silently
+ * costs you a restore point (a failed backup). Routine successful backups are
+ * NOT mailed. On 51 apps a nightly "backup completed" is ~1,500 mails a month
+ * that teach people to filter the sender, at which point the failure alert —
+ * the only one that matters — is filtered with it.
+ *
+ * Failures are rate limited to one per site per 24h. A broken site fails every
+ * night, and the second identical email adds nothing the first did not say.
  *
  * The pure parts — who gets mail, and what it says — are separated from sending
  * so they can be tested without a database or a mail provider.
@@ -25,27 +26,63 @@ import {
   type EmailTone
 } from "./email-layout";
 
-export type BackupEvent =
+export type SiteEvent =
   | "backup_started"
   | "backup_succeeded"
   | "backup_failed"
   | "schedule_enabled"
-  | "schedule_disabled";
+  | "schedule_disabled"
+  | "staging_created"
+  | "staging_synced_to_production";
+
+/** @deprecated Kept so existing imports keep compiling; use SiteEvent. */
+export type BackupEvent = SiteEvent;
 
 /**
- * Which events are mailed. All on, per the request. Flip an entry to false to
- * mute one class of event without touching call sites.
+ * Which events are mailed. Flip an entry rather than editing a call site, so
+ * muting an event stays visible in one place instead of becoming a silent gap.
+ *
+ * Routine backup traffic is off: a nightly success mail per app is the fastest
+ * way to get the whole sender filtered. schedule_enabled/disabled are off too —
+ * they are a settings change the person making it can already see.
  */
-export const EVENT_DEFAULTS: Record<BackupEvent, boolean> = {
-  backup_started: true,
-  backup_succeeded: true,
+export const EVENT_DEFAULTS: Record<SiteEvent, boolean> = {
+  backup_started: false,
+  backup_succeeded: false,
   backup_failed: true,
-  schedule_enabled: true,
-  schedule_disabled: true
+  schedule_enabled: false,
+  schedule_disabled: false,
+  staging_created: true,
+  staging_synced_to_production: true
 };
 
-export function isBackupEventNotified(event: BackupEvent): boolean {
+export function isBackupEventNotified(event: SiteEvent): boolean {
   return EVENT_DEFAULTS[event] === true;
+}
+
+export const BACKUP_FAILURE_COOLDOWN_HOURS = 24;
+
+/**
+ * Whether a failed backup is worth a second email.
+ *
+ * "One email if a backup failed" means one, not one per night for a site that
+ * has been broken for a week. The first failure after a healthy run always gets
+ * through; repeats inside the window do not.
+ */
+export function shouldNotifyBackupFailure(input: {
+  lastAlertAt?: Date | string | null;
+  now?: Date;
+  cooldownHours?: number;
+}): { notify: boolean; reason: "first_failure" | "cooldown_elapsed" | "within_cooldown" } {
+  const raw = input.lastAlertAt ? new Date(input.lastAlertAt) : null;
+  const lastAlertAt = raw && !Number.isNaN(raw.getTime()) ? raw : null;
+  if (!lastAlertAt) return { notify: true, reason: "first_failure" };
+
+  const now = input.now ?? new Date();
+  const cooldownMs = (input.cooldownHours ?? BACKUP_FAILURE_COOLDOWN_HOURS) * 60 * 60 * 1000;
+  return now.getTime() - lastAlertAt.getTime() < cooldownMs
+    ? { notify: false, reason: "within_cooldown" }
+    : { notify: true, reason: "cooldown_elapsed" };
 }
 
 /** A very forgiving check: enough to avoid handing the provider obvious junk. */
@@ -105,6 +142,18 @@ export type BackupEventEmailInput = {
   /** What kicked the backup off: manual, scheduled, or promote. */
   trigger?: string | null;
   sizeBytes?: number | null;
+  /** Staging events: the staging site's own address. */
+  stagingUrl?: string | null;
+  /** Staging events: the production address it mirrors or was promoted to. */
+  productionUrl?: string | null;
+  /** staging_created: whether production content was copied in. */
+  contentSynced?: boolean | null;
+  /** staging_synced_to_production: rows the URL rewrite changed. */
+  urlRowsRewritten?: number | null;
+  /** staging_synced_to_production: the Coolify deployment it triggered. */
+  deploymentId?: string | null;
+  /** Who performed it, when a person did. */
+  actorEmail?: string | null;
 };
 
 function formatUtc(value: Date): string {
@@ -239,6 +288,63 @@ function buildEventCopy(input: BackupEventEmailInput): EventCopy {
         footnote
       };
 
+    case "staging_created":
+      return {
+        subject: `Staging site created for ${input.siteName}`,
+        preheader: input.stagingUrl
+          ? `Staging is live at ${input.stagingUrl}.`
+          : "A staging copy of this site is now available.",
+        badge: { tone: "success", label: "Staging created" },
+        title: `Staging site created for ${input.siteName}`,
+        intro: input.contentSynced === false
+          ? "A staging environment was created, but production content has not been copied into it yet — it is still a fresh WordPress install."
+          : "A staging copy of this site was created and production content was copied into it. Changes made there do not affect the live site until you promote them.",
+        rows: [
+          { label: "App", value: input.siteName },
+          ...(input.stagingUrl ? [{ label: "Staging URL", value: input.stagingUrl }] : []),
+          ...(input.productionUrl ? [{ label: "Production URL", value: input.productionUrl }] : []),
+          { label: "Content copied from production", value: input.contentSynced === false ? "Not yet" : "Yes" },
+          { label: "Created", value: when },
+          ...(input.actorEmail ? [{ label: "By", value: input.actorEmail }] : [])
+        ],
+        ...(input.contentSynced === false
+          ? {
+              callout: {
+                tone: "warning" as const,
+                title: "Content not synced yet",
+                body: "Run a production-to-staging content sync before testing, or staging will not reflect the live site."
+              }
+            }
+          : {}),
+        footnote
+      };
+
+    case "staging_synced_to_production":
+      return {
+        subject: `Staging promoted to production for ${input.siteName}`,
+        preheader: "Staging content is now live in production.",
+        badge: { tone: "warning", label: "Promoted to production" },
+        title: `Staging promoted to production for ${input.siteName}`,
+        intro: "Staging files and database were copied into production and a production deployment was triggered. The live site now serves what staging had.",
+        rows: [
+          { label: "App", value: input.siteName },
+          ...(input.productionUrl ? [{ label: "Production URL", value: input.productionUrl }] : []),
+          ...(input.stagingUrl ? [{ label: "Promoted from", value: input.stagingUrl }] : []),
+          ...(typeof input.urlRowsRewritten === "number"
+            ? [{ label: "URLs rewritten", value: `${input.urlRowsRewritten} row${input.urlRowsRewritten === 1 ? "" : "s"}` }]
+            : []),
+          ...(input.deploymentId ? [{ label: "Deployment", value: input.deploymentId }] : []),
+          { label: "Promoted", value: when },
+          ...(input.actorEmail ? [{ label: "By", value: input.actorEmail }] : [])
+        ],
+        callout: {
+          tone: "info",
+          title: "This changed the live site",
+          body: "A backup was taken before the promotion. If something looks wrong, restore from the Backups tab."
+        },
+        footnote
+      };
+
     case "schedule_disabled":
       return {
         subject: `Automatic backups turned off for ${input.siteName}`,
@@ -300,7 +406,7 @@ export function buildBackupEventEmail(
 export type NotifyResult = {
   attempted: number;
   sent: number;
-  skippedReason?: "event_muted" | "no_recipients" | "site_missing";
+  skippedReason?: "event_muted" | "no_recipients" | "site_missing" | "within_cooldown";
 };
 
 /**
@@ -312,12 +418,18 @@ export type NotifyResult = {
  */
 export async function notifyBackupEvent(input: {
   siteId: string;
-  event: BackupEvent;
+  event: SiteEvent;
   at?: Date;
   error?: string | null;
   trigger?: string | null;
   sizeBytes?: number | null;
   frequencyLabel?: string | null;
+  stagingUrl?: string | null;
+  productionUrl?: string | null;
+  contentSynced?: boolean | null;
+  urlRowsRewritten?: number | null;
+  deploymentId?: string | null;
+  actorEmail?: string | null;
 }): Promise<NotifyResult> {
   if (!isBackupEventNotified(input.event)) {
     return { attempted: 0, sent: 0, skippedReason: "event_muted" };
@@ -334,6 +446,7 @@ export async function notifyBackupEvent(input: {
         id: true,
         slug: true,
         name: true,
+        backupAlertSentAt: true,
         organization: {
           select: {
             owner: { select: { email: true } },
@@ -350,6 +463,16 @@ export async function notifyBackupEvent(input: {
       }
     });
     if (!site) return { attempted: 0, sent: 0, skippedReason: "site_missing" };
+
+    // "One email if a backup failed" — not one per night for a site that has
+    // been failing all week. Checked before recipients are resolved so a
+    // suppressed alert costs nothing.
+    if (input.event === "backup_failed") {
+      const decision = shouldNotifyBackupFailure({ lastAlertAt: site.backupAlertSentAt, now: input.at });
+      if (!decision.notify) {
+        return { attempted: 0, sent: 0, skippedReason: "within_cooldown" };
+      }
+    }
 
     const recipients = collectSiteRecipients({
       ownerEmail: site.organization?.owner?.email,
@@ -382,7 +505,13 @@ export async function notifyBackupEvent(input: {
       lastSuccessAt,
       trigger: input.trigger,
       sizeBytes: input.sizeBytes,
-      frequencyLabel: input.frequencyLabel
+      frequencyLabel: input.frequencyLabel,
+      stagingUrl: input.stagingUrl,
+      productionUrl: input.productionUrl,
+      contentSynced: input.contentSynced,
+      urlRowsRewritten: input.urlRowsRewritten,
+      deploymentId: input.deploymentId,
+      actorEmail: input.actorEmail
     });
 
     const { sendTransactionalEmail } = await import("@/lib/email");
@@ -398,6 +527,19 @@ export async function notifyBackupEvent(input: {
         if (result.sent) sent += 1;
       } catch {
         // Next recipient — one bad address must not silence the rest.
+      }
+    }
+
+    // Stamped only on a send that actually happened, so a misconfigured mailer
+    // cannot silently burn the next 24 hours of failure alerts.
+    if (input.event === "backup_failed" && sent > 0) {
+      try {
+        await (db as any).site.update({
+          where: { id: site.id },
+          data: { backupAlertSentAt: input.at ?? new Date() }
+        });
+      } catch {
+        // Worst case the next failure emails again — far better than losing it.
       }
     }
 

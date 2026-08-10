@@ -760,6 +760,23 @@ export async function POST(req: Request, { params }: Params) {
       req
     });
 
+    // The promote is done and audited; a notification failure must not turn a
+    // successful promotion into an error response.
+    try {
+      const { notifyBackupEvent } = await import("@/lib/site-notify");
+      await notifyBackupEvent({
+        siteId: site.id,
+        event: "staging_synced_to_production",
+        stagingUrl,
+        productionUrl,
+        urlRowsRewritten: urlRewrite?.ok ? urlRewrite.rowsChanged : null,
+        deploymentId: result.deploymentId ?? null,
+        actorEmail: session?.user?.email ?? null
+      });
+    } catch (error) {
+      console.error(`[jongo] promote ${promoteAttemptId}: notification failed`, error);
+    }
+
     return NextResponse.json({
       ok: true,
       promoteAttemptId,

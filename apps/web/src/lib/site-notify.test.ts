@@ -3,8 +3,10 @@ import {
   buildBackupEventEmail,
   collectSiteRecipients,
   isBackupEventNotified,
-  type BackupEvent
-} from "./backup-notify";
+  shouldNotifyBackupFailure,
+  BACKUP_FAILURE_COOLDOWN_HOURS,
+  type SiteEvent
+} from "./site-notify";
 
 const at = new Date("2026-08-09T03:14:00Z");
 
@@ -43,17 +45,50 @@ describe("collectSiteRecipients", () => {
 });
 
 describe("isBackupEventNotified", () => {
-  it("has every lifecycle event switched on", () => {
-    const events: BackupEvent[] = [
-      "backup_started",
-      "backup_succeeded",
-      "backup_failed",
-      "schedule_enabled",
-      "schedule_disabled"
-    ];
-    for (const event of events) {
+  it("mails the decisions a human made and the failure that costs a restore point", () => {
+    for (const event of ["staging_created", "staging_synced_to_production", "backup_failed"] as SiteEvent[]) {
       expect(isBackupEventNotified(event)).toBe(true);
     }
+  });
+
+  it("stays quiet about routine backup traffic", () => {
+    // A nightly success mail per app is ~1,500/month across the fleet and gets
+    // the sender filtered, taking the failure alert with it.
+    for (const event of ["backup_started", "backup_succeeded"] as SiteEvent[]) {
+      expect(isBackupEventNotified(event)).toBe(false);
+    }
+  });
+
+  it("does not mail a schedule toggle the person already made", () => {
+    for (const event of ["schedule_enabled", "schedule_disabled"] as SiteEvent[]) {
+      expect(isBackupEventNotified(event)).toBe(false);
+    }
+  });
+});
+
+describe("shouldNotifyBackupFailure", () => {
+  const now = new Date("2026-08-10T12:00:00Z");
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
+
+  it("always sends the first failure after a healthy run", () => {
+    expect(shouldNotifyBackupFailure({ lastAlertAt: null, now })).toEqual({
+      notify: true,
+      reason: "first_failure"
+    });
+  });
+
+  it("suppresses a repeat inside the window", () => {
+    // A site broken for a week must not email every night.
+    expect(shouldNotifyBackupFailure({ lastAlertAt: hoursAgo(3), now }).notify).toBe(false);
+  });
+
+  it("sends again once the cooldown has elapsed", () => {
+    const decision = shouldNotifyBackupFailure({ lastAlertAt: hoursAgo(BACKUP_FAILURE_COOLDOWN_HOURS + 1), now });
+    expect(decision).toEqual({ notify: true, reason: "cooldown_elapsed" });
+  });
+
+  it("treats an unparseable stamp as never alerted rather than silently muting", () => {
+    expect(shouldNotifyBackupFailure({ lastAlertAt: "not a date", now }).notify).toBe(true);
   });
 });
 
@@ -61,12 +96,14 @@ describe("buildBackupEventEmail", () => {
   const base = { siteName: "Acme Dental", siteUrl: "https://jongo.example/apps/acme/backups", at };
 
   it("names the site and links the backups tab on every event", () => {
-    const events: BackupEvent[] = [
+    const events: SiteEvent[] = [
       "backup_started",
       "backup_succeeded",
       "backup_failed",
       "schedule_enabled",
-      "schedule_disabled"
+      "schedule_disabled",
+      "staging_created",
+      "staging_synced_to_production"
     ];
     for (const event of events) {
       const m = buildBackupEventEmail({ ...base, event });
@@ -134,12 +171,14 @@ describe("buildBackupEventEmail", () => {
 
 describe("buildBackupEventEmail — HTML part", () => {
   const base = { siteName: "Acme Dental", siteUrl: "https://jongo.example/apps/acme/backups", at };
-  const events: BackupEvent[] = [
+  const events: SiteEvent[] = [
     "backup_started",
     "backup_succeeded",
     "backup_failed",
     "schedule_enabled",
-    "schedule_disabled"
+    "schedule_disabled",
+    "staging_created",
+    "staging_synced_to_production"
   ];
 
   it("sends a complete document with a preheader and the brand header", () => {
@@ -213,5 +252,43 @@ describe("buildBackupEventEmail — HTML part", () => {
       expect(text).toContain(base.siteUrl);
       expect(text).not.toContain("<");
     }
+  });
+});
+
+describe("staging event copy", () => {
+  const base = { siteName: "Acme Dental", siteUrl: "https://jongo.example/apps/acme/backups", at };
+
+  it("names both addresses when staging is created", () => {
+    const m = buildBackupEventEmail({
+      ...base,
+      event: "staging_created",
+      stagingUrl: "https://stage.acme.mfts.link",
+      productionUrl: "https://acme.mfts.link",
+      contentSynced: true
+    });
+    expect(m.subject).toContain("Staging site created");
+    expect(m.text).toContain("https://stage.acme.mfts.link");
+    expect(m.text).toContain("https://acme.mfts.link");
+  });
+
+  it("warns when staging was created without production content", () => {
+    // Testing against a fresh install instead of the live site is worse than useless.
+    const m = buildBackupEventEmail({ ...base, event: "staging_created", contentSynced: false });
+    expect(m.text).toContain("Not yet");
+    expect(m.text).toMatch(/content sync/i);
+  });
+
+  it("says a promotion changed the live site and points at the backup", () => {
+    const m = buildBackupEventEmail({
+      ...base,
+      event: "staging_synced_to_production",
+      productionUrl: "https://acme.mfts.link",
+      urlRowsRewritten: 77,
+      deploymentId: "dep-123"
+    });
+    expect(m.subject).toContain("promoted to production");
+    expect(m.text).toContain("77 rows");
+    expect(m.text).toContain("dep-123");
+    expect(m.text).toMatch(/changed the live site/i);
   });
 });
