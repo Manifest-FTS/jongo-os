@@ -8,6 +8,8 @@ import {
 import { getBackupReadiness, getPathPreflight, shouldAutoBackupBeforePromote } from "@/lib/deploy-guards";
 import { listSiteDeployments } from "@/lib/repositories";
 import { startSiteBackup } from "@/lib/site-backup-start";
+import { runUrlRewrite } from "@/lib/wp-url-rewrite-run";
+import { summarizeRewriteReport } from "@/lib/wp-url-rewrite";
 
 // Promote spawns the first-run backup as a detached child process.
 export const runtime = "nodejs";
@@ -711,6 +713,31 @@ export async function POST(req: Request, { params }: Params) {
       productionUrl
     });
 
+    // The content sync copies staging's database wholesale, which brings
+    // staging's URLs with it — and it only ever rewrote wp_options siteurl/home.
+    // Every absolute URL inside post content, page-builder JSON and serialized
+    // widget options still named the staging host, so a promoted site served
+    // stage.* asset URLs from production. Rewrite them before the deploy, so the
+    // site that comes up is already self-consistent.
+    let urlRewrite: Awaited<ReturnType<typeof runUrlRewrite>> | null = null;
+    try {
+      urlRewrite = await runUrlRewrite({
+        resourceUuid: appUuid,
+        fromUrl: stagingUrl,
+        toUrl: productionUrl,
+        apply: true
+      });
+      if (!urlRewrite.ok) {
+        console.error(
+          `[jongo] promote ${promoteAttemptId}: URL rewrite failed for ${appUuid}: ${urlRewrite.error}`
+        );
+      }
+    } catch (error) {
+      // Not fatal: the content is already in production and a deploy still needs
+      // to happen. The outcome is reported so nobody assumes the URLs are clean.
+      console.error(`[jongo] promote ${promoteAttemptId}: URL rewrite threw`, error);
+    }
+
     const result = await triggerCoolifyDeploy(appUuid, "production");
 
     await recordStagingAuditLog({
@@ -725,6 +752,9 @@ export async function POST(req: Request, { params }: Params) {
         deploymentId: result.deploymentId,
         mode: result.mode,
         preflight,
+        urlRewrite: urlRewrite
+          ? { ok: urlRewrite.ok, rowsChanged: urlRewrite.rowsChanged, skipped: urlRewrite.skippedUnserializable, error: urlRewrite.error }
+          : null,
         message: `${result.message} ${PROMOTE_SEMANTICS_NOTE}`
       },
       req
@@ -737,7 +767,13 @@ export async function POST(req: Request, { params }: Params) {
       deploymentId: result.deploymentId,
       mode: result.mode,
       message: `${result.message} ${PROMOTE_SEMANTICS_NOTE}`,
-      preflight
+      preflight,
+      // Surfaced, not swallowed: a promote whose URL rewrite failed leaves
+      // production serving staging asset URLs, and that must not read as a clean
+      // success.
+      urlRewrite: urlRewrite
+        ? { ok: urlRewrite.ok, rowsChanged: urlRewrite.rowsChanged, skippedUnserializable: urlRewrite.skippedUnserializable, summary: summarizeRewriteReport(urlRewrite) }
+        : null
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to trigger production deploy.";
