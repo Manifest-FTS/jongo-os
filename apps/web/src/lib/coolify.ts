@@ -6,6 +6,7 @@ import { resolveStagingServerUuid, type ServerResolution } from "./coolify-serve
 import { encodeComposeForCoolify } from "./compose-encoding";
 import { detectDatabaseEnv } from "./database-env-detect";
 import { CoolifyRateLimitError, CoolifyHttpError, isNotFoundError, isRateLimitError, noteRateLimited, rateLimitCooldownRemaining } from "./coolify-rate-limit";
+import { pickStagingTarget } from "./staging-target-match";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
 
@@ -3830,70 +3831,40 @@ export async function getCoolifyAppStagingCapability(
   }
 
   try {
-    const normalizeStagingNameKey = (value: string): string =>
-      value
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "");
-
-    const stripStageHints = (value: string): string =>
-      value
-        .replace(/-(staging|stage|preview|dev|development|prod|production)$/g, "")
-        .replace(/-(staging|stage|preview|dev|development|prod|production)$/g, "")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "");
-
     const extractResourceName = (value: Record<string, unknown> | null | undefined): string =>
       value ? stringValue(value, ["name", "application_name", "service_name"], "") : "";
 
-    const isLikelyStagingSibling = (candidate: Record<string, unknown>): boolean => {
-      const rootResourceKey = stripStageHints(normalizeStagingNameKey(extractResourceName(rootResource)));
-      const candidateKey = stripStageHints(normalizeStagingNameKey(extractResourceName(candidate)));
-
-      if (!candidateKey || !rootResourceKey) {
-        return true;
-      }
-
-      if (candidateKey === rootResourceKey) {
-        return true;
-      }
-
-      if (rootResourceKey.length >= 4 && candidateKey.includes(rootResourceKey)) {
-        return true;
-      }
-
-      if (candidateKey.length >= 4 && rootResourceKey.includes(candidateKey)) {
-        return true;
-      }
-
-      return false;
-    };
-
+    // The matching rule lives in lib/staging-target-match.ts, where it is tested.
+    // It used to be a closure here, which meant the single decision that attaches
+    // an app to a staging resource — and then syncs production content into it —
+    // had no test at all.
     const pickBestStagingTarget = (candidates: Record<string, unknown>[]): {
       selected?: Record<string, unknown>;
       candidateCount: number;
       matchedCount: number;
+      adoptedWithoutNameMatch: boolean;
     } => {
-      const sanitized = candidates.filter((candidate) => {
-        const candidateUuid = stringValue(candidate, ["uuid", "id"], "");
-        return candidateUuid.length > 0 && candidateUuid !== appUuid;
+      const byUuid = new Map<string, Record<string, unknown>>();
+      const flat = candidates.map((candidate) => {
+        const uuid = stringValue(candidate, ["uuid", "id"], "");
+        if (uuid) byUuid.set(uuid, candidate);
+        return { uuid, name: extractResourceName(candidate) };
       });
 
-      const matched = sanitized.filter((candidate) => isLikelyStagingSibling(candidate));
-      if (matched.length === 0 && relaxedTargetMatch && sanitized.length === 1) {
-        return {
-          selected: sanitized[0],
-          candidateCount: sanitized.length,
-          matchedCount: matched.length
-        };
-      }
+      const picked = pickStagingTarget(extractResourceName(rootResource), flat, {
+        relaxed: relaxedTargetMatch,
+        // Adopting "the only resource in the staging environment" regardless of
+        // its name is fine for display and fatal for enabling, so it rides with
+        // the relaxed flag rather than being unconditional.
+        allowLoneCandidateFallback: relaxedTargetMatch,
+        excludeUuid: appUuid
+      });
 
       return {
-        selected: matched[0],
-        candidateCount: sanitized.length,
-        matchedCount: matched.length
+        selected: picked.selected ? byUuid.get(picked.selected.uuid) : undefined,
+        candidateCount: picked.candidateCount,
+        matchedCount: picked.matchedCount,
+        adoptedWithoutNameMatch: picked.adoptedWithoutNameMatch
       };
     };
 

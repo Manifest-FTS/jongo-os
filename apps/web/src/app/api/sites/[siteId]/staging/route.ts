@@ -36,6 +36,25 @@ import { StagingProvisioningPipeline } from "@/orchestration/staging";
  */
 const STAGING_MATCH = { relaxedTargetMatch: true } as const;
 
+/**
+ * Identity questions get the strict rule.
+ *
+ * Relaxed matching will adopt a resource whose name merely CONTAINS this app's,
+ * and will adopt the only resource in a staging environment regardless of its
+ * name. That is fine for showing staging that exists, and wrong for the two
+ * decisions below, both of which act on the answer:
+ *
+ *   - "does this app already have staging?" — a false yes attaches the app to a
+ *     NEIGHBOUR's staging site and then syncs production content into it, which
+ *     is how adding staging for one app started showing another app's values;
+ *   - "is old staging still present?" — a false yes blocks re-enable on someone
+ *     else's resource.
+ *
+ * When strict finds nothing, staging is PROVISIONED. Creating a new staging site
+ * is recoverable; writing into another client's is not.
+ */
+const STAGING_IDENTITY_MATCH = { relaxedTargetMatch: false } as const;
+
 type Params = { params: Promise<{ siteId: string }> };
 
 type StagingContentProbe = {
@@ -1280,7 +1299,7 @@ export async function POST(req: Request, { params }: Params) {
 
   if (body.enabled) {
     if (!site.stagingEnabled && appUuid) {
-      const residualCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
+      const residualCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
       if (residualCapability.applicationUuid) {
         const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
         return NextResponse.json({
@@ -1318,7 +1337,9 @@ export async function POST(req: Request, { params }: Params) {
       });
     }
 
-    const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
+    // Strict: only THIS app's own staging counterpart counts as "already exists".
+    // Anything else and we provision, rather than adopting a stranger.
+    const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
     const currentStagingTargetResolved = Boolean(currentCapability.detected && currentCapability.applicationUuid);
     if (currentStagingTargetResolved) {
       let capabilityAfterExistingCheck = currentCapability;
