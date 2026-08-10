@@ -124,6 +124,13 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
       // must not be swallowed, or the domain looks set when it is not.
       if (data?.provision && data.provision.domainApplied === false) {
         setNotice(data.provision.message ?? "App created, but its domain could not be applied. Set it in Coolify.");
+      } else if (data?.provision && data.provision.restarted === false) {
+        // The domain is stored but nothing has re-read it: Coolify only
+        // regenerates routing and the container's FQDN on deploy, so the app is
+        // still answering on the host it was deployed with.
+        setNotice(
+          "App created and its domain saved, but Coolify did not accept the restart that makes the domain take effect. Restart the service in Coolify if the site does not answer on its address."
+        );
       }
 
       resetForm();

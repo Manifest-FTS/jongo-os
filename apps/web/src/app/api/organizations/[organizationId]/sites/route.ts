@@ -187,6 +187,8 @@ export async function POST(req: Request, { params }: Params) {
     let provisionMessage: string | null = null;
     let provisionDomainApplied: boolean | null = null;
     let provisionDomain: string | null = null;
+    let provisionRestarted: boolean | null = null;
+    let provisionDomainConverged: boolean | null = null;
     let provisionedProjectUuid: string | null = null;
 
     if (body.provisionWordPress === true && !coolifyServiceUuid) {
@@ -219,6 +221,12 @@ export async function POST(req: Request, { params }: Params) {
       // goes looking for a domain that was never applied.
       provisionDomainApplied = provision.domainApplied ?? null;
       provisionDomain = provision.domain ?? desiredDomain ?? null;
+      // Coolify applies a domain to config only; the running container keeps the
+      // FQDN it was deployed with until a restart. If that restart did not take,
+      // the operator has to know — it is the difference between a working app and
+      // one that answers on a generated host.
+      provisionRestarted = provision.restarted ?? null;
+      provisionDomainConverged = provision.domainConverged ?? null;
       provisionedProjectUuid = org.coolifyProjectId ?? null;
     }
 
@@ -371,7 +379,13 @@ export async function POST(req: Request, { params }: Params) {
         // success and leaves the site on a Coolify-generated host with nobody
         // aware of it.
         provision: provisionMessage
-          ? { message: provisionMessage, domain: provisionDomain, domainApplied: provisionDomainApplied }
+          ? {
+              message: provisionMessage,
+              domain: provisionDomain,
+              domainApplied: provisionDomainApplied,
+              restarted: provisionRestarted,
+              domainConverged: provisionDomainConverged
+            }
           : null
       },
       { status: 201 }
