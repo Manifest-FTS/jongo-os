@@ -115,7 +115,7 @@ export async function PATCH(request: Request, { params }: Params) {
       : null;
 
     if (wasEnabled !== null && wasEnabled !== schedule.enabled) {
-      const { notifyBackupEvent } = await import("@/lib/backup-notify");
+      const { notifyBackupEvent } = await import("@/lib/site-notify");
       await notifyBackupEvent({
         siteId: workspace.id,
         event: schedule.enabled ? "schedule_enabled" : "schedule_disabled",

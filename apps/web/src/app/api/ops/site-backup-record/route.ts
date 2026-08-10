@@ -149,7 +149,7 @@ export async function POST(request: Request) {
       // rather than treating "not success" as failure keeps a future status
       // (pruned, cancelled) from mailing everyone a false failure.
       if (updated.status === "success" || updated.status === "failed") {
-        const { notifyBackupEvent } = await import("@/lib/backup-notify");
+        const { notifyBackupEvent } = await import("@/lib/site-notify");
         const notified = await notifyBackupEvent({
           siteId: updated.siteId,
           event: updated.status === "success" ? "backup_succeeded" : "backup_failed",

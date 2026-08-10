@@ -11,7 +11,7 @@ import { isRateLimitError, isRateLimited } from "@/lib/coolify-rate-limit";
 import { decideStaleRun, DEFAULT_STALE_RUN_HOURS } from "@/lib/stale-run";
 import { orderDueRehearsals, DEFAULT_REHEARSAL_INTERVAL_DAYS } from "@/lib/backup-rehearsal";
 import { scheduledBackupsDefaultEnabled } from "@/lib/backup-schedule";
-import { notifyBackupEvent } from "@/lib/backup-notify";
+import { notifyBackupEvent } from "@/lib/site-notify";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";

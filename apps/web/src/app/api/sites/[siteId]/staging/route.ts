@@ -77,6 +77,36 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Tell the app's team a staging site now exists.
+ *
+ * Both creation paths (adopting a staging resource Coolify already had, and
+ * provisioning a new one) end here, so the email cannot be wired to one and
+ * forgotten on the other. Never throws: staging is already created by this point
+ * and a mail failure must not turn that into an error response.
+ */
+async function notifyStagingCreated(params: {
+  siteDbId: string;
+  stagingUrl?: string | null;
+  productionUrl?: string | null;
+  contentSynced: boolean;
+  actorEmail?: string | null;
+}): Promise<void> {
+  try {
+    const { notifyBackupEvent } = await import("@/lib/site-notify");
+    await notifyBackupEvent({
+      siteId: params.siteDbId,
+      event: "staging_created",
+      stagingUrl: params.stagingUrl ?? null,
+      productionUrl: params.productionUrl ?? null,
+      contentSynced: params.contentSynced,
+      actorEmail: params.actorEmail ?? null
+    });
+  } catch (error) {
+    console.error("[jongo] staging_created notification failed", error);
+  }
+}
+
 function normalizeHostForCompare(value: string): string {
   try {
     const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
@@ -1386,6 +1416,14 @@ export async function POST(req: Request, { params }: Params) {
         });
       }
 
+      await notifyStagingCreated({
+        siteDbId: site.id,
+        stagingUrl: autoSyncStagingUrl ?? preferredStagingDomain ?? null,
+        productionUrl: site.name ?? null,
+        contentSynced: !freshInstallDetected,
+        actorEmail: session?.user?.email ?? null
+      });
+
       await tryRecordStagingAuditLog({
         organizationId: site.organizationId,
         actorId,
@@ -1580,6 +1618,14 @@ export async function POST(req: Request, { params }: Params) {
         direction: "production-to-staging"
       });
     }
+
+    await notifyStagingCreated({
+      siteDbId: site.id,
+      stagingUrl: autoSyncStagingUrl ?? preferredStagingDomain ?? null,
+      productionUrl: site.name ?? null,
+      contentSynced: Boolean(contentSyncReason),
+      actorEmail: session?.user?.email ?? null
+    });
 
     await tryRecordStagingAuditLog({
       organizationId: site.organizationId,
