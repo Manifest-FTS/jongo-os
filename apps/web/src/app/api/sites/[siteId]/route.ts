@@ -360,9 +360,11 @@ export async function DELETE(req: Request, { params }: Params) {
   const { siteId } = await params;
 
   let deleteCoolifyResource = false;
+  let forceArchiveOnCoolifyFailure = false;
   try {
     const body = await req.json();
     deleteCoolifyResource = body?.deleteCoolifyResource === true;
+    forceArchiveOnCoolifyFailure = body?.force === true;
   } catch {
     deleteCoolifyResource = false;
   }
@@ -404,15 +406,80 @@ export async function DELETE(req: Request, { params }: Params) {
       const deletion = await destroyCoolifyApplication(site.coolifyServiceUuid.trim());
       coolifyDestroyed = deletion.ok;
       coolifyDeletionMessage = deletion.message;
+
+      // Archiving the Jongo row after a FAILED Coolify deletion is the exact
+      // divergence this sync exists to prevent: Jongo would report the app gone
+      // while the resource keeps running and billing, and with the row archived
+      // nothing is left pointing at it. Refuse instead, so the operator can
+      // retry — or pass force to accept the orphan knowingly.
+      if (!coolifyDestroyed && !forceArchiveOnCoolifyFailure) {
+        try {
+          await db.auditLog.create({
+            data: {
+              organizationId: site.organization.id,
+              actorId: session.user.id,
+              action: "site_updated",
+              resourceType: "site",
+              resourceId: site.id,
+              details: {
+                actionType: "coolify_deletion_failed_archive_refused",
+                coolifyServiceUuid: site.coolifyServiceUuid,
+                coolifyDeletionMessage,
+                message: "Coolify refused the resource deletion, so the Jongo app was left in place."
+              },
+              ipAddress: req.headers.get("x-forwarded-for") ?? "unknown",
+              userAgent: req.headers.get("user-agent") ?? undefined
+            }
+          });
+        } catch {
+          // Reporting the refusal matters more than logging it.
+        }
+
+        return NextResponse.json({
+          ok: false,
+          coolifyDeletionRequested: true,
+          coolifyDestroyed: false,
+          coolifyDeletionMessage,
+          error:
+            `Coolify did not delete the resource${coolifyDeletionMessage ? `: ${coolifyDeletionMessage}` : "."} ` +
+            "The app was left in place so the two systems do not diverge. Retry, or send force to archive it here anyway.",
+          actionHint: "Retry the deletion, or delete the resource in Coolify and try again."
+        }, { status: 502 });
+      }
     }
 
     await db.site.update({ where: { id: site.id }, data: { deletedAt: new Date() } });
+
+    try {
+      await db.auditLog.create({
+        data: {
+          organizationId: site.organization.id,
+          actorId: session.user.id,
+          action: "site_deleted",
+          resourceType: "site",
+          resourceId: site.id,
+          details: {
+            actionType: "site_archived",
+            coolifyServiceUuid: site.coolifyServiceUuid ?? null,
+            coolifyDeletionRequested: deleteCoolifyResource,
+            coolifyDestroyed,
+            forcedDespiteCoolifyFailure: deleteCoolifyResource && !coolifyDestroyed,
+            coolifyDeletionMessage: coolifyDeletionMessage ?? null
+          },
+          ipAddress: req.headers.get("x-forwarded-for") ?? "unknown",
+          userAgent: req.headers.get("user-agent") ?? undefined
+        }
+      });
+    } catch (error) {
+      console.error("[jongo] DELETE /api/sites/[id]: audit log failed", error);
+    }
 
     return NextResponse.json({
       ok: true,
       coolifyDeletionRequested: deleteCoolifyResource,
       coolifyDestroyed,
-      coolifyDeletionMessage
+      coolifyDeletionMessage,
+      forcedDespiteCoolifyFailure: deleteCoolifyResource && !coolifyDestroyed
     });
   } catch (err) {
     console.error("DELETE /api/sites/[id] error:", err);

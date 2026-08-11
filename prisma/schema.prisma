@@ -236,6 +236,36 @@ model WordPressTelemetryConfig {
   @@index([siteId])
 }
 
+// One row per inbound webhook delivery.
+//
+// Two jobs: idempotency and forensics. deliveryId is unique, so a re-delivery of
+// the same event is recognised and skipped rather than re-applied — Coolify's
+// sender retries, and "delete this site" must not run twice. And because every
+// delivery is recorded with its outcome, a skipped or failed event is visible
+// afterwards instead of being a silent no-op in a log nobody keeps.
+model WebhookEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  source     String // 'coolify'
+  deliveryId String @unique
+  eventType  String
+
+  /// 'applied' | 'skipped' | 'failed' | 'throttled' | 'unmatched'
+  outcome String
+  /// Why it was skipped or how it failed. Null on a clean apply.
+  detail  String?
+
+  /// Coolify uuid(s) the delivery named.
+  resourceUuids String[]
+  /// Jongo Site ids actually affected. Empty when nothing matched.
+  siteIds       String[] @db.Uuid
+
+  receivedAt DateTime @default(now())
+
+  @@index([source, receivedAt])
+  @@index([outcome])
+}
+
 // Cached plugin inventory, read straight from the WordPress container.
 //
 // The REST collector (WordPressTelemetryConfig above) needs a per-site
