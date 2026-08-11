@@ -77,7 +77,7 @@ export default function StagingSiteFacts({
         {stagingUrl ? (
           <p className="panel-subheading">
             <a href={stagingUrl} target="_blank" rel="noreferrer" className="action-link">
-              {stagingUrl.replace(/^https?:\/\//, "")}
+              {stagingUrl}
             </a>
           </p>
         ) : (
