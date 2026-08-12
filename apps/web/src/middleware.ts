@@ -66,6 +66,22 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Ticked every minute by scripts/coolify-deletion-watcher.mjs. Without it here
+  // the POST is redirected to /auth/login (307); fetch follows a 307 with the
+  // method intact, so the watcher saw "HTTP 405" from the login page and no
+  // deletion was ever synced.
+  if (pathname === "/api/ops/coolify-deletion-watch" && hasBackupReconcileToken) {
+    return NextResponse.next();
+  }
+
+  // The webhook authenticates itself — HMAC over the raw body, or a shared token —
+  // and fails closed when no secret is configured. It therefore has to reach its
+  // own handler unauthenticated at this layer; gating it on a session would make
+  // every delivery a 307 to the login page.
+  if (pathname === "/api/webhooks/coolify") {
+    return NextResponse.next();
+  }
+
   // Result callbacks from the backup/restore scripts. These run detached on the
   // server and report back with a machine token — without them listed here the
   // middleware redirects the POST to /login (307), the result is never recorded,

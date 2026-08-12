@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, getCoolifyOverview, provisionCoolifyWordPressService } from "@/lib/coolify";
 import { isAdminRole } from "@/lib/roles";
 import { DEFAULT_BACKUP_FREQUENCY_HOURS } from "@/lib/backup-schedule";
+import { nextAvailableSlug, toSiteSlug } from "@/lib/site-slug";
 import {
   buildTemporaryProductionDomain,
   normalizeTemporaryDomainSlug,
@@ -143,12 +144,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 60);
-  const pinnedTemporarySlug = normalizeTemporaryDomainSlug(body.temporaryDomainSlug) || slug;
+  const baseSlug = toSiteSlug(name);
   const pinnedTemporarySuffix = resolveTemporaryDomainSuffix(body.temporaryDomainSuffix);
 
   try {
@@ -178,6 +174,18 @@ export async function POST(req: Request, { params }: Params) {
     if (!callerIsAdmin) {
       return NextResponse.json({ error: "Only admins can create apps" }, { status: 403 });
     }
+
+    // The unique constraint on (organizationId, slug) spans SOFT-DELETED rows, so
+    // every archived app keeps its name reserved. Without this, recreating an app
+    // with a previously used name failed on P2002 — after the Coolify service had
+    // already been provisioned, leaving an orphan behind. Deleted rows are
+    // included on purpose: the constraint counts them.
+    const takenSlugs = await db.site.findMany({
+      where: { organizationId },
+      select: { slug: true }
+    });
+    const slug = nextAvailableSlug(baseSlug, takenSlugs.map((row: { slug: string }) => row.slug));
+    const pinnedTemporarySlug = normalizeTemporaryDomainSlug(body.temporaryDomainSlug) || slug;
 
     // Two different intents share this endpoint: ADOPT an existing Coolify
     // resource (paste its uuid), or CREATE one. Only the first ever worked —
