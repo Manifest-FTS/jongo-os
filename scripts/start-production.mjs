@@ -112,6 +112,16 @@ try {
     startBackgroundProcess("Starting backup reconcile scheduler", ["run", "ops:backup-reconcile:scheduler"]);
   }
 
+  // Fast deletion sync. On by default: without it, deleting an app in Coolify
+  // takes the reconciler's seven-day path to disappear from Jongo, which is the
+  // behaviour this was added to fix. Set COOLIFY_DELETION_WATCH_ENABLED=false to
+  // opt out. The watcher exits on its own if its ops token is missing.
+  const deletionWatchEnabled =
+    (process.env.COOLIFY_DELETION_WATCH_ENABLED || "true").trim().toLowerCase() !== "false";
+  if (deletionWatchEnabled) {
+    startBackgroundProcess("Starting Coolify deletion watcher", ["run", "ops:coolify-deletion:watcher"]);
+  }
+
   await runStep("Starting web application", ["run", "start:web"], {
     HOSTNAME: process.env.HOSTNAME || "0.0.0.0"
   });
