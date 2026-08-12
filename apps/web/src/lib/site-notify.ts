@@ -435,6 +435,15 @@ export async function notifyBackupEvent(input: {
     return { attempted: 0, sent: 0, skippedReason: "event_muted" };
   }
 
+  // siteId must be a real Site.id. Several callers hand around a SLUG or a
+  // Coolify uuid under the same name, and Prisma answers a non-uuid value on a
+  // @db.Uuid column with "Inconsistent column data: Error creating UUID" — a
+  // thrown query and a logged error, once per attempt. Refuse it here instead.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.siteId ?? "")) {
+    console.warn(`[jongo] notifyBackupEvent(${input.event}): ignoring non-uuid siteId "${input.siteId}"`);
+    return { attempted: 0, sent: 0, skippedReason: "site_missing" };
+  }
+
   try {
     const { getDb } = await import("@/lib/db");
     const db = await getDb();
