@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoolifyBackupCapability } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
-import { decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
+import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -652,10 +652,10 @@ export async function POST(request: Request) {
     }
 
     // ── Lifecycle sync: retire sites whose Coolify resource is gone ──
-    // Opt-in (JONGO_ARCHIVE_MISSING_SITES=true). Soft delete only, after a
-    // grace period, on a complete index, and refused entirely if an implausible
-    // share of sites look deleted at once.
-    const archiveEnabled = (process.env.JONGO_ARCHIVE_MISSING_SITES || "").trim() === "true";
+    // On by default (JONGO_ARCHIVE_MISSING_SITES=false to opt out). Soft delete
+    // only, after a grace period, on a complete index, and refused entirely if an
+    // implausible share of sites look deleted at once.
+    const archiveEnabled = archiveMissingSitesDefaultEnabled();
     const graceDays = Number(process.env.JONGO_ARCHIVE_GRACE_DAYS || 7);
     let archiveCandidates: Array<{ id: string; slug: string }> = [];
     let archived = 0;

@@ -64,7 +64,7 @@ describe("findRepairTarget", () => {
   });
 });
 
-import { decideSiteArchive, shouldAbortArchiveBatch } from "./platform-reconcile-match";
+import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch } from "./platform-reconcile-match";
 
 describe("decideSiteArchive", () => {
   const now = new Date("2026-08-01T00:00:00Z");
@@ -171,5 +171,25 @@ describe("orderDueBackups", () => {
       { id: "old", slug: "old", ...base, lastScheduledBackupAt: new Date("2026-07-01T00:00:00Z") }
     ];
     expect(orderDueBackups(sites, { now }).map((s) => s.id)).toEqual(["old"]);
+  });
+});
+
+describe("archiveMissingSitesDefaultEnabled", () => {
+  it("defaults to ON when the variable is unset or blank", () => {
+    // It was `=== "true"` and never set, so deleting an app in Coolify flagged
+    // it in Jongo and then did nothing — four sites waited 18 days.
+    expect(archiveMissingSitesDefaultEnabled(undefined)).toBe(true);
+    expect(archiveMissingSitesDefaultEnabled("")).toBe(true);
+    expect(archiveMissingSitesDefaultEnabled("   ")).toBe(true);
+  });
+
+  it("honours an explicit opt-out", () => {
+    for (const value of ["false", "FALSE", " false ", "0", "off", "no"]) {
+      expect(archiveMissingSitesDefaultEnabled(value)).toBe(false);
+    }
+  });
+
+  it("stays on for an explicit true", () => {
+    expect(archiveMissingSitesDefaultEnabled("true")).toBe(true);
   });
 });
