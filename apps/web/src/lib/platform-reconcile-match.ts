@@ -88,6 +88,31 @@ export function findRepairTarget(index: LiveResourceIndex, site: SiteForReconcil
  */
 export type ArchiveDecision = { archive: boolean; reason: string };
 
+/**
+ * Whether a site whose Coolify resource has vanished gets archived.
+ *
+ * Defaults to ON. It used to be `JONGO_ARCHIVE_MISSING_SITES === "true"`, and
+ * that variable was never set — so deleting an app in Coolify flagged it in
+ * Jongo within the hour and then did nothing forever. Four sites sat correctly
+ * identified as deleted for 18 days, eleven days past the grace period, because
+ * the one step that acts on that finding was behind an unset flag.
+ *
+ * Defaulting a DELETION on is a bigger claim than defaulting a backup on, so it
+ * leans on the three guards that already exist and are tested: the resource must
+ * have been missing continuously for graceDays, the Coolify index must be
+ * complete for the pass, and shouldAbortArchiveBatch refuses the whole batch if
+ * an implausible share of sites look deleted at once. The archive itself is a
+ * soft delete, so it is reversible.
+ *
+ * Takes the raw value as a parameter to keep this module import-free and testable.
+ */
+export function archiveMissingSitesDefaultEnabled(
+  raw: string | undefined = process.env.JONGO_ARCHIVE_MISSING_SITES
+): boolean {
+  const value = (raw ?? "").trim().toLowerCase();
+  return !(value === "false" || value === "0" || value === "off" || value === "no");
+}
+
 export function decideSiteArchive(input: {
   missingSince: Date | null;
   now?: Date;
