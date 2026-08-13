@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { buildSiteIdentityWhere } from "@/lib/site-identity";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
 
 type Params = { params: Promise<{ siteId: string; collaboratorId: string }> };
@@ -8,22 +9,6 @@ type CallerAccess = {
   siteId: string;
   callerRole: "admin" | "collaborator";
 };
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function buildSiteIdentityWhere(siteId: string): Record<string, unknown> {
-  if (isUuid(siteId)) {
-    return {
-      OR: [{ id: siteId }, { slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
-    };
-  }
-
-  return {
-    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
-  };
-}
 
 async function getCallerAccess(siteId: string, userId: string): Promise<CallerAccess | null> {
   const { db } = await import("@/lib/db");

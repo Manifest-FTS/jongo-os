@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { buildSiteIdentityWhere } from "@/lib/site-identity";
 import {
   getCoolifyAppBackupInventory,
   getCoolifyAppStagingCapability,
@@ -111,24 +112,6 @@ function hasOpsToken(req: Request): boolean {
   const authHeader = req.headers.get("authorization") ?? "";
   const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
   return Boolean(configured && provided && configured === provided);
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function buildSiteIdentityWhere(siteId: string) {
-  if (isUuid(siteId)) {
-    return {
-      OR: [{ id: siteId }, { slug: siteId }],
-      deletedAt: null
-    };
-  }
-
-  return {
-    slug: siteId,
-    deletedAt: null
-  };
 }
 
 function blockedPromoteResponse(params: {

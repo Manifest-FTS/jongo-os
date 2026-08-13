@@ -29,6 +29,25 @@ function slugify(value: string): string {
     .replace(/^-|-$/g, "");
 }
 
+function isLikelyStagingSite(site: SiteOverview): boolean {
+  const env = normalized(site.coolifyEnvironmentName);
+  if (env.includes("stag") || env.includes("preview") || env === "dev") {
+    return true;
+  }
+
+  const name = normalized(site.name);
+  return /(^|[.\-_\s])(staging|stage|stg|preview|dev)([.\-_\s]|$)/.test(name);
+}
+
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { code?: string };
+  return e.code === "P2002";
+}
+
 function makeUniqueSlug(baseSlug: string, existingSlugs: Set<string>): string {
   const truncatedBase = baseSlug.slice(0, 60);
   if (!existingSlugs.has(truncatedBase)) {
@@ -127,7 +146,9 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
   }
 
   const linkedProjectIds = new Set(linkedProjects.map((project) => project.coolifyProjectId));
-  const coolifySites = overview.sites.filter((site) => site.coolifyProjectId && linkedProjectIds.has(site.coolifyProjectId));
+  const coolifySites = overview.sites.filter(
+    (site) => site.coolifyProjectId && linkedProjectIds.has(site.coolifyProjectId) && !isLikelyStagingSite(site)
+  );
 
   const existingSites: Array<{
     name: string;
@@ -175,27 +196,39 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
     const linkedProject = linkedProjects.find((project) => project.coolifyProjectId === projectId);
     const coolifyProjectName = site.coolifyProjectName ?? linkedProject?.coolifyProjectName ?? null;
 
-    await db.site.create({
-      data: {
-        organizationId,
-        slug: createSiteSlug(site, existingSlugs),
-        name: site.name,
-        description: null,
-        coolifyServiceId: site.deployTargetId || site.id,
-        coolifyServiceUuid: site.id,
-        coolifyProjectId: projectId,
-        coolifyProjectName,
-        stagingEnabled: false,
-        gitRepositoryUrl: null,
-        environments: {
-          create: [
-            { name: "production", isProductionLike: true },
-            { name: "staging", isProductionLike: false }
-          ]
-        }
-      },
-      select: { id: true }
-    });
+    const candidateSlug = createSiteSlug(site, existingSlugs);
+
+    try {
+      await db.site.create({
+        data: {
+          organizationId,
+          slug: candidateSlug,
+          name: site.name,
+          description: null,
+          coolifyServiceId: site.deployTargetId || site.id,
+          coolifyServiceUuid: site.id,
+          coolifyProjectId: projectId,
+          coolifyProjectName,
+          stagingEnabled: false,
+          gitRepositoryUrl: null,
+          environments: {
+            create: [
+              { name: "production", isProductionLike: true },
+              { name: "staging", isProductionLike: false }
+            ]
+          }
+        },
+        select: { id: true }
+      });
+    } catch (error) {
+      // Concurrent sync/import can race on slug uniqueness. Treat it as a skip
+      // rather than failing the whole ownership sync pass.
+      if (!isPrismaUniqueConstraintError(error)) {
+        throw error;
+      }
+      skippedSites += 1;
+      continue;
+    }
 
     existingNames.add(normalizedName);
     if (site.id) existingCoolifyIdentifiers.add(site.id);

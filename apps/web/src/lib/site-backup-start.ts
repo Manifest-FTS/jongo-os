@@ -52,6 +52,13 @@ export type StartSiteBackupResult =
       runningBackupId?: string;
     };
 
+function isUuid(value?: string | null): boolean {
+  return Boolean(
+    value &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim())
+  );
+}
+
 function hasValue(value?: string | null): boolean {
   return Boolean(value && value.trim().length > 0);
 }
@@ -63,6 +70,38 @@ function resolveScriptPath(name: string): string | null {
     path.join(cwd, "..", "scripts", name),
     path.join(cwd, "..", "..", "scripts", name)
   ].find((candidate) => existsSync(candidate)) ?? null;
+}
+
+async function resolveSiteBackupRecordSiteId(db: any, site: SiteBackupTarget): Promise<string | null> {
+  const directId = site.id?.trim();
+  if (isUuid(directId)) {
+    return directId;
+  }
+
+  const identityCandidates = new Set<string>();
+  if (directId) identityCandidates.add(directId);
+  if (site.slug?.trim()) identityCandidates.add(site.slug.trim());
+  if (site.coolifyServiceUuid?.trim()) identityCandidates.add(site.coolifyServiceUuid.trim());
+
+  if (!identityCandidates.size) {
+    return null;
+  }
+
+  const orConditions = Array.from(identityCandidates).flatMap((identity) => [
+    { slug: identity },
+    { coolifyServiceUuid: identity },
+    { coolifyServiceId: identity }
+  ]);
+
+  const mappedSite = await db.site.findFirst({
+    where: {
+      deletedAt: null,
+      OR: orConditions
+    },
+    select: { id: true }
+  });
+
+  return mappedSite?.id ?? null;
 }
 
 export async function startSiteBackup(input: {
@@ -111,9 +150,18 @@ export async function startSiteBackup(input: {
     };
   }
 
+  const backupRecordSiteId = await resolveSiteBackupRecordSiteId(db, input.site);
+  if (!backupRecordSiteId) {
+    return {
+      ok: false,
+      reason: "not_linked",
+      message: "This app is not mapped to a backup-capable site record yet. Re-link it in app settings and try again."
+    };
+  }
+
   // Refuse to stack concurrent backups for the same site.
   const running = await (db as any).siteBackup.findFirst({
-    where: { siteId: input.site.id, status: "running" },
+    where: { siteId: backupRecordSiteId, status: "running" },
     select: { id: true }
   });
   if (running) {
@@ -127,7 +175,7 @@ export async function startSiteBackup(input: {
 
   const record = await (db as any).siteBackup.create({
     data: {
-      siteId: input.site.id,
+      siteId: backupRecordSiteId,
       resourceUuid,
       label: input.label,
       trigger: input.trigger,
@@ -158,7 +206,7 @@ export async function startSiteBackup(input: {
   // swallows its own errors, so this cannot fail the backup it is reporting.
   const { notifyBackupEvent } = await import("@/lib/site-notify");
   await notifyBackupEvent({
-    siteId: input.site.id,
+    siteId: backupRecordSiteId,
     event: "backup_started",
     trigger: input.trigger
   });

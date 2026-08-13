@@ -21,6 +21,16 @@ function isPrismaUniqueConstraintError(error: unknown): boolean {
   return e.code === "P2002";
 }
 
+function isOrgSlugUniqueConflict(error: unknown): boolean {
+  if (!isPrismaUniqueConstraintError(error) || !error || typeof error !== "object") {
+    return false;
+  }
+
+  const e = error as { meta?: { target?: unknown } };
+  const target = Array.isArray(e.meta?.target) ? e.meta?.target.map(String) : [];
+  return target.includes("organizationId") && target.includes("slug");
+}
+
 function isPrismaSchemaMismatchError(error: unknown): boolean {
   if (!error || typeof error !== "object") {
     return false;
@@ -34,6 +44,18 @@ function isPrismaSchemaMismatchError(error: unknown): boolean {
     (message.includes("column") && message.includes("does not exist")) ||
     (message.includes("the column") && message.includes("does not exist"))
   );
+}
+
+function omitSiteCompatibilityFields<T extends Record<string, unknown>>(data: T) {
+  const {
+    temporaryDomainSlug: _temporaryDomainSlug,
+    temporaryDomainSuffix: _temporaryDomainSuffix,
+    backupScheduleEnabled: _backupScheduleEnabled,
+    backupFrequencyHours: _backupFrequencyHours,
+    ...compatibleData
+  } = data;
+
+  return compatibleData;
 }
 
 /**
@@ -264,35 +286,150 @@ export async function POST(req: Request, { params }: Params) {
             }
           });
         } catch (error) {
-          if (!isPrismaUniqueConstraintError(error)) {
+          if (isPrismaSchemaMismatchError(error)) {
+            console.warn(
+              "POST /api/organizations/[id]/sites: organization project backfill skipped because Coolify mapping columns are missing.",
+              organizationId,
+              coolifyProjectId
+            );
+          } else if (!isPrismaUniqueConstraintError(error)) {
             throw error;
+          } else {
+            console.warn(
+              "POST /api/organizations/[id]/sites: organization project backfill skipped due to uniqueness conflict.",
+              organizationId,
+              coolifyProjectId
+            );
           }
-
-          console.warn(
-            "POST /api/organizations/[id]/sites: organization project backfill skipped due to uniqueness conflict.",
-            organizationId,
-            coolifyProjectId
-          );
         }
       }
+    }
+
+    const siteSelect = {
+      id: true,
+      slug: true,
+      name: true,
+      description: true,
+      coolifyServiceUuid: true,
+      coolifyProjectId: true,
+      stagingEnabled: true,
+      gitRepositoryUrl: true,
+      organizationId: true,
+      createdAt: true,
+      environments: { select: { id: true, name: true, isProductionLike: true } }
+    } as const;
+
+    const siteBaseData = {
+      organizationId,
+      slug,
+      name,
+      description: body.description?.trim() || null,
+      coolifyServiceUuid,
+      coolifyProjectId,
+      stagingEnabled: false,
+      gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
+      // Protected from the moment it exists, rather than inheriting a
+      // platform default that a later config change could quietly flip off.
+      backupScheduleEnabled: true,
+      backupFrequencyHours: DEFAULT_BACKUP_FREQUENCY_HOURS
+    } as const;
+
+    const existingBySlug = await db.site.findFirst({
+      where: { organizationId, slug },
+      select: {
+        id: true,
+        deletedAt: true,
+        name: true,
+        coolifyServiceUuid: true
+      }
+    });
+
+    // Re-linking should be idempotent: if the slug already exists (especially a
+    // soft-deleted or stale unavailable row), revive and update it instead of
+    // throwing a 500 from the unique index.
+    if (existingBySlug) {
+      if (!existingBySlug.deletedAt) {
+        return NextResponse.json(
+          {
+            error: "A site with this slug already exists in this client.",
+            code: "slug_conflict",
+            existingSiteId: existingBySlug.id
+          },
+          { status: 409 }
+        );
+      }
+
+      let revivedSite: any;
+      try {
+        revivedSite = await db.site.update({
+          where: { id: existingBySlug.id },
+          data: {
+            ...siteBaseData,
+            deletedAt: null,
+            temporaryDomainSlug: pinnedTemporarySlug,
+            temporaryDomainSuffix: pinnedTemporarySuffix
+          },
+          select: siteSelect
+        });
+      } catch (error) {
+        if (!isPrismaSchemaMismatchError(error)) {
+          throw error;
+        }
+
+        revivedSite = await db.site.update({
+          where: { id: existingBySlug.id },
+          data: omitSiteCompatibilityFields({
+            ...siteBaseData,
+            deletedAt: null
+          }),
+          select: siteSelect
+        });
+      }
+
+      let backupReconciliation: Awaited<ReturnType<typeof ensureCoolifyAppBackupSchedules>> | null = null;
+      if (coolifyServiceUuid) {
+        try {
+          backupReconciliation = await ensureCoolifyAppBackupSchedules(coolifyServiceUuid);
+        } catch (backupError) {
+          console.error("POST /api/organizations/[id]/sites backup auto-provision failed:", backupError);
+        }
+      }
+
+      return NextResponse.json(
+        {
+          id: revivedSite.id,
+          slug: revivedSite.slug,
+          name: revivedSite.name,
+          description: revivedSite.description,
+          coolifyServiceUuid: revivedSite.coolifyServiceUuid,
+          coolifyProjectId: revivedSite.coolifyProjectId,
+          stagingEnabled: revivedSite.stagingEnabled,
+          gitRepositoryUrl: revivedSite.gitRepositoryUrl,
+          temporaryDomainSlug: revivedSite.temporaryDomainSlug,
+          temporaryDomainSuffix: revivedSite.temporaryDomainSuffix,
+          organizationId: revivedSite.organizationId,
+          environments: revivedSite.environments,
+          createdAt: revivedSite.createdAt,
+          backupReconciliation,
+          provision: provisionMessage
+            ? {
+                message: provisionMessage,
+                domain: provisionDomain,
+                domainApplied: provisionDomainApplied,
+                restarted: provisionRestarted,
+                domainConverged: provisionDomainConverged
+              }
+            : null
+        },
+        { status: 200 }
+      );
     }
 
     let site: any;
     try {
       site = await db.site.create({
         data: {
-          organizationId,
-          slug,
-          name,
-          description: body.description?.trim() || null,
-          coolifyServiceUuid,
-          coolifyProjectId,
-          stagingEnabled: false,
-          gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
-          // Protected from the moment it exists, rather than inheriting a
-          // platform default that a later config change could quietly flip off.
-          backupScheduleEnabled: true,
-          backupFrequencyHours: DEFAULT_BACKUP_FREQUENCY_HOURS,
+          ...siteBaseData,
           temporaryDomainSlug: pinnedTemporarySlug,
           temporaryDomainSuffix: pinnedTemporarySuffix,
           environments: {
@@ -302,38 +439,27 @@ export async function POST(req: Request, { params }: Params) {
             ]
           }
         },
-        select: {
-          id: true,
-          slug: true,
-          name: true,
-          description: true,
-          coolifyServiceUuid: true,
-          coolifyProjectId: true,
-          stagingEnabled: true,
-          gitRepositoryUrl: true,
-          organizationId: true,
-          createdAt: true,
-          environments: { select: { id: true, name: true, isProductionLike: true } }
-        }
+        select: siteSelect
       });
     } catch (error) {
+      if (isOrgSlugUniqueConflict(error)) {
+        return NextResponse.json(
+          {
+            error: "A site with this slug already exists in this client.",
+            code: "slug_conflict"
+          },
+          { status: 409 }
+        );
+      }
+
       if (!isPrismaSchemaMismatchError(error)) {
         throw error;
       }
 
-      // Compatibility fallback when DB is missing temporary-domain columns.
+      // Compatibility fallback when this environment is missing newer Site columns.
       site = await db.site.create({
         data: {
-          organizationId,
-          slug,
-          name,
-          description: body.description?.trim() || null,
-          coolifyServiceUuid,
-          coolifyProjectId,
-          stagingEnabled: false,
-          gitRepositoryUrl: body.gitRepositoryUrl?.trim() || null,
-          backupScheduleEnabled: true,
-          backupFrequencyHours: DEFAULT_BACKUP_FREQUENCY_HOURS,
+          ...omitSiteCompatibilityFields(siteBaseData),
           environments: {
             create: [
               { name: "production", isProductionLike: true },
@@ -341,19 +467,7 @@ export async function POST(req: Request, { params }: Params) {
             ]
           }
         },
-        select: {
-          id: true,
-          slug: true,
-          name: true,
-          description: true,
-          coolifyServiceUuid: true,
-          coolifyProjectId: true,
-          stagingEnabled: true,
-          gitRepositoryUrl: true,
-          organizationId: true,
-          createdAt: true,
-          environments: { select: { id: true, name: true, isProductionLike: true } }
-        }
+        select: siteSelect
       });
     }
 

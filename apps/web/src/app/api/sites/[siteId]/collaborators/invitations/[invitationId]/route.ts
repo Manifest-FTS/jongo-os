@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { buildSiteIdentityWhere } from "@/lib/site-identity";
 import { isSmtpConfigured, sendInviteEmail } from "@/lib/email";
 import {
   buildInviteUrlForInvitation,
@@ -23,22 +24,6 @@ type Access = {
   orgId: string;
   isAdmin: boolean;
 };
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function buildSiteIdentityWhere(siteId: string): Record<string, unknown> {
-  if (isUuid(siteId)) {
-    return {
-      OR: [{ id: siteId }, { slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
-    };
-  }
-
-  return {
-    OR: [{ slug: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }]
-  };
-}
 
 function getInvitationStatus(invite: {
   acceptedAt: Date | null;
