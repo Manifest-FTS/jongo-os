@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { destroyCoolifyApplication } from "@/lib/coolify";
+import { buildSiteIdentityWhere } from "@/lib/site-identity";
 import { isAdminRole } from "@/lib/roles";
 import {
   normalizeTemporaryDomainSlug,
@@ -8,38 +9,6 @@ import {
 } from "@/lib/temporary-domains";
 
 type Params = { params: Promise<{ siteId: string }> };
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function buildSiteIdentityWhere(siteId: string) {
-  const normalizedSiteId = decodeURIComponent(siteId).trim();
-
-  if (!normalizedSiteId) {
-    return {
-      slug: siteId,
-      deletedAt: null
-    };
-  }
-
-  if (isUuid(normalizedSiteId)) {
-    return {
-      OR: [
-        { id: normalizedSiteId },
-        { slug: normalizedSiteId },
-        { coolifyServiceUuid: normalizedSiteId },
-        { coolifyServiceId: normalizedSiteId }
-      ],
-      deletedAt: null
-    };
-  }
-
-  return {
-    slug: normalizedSiteId,
-    deletedAt: null
-  };
-}
 
 function isPrismaSchemaMismatchError(error: unknown): boolean {
   if (!error || typeof error !== "object") {

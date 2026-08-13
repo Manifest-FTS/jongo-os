@@ -1,17 +1,13 @@
 import { getClients, getClientById as getMockClientById, getClientForSite, type ClientRecord } from "./clients";
 import { getCoolifyOverview, type CoolifyOverview } from "./coolify";
 import { recordRepositoryCall } from "./diagnostics";
+import { buildSiteIdentityWhere, isUuid } from "./site-identity";
 import { normalizeRole } from "./roles";
 
 export type ViewerContext = {
   userId?: string;
   email?: string;
 };
-
-function isUuid(value?: string | null): boolean {
-  if (!value) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
 
 function getScopedViewerUserId(viewer?: ViewerContext): string | undefined {
   if (!viewer?.userId) {
@@ -128,20 +124,6 @@ async function hasTemporaryDomainColumns(prisma: any): Promise<boolean> {
     temporaryDomainColumnsAvailable = false;
     return false;
   }
-}
-
-function buildSiteIdentityWhere(siteId: string): Record<string, unknown> {
-  if (isUuid(siteId)) {
-    return {
-      OR: [{ id: siteId }, { coolifyServiceUuid: siteId }, { coolifyServiceId: siteId }],
-      deletedAt: null
-    };
-  }
-
-  return {
-    slug: siteId,
-    deletedAt: null
-  };
 }
 
 export type ClientWorkspaceRecord = ClientRecord & {
