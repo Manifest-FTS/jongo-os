@@ -16,7 +16,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { hasCoolifyBackupableState } from "@/lib/coolify";
+import { describeCoolifyBackupCapability } from "@/lib/coolify";
 import { openJobLog } from "@/lib/job-log";
 
 /**
@@ -117,13 +117,18 @@ export async function startSiteBackup(input: {
   }
 
   // The backup captures whatever persistent state a resource has (files volumes
-  // and/or databases). Reject only resources with neither — the script is the
-  // final arbiter and will report "nothing to back up" if it finds nothing.
-  if (!(await hasCoolifyBackupableState(resourceUuid))) {
+  // and/or databases). Reject only definitive no-data answers; "unknown" can
+  // be a transient Coolify/API failure and must not block a manual backup.
+  const capability = await describeCoolifyBackupCapability(resourceUuid);
+  if (!capability.backupable && capability.reason !== "unknown") {
+    const message =
+      capability.reason === "external_database"
+        ? "This app uses an external database that Jongo cannot back up from this platform."
+        : "This resource has no files or database to back up.";
     return {
       ok: false,
       reason: "unsupported_resource_type",
-      message: "This resource has no files or database to back up."
+      message
     };
   }
 
