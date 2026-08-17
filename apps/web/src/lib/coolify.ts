@@ -1737,6 +1737,17 @@ export async function provisionCoolifyWordPressService(
       if (isRateLimitError(error)) {
         return { ok: false, reason: "rate_limited", message: "Coolify's API rate limit is in effect. Try again shortly." };
       }
+      // Distinguish "Coolify answered with an error" from "we could not reach
+      // Coolify". A 500 here was reported as unreachable, which sent debugging at
+      // networking when the real cause was Coolify failing to decrypt a stored
+      // value ("The MAC is invalid") after being migrated without its APP_KEY.
+      if (typeof status === "number") {
+        return {
+          ok: false,
+          reason: "coolify_server_list_failed",
+          message: `Coolify returned HTTP ${status} for /api/v1/servers, so the target server could not be resolved. Check Coolify itself — this is not a Jongo-side failure.`
+        };
+      }
       return { ok: false, reason: "server_unresolved", message: "Could not reach Coolify to determine which server to use." };
     }
   }
