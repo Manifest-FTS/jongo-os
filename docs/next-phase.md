@@ -1,9 +1,14 @@
 # Next Phase: Coolify ⟷ Jongo OS Sync Hardening
 
 Handoff doc for whoever (GitHub Copilot or otherwise) picks this up next.
-Written 2026-08-19 after a live incident-response pass. Read this top to
-bottom before touching code — it explains what was already fixed, what was
-verified working, and what is still genuinely open.
+Written 2026-08-19 after a live incident-response pass, updated same day
+after a live regression was caught. Read this top to bottom before touching
+code — it explains what was already fixed, what was verified working, and
+what is still genuinely open.
+
+**Priority order for whoever picks this up: section 2 ("A0" — confirmed
+regression, actively producing broken staging sites) before sections 3
+("A", unconfirmed) and 4 ("B", confirmed but not urgent).**
 
 ## 0. Context: the Coolify migration
 
@@ -75,7 +80,86 @@ git ls-remote origin main   # confirms GitHub's actual ref, not just local cache
 clean as of this writing.** The open work below is genuinely new, not a
 re-check of what's already fixed.
 
-## 2. Open item A: destroying staging may leave a paired resource orphaned in Coolify
+## 2. Open item A0 (CONFIRMED REGRESSION, higher priority than A/B below): auto content sync silently skipped when the post-provision capability probe fails
+
+**Confirmed live, 2026-08-18.** A collaborator enabled staging for
+`gardenstateequality.org` (a large GSE production site). Coolify successfully
+created and deployed the new staging service (`POST /api/v1/services` → 201,
+confirmed in the audit log's `provisioningAttempts`), but the resulting
+staging site is a **bare fresh WordPress install**, not a clone of
+production content.
+
+Root cause, found in the audit log entry itself
+(`AuditLog` row for `gardenstateequality-org`, `createdAt: 2026-08-18T21:30:39Z`):
+
+```json
+"capability": { "note": "fetch_error", "detected": false, ... },
+"contentSyncReason": "service_created",
+"autoContentSync": { "attempted": false, "ok": false, "reason": "not_required" }
+```
+
+`contentSyncReason: "service_created"` proves the code correctly computed
+`requiresContentSync = true` (see `createdNewService || freshInstallDetected
+|| probeUnavailable` in
+`app/api/sites/[siteId]/staging/route.ts` around line 1612). But
+`autoContentSync.attempted` is `false` with reason `not_required` — meaning
+the sync was never actually triggered. That only happens if the guard at
+line 1632, `if (requiresContentSync && capabilityAfterProvision.applicationUuid)`,
+saw `capabilityAfterProvision.applicationUuid` as falsy — which lines up
+exactly with `capability.note: "fetch_error"` a few lines earlier: the
+post-provision Coolify capability check failed to resolve the new service's
+UUID.
+
+**Confirmed cause of the fetch_error:** the container logs for that exact
+window show `[coolify-deletion-watcher] skipped: could not read Coolify
+resources: Coolify rate limit reached; retry in 60s` at the same timestamp.
+Provisioning a new staging service is API-call-heavy (probing ~6 candidate
+endpoints to see if staging already exists, creating the service, checking
+capability, triggering deploy), and it collided with Coolify's 200 req/min
+cap. The capability probe that decides whether to sync content has **no
+retry** — a single rate-limited or otherwise-failed call permanently and
+silently disables content sync for that enable-staging request, with no
+error surfaced to the user beyond the generic "Staging target created in
+Coolify" success message. The user has no way to tell "site was cloned" from
+"site is empty" from the UI response.
+
+**This is not a size/timing issue.** It is not "the clone is still running in
+the background for a large site" — `autoContentSync.attempted: false` proves
+nothing was ever started. There is no background job to wait for.
+
+**Task for next phase (do this before sections 3 and 4 below — it's actively
+producing broken staging sites for real client apps, not a theoretical
+gap):**
+1. Add a short retry (2-3 attempts, a few seconds apart, same pattern as the
+   existing "Coolify reads can intermittently fail even when staging exists.
+   Retry unresolved capability briefly" comment already in
+   `staging/route.ts` around the disable path) to the post-provision
+   capability check before deciding `requiresContentSync` is unactionable.
+2. If the capability check still fails after retries, do NOT silently report
+   success — either queue the content sync for a later retry (there's a
+   precedent for detached background jobs in this codebase, e.g.
+   `site-backup.mjs`/`backup-rehearsal.mjs` spawned via `spawn(..., {
+   detached: true })` from `backup-reconcile/route.ts`), or clearly surface
+   in the audit log AND the API response that content sync could not run and
+   needs a manual retry, with an actionable next step (e.g. a "re-sync
+   content" button/endpoint).
+3. Add a manual "re-sync staging content now" action for a site whose
+   staging is already enabled but was never successfully synced — right now
+   there is no way to retry `runAutoContentSync` after the fact without
+   disabling and re-enabling staging (which itself risks tripping the same
+   rate limit again, in a loop).
+4. For `gardenstateequality.org` specifically: once (1)-(3) are in place, run
+   a manual production-to-staging content sync for that site so the
+   collaborator's staging environment actually reflects production, since
+   right now it's a fresh install.
+5. Add a test asserting that a `capabilityAfterProvision.applicationUuid`
+   failure does not silently downgrade `requiresContentSync: true` into a
+   reported "not required" outcome — this is exactly the kind of thing a
+   pure-function test (in the style of `platform-reconcile-match.ts`'s tests)
+   would have caught, but the sync-trigger decision currently lives inline
+   in the route handler, untested.
+
+## 3. Open item A: destroying staging may leave a paired resource orphaned in Coolify
 
 **Not confirmed as a live bug** — this came up because a site
 (`staging-wptest`) was misread during this pass as an orphan; it turned out
@@ -121,7 +205,7 @@ Coolify, undetected by Jongo until/unless something else notices it.
    WordPress+DB staging target, confirming zero resources remain in Coolify
    afterward.
 
-## 3. Open item B: Coolify → Jongo is one-way (deletions only), not bidirectional
+## 4. Open item B: Coolify → Jongo is one-way (deletions only), not bidirectional
 
 This is the real, confirmed gap — not a false alarm.
 
@@ -185,7 +269,7 @@ is not wired to any route or scheduled job.
    pure-logic split) and verify against a real reconcile pass before
    deploying.
 
-## 4. How to verify anything in this doc yourself
+## 5. How to verify anything in this doc yourself
 
 Coolify API base URL, token, and Jongo's DB creds are all available as env
 vars inside the running Jongo container — see `scripts/db-tunnel.sh` and
