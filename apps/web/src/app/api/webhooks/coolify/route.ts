@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   authenticateWebhook,
   parseCoolifyWebhook,
-  shouldThrottleWebhookDeletion
+  applyCoolifyDeletion
 } from "@/lib/coolify-webhook";
 
 export const runtime = "nodejs";
@@ -66,135 +66,45 @@ export async function POST(request: Request) {
 
   const { db } = await import("@/lib/db");
 
-  // Claim the delivery id first. The unique index is the idempotency mechanism:
-  // a concurrent or retried delivery loses this insert and stops here, so the
-  // deletion cannot be applied twice.
   const deliveryId = parsed.kind === "deletion" ? parsed.event.deliveryId : parsed.deliveryId;
   const eventType = parsed.kind === "deletion" ? parsed.event.eventType : parsed.eventType;
-  const resourceUuids = parsed.kind === "deletion" ? parsed.event.resourceUuids : [];
-
-  let claimed: { id: string } | null = null;
-  try {
-    claimed = await db.webhookEvent.create({
-      data: { source: "coolify", deliveryId, eventType, outcome: "received", resourceUuids, siteIds: [] },
-      select: { id: true }
-    });
-  } catch (error) {
-    const code = (error as { code?: string })?.code;
-    if (code === "P2002") {
-      return NextResponse.json({ ok: true, status: "duplicate", deliveryId, message: "Delivery already processed." });
-    }
-    console.error("[jongo] coolify webhook: could not record delivery", error);
-    // Our storage failed, so idempotency cannot be guaranteed — ask for a retry.
-    return NextResponse.json({ ok: false, error: "Could not record the delivery." }, { status: 500 });
-  }
-
-  const finish = async (outcome: string, detail: string | null, siteIds: string[] = []) => {
-    try {
-      await db.webhookEvent.update({ where: { id: claimed!.id }, data: { outcome, detail, siteIds } });
-    } catch (error) {
-      console.error("[jongo] coolify webhook: could not update delivery outcome", error);
-    }
-    return { outcome, detail, siteIds };
-  };
 
   if (parsed.kind === "ignored") {
-    await finish("skipped", parsed.reason);
+    // Recorded for the audit trail, but never through applyCoolifyDeletion:
+    // an ignored event was never a deletion attempt, so it needs no throttle
+    // check and no site match — just a note that it arrived and why nothing happened.
+    try {
+      await db.webhookEvent.create({
+        data: { source: "coolify", deliveryId, eventType, outcome: "skipped", detail: parsed.reason, resourceUuids: [], siteIds: [] }
+      });
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      if (code !== "P2002") {
+        console.error("[jongo] coolify webhook: could not record ignored delivery", error);
+      }
+    }
     return NextResponse.json({ ok: true, status: "skipped", deliveryId, message: parsed.reason });
   }
 
-  try {
-    // Map Coolify ids to Jongo records. Both columns are checked because an app
-    // may be linked by either, and already-deleted rows are excluded so a repeat
-    // is a no-op rather than a second write.
-    const sites = await db.site.findMany({
-      where: {
-        deletedAt: null,
-        OR: [
-          { coolifyServiceUuid: { in: resourceUuids } },
-          { coolifyServiceId: { in: resourceUuids } }
-        ]
-      },
-      select: { id: true, slug: true, name: true, organizationId: true }
-    }) as Array<{ id: string; slug: string; name: string; organizationId: string }>;
+  const result = await applyCoolifyDeletion({
+    db,
+    deliveryId,
+    eventType,
+    resourceUuids: parsed.event.resourceUuids,
+    authMethod: auth.method,
+    ipAddress: request.headers.get("x-forwarded-for") ?? "webhook",
+    userAgent: request.headers.get("user-agent") ?? "coolify-webhook"
+  });
 
-    if (sites.length === 0) {
-      // Not an error: Coolify holds plenty of resources Jongo never adopted.
-      const detail = `no Jongo site is linked to ${resourceUuids.join(", ")}`;
-      await finish("unmatched", detail);
-      return NextResponse.json({ ok: true, status: "unmatched", deliveryId, message: detail });
-    }
-
-    const recentDeletions = await db.webhookEvent.count({
-      where: {
-        source: "coolify",
-        outcome: "applied",
-        receivedAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }
-      }
-    });
-    const throttle = shouldThrottleWebhookDeletion({ recentDeletions });
-    if (throttle.throttle) {
-      // Mirrors the reconciler's mass-deletion circuit breaker. A flood of
-      // deletions is far more likely a Coolify fault or a stolen token than
-      // reality, and this path acts immediately.
-      await finish("throttled", throttle.reason, sites.map((site) => site.id));
-      console.error(`[jongo] coolify webhook throttled: ${throttle.reason}`);
-      return NextResponse.json(
-        { ok: true, status: "throttled", deliveryId, message: throttle.reason },
-        { status: 200 }
-      );
-    }
-
-    const now = new Date();
-    // SOFT delete only. Same reasoning as decideSiteArchive: the record still
-    // holds backup history and team links, and a webhook acting on someone else's
-    // mistake has to be reversible.
-    await db.site.updateMany({
-      where: { id: { in: sites.map((site) => site.id) }, deletedAt: null },
-      data: { deletedAt: now }
-    });
-
-    for (const site of sites) {
-      try {
-        await db.auditLog.create({
-          data: {
-            organizationId: site.organizationId,
-            actorId: null,
-            action: "site_deleted",
-            resourceType: "site",
-            resourceId: site.id,
-            details: {
-              actionType: "coolify_webhook_deletion_synced",
-              deliveryId,
-              eventType,
-              resourceUuids,
-              authMethod: auth.method,
-              message: `Coolify reported this resource deleted; the Jongo app was archived to match.`
-            },
-            ipAddress: request.headers.get("x-forwarded-for") ?? "webhook",
-            userAgent: request.headers.get("user-agent") ?? "coolify-webhook"
-          }
-        });
-      } catch (error) {
-        // The site is already archived; a missing audit row must not undo that.
-        console.error(`[jongo] coolify webhook: audit log failed for ${site.id}`, error);
-      }
-    }
-
-    const siteIds = sites.map((site) => site.id);
-    await finish("applied", null, siteIds);
-
-    return NextResponse.json({
-      ok: true,
-      status: "applied",
-      deliveryId,
-      archivedSiteIds: siteIds,
-      message: `Archived ${sites.length} Jongo app${sites.length === 1 ? "" : "s"} to match Coolify.`
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message.slice(0, 300) : "unknown error";
-    await finish("failed", detail);
-    console.error("[jongo] coolify webhook: apply failed", error);
-    return NextResponse.json({ ok: false, error: `Could not apply the deletion: ${detail}` }, { status: 500 });
+  if (result.status === "failed") {
+    return NextResponse.json({ ok: false, error: result.message }, { status: 500 });
   }
+
+  return NextResponse.json({
+    ok: true,
+    status: result.status,
+    deliveryId: result.deliveryId,
+    message: result.message,
+    ...(result.archivedSiteIds ? { archivedSiteIds: result.archivedSiteIds } : {})
+  });
 }

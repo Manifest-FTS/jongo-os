@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createHmac } from "node:crypto";
 import { coolifyFetch } from "@/lib/coolify";
+import { applyCoolifyDeletion } from "@/lib/coolify-webhook";
 import {
   DEFAULT_CONFIRM_MINUTES,
   DEFAULT_MAX_DROP_FRACTION,
@@ -23,8 +23,12 @@ export const runtime = "nodejs";
  * recreate churn of an ordinary deploy.
  *
  * This decides only WHEN to speak. Applying the deletion stays with
- * /api/webhooks/coolify, which is idempotent, rate-limited and logged — so the
- * fast path and any external sender converge on one applier and one audit trail.
+ * lib/coolify-webhook's applyCoolifyDeletion — the same function
+ * /api/webhooks/coolify calls — so the fast path and any external sender
+ * converge on one applier and one audit trail. It is called directly, in
+ * process, rather than over HTTP: a route handler fetching its own server's
+ * URL is a known source of flaky "fetch failed" errors in Next.js, and this
+ * tick already runs inside that same server.
  *
  * The reconciler's seven-day archive remains untouched as the conservative
  * backstop: if this process is not running, deletions still sync, just slowly.
@@ -116,8 +120,18 @@ export async function POST(request: Request) {
 
     const reported: Array<{ slug: string; status: string }> = [];
     for (const candidate of confirmed) {
-      const outcome = await reportToWebhook(request, candidate.uuid);
-      reported.push({ slug: candidate.slug, status: outcome });
+      // Bucketed by hour, same as the old HTTP delivery_id: a retry within the
+      // hour dedupes on WebhookEvent's unique index, while a resource genuinely
+      // re-created and re-deleted later still gets through.
+      const deliveryId = `watcher-${candidate.uuid}-${Math.floor(Date.now() / 3_600_000)}`;
+      const result = await applyCoolifyDeletion({
+        db,
+        deliveryId,
+        eventType: "resource.deleted",
+        resourceUuids: [candidate.uuid],
+        authMethod: "internal-watcher"
+      });
+      reported.push({ slug: candidate.slug, status: result.status });
     }
 
     return NextResponse.json({
@@ -139,49 +153,3 @@ export async function POST(request: Request) {
   }
 }
 
-/**
- * Hand a confirmed deletion to the webhook.
- *
- * Called over HTTP rather than by importing the handler so there is exactly one
- * applier with one delivery log, whether the trigger was this watcher or an
- * external sender. The delivery id is bucketed by hour, so a retry within the
- * hour dedupes while a resource genuinely re-created and re-deleted later still
- * gets through.
- */
-async function reportToWebhook(request: Request, uuid: string): Promise<string> {
-  const hmacSecret = process.env.COOLIFY_WEBHOOK_HMAC_SECRET?.trim() || "";
-  const token = process.env.COOLIFY_WEBHOOK_TOKEN?.trim() || "";
-  if (!hmacSecret && !token) {
-    // The endpoint fails closed, so without a secret this would only ever 401.
-    return "no_webhook_secret_configured";
-  }
-
-  const url =
-    process.env.COOLIFY_WEBHOOK_URL?.trim() ||
-    new URL("/api/webhooks/coolify", request.url).toString();
-
-  const body = JSON.stringify({
-    delivery_id: `watcher-${uuid}-${Math.floor(Date.now() / 3_600_000)}`,
-    event: "resource.deleted",
-    uuid,
-    source: "coolify-deletion-watch"
-  });
-
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (hmacSecret) {
-    const timestamp = String(Math.floor(Date.now() / 1000));
-    headers["x-jongo-timestamp"] = timestamp;
-    headers["x-jongo-signature"] = createHmac("sha256", hmacSecret).update(`${timestamp}.${body}`).digest("hex");
-  } else {
-    headers["x-jongo-webhook-token"] = token;
-  }
-
-  try {
-    const response = await fetch(url, { method: "POST", headers, body });
-    const payload = (await response.json().catch(() => ({}))) as { status?: string; error?: string };
-    if (!response.ok) return `http_${response.status}:${payload?.error ?? ""}`;
-    return payload?.status ?? "ok";
-  } catch (error) {
-    return `transport_error:${error instanceof Error ? error.message : "unknown"}`;
-  }
-}

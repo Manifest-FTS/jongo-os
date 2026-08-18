@@ -209,3 +209,153 @@ export function shouldThrottleWebhookDeletion(input: {
   }
   return { throttle: false, reason: "within_limit" };
 }
+
+export type ApplyDeletionResult = {
+  status: "duplicate" | "skipped" | "unmatched" | "throttled" | "applied" | "failed";
+  deliveryId: string;
+  message: string;
+  archivedSiteIds?: string[];
+};
+
+/**
+ * Apply (or refuse to apply) a Coolify resource-deletion event against Jongo's
+ * database. This is the single applier: both /api/webhooks/coolify (an HTTP
+ * delivery) and the deletion watcher (an in-process check) call this exact
+ * function, so a deletion can never be recorded twice or applied two different
+ * ways.
+ *
+ * Deliberately NOT an HTTP call from the watcher — a route handler fetching its
+ * own server's URL is a well-known source of flaky "fetch failed" errors in
+ * Next.js (the request has no reliable path back to itself, especially behind a
+ * platform proxy/edge in front of the app). Calling the same logic as a plain
+ * function removes that failure mode entirely while keeping identical behavior:
+ * the idempotency claim, the throttle breaker, and the audit trail all still run
+ * exactly once per deliveryId.
+ */
+export async function applyCoolifyDeletion(input: {
+  db: any;
+  deliveryId: string;
+  eventType: string;
+  resourceUuids: string[];
+  authMethod: string;
+  ipAddress?: string;
+  userAgent?: string;
+}): Promise<ApplyDeletionResult> {
+  const { db, deliveryId, eventType, resourceUuids, authMethod } = input;
+  const ipAddress = input.ipAddress ?? "webhook";
+  const userAgent = input.userAgent ?? "coolify-webhook";
+
+  let claimed: { id: string } | null = null;
+  try {
+    claimed = await db.webhookEvent.create({
+      data: { source: "coolify", deliveryId, eventType, outcome: "received", resourceUuids, siteIds: [] },
+      select: { id: true }
+    });
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === "P2002") {
+      return { status: "duplicate", deliveryId, message: "Delivery already processed." };
+    }
+    console.error("[jongo] coolify webhook: could not record delivery", error);
+    return { status: "failed", deliveryId, message: "Could not record the delivery." };
+  }
+
+  const finish = async (outcome: string, detail: string | null, siteIds: string[] = []) => {
+    try {
+      await db.webhookEvent.update({ where: { id: claimed!.id }, data: { outcome, detail, siteIds } });
+    } catch (error) {
+      console.error("[jongo] coolify webhook: could not update delivery outcome", error);
+    }
+  };
+
+  try {
+    // Map Coolify ids to Jongo records. Both columns are checked because an app
+    // may be linked by either, and already-deleted rows are excluded so a repeat
+    // is a no-op rather than a second write.
+    const sites = (await db.site.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { coolifyServiceUuid: { in: resourceUuids } },
+          { coolifyServiceId: { in: resourceUuids } }
+        ]
+      },
+      select: { id: true, slug: true, name: true, organizationId: true }
+    })) as Array<{ id: string; slug: string; name: string; organizationId: string }>;
+
+    if (sites.length === 0) {
+      // Not an error: Coolify holds plenty of resources Jongo never adopted.
+      const detail = `no Jongo site is linked to ${resourceUuids.join(", ")}`;
+      await finish("unmatched", detail);
+      return { status: "unmatched", deliveryId, message: detail };
+    }
+
+    const recentDeletions = await db.webhookEvent.count({
+      where: {
+        source: "coolify",
+        outcome: "applied",
+        receivedAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }
+      }
+    });
+    const throttle = shouldThrottleWebhookDeletion({ recentDeletions });
+    if (throttle.throttle) {
+      // Mirrors the reconciler's mass-deletion circuit breaker. A flood of
+      // deletions is far more likely a Coolify fault or a stolen token than
+      // reality, and this path acts immediately.
+      await finish("throttled", throttle.reason, sites.map((site) => site.id));
+      console.error(`[jongo] coolify webhook throttled: ${throttle.reason}`);
+      return { status: "throttled", deliveryId, message: throttle.reason };
+    }
+
+    const now = new Date();
+    // SOFT delete only. Same reasoning as decideSiteArchive: the record still
+    // holds backup history and team links, and a webhook acting on someone else's
+    // mistake has to be reversible.
+    await db.site.updateMany({
+      where: { id: { in: sites.map((site) => site.id) }, deletedAt: null },
+      data: { deletedAt: now }
+    });
+
+    for (const site of sites) {
+      try {
+        await db.auditLog.create({
+          data: {
+            organizationId: site.organizationId,
+            actorId: null,
+            action: "site_deleted",
+            resourceType: "site",
+            resourceId: site.id,
+            details: {
+              actionType: "coolify_webhook_deletion_synced",
+              deliveryId,
+              eventType,
+              resourceUuids,
+              authMethod,
+              message: `Coolify reported this resource deleted; the Jongo app was archived to match.`
+            },
+            ipAddress,
+            userAgent
+          }
+        });
+      } catch (error) {
+        // The site is already archived; a missing audit row must not undo that.
+        console.error(`[jongo] coolify webhook: audit log failed for ${site.id}`, error);
+      }
+    }
+
+    const siteIds = sites.map((site) => site.id);
+    await finish("applied", null, siteIds);
+
+    return {
+      status: "applied",
+      deliveryId,
+      archivedSiteIds: siteIds,
+      message: `Archived ${sites.length} Jongo app${sites.length === 1 ? "" : "s"} to match Coolify.`
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.slice(0, 300) : "unknown error";
+    await finish("failed", detail);
+    console.error("[jongo] coolify webhook: apply failed", error);
+    return { status: "failed", deliveryId, message: `Could not apply the deletion: ${detail}` };
+  }
+}
