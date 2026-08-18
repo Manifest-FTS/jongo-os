@@ -1873,6 +1873,7 @@ main {
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  margin-bottom: 15px;
 }
 
 /* Automatic-backup schedule strip, above the backup list. */
