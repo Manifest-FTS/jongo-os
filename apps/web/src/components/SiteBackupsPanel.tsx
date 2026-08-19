@@ -470,7 +470,9 @@ export default function SiteBackupsPanel({
                       </button>
                     </div>
                   ) : b.label ? (
-                    <p className="bk-when__time" style={{ marginTop: "0.25rem" }}>{b.label}</p>
+                    <p className="bk-when__time bk-backup-note" style={{ marginTop: "0.25rem" }} title={b.label}>
+                      {b.label}
+                    </p>
                   ) : null}
                 </div>
 
@@ -550,7 +552,7 @@ export default function SiteBackupsPanel({
                         <div className="bk-menu" role="menu">
                           <button
                             type="button"
-                            className="bk-btn"
+                            className="bk-menu__item"
                             onClick={() => {
                               setOpenMenu(null);
                               setEditingNote({ id: b.id, value: b.label ?? "" });
@@ -562,7 +564,16 @@ export default function SiteBackupsPanel({
                           </button>
                           <button
                             type="button"
-                            className="bk-btn bk-btn--danger"
+                            className="bk-menu__item"
+                            disabled
+                            title="Backup downloads are coming soon."
+                            role="menuitem"
+                          >
+                            Download this backup
+                          </button>
+                          <button
+                            type="button"
+                            className="bk-menu__item bk-menu__item--danger"
                             onClick={() => {
                               setOpenMenu(null);
                               setPendingRestore({ id: b.id, when });

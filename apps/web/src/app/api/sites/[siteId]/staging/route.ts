@@ -15,6 +15,7 @@ import {
   triggerCoolifyDeploy,
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
+import { waitForStagingCapabilityToClear } from "@/lib/staging-capability-clear";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import { getSiteWorkspace } from "@/lib/repositories";
@@ -1299,7 +1300,9 @@ export async function POST(req: Request, { params }: Params) {
 
   if (body.enabled) {
     if (!site.stagingEnabled && appUuid) {
-      const residualCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
+      const residualCapability = await waitForStagingCapabilityToClear(async () => {
+        return await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
+      }, 6, 1500);
       if (residualCapability.applicationUuid) {
         const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
         return NextResponse.json({

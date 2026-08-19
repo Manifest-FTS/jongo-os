@@ -413,14 +413,17 @@ export default function PromoteToProductionCard({
         This action copies staging WordPress files and database content into production, then triggers a production deployment.
       </p>
 
-      <button
-        type="button"
-        className="button"
-        onClick={openConfirmPanel}
-        disabled={isPromoteLocked}
-      >
-        {status === "pending" ? "Promoting staging to production..." : "Promote to production"}
-      </button>
+      <div style={{ display: "flex", justifyContent: "center", padding: "0.35rem 0" }}>
+        <button
+          type="button"
+          className="button"
+          style={{ width: "min(100%, 18rem)" }}
+          onClick={openConfirmPanel}
+          disabled={isPromoteLocked}
+        >
+          {status === "pending" ? "Promoting staging to production..." : "Promote to production"}
+        </button>
+      </div>
 
       {isPromoteLocked && promoteLockReason ? (
         <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>

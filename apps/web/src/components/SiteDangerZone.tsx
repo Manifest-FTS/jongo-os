@@ -83,15 +83,12 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
   return (
     <>
       <ToastStack toasts={toasts} onDismiss={dismiss} />
-      <article className="card" style={{ borderColor: "var(--danger, #dc2626)" }}>
+      <article className="card" style={{ borderColor: "var(--danger, #dc2626)", marginTop: "2rem" }}>
         <h2 style={{ margin: 0, color: "var(--danger, #dc2626)" }}>Danger Zone</h2>
-        <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>
-          Irreversible actions. Read them before you click.
-        </p>
 
         <div
           style={{
-            marginTop: "0.9rem",
+            marginTop: "0.75rem",
             display: "flex",
             alignItems: "flex-start",
             justifyContent: "space-between",
@@ -102,8 +99,7 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
           <div style={{ maxWidth: "38rem" }}>
             <h4 style={{ margin: 0, fontSize: "0.95rem" }}>Delete this app</h4>
             <p className="card-muted" style={{ margin: "0.25rem 0 0" }}>
-              Removes <strong>{siteName}</strong> from Jongo, along with its backup catalogue, collaborators and
-              settings. By default the running site in Coolify is left alone.
+              Remove <strong>{siteName}</strong> from Jongo. The live site remains online unless you also destroy its Coolify resource.
             </p>
 
             {hasCoolifyResource ? (
@@ -118,18 +114,12 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
                   style={{ marginTop: "0.2rem" }}
                 />
                 <span className="card-muted" style={{ margin: 0 }}>
-                  Also destroy the Coolify resource. This takes the site offline and deletes its containers and
-                  volumes. <strong>Backups already taken are not affected</strong>, but nothing new will be captured.
+                  Also destroy the Coolify resource, including its containers and volumes.
                 </span>
               </label>
             ) : null}
 
             {error ? <p className="form-error" style={{ margin: "0.6rem 0 0" }}>{error}</p> : null}
-            {!canDelete ? (
-              <p className="card-muted" style={{ margin: "0.6rem 0 0" }}>
-                Only organisation admins can delete an app.
-              </p>
-            ) : null}
           </div>
 
           <button
@@ -137,6 +127,7 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
             className="btn btn-danger"
             onClick={() => setOpen(true)}
             disabled={!canDelete || busy}
+            title={!canDelete ? "Only organisation admins can delete an app." : undefined}
           >
             {busy ? "Deleting..." : "Delete app"}
           </button>

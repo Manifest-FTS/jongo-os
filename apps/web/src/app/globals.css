@@ -1873,7 +1873,7 @@ main {
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  margin-bottom: 15px;
+  margin-bottom: 1.25rem;
 }
 
 /* Automatic-backup schedule strip, above the backup list. */
@@ -2013,6 +2013,14 @@ main {
   color: var(--muted);
 }
 
+.bk-backup-note {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .bk-tag {
   display: inline-block;
   margin-top: 0.3rem;
@@ -2069,6 +2077,42 @@ main {
   border-radius: 10px;
   padding: 0.4rem;
   box-shadow: var(--shadow);
+  display: grid;
+  gap: 0.15rem;
+}
+
+.bk-menu__item {
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bk-menu__item:hover:not(:disabled),
+.bk-menu__item:focus-visible {
+  background: var(--surface-alt);
+}
+
+.bk-menu__item:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.bk-menu__item--danger {
+  color: #8c1d18;
+}
+
+.bk-menu__item--danger:hover:not(:disabled),
+.bk-menu__item--danger:focus-visible {
+  background: #fdf4f3;
 }
 
 .bk-empty {
