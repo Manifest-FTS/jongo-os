@@ -58,13 +58,17 @@ async function flushCache(request: Request, { params }: Params) {
     return NextResponse.json({ ok: false, message: "Not found or insufficient permissions" }, { status: 404 });
   }
 
-  // Same bar as the other write action on this panel (the domain slug save).
+  // Collaborators included. This used to reuse canManageDomains — the bar for
+  // the domain slug save — which made it admin-only, while both panels that
+  // offer the button rendered it enabled for anyone signed in. A collaborator
+  // therefore got a 403 from a live-looking button. A flush is non-destructive
+  // and its own capability now, so the gate and the UI agree.
   const permissionSnapshot = await resolveSitePermissionSnapshot({
     siteId,
     workspace,
     viewer: { userId: session.user.id, email: session.user.email }
   });
-  if (!permissionSnapshot.canManageDomains) {
+  if (!permissionSnapshot.canFlushCache) {
     return NextResponse.json(
       { ok: false, message: "You do not have permission to flush this app's cache." },
       { status: 403 }
