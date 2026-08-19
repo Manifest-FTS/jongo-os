@@ -67,3 +67,47 @@ export function describeRestorability(input: {
   }
   return { restorable: true, reason: "restorable", message: "" };
 }
+
+export type Downloadability = {
+  downloadable: boolean;
+  reason: RestorabilityReason;
+  /** End-user copy. Empty when downloadable. */
+  message: string;
+};
+
+/**
+ * "Can this catalogue row be downloaded?" — deliberately the SAME predicate as
+ * restorability, because the requirement is identical: the run succeeded and the
+ * restic snapshot it points at still exists. Sharing `describeRestorability`
+ * rather than restating the checks is the point of this module; a download that
+ * disagreed with a restore about whether a snapshot exists is exactly the drift
+ * this file was written to prevent.
+ *
+ * Only the copy differs. Reusing the restore wording would tell someone their
+ * download failed because the backup "cannot be restored", which sends them
+ * looking for a restore they never asked for.
+ */
+export function describeDownloadability(input: {
+  status: string | null | undefined;
+  resticSnapshotId: string | null | undefined;
+}): Downloadability {
+  const restorability = describeRestorability(input);
+  if (restorability.restorable) {
+    return { downloadable: true, reason: "restorable", message: "" };
+  }
+
+  const messages: Record<RestorabilityReason, string> = {
+    restorable: "",
+    in_progress: "This backup is still running. It can be downloaded once it finishes.",
+    failed: "This backup did not complete successfully, so there is nothing to download.",
+    expired:
+      "This backup has passed its retention period and was removed from offsite storage, so it can no longer be downloaded.",
+    no_snapshot: "This backup has no offsite snapshot recorded, so there is nothing to download."
+  };
+
+  return {
+    downloadable: false,
+    reason: restorability.reason,
+    message: messages[restorability.reason]
+  };
+}
