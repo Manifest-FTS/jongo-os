@@ -6,7 +6,8 @@ import { showSuccessToast } from "@/lib/ui/toast";
 
 type Props = {
   siteId: string;
-  canManageActions: boolean;
+  /** Gates the flush button only — every other control here is a stub. */
+  canFlushCache: boolean;
   initialStagingEnabled: boolean;
   hasDetectedStagingTarget: boolean;
 };
@@ -40,7 +41,7 @@ function StubToggle({
 
 export default function WordPressAdvancedControls({
   siteId,
-  canManageActions,
+  canFlushCache,
   initialStagingEnabled,
   hasDetectedStagingTarget
 }: Props) {
@@ -105,7 +106,7 @@ export default function WordPressAdvancedControls({
               type="button"
               className="btn"
               onClick={flushCache}
-              disabled={!canManageActions || flushingCache}
+              disabled={!canFlushCache || flushingCache}
             >
               {flushingCache ? "Flushing..." : "Flush Cache"}
             </button>

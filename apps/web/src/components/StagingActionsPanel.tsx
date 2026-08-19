@@ -20,7 +20,8 @@ type Props = {
   siteId: string;
   /** False when there is no staging copy to act on. */
   stagingReady: boolean;
-  canManage: boolean;
+  /** Gates the flush button only — the other rows in this panel are stubs. */
+  canFlushCache: boolean;
 };
 
 function PendingRow({ title, help }: { title: string; help: string }) {
@@ -39,7 +40,7 @@ function PendingRow({ title, help }: { title: string; help: string }) {
   );
 }
 
-export default function StagingActionsPanel({ siteId, stagingReady, canManage }: Props) {
+export default function StagingActionsPanel({ siteId, stagingReady, canFlushCache }: Props) {
   const { toasts, push, dismiss } = useToasts();
   const [flushing, setFlushing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export default function StagingActionsPanel({ siteId, stagingReady, canManage }:
               type="button"
               className="btn"
               onClick={flushStagingCache}
-              disabled={!canManage || !stagingReady || flushing}
+              disabled={!canFlushCache || !stagingReady || flushing}
             >
               {flushing ? "Flushing…" : "Flush cache"}
             </button>

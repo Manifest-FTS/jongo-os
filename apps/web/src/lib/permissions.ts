@@ -18,6 +18,7 @@ export interface UserPermissions {
   isCollaborator: boolean;
   canManageTeam: boolean;
   canManageBackups: boolean;
+  canFlushCache: boolean;
   canManageStaging: boolean;
   canEditDomains: boolean;
   canTogglePrivacyMode: boolean;
@@ -103,6 +104,12 @@ export function getPermissions(callerRole: unknown, isPlatformAdmin = false): Us
     isCollaborator: !isAdmin,
     canManageTeam: isAdmin,
     canManageBackups: true,
+    // Open to collaborators, like backups and staging. Flushing a cache is
+    // non-destructive — the contents regenerate on the next request — and it is
+    // the first thing anyone debugging a stale page needs to try. Gating it
+    // behind admin meant a collaborator who could see the problem had to find
+    // someone else to press the button.
+    canFlushCache: true,
     canManageStaging: true,
     canEditDomains: isAdmin,
     canTogglePrivacyMode: true,

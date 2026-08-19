@@ -102,7 +102,7 @@ export default async function SiteSettingsPage({ params }: Params) {
         <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)", alignItems: "start" }}>
           <WordPressAdvancedControls
             siteId={siteId}
-            canManageActions={Boolean(session?.user?.id)}
+            canFlushCache={permissionSnapshot.canFlushCache}
             initialStagingEnabled={Boolean(workspace.stagingEnabled)}
             hasDetectedStagingTarget={stagingTargetAttached}
           />
