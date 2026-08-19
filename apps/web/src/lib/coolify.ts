@@ -6,6 +6,7 @@ import { resolveStagingServerUuid, type ServerResolution } from "./coolify-serve
 import { encodeComposeForCoolify } from "./compose-encoding";
 import { detectDatabaseEnv } from "./database-env-detect";
 import { CoolifyRateLimitError, CoolifyHttpError, isNotFoundError, isRateLimitError, noteRateLimited, rateLimitCooldownRemaining } from "./coolify-rate-limit";
+import { retryOnceAfterRateLimit } from "./rate-limit-retry";
 import { pickStagingTarget } from "./staging-target-match";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
@@ -2764,7 +2765,9 @@ export async function provisionCoolifyStagingFromProduction(
       : [...serviceCandidateRequests, ...applicationCandidateRequests, ...fallbackCandidateRequests];
 
   for (const request of candidateRequests) {
-    const result = await coolifyMutateWithResponse(request.path, "POST", request.body);
+    const result = await retryOnceAfterRateLimit(
+      () => coolifyMutateWithResponse(request.path, "POST", request.body)
+    );
     provisioningAttempts.push({
       path: request.path,
       method: "POST",

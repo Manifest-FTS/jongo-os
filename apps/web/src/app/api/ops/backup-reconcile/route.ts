@@ -12,6 +12,7 @@ import { decideStaleRun, DEFAULT_STALE_RUN_HOURS } from "@/lib/stale-run";
 import { orderDueRehearsals, DEFAULT_REHEARSAL_INTERVAL_DAYS } from "@/lib/backup-rehearsal";
 import { scheduledBackupsDefaultEnabled } from "@/lib/backup-schedule";
 import { notifyBackupEvent } from "@/lib/site-notify";
+import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -81,6 +82,44 @@ export async function POST(request: Request) {
     if (liveIndex.complete === false && isRateLimited()) {
       rateLimited = true;
     }
+
+    // Coolify is the ownership source of truth. Only linked projects with an
+    // active project ID match are eligible for automatic site import; name-based
+    // matching is intentionally skipped so ownership stays deterministic.
+    const IMPORT_PROJECT_SITES_MAX_PER_RUN = Number(process.env.JONGO_IMPORT_PROJECT_SITES_MAX_PER_RUN || 8) || 8;
+    let projectSitesImported = 0;
+    let projectSitesCreated = 0;
+    let projectSitesSkipped = 0;
+    try {
+      const organizations = await db.organization.findMany({
+        where: { deletedAt: null },
+        select: { id: true },
+        orderBy: { createdAt: "asc" }
+      });
+
+      for (const organization of organizations) {
+        if (projectSitesImported >= IMPORT_PROJECT_SITES_MAX_PER_RUN) break;
+        try {
+          const importResult = await importLinkedCoolifyProjectSites(organization.id);
+          projectSitesImported += 1;
+          projectSitesCreated += importResult.createdSites;
+          projectSitesSkipped += importResult.skippedSites;
+          if (isRateLimited()) {
+            rateLimited = true;
+            break;
+          }
+        } catch (error) {
+          if (isRateLimitError(error)) {
+            rateLimited = true;
+            break;
+          }
+        }
+      }
+    } catch {
+      // Import is best-effort. Never let a linked-project sync failure break the
+      // backup reconciliation pass that is already running.
+    }
+
     let mappingsRepaired = 0;
     let mappingsStaleUnresolved = 0;
     let stagingEnvsEnsured = 0;
@@ -700,6 +739,13 @@ export async function POST(request: Request) {
         intervalDays: rehearsalIntervalDays,
         due: rehearsalsDue,
         started: rehearsalStarted
+      },
+      linkedProjectImport: {
+        maxPerRun: IMPORT_PROJECT_SITES_MAX_PER_RUN,
+        processed: projectSitesImported,
+        created: projectSitesCreated,
+        skipped: projectSitesSkipped,
+        rateLimited
       },
       scheduledBackups: {
         platformDefaultEnabled: scheduleDefaultOn,

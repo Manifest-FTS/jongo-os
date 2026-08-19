@@ -102,9 +102,7 @@ export default async function SiteSettingsPage({ params }: Params) {
         <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)", alignItems: "start" }}>
           <WordPressAdvancedControls
             siteId={siteId}
-            canManageDomainSlug={Boolean(session?.user?.id)}
-            initialDomainSlug={workspace.temporaryDomainSlug ?? workspace.slug ?? undefined}
-            initialDomainSuffix={workspace.temporaryDomainSuffix ?? undefined}
+            canManageActions={Boolean(session?.user?.id)}
             initialStagingEnabled={Boolean(workspace.stagingEnabled)}
             hasDetectedStagingTarget={stagingTargetAttached}
           />

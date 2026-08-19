@@ -426,6 +426,37 @@ export default async function StagingPage({ params, searchParams }: Params) {
           minute per open tab this page was a major consumer of the 200/min
           budget — rate-limiting itself into reporting staging as missing. */}
       <PageAutoRefresh intervalMs={60000} />
+
+      {stagingConfigured ? (
+        <article className="card">
+          <h3 className="card-title">Go Live!</h3>
+          <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+            Move staging changes to production (live site).
+          </p>
+          <PromoteToProductionCard
+            siteId={siteId}
+            disabled={Boolean(promoteLockedReason)}
+            disabledReason={promoteLockedReason}
+            preflightLabel={stagingToProdPreflight.label}
+            preflightTone={stagingToProdPreflight.tone}
+          />
+
+          {/* Two columns, matching the reference layout: actions on the left,
+              reference facts on the right. */}
+          <div className="split-2 split-2--spaced">
+            <StagingActionsPanel
+              siteId={siteId}
+              stagingReady={stagingConfigured}
+              canManage={permissionSnapshot.canManageStaging}
+            />
+            <StagingSiteFacts
+              siteId={siteId}
+              stagingUrl={reportedStagingDomains[0] ?? preferredDomainValue ?? null}
+            />
+          </div>
+        </article>
+      ) : null}
+
       {/* Status header */}
       <article className="card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
@@ -470,36 +501,6 @@ export default async function StagingPage({ params, searchParams }: Params) {
           </p>
         ) : null}
       </article>
-
-      {stagingConfigured ? (
-        <article className="card">
-          <h3 className="card-title">Go Live!</h3>
-          <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
-            Move staging changes to production (live site).
-          </p>
-          <PromoteToProductionCard
-            siteId={siteId}
-            disabled={Boolean(promoteLockedReason)}
-            disabledReason={promoteLockedReason}
-            preflightLabel={stagingToProdPreflight.label}
-            preflightTone={stagingToProdPreflight.tone}
-          />
-
-          {/* Two columns, matching the reference layout: actions on the left,
-              reference facts on the right. */}
-          <div className="split-2 split-2--spaced">
-            <StagingActionsPanel
-              siteId={siteId}
-              stagingReady={stagingConfigured}
-              canManage={permissionSnapshot.canManageStaging}
-            />
-            <StagingSiteFacts
-              siteId={siteId}
-              stagingUrl={reportedStagingDomains[0] ?? preferredDomainValue ?? null}
-            />
-          </div>
-        </article>
-      ) : null}
 
       {latestPromoteOutcome && latestPromoteOutcome.actionType !== "staging_promote_triggered" && latestPromoteOutcome.actionType !== "staging_promote_in_progress" ? (
         <article className="card">

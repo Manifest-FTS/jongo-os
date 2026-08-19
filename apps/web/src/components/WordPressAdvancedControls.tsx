@@ -1,21 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import SiteStagingToggle from "@/components/SiteStagingToggle";
-import {
-  DEFAULT_TEMPORARY_DOMAIN_SUFFIX,
-  TEMPORARY_DOMAIN_SUFFIX_OPTIONS,
-  buildTemporaryProductionDomain,
-  normalizeTemporaryDomainSlug
-} from "@/lib/temporary-domains";
 import { showSuccessToast } from "@/lib/ui/toast";
 
 type Props = {
   siteId: string;
-  canManageDomainSlug: boolean;
-  initialDomainSlug?: string;
-  initialDomainSuffix?: string;
+  canManageActions: boolean;
   initialStagingEnabled: boolean;
   hasDetectedStagingTarget: boolean;
 };
@@ -49,26 +40,13 @@ function StubToggle({
 
 export default function WordPressAdvancedControls({
   siteId,
-  canManageDomainSlug,
-  initialDomainSlug,
-  initialDomainSuffix,
+  canManageActions,
   initialStagingEnabled,
   hasDetectedStagingTarget
 }: Props) {
-  const router = useRouter();
-  const [domainSlug, setDomainSlug] = useState(initialDomainSlug ?? "");
-  const [domainSuffix, setDomainSuffix] = useState(initialDomainSuffix ?? DEFAULT_TEMPORARY_DOMAIN_SUFFIX);
-  const [savingDomain, setSavingDomain] = useState(false);
-  const [domainError, setDomainError] = useState<string | null>(null);
   const [flushingCache, setFlushingCache] = useState(false);
   const [cacheError, setCacheError] = useState<string | null>(null);
   const [cacheNote, setCacheNote] = useState<string | null>(null);
-
-  const normalizedSlug = useMemo(() => normalizeTemporaryDomainSlug(domainSlug) || "", [domainSlug]);
-  const previewDomain = useMemo(
-    () => buildTemporaryProductionDomain({ slug: normalizedSlug || "site", suffix: domainSuffix }),
-    [normalizedSlug, domainSuffix]
-  );
 
   /**
    * Flush the site's caches.
@@ -108,83 +86,12 @@ export default function WordPressAdvancedControls({
     }
   }
 
-  async function saveDomainSettings() {
-    setSavingDomain(true);
-    setDomainError(null);
-
-    try {
-      const response = await fetch(`/api/sites/${siteId}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          temporaryDomainSlug: normalizedSlug || undefined,
-          temporaryDomainSuffix: domainSuffix
-        })
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setDomainError(data.error ?? "Failed to save domain slug settings");
-        return;
-      }
-
-      showSuccessToast("Domain slug settings saved.");
-      router.refresh();
-    } catch {
-      setDomainError("Network error while saving domain settings.");
-    } finally {
-      setSavingDomain(false);
-    }
-  }
-
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
       <article className="card">
         <h2 style={{ margin: 0 }}>Quick Actions</h2>
 
         <div style={{ marginTop: "0.9rem", display: "grid", gap: "0.8rem" }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "1rem" }}>Domain Slug</h3>
-            <p className="card-muted" style={{ margin: "0.35rem 0 0.75rem" }}>
-              Control the preferred temporary production domain for this app.
-            </p>
-            <div className="form-stack" style={{ marginTop: 0 }}>
-              <label className="form-label" style={{ marginBottom: "-0.25rem" }}>Site Slug</label>
-              <input
-                className="form-input mono-input"
-                value={domainSlug}
-                onChange={(event) => setDomainSlug(event.target.value)}
-                placeholder="site-slug"
-                disabled={!canManageDomainSlug}
-              />
-              <label className="form-label" style={{ marginBottom: "-0.25rem" }}>Preferred Domain</label>
-              <select
-                className="form-input"
-                value={domainSuffix}
-                onChange={(event) => setDomainSuffix(event.target.value)}
-                disabled={!canManageDomainSlug}
-              >
-                {TEMPORARY_DOMAIN_SUFFIX_OPTIONS.map((suffix) => (
-                  <option key={suffix} value={suffix}>
-                    https://{buildTemporaryProductionDomain({ slug: normalizedSlug || "site", suffix }) ?? `site.${suffix}`}
-                  </option>
-                ))}
-              </select>
-              {domainError ? <p className="form-error" style={{ margin: 0 }}>{domainError}</p> : null}
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  className="btn"
-                  style={{ width: "min(100%, 7.5rem)" }}
-                  onClick={saveDomainSettings}
-                  disabled={!canManageDomainSlug || savingDomain}
-                >
-                  {savingDomain ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </div>
-          </div>
-
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
             <div>
               <h4 style={{ margin: 0, fontSize: "0.95rem" }}>Flush Cache</h4>
@@ -198,7 +105,7 @@ export default function WordPressAdvancedControls({
               type="button"
               className="btn"
               onClick={flushCache}
-              disabled={!canManageDomainSlug || flushingCache}
+              disabled={!canManageActions || flushingCache}
             >
               {flushingCache ? "Flushing..." : "Flush Cache"}
             </button>
