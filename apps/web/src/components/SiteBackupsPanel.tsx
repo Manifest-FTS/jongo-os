@@ -562,15 +562,33 @@ export default function SiteBackupsPanel({
                           >
                             {b.label ? "Edit note" : "Add a note"}
                           </button>
-                          <button
-                            type="button"
-                            className="bk-menu__item"
-                            disabled
-                            title="Backup downloads are coming soon."
+                          {/*
+                            A real link, not a fetch: the browser streams the
+                            archive straight to disk, where fetch() would have to
+                            hold a multi-gigabyte body in memory first. Opened in
+                            a new tab so that if the API refuses (Backblaze
+                            unreachable, snapshot expired) its JSON lands there
+                            instead of navigating this page away mid-session; a
+                            successful download never renders, so the tab closes
+                            on its own.
+                          */}
+                          <a
+                            className="bk-menu__item bk-menu__item--link"
+                            href={`/api/sites/${siteId}/backups/${b.id}/download`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => {
+                              setOpenMenu(null);
+                              push({
+                                tone: "info",
+                                title: "Preparing your download",
+                                text: "The archive starts once it has been read from Backblaze. Large sites can take a few minutes."
+                              });
+                            }}
                             role="menuitem"
                           >
                             Download this backup
-                          </button>
+                          </a>
                           <button
                             type="button"
                             className="bk-menu__item bk-menu__item--danger"
