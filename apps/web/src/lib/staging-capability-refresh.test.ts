@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { preserveResolvedStagingCapability } from "./staging-capability-refresh";
+import {
+  preserveResolvedStagingCapability,
+  resolveStagingSyncReadiness
+} from "./staging-capability-refresh";
 
 describe("preserveResolvedStagingCapability", () => {
   it("keeps the staging UUID when a post-deploy refresh returns fetch_error", () => {
@@ -29,5 +32,11 @@ describe("preserveResolvedStagingCapability", () => {
     };
 
     expect(preserveResolvedStagingCapability(resolved, refreshed)).toBe(refreshed);
+  });
+
+  it("does not call required content sync 'not required' when the target UUID is missing", () => {
+    expect(resolveStagingSyncReadiness(true, undefined)).toBe("missing_target");
+    expect(resolveStagingSyncReadiness(true, "staging-uuid")).toBe("ready");
+    expect(resolveStagingSyncReadiness(false, undefined)).toBe("not_required");
   });
 });

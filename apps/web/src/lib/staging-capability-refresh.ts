@@ -15,3 +15,14 @@ export function preserveResolvedStagingCapability<T extends StagingCapabilityLik
 
   return refreshed;
 }
+
+export function resolveStagingSyncReadiness(
+  requiresContentSync: boolean,
+  stagingServiceUuid?: string
+): "ready" | "not_required" | "missing_target" {
+  if (!requiresContentSync) {
+    return "not_required";
+  }
+
+  return stagingServiceUuid?.trim() ? "ready" : "missing_target";
+}

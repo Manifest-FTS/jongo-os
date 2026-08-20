@@ -16,7 +16,10 @@ import {
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
 import { waitForStagingCapabilityToClear } from "@/lib/staging-capability-clear";
-import { preserveResolvedStagingCapability } from "@/lib/staging-capability-refresh";
+import {
+  preserveResolvedStagingCapability,
+  resolveStagingSyncReadiness
+} from "@/lib/staging-capability-refresh";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import { retryOnceAfterRateLimitError } from "@/lib/rate-limit-retry";
@@ -1519,11 +1522,15 @@ export async function POST(req: Request, { params }: Params) {
     });
     const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
 
-    let capabilityAfterProvision = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
+    let capabilityAfterProvision = await retryOnceAfterRateLimitError(() =>
+      getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
+    );
     if (!capabilityAfterProvision.applicationUuid) {
       for (const retryDelayMs of [250, 500]) {
         await sleep(retryDelayMs);
-        const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
+        const retriedCapability = await retryOnceAfterRateLimitError(() =>
+          getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
+        );
         capabilityAfterProvision = retriedCapability;
         if (retriedCapability.applicationUuid) {
           break;
@@ -1630,8 +1637,12 @@ export async function POST(req: Request, { params }: Params) {
     let autoContentSync: AutoContentSyncResult = {
       attempted: false,
       ok: false,
-      reason: "not_required",
-      message: "Automatic content sync not required."
+      reason: resolveStagingSyncReadiness(requiresContentSync, capabilityAfterProvision.applicationUuid) === "missing_target"
+        ? "missing_identifiers"
+        : "not_required",
+      message: resolveStagingSyncReadiness(requiresContentSync, capabilityAfterProvision.applicationUuid) === "missing_target"
+        ? "Automatic content sync is required, but Coolify did not report the staging target UUID. Retry from Staging Actions."
+        : "Automatic content sync not required."
     };
 
     if (requiresContentSync && capabilityAfterProvision.applicationUuid) {

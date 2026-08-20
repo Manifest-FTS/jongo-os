@@ -1279,6 +1279,13 @@ main {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  min-width: 0;
+}
+
+.auth-name-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
 }
 
 .auth-field label {
@@ -1289,6 +1296,9 @@ main {
 }
 
 .auth-field input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   border: 1px solid rgba(209, 213, 219, 0.7);
   border-radius: 12px;
   padding: 0.75rem 1rem;
@@ -1299,6 +1309,12 @@ main {
   outline: none;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 2px rgba(21, 34, 34, 0.05) inset;
+}
+
+@media (max-width: 520px) {
+  .auth-name-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .auth-field input:focus {

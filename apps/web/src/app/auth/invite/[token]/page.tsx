@@ -193,7 +193,7 @@ export default function AcceptInvitePage() {
                   placeholder="kevin.adams"
                 />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
+              <div className="auth-name-grid">
                 <div className="auth-field" style={{ marginBottom: 0 }}>
                   <label htmlFor="firstName">First name</label>
                   <input

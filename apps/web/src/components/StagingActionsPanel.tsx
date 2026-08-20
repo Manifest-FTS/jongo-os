@@ -42,6 +42,7 @@ function PendingRow({ title, help }: { title: string; help: string }) {
 export default function StagingActionsPanel({ siteId, stagingReady, canManage }: Props) {
   const { toasts, push, dismiss } = useToasts();
   const [flushing, setFlushing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,6 +78,30 @@ export default function StagingActionsPanel({ siteId, stagingReady, canManage }:
     }
   }
 
+  async function syncFromProduction() {
+    if (!window.confirm("Replace staging files and database content with the current production site? Staging-only changes will be lost.")) {
+      return;
+    }
+
+    setSyncing(true);
+    setError(null);
+    setNote(null);
+    try {
+      const response = await fetch(`/api/sites/${siteId}/staging/sync`, { method: "POST" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        setError(payload?.message ?? "Production content could not be synced to staging.");
+        return;
+      }
+
+      push({ tone: "success", title: payload.message ?? "Production content synced to staging." });
+    } catch {
+      setError("Production content could not be synced to staging — the request did not complete.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
     <div className="stack">
       <ToastStack toasts={toasts} onDismiss={dismiss} />
@@ -108,10 +133,24 @@ export default function StagingActionsPanel({ siteId, stagingReady, canManage }:
           </div>
         </div>
 
-        <PendingRow
-          title="Reset staging environment"
-          help="Create a new staging copy from the live site. The current staging site will be lost."
-        />
+        <div className="panel-row">
+          <div className="panel-row__body">
+            <h4 className="panel-row__title">Sync from production</h4>
+            <p className="panel-row__help">
+              Replace staging files and database content with the current live site.
+            </p>
+          </div>
+          <div className="panel-row__control">
+            <button
+              type="button"
+              className="btn"
+              onClick={syncFromProduction}
+              disabled={!canManage || !stagingReady || syncing}
+            >
+              {syncing ? "Syncing…" : "Sync content"}
+            </button>
+          </div>
+        </div>
         <PendingRow
           title="Reset login attempts"
           help="Clear a WordPress login lockout without waiting it out."
