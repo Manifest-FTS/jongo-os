@@ -7,6 +7,7 @@ import { encodeComposeForCoolify } from "./compose-encoding";
 import { detectDatabaseEnv } from "./database-env-detect";
 import { CoolifyRateLimitError, CoolifyHttpError, isNotFoundError, isRateLimitError, noteRateLimited, rateLimitCooldownRemaining } from "./coolify-rate-limit";
 import { retryOnceAfterRateLimit } from "./rate-limit-retry";
+import { extractCreatedResourceUuid } from "./staging-capability-refresh";
 import { pickStagingTarget } from "./staging-target-match";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
@@ -1140,6 +1141,8 @@ export type CoolifyActionResult = {
     | "environment_create_failed";
   /** HTTP status from Coolify, when the failure came from a rejected request. */
   status?: number;
+  /** UUID returned by Coolify when this action creates a resource. */
+  resourceUuid?: string;
   /** Provisioning attempt diagnostics for staged create/delete flows. */
   attempts?: Array<{
     path: string;
@@ -2531,9 +2534,12 @@ export async function provisionCoolifyStagingFromProduction(
     }
   };
 
-  const createServiceFromSource = async (stagingEnvironment: StagingEnvironmentResolution): Promise<boolean> => {
+  const createServiceFromSource = async (stagingEnvironment: StagingEnvironmentResolution): Promise<{
+    created: boolean;
+    resourceUuid?: string;
+  }> => {
     if (!stagingEnvironment.stagingEnvironmentId || !stagingEnvironment.stagingEnvironmentName) {
-      return false;
+      return { created: false };
     }
 
     let sourceService: Record<string, unknown> | null = null;
@@ -2550,7 +2556,7 @@ export async function provisionCoolifyStagingFromProduction(
     }
 
     if (!sourceService) {
-      return false;
+      return { created: false };
     }
 
     // Coolify stopped exposing server_uuid on services and id on servers, which
@@ -2633,7 +2639,7 @@ export async function provisionCoolifyStagingFromProduction(
           ? serverResolution.reason ?? "Could not determine which Coolify server to create the staging copy on."
           : "Could not determine which Coolify project the staging copy belongs to."
       });
-      return false;
+      return { created: false };
     }
 
     const baseBody: Record<string, unknown> = {
@@ -2680,7 +2686,7 @@ export async function provisionCoolifyStagingFromProduction(
         error:
           "Coolify did not report a service type or compose file for this app, so there was nothing to copy for staging."
       });
-      return false;
+      return { created: false };
     }
 
     for (const body of candidateBodies) {
@@ -2696,10 +2702,13 @@ export async function provisionCoolifyStagingFromProduction(
         continue;
       }
 
-      return true;
+      return {
+        created: true,
+        resourceUuid: extractCreatedResourceUuid(createResult.body)
+      };
     }
 
-    return false;
+    return { created: false };
   };
 
   const resourceUuid = encodeURIComponent(provisioningResource.uuid || appUuid);
@@ -2784,6 +2793,7 @@ export async function provisionCoolifyStagingFromProduction(
           ? "Staging provisioning request sent to Coolify."
           : "Staging provisioning request was accepted by Coolify and is still settling.",
         reason: "request_sent",
+        resourceUuid: extractCreatedResourceUuid(result.body),
         attempts: provisioningAttempts
       };
     }
@@ -2805,12 +2815,13 @@ export async function provisionCoolifyStagingFromProduction(
 
   if (stagingEnvironment) {
     const createdFromSource = await createServiceFromSource(stagingEnvironment);
-    if (createdFromSource) {
+    if (createdFromSource.created) {
       return {
         mode: "live",
         ok: true,
         message: "Staging target created in Coolify.",
         reason: "service_created",
+        resourceUuid: createdFromSource.resourceUuid,
         attempts: provisioningAttempts
       };
     }
