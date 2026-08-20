@@ -6,6 +6,7 @@ const dbMocks = vi.hoisted(() => ({
   queryRaw: vi.fn(),
   siteFindMany: vi.fn(),
   siteCreate: vi.fn(),
+  siteUpdate: vi.fn(),
   siteBackupFindMany: vi.fn(),
   siteBackupFindFirst: vi.fn(),
   backupRestoreVerificationFindMany: vi.fn()
@@ -49,7 +50,8 @@ vi.mock("@/lib/db", () => ({
     $queryRaw: dbMocks.queryRaw,
     site: {
       findMany: dbMocks.siteFindMany,
-      create: dbMocks.siteCreate
+      create: dbMocks.siteCreate,
+      update: dbMocks.siteUpdate
     },
     siteBackup: {
       findMany: dbMocks.siteBackupFindMany,
@@ -216,6 +218,7 @@ describe("importLinkedCoolifyProjectSites", () => {
       linkedProjectCount: 1,
       matchedCoolifySites: 2,
       createdSites: 1,
+      updatedSites: 0,
       skippedSites: 1,
       backupReconciledSites: 1,
       backupsAlreadyConfigured: 1,
@@ -275,6 +278,7 @@ describe("importLinkedCoolifyProjectSites", () => {
       linkedProjectCount: 1,
       matchedCoolifySites: 0,
       createdSites: 0,
+      updatedSites: 0,
       skippedSites: 0,
       backupReconciledSites: 0,
       backupsAlreadyConfigured: 0,
@@ -291,6 +295,7 @@ describe("importLinkedCoolifyProjectSites", () => {
       linkedProjectCount: 1,
       matchedCoolifySites: 1,
       createdSites: 1,
+      updatedSites: 0,
       skippedSites: 0,
       backupReconciledSites: 0,
       backupsAlreadyConfigured: 0,
@@ -310,5 +315,67 @@ describe("importLinkedCoolifyProjectSites", () => {
     expect(routeMocks.importLinkedCoolifyProjectSites).toHaveBeenCalledWith("org-1");
     expect(routeMocks.importLinkedCoolifyProjectSites).toHaveBeenCalledWith("org-2");
     expect(payload.ok).toBe(true);
+  });
+
+  it("refreshes same-UUID metadata from a strictly linked Coolify project", async () => {
+    dbMocks.organizationFindFirst.mockResolvedValue({
+      id: "org-1",
+      coolifyProjectId: "project-1",
+      coolifyProjectName: "Current Project"
+    });
+    dbMocks.queryRaw.mockResolvedValue([]);
+    dbMocks.siteFindMany
+      .mockResolvedValueOnce([
+        {
+          id: "site-1",
+          name: "Old App Name",
+          slug: "stable-slug",
+          coolifyServiceId: "coolify-site-1",
+          coolifyServiceUuid: "coolify-site-1",
+          coolifyProjectId: "project-1",
+          coolifyProjectName: "Old Project Name"
+        }
+      ])
+      .mockResolvedValueOnce([{ coolifyServiceUuid: "coolify-site-1" }]);
+    vi.mocked(getCoolifyOverview).mockResolvedValue({
+      mode: "live",
+      generatedAt: "2026-08-19T00:00:00.000Z",
+      projects: [],
+      environments: [],
+      deployments: [],
+      stats: { healthySites: 1, degradedSites: 0, errorSites: 0, unknownSites: 0 },
+      sites: [
+        {
+          id: "coolify-site-1",
+          name: "Renamed in Coolify",
+          deployTargetId: "coolify-site-1",
+          status: "healthy",
+          productionStatus: "healthy",
+          stagingStatus: "unknown",
+          siteType: "wordpress",
+          coolifyProjectId: "project-1",
+          coolifyProjectName: "Current Project",
+          coolifyEnvironmentId: "env-1",
+          coolifyEnvironmentName: "production",
+          resourceType: "service"
+        }
+      ]
+    });
+
+    const result = await importLinkedCoolifyProjectSites("org-1");
+
+    expect(result.updatedSites).toBe(1);
+    expect(result.createdSites).toBe(0);
+    expect(dbMocks.siteUpdate).toHaveBeenCalledWith({
+      where: { id: "site-1" },
+      data: {
+        name: "Renamed in Coolify",
+        coolifyServiceId: "coolify-site-1",
+        coolifyServiceUuid: "coolify-site-1",
+        coolifyProjectId: "project-1",
+        coolifyProjectName: "Current Project"
+      },
+      select: { id: true }
+    });
   });
 });

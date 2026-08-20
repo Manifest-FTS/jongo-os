@@ -89,6 +89,7 @@ export async function POST(request: Request) {
     const IMPORT_PROJECT_SITES_MAX_PER_RUN = Number(process.env.JONGO_IMPORT_PROJECT_SITES_MAX_PER_RUN || 8) || 8;
     let projectSitesImported = 0;
     let projectSitesCreated = 0;
+    let projectSitesUpdated = 0;
     let projectSitesSkipped = 0;
     try {
       const organizations = await db.organization.findMany({
@@ -103,6 +104,7 @@ export async function POST(request: Request) {
           const importResult = await importLinkedCoolifyProjectSites(organization.id);
           projectSitesImported += 1;
           projectSitesCreated += importResult.createdSites;
+          projectSitesUpdated += importResult.updatedSites;
           projectSitesSkipped += importResult.skippedSites;
           if (isRateLimited()) {
             rateLimited = true;
@@ -744,6 +746,7 @@ export async function POST(request: Request) {
         maxPerRun: IMPORT_PROJECT_SITES_MAX_PER_RUN,
         processed: projectSitesImported,
         created: projectSitesCreated,
+        updated: projectSitesUpdated,
         skipped: projectSitesSkipped,
         rateLimited
       },
