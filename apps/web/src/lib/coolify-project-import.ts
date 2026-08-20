@@ -10,6 +10,7 @@ export type CoolifyProjectImportResult = {
   linkedProjectCount: number;
   matchedCoolifySites: number;
   createdSites: number;
+  updatedSites: number;
   skippedSites: number;
   backupReconciledSites: number;
   backupsAlreadyConfigured: number;
@@ -123,6 +124,7 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
       linkedProjectCount: 0,
       matchedCoolifySites: 0,
       createdSites: 0,
+      updatedSites: 0,
       skippedSites: 0,
       backupReconciledSites: 0,
       backupsAlreadyConfigured: 0,
@@ -137,6 +139,7 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
       linkedProjectCount: linkedProjects.length,
       matchedCoolifySites: 0,
       createdSites: 0,
+      updatedSites: 0,
       skippedSites: 0,
       backupReconciledSites: 0,
       backupsAlreadyConfigured: 0,
@@ -151,50 +154,89 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
   );
 
   const existingSites: Array<{
+    id: string;
     name: string;
     slug: string;
     coolifyServiceId: string | null;
     coolifyServiceUuid: string | null;
     coolifyProjectId: string | null;
+    coolifyProjectName: string | null;
   }> = await db.site.findMany({
     where: { organizationId, deletedAt: null },
     select: {
+      id: true,
       name: true,
       slug: true,
       coolifyServiceId: true,
       coolifyServiceUuid: true,
-      coolifyProjectId: true
+      coolifyProjectId: true,
+      coolifyProjectName: true
     }
   });
 
   const existingNames = new Set<string>(existingSites.map((site) => normalized(site.name)).filter((value): value is string => Boolean(value)));
   const existingSlugs = new Set<string>(existingSites.map((site) => site.slug).filter((value): value is string => Boolean(value)));
   const existingCoolifyIdentifiers = new Set<string>();
+  const existingSitesByCoolifyIdentifier = new Map<string, typeof existingSites[number]>();
 
   for (const site of existingSites) {
-    if (site.coolifyServiceId) existingCoolifyIdentifiers.add(site.coolifyServiceId);
-    if (site.coolifyServiceUuid) existingCoolifyIdentifiers.add(site.coolifyServiceUuid);
+    if (site.coolifyServiceId) {
+      existingCoolifyIdentifiers.add(site.coolifyServiceId);
+      existingSitesByCoolifyIdentifier.set(site.coolifyServiceId, site);
+    }
+    if (site.coolifyServiceUuid) {
+      existingCoolifyIdentifiers.add(site.coolifyServiceUuid);
+      existingSitesByCoolifyIdentifier.set(site.coolifyServiceUuid, site);
+    }
     if (site.coolifyProjectId) existingCoolifyIdentifiers.add(site.coolifyProjectId);
   }
 
   let createdSites = 0;
+  let updatedSites = 0;
   let skippedSites = 0;
 
   for (const site of coolifySites) {
     const normalizedName = normalized(site.name);
     const projectId = site.coolifyProjectId;
+    const linkedProject = linkedProjects.find((project) => project.coolifyProjectId === projectId);
+    const coolifyProjectName = site.coolifyProjectName ?? linkedProject?.coolifyProjectName ?? null;
+    const existingByIdentifier = existingSitesByCoolifyIdentifier.get(site.id) ??
+      existingSitesByCoolifyIdentifier.get(site.deployTargetId);
+
+    if (existingByIdentifier) {
+      const serviceId = site.deployTargetId || site.id;
+      const metadataChanged =
+        existingByIdentifier.name !== site.name ||
+        existingByIdentifier.coolifyServiceId !== serviceId ||
+        existingByIdentifier.coolifyServiceUuid !== site.id ||
+        existingByIdentifier.coolifyProjectId !== projectId ||
+        existingByIdentifier.coolifyProjectName !== coolifyProjectName;
+
+      if (metadataChanged) {
+        await db.site.update({
+          where: { id: existingByIdentifier.id },
+          data: {
+            name: site.name,
+            coolifyServiceId: serviceId,
+            coolifyServiceUuid: site.id,
+            coolifyProjectId: projectId,
+            coolifyProjectName
+          },
+          select: { id: true }
+        });
+        updatedSites += 1;
+      } else {
+        skippedSites += 1;
+      }
+      continue;
+    }
 
     if (
-      existingCoolifyIdentifiers.has(site.id) ||
-      existingCoolifyIdentifiers.has(site.deployTargetId) ||
       (normalizedName && existingNames.has(normalizedName))
     ) {
       skippedSites += 1;
       continue;
     }
-
-    const linkedProject = linkedProjects.find((project) => project.coolifyProjectId === projectId);
-    const coolifyProjectName = site.coolifyProjectName ?? linkedProject?.coolifyProjectName ?? null;
 
     const candidateSlug = createSiteSlug(site, existingSlugs);
 
@@ -277,6 +319,7 @@ export async function importLinkedCoolifyProjectSites(organizationId: string): P
     linkedProjectCount: linkedProjects.length,
     matchedCoolifySites: coolifySites.length,
     createdSites,
+    updatedSites,
     skippedSites,
     backupReconciledSites: appUuids.length,
     backupsAlreadyConfigured,
