@@ -10,7 +10,7 @@ type Props = {
   /** Typed by the operator to confirm. The slug, because it is unambiguous. */
   siteSlug: string;
   siteName: string;
-  /** False for non-admins: the API refuses them anyway, so do not offer it. */
+  /** False for non-admins. The whole section is hidden, not just disabled. */
   canDelete: boolean;
   /** Whether this app is linked to a Coolify resource that could also go. */
   hasCoolifyResource: boolean;
@@ -30,6 +30,14 @@ type Props = {
  * customer's site down.
  */
 export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, hasCoolifyResource }: Props) {
+  // Hidden outright rather than shown disabled. A greyed-out "Delete app" still
+  // tells a collaborator this is theirs to attempt and invites a support ticket
+  // when it refuses; the section is admin-only, so for everyone else there is
+  // nothing here worth a heading that says "Danger".
+  if (!canDelete) {
+    return null;
+  }
+
   const router = useRouter();
   const { toasts, push, dismiss } = useToasts();
   const [open, setOpen] = useState(false);

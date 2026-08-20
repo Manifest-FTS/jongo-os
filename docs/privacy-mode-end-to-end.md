@@ -5,8 +5,17 @@
 - Persisted on `Site` (`privacyMode*` columns, migration
   `20260820120000_add_site_privacy_mode`), including who changed it and whether
   the proxy actually reflects it.
-- `GET/POST /api/sites/[siteId]/privacy-mode`, gated on `canTogglePrivacyMode`
-  and writing an `AuditLog` row for every attempt and outcome.
+- `GET/POST /api/sites/[siteId]/privacy-mode`, writing an `AuditLog` row for
+  every attempt and outcome. Permissions are split by direction, because the two
+  are not equally safe:
+  - `canEnablePrivacyMode` (both roles) — turning protection on, and reading the
+    credentials, which a collaborator needs in order to use what they may enable.
+  - `canDisablePrivacyMode` (admin) — turning it off publishes a site somebody
+    deliberately hid, and a page a crawler has already fetched cannot be
+    un-indexed on demand.
+  - `canManagePrivacyCredentials` (admin) — renaming the user or regenerating the
+    password cuts off anyone already using them. Exempt on first provision, when
+    there is nothing yet to break.
 - Enforcement is live: a Traefik router written to the proxy's watched dynamic
   directory applies HTTP Basic Auth ahead of Coolify's own router. See
   `lib/privacy-mode.ts` for why a separate higher-priority router is used rather

@@ -19,6 +19,7 @@ type Ctx = {
   siteRow: { id: string; organizationId?: string | null } & Record<string, unknown>;
   resourceUuid: string;
   actorId: string;
+  permissions: { canDisablePrivacyMode: boolean; canManagePrivacyCredentials: boolean };
 };
 
 /**
@@ -102,7 +103,7 @@ async function resolve(siteId: string): Promise<
     workspace,
     viewer: { userId: session.user.id, email: session.user.email }
   });
-  if (!permissions.canTogglePrivacyMode) {
+  if (!permissions.canEnablePrivacyMode) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -130,7 +131,7 @@ async function resolve(siteId: string): Promise<
   }
 
   const resourceUuid = String(workspace.coolifyServiceUuid ?? "").trim();
-  return { ok: true, ctx: { db, siteRow, resourceUuid, actorId: session.user.id } };
+  return { ok: true, ctx: { db, siteRow, resourceUuid, actorId: session.user.id, permissions } };
 }
 
 /** Current persisted state, including whether the proxy actually reflects it. */
@@ -154,11 +155,43 @@ export async function POST(request: Request, { params }: Params) {
   const { siteId } = await params;
   const resolved = await resolve(siteId);
   if (!resolved.ok) return resolved.response;
-  const { db, siteRow, resourceUuid, actorId } = resolved.ctx;
+  const { db, siteRow, resourceUuid, actorId, permissions } = resolved.ctx;
   const organizationId = (siteRow.organizationId as string | undefined) ?? null;
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
   const enabled = Boolean((body as any)?.enabled);
+
+  // Turning privacy OFF publishes a site somebody deliberately hid.
+  if (!enabled && !permissions.canDisablePrivacyMode) {
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "forbidden",
+        message: "Only organisation admins can turn privacy mode off and make this site public."
+      },
+      { status: 403 }
+    );
+  }
+
+  // Rotating or renaming cuts off everyone already using the credentials. The
+  // first provision is exempt: there is nothing yet to break, and someone who
+  // may enable privacy mode has to be given a way in.
+  const alreadyProvisioned = Boolean(siteRow.privacyModePassword);
+  const wantsCredentialChange =
+    Boolean((body as any)?.regenerate) ||
+    (typeof (body as any)?.username === "string" &&
+      (body as any).username !== (siteRow.privacyModeUsername ?? DEFAULT_PRIVACY_USERNAME));
+  if (enabled && alreadyProvisioned && wantsCredentialChange && !permissions.canManagePrivacyCredentials) {
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "forbidden",
+        message:
+          "Only organisation admins can change the privacy mode username or password, because anyone already using them would lose access."
+      },
+      { status: 403 }
+    );
+  }
 
   if (!resourceUuid) {
     return NextResponse.json(

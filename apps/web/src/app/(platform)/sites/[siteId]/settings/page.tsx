@@ -145,6 +145,7 @@ export default async function SiteSettingsPage({ params }: Params) {
           <p className="card-muted" style={{ marginBottom: "1rem" }}>Update name, description, and infrastructure links.</p>
           <SiteInfoForm
             siteId={siteId}
+            canDelete={permissionSnapshot.canDeleteSite}
             initial={{
               name: workspace.name,
               description: workspace.description,
@@ -251,7 +252,7 @@ export default async function SiteSettingsPage({ params }: Params) {
         siteId={siteId}
         siteSlug={workspace.slug ?? String(siteId)}
         siteName={workspace.name || workspace.slug || String(siteId)}
-        canDelete={permissionSnapshot.role === "admin"}
+        canDelete={permissionSnapshot.canDeleteSite}
         hasCoolifyResource={Boolean(workspace.coolifyServiceUuid?.trim())}
       />
     </div>

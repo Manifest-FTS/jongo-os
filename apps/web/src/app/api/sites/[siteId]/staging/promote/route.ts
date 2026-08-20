@@ -294,6 +294,29 @@ export async function POST(req: Request, { params }: Params) {
 
   const { siteId } = await params;
 
+  // Promote REPLACES production with the staging copy. This route checked only
+  // that someone was signed in, so any collaborator could overwrite a live site.
+  // The ops-token path is exempt: it is automation, with no user to check.
+  if (!authorizedByToken && actorId) {
+    const { getSiteWorkspace } = await import("@/lib/repositories");
+    const { resolveSitePermissionSnapshot } = await import("@/lib/permissions");
+    const workspace = await getSiteWorkspace(siteId, { userId: actorId, email: session?.user?.email });
+    if (!workspace) {
+      return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+    const permissions = await resolveSitePermissionSnapshot({
+      siteId,
+      workspace,
+      viewer: { userId: actorId, email: session?.user?.email }
+    });
+    if (!permissions.canPromoteStaging) {
+      return NextResponse.json(
+        { error: "Only organisation admins can promote staging to production." },
+        { status: 403 }
+      );
+    }
+  }
+
   let body: PromoteBody;
   try {
     body = await req.json();

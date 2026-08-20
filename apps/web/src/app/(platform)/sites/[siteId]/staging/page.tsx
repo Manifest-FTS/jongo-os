@@ -281,7 +281,9 @@ export default async function StagingPage({ params, searchParams }: Params) {
     }
   });
 
-  const canManageDomains = Boolean(session?.user?.id && permissionSnapshot.canManageStaging);
+  // Was derived from the staging permission, which is open to collaborators —
+  // so domain controls were offered to people the domain API refuses.
+  const canManageDomains = Boolean(session?.user?.id && permissionSnapshot.canEditDomains);
 
   const stagingEnabled = Boolean(workspace?.stagingEnabled);
   const appUuid = workspace?.coolifyServiceUuid;
@@ -337,7 +339,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const backupReadiness = getBackupReadiness(backupInventory, appUuid, jongoBackupState);
   const prodToStagingPreflight = getPathPreflight("production-to-staging", backupReadiness, stagingConfigured);
   const stagingToProdPreflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
-  const promoteLockedReason = !canManageDomains
+  const promoteLockedReason = !permissionSnapshot.canPromoteStaging
     ? "You do not have permission to promote staging to production."
     : stagingToProdPreflight.tone === "error"
       ? stagingToProdPreflight.detail
@@ -452,7 +454,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
               siteId={siteId}
               stagingReady={stagingConfigured}
               canFlushCache={permissionSnapshot.canFlushCache}
-              canManageStaging={permissionSnapshot.canManageStaging}
+              canSyncStaging={permissionSnapshot.canSyncStaging}
             />
             <StagingSiteFacts
               siteId={siteId}

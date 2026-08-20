@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const permissions = await resolveSitePermissionSnapshot({ siteId, workspace, viewer });
-  if (!permissions.canManageStaging) {
+  if (!permissions.canSyncStaging) {
     return NextResponse.json(
       { ok: false, message: "You do not have permission to sync this staging site." },
       { status: 403 }

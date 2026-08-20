@@ -11,6 +11,8 @@ import {
 
 type Props = {
   siteId: string;
+  /** False for non-admins. The delete control is hidden, not just disabled. */
+  canDelete?: boolean;
   initial: {
     name: string;
     description?: string;
@@ -22,7 +24,7 @@ type Props = {
   };
 };
 
-export default function SiteInfoForm({ siteId, initial }: Props) {
+export default function SiteInfoForm({ siteId, initial, canDelete = false }: Props) {
   const router = useRouter();
   const initialDerivedTemporarySlug = normalizeTemporaryDomainSlug(initial.name);
   const [name, setName] = useState(initial.name);
@@ -221,9 +223,11 @@ export default function SiteInfoForm({ siteId, initial }: Props) {
           />
           Also delete linked Coolify resource (if linked)
         </label>
-        <button type="button" className="btn btn-danger" disabled={deleting || loading} onClick={handleDeleteSite}>
-          {deleting ? "Deleting…" : "Delete App"}
-        </button>
+        {canDelete ? (
+          <button type="button" className="btn btn-danger" disabled={deleting || loading} onClick={handleDeleteSite}>
+            {deleting ? "Deleting…" : "Delete App"}
+          </button>
+        ) : null}
       </div>
     </form>
   );
