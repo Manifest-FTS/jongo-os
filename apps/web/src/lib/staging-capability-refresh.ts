@@ -26,3 +26,32 @@ export function resolveStagingSyncReadiness(
 
   return stagingServiceUuid?.trim() ? "ready" : "missing_target";
 }
+
+export function extractCreatedResourceUuid(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const direct = typeof record.uuid === "string"
+    ? record.uuid
+    : typeof record.id === "string"
+      ? record.id
+      : undefined;
+  if (direct?.trim()) {
+    return direct.trim();
+  }
+
+  const data = record.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return undefined;
+  }
+
+  const nested = data as Record<string, unknown>;
+  const nestedUuid = typeof nested.uuid === "string"
+    ? nested.uuid
+    : typeof nested.id === "string"
+      ? nested.id
+      : undefined;
+  return nestedUuid?.trim() || undefined;
+}

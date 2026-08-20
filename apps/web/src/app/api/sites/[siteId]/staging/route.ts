@@ -1522,9 +1522,34 @@ export async function POST(req: Request, { params }: Params) {
     });
     const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
 
-    let capabilityAfterProvision = await retryOnceAfterRateLimitError(() =>
-      getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
-    );
+    let capabilityAfterProvision: Awaited<ReturnType<typeof getCoolifyAppStagingCapability>>;
+    if (provisionResult.resourceUuid) {
+      capabilityAfterProvision = {
+        detected: true,
+        resourceKind: "service",
+        applicationUuid: provisionResult.resourceUuid,
+        status: "unknown",
+        note: "provision_response",
+        checkedAt: new Date().toISOString()
+      };
+      try {
+        const refreshedCapability = await retryOnceAfterRateLimitError(() =>
+          getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
+        );
+        capabilityAfterProvision = preserveResolvedStagingCapability(
+          capabilityAfterProvision,
+          refreshedCapability
+        );
+      } catch {
+        // The create response UUID is authoritative enough to apply the
+        // preferred domain, start the service, and sync content. A transient
+        // inventory read must not undo a successful creation response.
+      }
+    } else {
+      capabilityAfterProvision = await retryOnceAfterRateLimitError(() =>
+        getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
+      );
+    }
     if (!capabilityAfterProvision.applicationUuid) {
       for (const retryDelayMs of [250, 500]) {
         await sleep(retryDelayMs);
