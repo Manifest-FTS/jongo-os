@@ -448,6 +448,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
               siteId={siteId}
               stagingReady={stagingConfigured}
               canFlushCache={permissionSnapshot.canFlushCache}
+              canManageStaging={permissionSnapshot.canManageStaging}
             />
             <StagingSiteFacts
               siteId={siteId}
