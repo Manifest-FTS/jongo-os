@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toClientFacingStagingMessage } from "@/lib/staging-client-copy";
 
 type Props = {
   siteId: string;
   initialEnabled: boolean;
   hasDetectedStagingTarget: boolean;
+  showInfrastructureDetails?: boolean;
 };
 
 type PendingAction = "enable" | "disable" | null;
@@ -37,7 +39,12 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedStagingTarget }: Props) {
+export default function SiteStagingToggle({
+  siteId,
+  initialEnabled,
+  hasDetectedStagingTarget,
+  showInfrastructureDetails = false
+}: Props) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
   const [detectedStagingTarget, setDetectedStagingTarget] = useState(hasDetectedStagingTarget);
@@ -52,6 +59,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
   const [modalMode, setModalMode] = useState<ModalMode>("confirm");
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeAttempt, setFinalizeAttempt] = useState(0);
+  const visibleMessage = (value?: string | null) =>
+    showInfrastructureDetails ? value ?? null : toClientFacingStagingMessage(value);
 
   useEffect(() => {
     setDetectedStagingTarget(hasDetectedStagingTarget);
@@ -150,8 +159,8 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       }
 
       if (!response.ok) {
-        setError(payload?.error ?? "Unable to update staging state.");
-        setActionHint(payload?.actionHint ?? null);
+        setError(visibleMessage(payload?.error) ?? "Unable to update staging state.");
+        setActionHint(visibleMessage(payload?.actionHint));
         setModalMode("result");
         setModalOpen(true);
         return;
@@ -160,15 +169,19 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
       setEnabled(nextEnabled);
       setPendingAction(null);
       setBurnOnDisable(true);
-      setMessage(payload?.message ?? (nextEnabled ? "Staging enabled." : "Staging disabled."));
-      setActionHint(payload?.actionHint ?? null);
+      setMessage(visibleMessage(payload?.message) ?? (nextEnabled ? "Staging enabled." : "Staging disabled."));
+      setActionHint(visibleMessage(payload?.actionHint));
       setManualProvisionRequired(Boolean(payload?.manualProvisionRequired));
       setModalMode("result");
       setModalOpen(true);
 
       const disableCleanupFailed = !nextEnabled && burnExisting && payload?.destroyed === false;
       if (disableCleanupFailed) {
-        setActionHint((previous) => previous ?? "Staging was disabled in Jongo, but resource cleanup failed in the infrastructure panel. Resolve cleanup manually before running another destructive toggle.");
+        setActionHint((previous) => previous ?? (
+          showInfrastructureDetails
+            ? "Staging was disabled in Jongo, but resource cleanup failed in the infrastructure panel. Resolve cleanup manually before running another destructive toggle."
+            : "Staging could not be fully removed. Try again later or contact support."
+        ));
       }
 
       const shouldFinalize = nextEnabled && !Boolean(payload?.manualProvisionRequired);
@@ -308,7 +321,9 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
 
       {enableBlockedByResidualStaging ? (
         <p style={{ margin: 0, fontSize: "0.78rem", color: "#a15c00", maxWidth: "320px", textAlign: "right" }}>
-          Re-enable is blocked while staging resources still exist. Finish unprovisioning in Coolify first.
+          {showInfrastructureDetails
+            ? "Re-enable is blocked while staging resources still exist. Finish unprovisioning in Coolify first."
+            : "Staging is still being removed. Wait a few minutes and try again."}
         </p>
       ) : null}
 
@@ -402,7 +417,9 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                 ) : null}
                 {manualProvisionRequired ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
-                    {actionHint ?? "Manual provisioning in the infrastructure panel is required before staging will be detected."}
+                    {actionHint ?? (showInfrastructureDetails
+                      ? "Manual provisioning in the infrastructure panel is required before staging will be detected."
+                      : "Staging setup needs attention. Please contact your administrator.")}
                   </p>
                 ) : null}
                 {error && actionHint && !manualProvisionRequired ? (
@@ -412,7 +429,9 @@ export default function SiteStagingToggle({ siteId, initialEnabled, hasDetectedS
                 ) : null}
                 {showPendingStagingHint ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
-                    Staging is enabled in Jongo, but no staging target is detected yet. Check the Staging tab in Coolify and refresh in a few minutes.
+                    {showInfrastructureDetails
+                      ? "Staging is enabled in Jongo, but no staging target is detected yet. Check the Staging tab in Coolify and refresh in a few minutes."
+                      : "Staging setup is still finishing. Wait a few minutes and refresh."}
                   </p>
                 ) : null}
                 {finalizing ? (

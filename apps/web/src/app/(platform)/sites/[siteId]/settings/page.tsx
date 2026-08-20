@@ -43,7 +43,7 @@ export default async function SiteSettingsPage({ params }: Params) {
             Jongo could not resolve this app record right now. Refresh in a moment and try again.
           </p>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>
-            If this persists, run Settings sync and verify the app mapping in Coolify.
+            If this persists, contact your administrator or support.
           </p>
         </div>
       </div>
@@ -103,6 +103,7 @@ export default async function SiteSettingsPage({ params }: Params) {
           <WordPressAdvancedControls
             siteId={siteId}
             canFlushCache={permissionSnapshot.canFlushCache}
+            showInfrastructureDetails={canViewInternalMetadata}
             initialStagingEnabled={Boolean(workspace.stagingEnabled)}
             hasDetectedStagingTarget={stagingTargetAttached}
           />
@@ -185,6 +186,7 @@ export default async function SiteSettingsPage({ params }: Params) {
               siteId={siteId}
               initialEnabled={Boolean(workspace.stagingEnabled)}
               hasDetectedStagingTarget={stagingTargetAttached}
+              showInfrastructureDetails={canViewInternalMetadata}
             />
           </div>
           {stagingConfigured ? (

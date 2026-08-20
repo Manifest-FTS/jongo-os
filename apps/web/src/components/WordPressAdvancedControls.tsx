@@ -8,6 +8,7 @@ type Props = {
   siteId: string;
   /** Gates the flush button only — every other control here is a stub. */
   canFlushCache: boolean;
+  showInfrastructureDetails?: boolean;
   initialStagingEnabled: boolean;
   hasDetectedStagingTarget: boolean;
 };
@@ -42,6 +43,7 @@ function StubToggle({
 export default function WordPressAdvancedControls({
   siteId,
   canFlushCache,
+  showInfrastructureDetails = false,
   initialStagingEnabled,
   hasDetectedStagingTarget
 }: Props) {
@@ -128,6 +130,7 @@ export default function WordPressAdvancedControls({
               siteId={siteId}
               initialEnabled={initialStagingEnabled}
               hasDetectedStagingTarget={hasDetectedStagingTarget}
+              showInfrastructureDetails={showInfrastructureDetails}
             />
           </div>
 
