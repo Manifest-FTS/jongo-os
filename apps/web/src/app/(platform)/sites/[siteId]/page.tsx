@@ -12,6 +12,7 @@ import InfrastructureDiagnostics from "@/components/InfrastructureDiagnostics";
 import SiteOverviewCollaboratorsCard from "@/components/SiteOverviewCollaboratorsCard";
 import SiteIpAddressCard from "@/components/SiteIpAddressCard";
 import SitePrivacyModeControl from "@/components/SitePrivacyModeControl";
+import SftpAccessCard from "@/components/SftpAccessCard";
 import { buildTemporaryProductionDomain } from "@/lib/temporary-domains";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 
@@ -455,6 +456,10 @@ export default async function SiteOverviewPage({ params }: Params) {
           <SiteOverviewCollaboratorsCard siteId={siteId} currentUserId={session?.user?.id ?? ""} clientId={workspace.clientId} />
 
           <SiteIpAddressCard ipAddress={hostingServerIp} countryName={hostingServerCountryName} />
+
+          <article className="card">
+            <SftpAccessCard siteId={siteId} canManage={permissions.canManageBackups} />
+          </article>
 
           <article className="card">
             <SitePrivacyModeControl

@@ -228,6 +228,7 @@ model Site {
   wordpressTelemetryConfig WordPressTelemetryConfig?
   wordpressPluginInventory WordPressPluginInventory?
   backups                  SiteBackup[]
+  sftpAccounts             SftpAccount[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -616,6 +617,38 @@ enum SecurityFindingSeverity {
   MEDIUM
   HIGH
   CRITICAL
+}
+
+// An SFTP account for one app's files volume.
+//
+// Its own table rather than columns on Site: an app may eventually need more
+// than one account (agency plus client, or a time-limited one for a migration),
+// and rotating or revoking one should not touch the Site row.
+//
+// password is stored in cleartext, deliberately and for the same reason as
+// privacy mode: the dashboard shows the credential so an operator can hand it
+// to a client, which a hash cannot support. SFTPGo keeps its own hashed copy —
+// this one exists only to display.
+model SftpAccount {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId   String @db.Uuid
+  username String @unique
+  password String
+  // Absolute path inside the SFTP service that this account is confined to.
+  homePath String
+
+  // 'active' | 'failed' — whether the SFTP service actually reflects this row.
+  status        String  @default("active")
+  providerError String?
+
+  createdBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  lastRotatedAt DateTime?
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
 }
 
 model SecurityScanResult {
