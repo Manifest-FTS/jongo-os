@@ -15,45 +15,95 @@ vi.mock("@/lib/repositories", () => ({ isClientAdmin: vi.fn().mockResolvedValue(
 const { checkIsPlatformAdmin, getPermissions } = await import("./permissions");
 
 describe("getPermissions", () => {
-  it("lets a collaborator flush the cache", () => {
-    // The reason this capability exists: a flush is non-destructive and is the
-    // first thing anyone debugging a stale page reaches for.
-    expect(getPermissions("collaborator").canFlushCache).toBe(true);
-    expect(getPermissions("collaborator").isCollaborator).toBe(true);
+  const admin = getPermissions("admin");
+  const collaborator = getPermissions("collaborator");
+
+  it("lets a collaborator do the additive and reversible things", () => {
+    // Each of these either adds something or undoes cleanly, so withholding it
+    // just means the person who spotted the problem has to go find an admin.
+    expect(collaborator.canCreateBackup).toBe(true);
+    expect(collaborator.canAnnotateBackup).toBe(true);
+    expect(collaborator.canFlushCache).toBe(true);
+    expect(collaborator.canSyncStaging).toBe(true);
+    expect(collaborator.canEnablePrivacyMode).toBe(true);
   });
 
-  it("lets an admin and the platform admin flush the cache too", () => {
-    expect(getPermissions("admin").canFlushCache).toBe(true);
-    expect(getPermissions("collaborator", true).canFlushCache).toBe(true);
-  });
-
-  it("treats an unknown or missing role as a collaborator that can still flush", () => {
-    expect(getPermissions(undefined).canFlushCache).toBe(true);
-    expect(getPermissions(null).canFlushCache).toBe(true);
-    expect(getPermissions("something-else").canFlushCache).toBe(true);
-  });
-
-  it("does not widen anything else in the process", () => {
-    const collaborator = getPermissions("collaborator");
-    expect(collaborator.isAdmin).toBe(false);
+  it("does NOT let a collaborator destroy anything or hand out credentials", () => {
+    // The bug this guards: every one of these was true for collaborators, so a
+    // collaborator could overwrite production or download the whole site.
+    expect(collaborator.canRestoreBackup).toBe(false);
+    expect(collaborator.canPromoteStaging).toBe(false);
+    expect(collaborator.canDeleteSite).toBe(false);
+    expect(collaborator.canDownloadBackup).toBe(false);
+    expect(collaborator.canManageSftp).toBe(false);
+    expect(collaborator.canManageStagingEnvironment).toBe(false);
+    expect(collaborator.canManageBackupSchedule).toBe(false);
+    // Turning privacy OFF publishes a site somebody hid on purpose, and a page
+    // a crawler has already fetched cannot be un-indexed on demand.
+    expect(collaborator.canDisablePrivacyMode).toBe(false);
+    // Rotating credentials cuts off whoever is already using them.
+    expect(collaborator.canManagePrivacyCredentials).toBe(false);
     expect(collaborator.canManageTeam).toBe(false);
     expect(collaborator.canEditDomains).toBe(false);
     expect(collaborator.canViewDiagnostics).toBe(false);
   });
 
-  it("keeps flushing independent of editing domains, which is what it used to borrow", () => {
-    // The old gate was canManageDomains, derived from canEditDomains. If those
-    // two ever line up again for a collaborator, the admin-only bar is back.
-    const collaborator = getPermissions("collaborator");
-    expect(collaborator.canFlushCache).toBe(true);
-    expect(collaborator.canEditDomains).toBe(false);
+  it("lets a collaborator raise protection but never lower it", () => {
+    // The asymmetry is the point: the two directions of one switch are not
+    // equally safe, so they are not one permission.
+    expect(collaborator.canEnablePrivacyMode).toBe(true);
+    expect(collaborator.canDisablePrivacyMode).toBe(false);
+    expect(admin.canEnablePrivacyMode).toBe(true);
+    expect(admin.canDisablePrivacyMode).toBe(true);
   });
 
-  it("still restricts admin-only capabilities to admins", () => {
-    const admin = getPermissions("admin");
-    expect(admin.canManageTeam).toBe(true);
-    expect(admin.canEditDomains).toBe(true);
-    expect(admin.canViewDiagnostics).toBe(true);
+  it("gives an admin everything", () => {
+    for (const [name, value] of Object.entries(admin)) {
+      if (name === "isCollaborator") continue;
+      if (name === "isPlatformAdmin") continue;
+      expect(value, `admin should have ${name}`).toBe(true);
+    }
+  });
+
+  it("treats the platform admin as an admin regardless of role", () => {
+    const platform = getPermissions("collaborator", true);
+    expect(platform.isAdmin).toBe(true);
+    expect(platform.canRestoreBackup).toBe(true);
+    expect(platform.canDeleteSite).toBe(true);
+  });
+
+  it("treats an unknown or missing role as a collaborator, never as an admin", () => {
+    // Failing open here would hand a destructive capability to anyone whose
+    // role could not be read.
+    for (const role of [undefined, null, "", "something-else", 42, {}]) {
+      const p = getPermissions(role as unknown);
+      expect(p.isAdmin, `role ${String(role)} must not be admin`).toBe(false);
+      expect(p.canRestoreBackup).toBe(false);
+      expect(p.canDeleteSite).toBe(false);
+    }
+  });
+
+  it("keeps every destructive capability strictly tied to isAdmin", () => {
+    // A blanket check, so a capability added later cannot quietly default to
+    // "everyone" the way canManageBackups did.
+    const destructive = [
+      "canRestoreBackup",
+      "canDownloadBackup",
+      "canManageBackupSchedule",
+      "canManageSftp",
+      "canPromoteStaging",
+      "canManageStagingEnvironment",
+      "canDisablePrivacyMode",
+      "canManagePrivacyCredentials",
+      "canEditDomains",
+      "canDeleteSite",
+      "canManageTeam",
+      "canViewDiagnostics"
+    ] as const;
+    for (const cap of destructive) {
+      expect(admin[cap], `admin ${cap}`).toBe(true);
+      expect(collaborator[cap], `collaborator ${cap}`).toBe(false);
+    }
   });
 });
 

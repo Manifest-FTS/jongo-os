@@ -51,7 +51,7 @@ export async function GET(_request: Request, { params }: Params) {
   // The same gate as restore. A download is read-only for the site but it hands
   // over every file and the full database — including wp-config credentials —
   // so it is not a lesser permission than putting that same data back.
-  if (!permissionSnapshot.canManageBackups) {
+  if (!permissionSnapshot.canDownloadBackup) {
     return NextResponse.json({ error: "You do not have permission to download backups" }, { status: 403 });
   }
 

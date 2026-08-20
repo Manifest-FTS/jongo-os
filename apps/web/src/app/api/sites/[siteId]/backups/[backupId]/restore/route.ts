@@ -75,7 +75,7 @@ async function restoreBackup(request: Request, { params }: Params) {
       email: session.user.email
     }
   });
-  if (!permissionSnapshot.canManageBackups) {
+  if (!permissionSnapshot.canRestoreBackup) {
     return NextResponse.json({ error: "You do not have permission to restore backups" }, { status: 403 });
   }
 

@@ -1174,6 +1174,28 @@ export async function POST(req: Request, { params }: Params) {
 
   const { siteId } = await params;
 
+  // Creating or destroying a staging environment (burnExisting throws the
+  // current copy away) is an admin action. This checked only for a session.
+  if (!authorizedByToken && actorId) {
+    const { getSiteWorkspace } = await import("@/lib/repositories");
+    const { resolveSitePermissionSnapshot } = await import("@/lib/permissions");
+    const workspace = await getSiteWorkspace(siteId, { userId: actorId, email: session?.user?.email });
+    if (!workspace) {
+      return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+    const permissions = await resolveSitePermissionSnapshot({
+      siteId,
+      workspace,
+      viewer: { userId: actorId, email: session?.user?.email }
+    });
+    if (!permissions.canManageStagingEnvironment) {
+      return NextResponse.json(
+        { error: "Only organisation admins can create or remove a staging environment." },
+        { status: 403 }
+      );
+    }
+  }
+
   let body: { enabled?: boolean; burnExisting?: boolean };
   try {
     body = await req.json();
@@ -1911,6 +1933,31 @@ export async function PATCH(req: Request, { params }: Params) {
   const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session);
 
   const { siteId } = await params;
+
+  // This edits domains, so it takes the domain permission — the same bar the
+  // production domain editor uses. It previously took none.
+  {
+    const { getSiteWorkspace } = await import("@/lib/repositories");
+    const { resolveSitePermissionSnapshot } = await import("@/lib/permissions");
+    const workspace = await getSiteWorkspace(siteId, {
+      userId: session.user.id,
+      email: session.user.email
+    });
+    if (!workspace) {
+      return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
+    }
+    const permissions = await resolveSitePermissionSnapshot({
+      siteId,
+      workspace,
+      viewer: { userId: session.user.id, email: session.user.email }
+    });
+    if (!permissions.canEditDomains) {
+      return NextResponse.json(
+        { error: "Only organisation admins can change staging domains." },
+        { status: 403 }
+      );
+    }
+  }
 
   let body: { domains?: string };
   try {

@@ -22,9 +22,9 @@ type Params = { params: Promise<{ siteId: string }> };
  *   POST   — create it, or rotate the password ({ rotate: true })
  *   DELETE — revoke access
  *
- * Gated on canManageBackups: this hands out read/write access to every file the
- * site is built from, which is the same power as restoring a backup over it, and
- * a stricter bar than merely viewing the app.
+ * Gated on canManageSftp (admin only): this hands out read/write access to every
+ * file the site is built from, which is the same power as restoring a backup
+ * over it.
  */
 
 function present(account: Record<string, any> | null) {
@@ -70,7 +70,7 @@ async function resolve(siteId: string) {
     workspace,
     viewer: { userId: session.user.id, email: session.user.email }
   });
-  if (!permissions.canManageBackups) {
+  if (!permissions.canManageSftp) {
     return {
       ok: false as const,
       response: NextResponse.json(

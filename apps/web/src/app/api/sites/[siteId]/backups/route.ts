@@ -50,7 +50,7 @@ async function createBackup(request: Request, { params }: Params) {
       email: session.user.email
     }
   });
-  if (!permissionSnapshot.canManageBackups) {
+  if (!permissionSnapshot.canCreateBackup) {
     return NextResponse.json({ error: "You do not have permission to create backups" }, { status: 403 });
   }
 

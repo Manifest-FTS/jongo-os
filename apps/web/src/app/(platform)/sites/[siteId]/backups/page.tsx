@@ -530,7 +530,10 @@ export default async function BackupsPage({ params, searchParams }: Params) {
       <SiteBackupsPanel
         siteId={siteId}
         backups={siteBackupRows}
-        canManage={permissionSnapshot.canManageBackups && allowBackupAction}
+        canCreateBackup={permissionSnapshot.canCreateBackup && allowBackupAction}
+        canAnnotateBackup={permissionSnapshot.canAnnotateBackup}
+        canRestoreBackup={permissionSnapshot.canRestoreBackup && allowBackupAction}
+        canDownloadBackup={permissionSnapshot.canDownloadBackup}
         supported={isBackupable}
         unsupportedReason={
           isStagingResource

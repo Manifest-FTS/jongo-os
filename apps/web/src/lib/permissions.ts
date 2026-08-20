@@ -12,17 +12,65 @@ export interface AppCapabilities {
 
 export type CanonicalRole = "admin" | "collaborator";
 
+/**
+ * What a role may do, one capability per action.
+ *
+ * Deliberately NOT grouped into broad flags like "canManageBackups". That flag
+ * covered taking a backup, restoring one over the live site, and downloading
+ * every file and database credential the site has — three very different levels
+ * of trust behind one boolean, and because it was true for everyone, a
+ * collaborator could overwrite production. Each capability now names a single
+ * action so widening one cannot silently widen the others.
+ *
+ * The rule applied throughout: a collaborator may do anything that is additive
+ * or reversible, and nothing that destroys data, takes the site down, or hands
+ * out credentials.
+ */
 export interface UserPermissions {
   isPlatformAdmin: boolean;
   isAdmin: boolean;
   isCollaborator: boolean;
+
   canManageTeam: boolean;
-  canManageBackups: boolean;
+
+  /** Taking a backup only adds a restore point. */
+  canCreateBackup: boolean;
+  /** Editing the note on a backup changes nothing about the site. */
+  canAnnotateBackup: boolean;
+  /** DESTRUCTIVE — overwrites the live site's files and database. */
+  canRestoreBackup: boolean;
+  /** Hands over every file plus a database dump, including wp-config credentials. */
+  canDownloadBackup: boolean;
+  /** Changes how well the site is protected, and for how long. */
+  canManageBackupSchedule: boolean;
+
+  /** Issues credentials with read/write access to every file the site runs on. */
+  canManageSftp: boolean;
+
+  /** Writes to the staging copy only; production is untouched. */
+  canSyncStaging: boolean;
+  /** DESTRUCTIVE — replaces production with the staging copy. */
+  canPromoteStaging: boolean;
+  /** Creating or destroying the staging environment itself. */
+  canManageStagingEnvironment: boolean;
+
+  /** Non-destructive: caches regenerate on the next request. */
   canFlushCache: boolean;
-  canManageStaging: boolean;
   canEditDomains: boolean;
-  canTogglePrivacyMode: boolean;
+
+  /**
+   * Privacy mode is split three ways because the two directions are not
+   * equivalent. Turning it ON adds protection. Turning it OFF publishes a site
+   * somebody deliberately hid — and unlike most reversible actions, you cannot
+   * un-index a page a crawler already fetched.
+   */
+  canEnablePrivacyMode: boolean;
+  canDisablePrivacyMode: boolean;
+  /** Changing the username or regenerating the password. */
+  canManagePrivacyCredentials: boolean;
   canViewDiagnostics: boolean;
+  /** Removes the app, and optionally the running resource behind it. */
+  canDeleteSite: boolean;
 }
 
 export interface SitePermissionSnapshot extends UserPermissions {
@@ -102,18 +150,37 @@ export function getPermissions(callerRole: unknown, isPlatformAdmin = false): Us
     isPlatformAdmin,
     isAdmin,
     isCollaborator: !isAdmin,
+
     canManageTeam: isAdmin,
-    canManageBackups: true,
-    // Open to collaborators, like backups and staging. Flushing a cache is
-    // non-destructive — the contents regenerate on the next request — and it is
-    // the first thing anyone debugging a stale page needs to try. Gating it
-    // behind admin meant a collaborator who could see the problem had to find
-    // someone else to press the button.
+
+    // Additive or reversible — open to collaborators.
+    canCreateBackup: true,
+    canAnnotateBackup: true,
+    // Flushing a cache is non-destructive and is the first thing anyone
+    // debugging a stale page needs to try; making it admin-only meant whoever
+    // could see the problem had to find someone else to press the button.
     canFlushCache: true,
-    canManageStaging: true,
+    // Overwrites the staging copy, never production.
+    canSyncStaging: true,
+    // Both roles, per TSK-00829: making a site private protects it, and the
+    // person who notices it is public should not have to go find an admin.
+    canEnablePrivacyMode: true,
+
+    // Destroys data, takes the site down, or hands out credentials — admin only.
+    canRestoreBackup: isAdmin,
+    canDownloadBackup: isAdmin,
+    canManageBackupSchedule: isAdmin,
+    canManageSftp: isAdmin,
+    // Exposing the site, and rotating a credential already shared with a
+    // client, are both admin-only. A collaborator may raise protection, never
+    // lower it.
+    canDisablePrivacyMode: isAdmin,
+    canManagePrivacyCredentials: isAdmin,
+    canPromoteStaging: isAdmin,
+    canManageStagingEnvironment: isAdmin,
     canEditDomains: isAdmin,
-    canTogglePrivacyMode: true,
-    canViewDiagnostics: isAdmin
+    canViewDiagnostics: isAdmin,
+    canDeleteSite: isAdmin
   };
 }
 
@@ -203,7 +270,9 @@ export async function resolveSitePermissionSnapshot(
     ...permissions,
     role,
     canViewInternalMetadata,
-    canManageTelemetry: true,
+    // The telemetry API has always required an admin; this said otherwise, so a
+    // collaborator was shown controls that answered 403.
+    canManageTelemetry: permissions.isAdmin,
     canManageDomains: Boolean(userId && permissions.canEditDomains)
   };
 }

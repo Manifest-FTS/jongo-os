@@ -36,7 +36,7 @@ export async function PATCH(request: Request, { params }: Params) {
       workspace,
       viewer: { userId: session.user.id, email: session.user.email }
     });
-    if (!permissionSnapshot.canManageBackups) {
+    if (!permissionSnapshot.canAnnotateBackup) {
       return NextResponse.json(
         { error: "You do not have permission to edit backup notes" },
         { status: 403 }

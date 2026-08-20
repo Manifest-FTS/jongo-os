@@ -458,14 +458,16 @@ export default async function SiteOverviewPage({ params }: Params) {
           <SiteIpAddressCard ipAddress={hostingServerIp} countryName={hostingServerCountryName} />
 
           <article className="card">
-            <SftpAccessCard siteId={siteId} canManage={permissions.canManageBackups} />
+            <SftpAccessCard siteId={siteId} canManage={permissions.canManageSftp} />
           </article>
 
           <article className="card">
             <SitePrivacyModeControl
               siteId={siteId}
               isWordPress={isWordPress}
-              canToggle={permissions.canTogglePrivacyMode}
+              canEnable={permissions.canEnablePrivacyMode}
+              canDisable={permissions.canDisablePrivacyMode}
+              canManageCredentials={permissions.canManagePrivacyCredentials}
               isCollaboratorView={isCollaboratorView}
             />
           </article>

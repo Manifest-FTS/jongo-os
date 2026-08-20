@@ -6,7 +6,12 @@ import { showSuccessToast } from "@/lib/ui/toast";
 type Props = {
   siteId: string;
   isWordPress: boolean;
-  canToggle: boolean;
+  /** May turn protection ON. */
+  canEnable: boolean;
+  /** May turn it OFF, which makes the site public again. Admin only. */
+  canDisable: boolean;
+  /** May rename the user or regenerate the password. Admin only. */
+  canManageCredentials: boolean;
   isCollaboratorView: boolean;
 };
 
@@ -30,7 +35,9 @@ type PrivacyState = {
 export default function SitePrivacyModeControl({
   siteId,
   isWordPress,
-  canToggle,
+  canEnable,
+  canDisable,
+  canManageCredentials,
   isCollaboratorView
 }: Props) {
   const [state, setState] = useState<PrivacyState | null>(null);
@@ -95,8 +102,11 @@ export default function SitePrivacyModeControl({
   }
 
   const unavailable = !isWordPress;
-  const disabled = unavailable || !canToggle || busy || loading;
   const enabled = Boolean(state?.enabled);
+  // Which direction the switch would move decides whether this person may use
+  // it: turning protection on is open, turning it off is not.
+  const mayToggle = enabled ? canDisable : canEnable;
+  const disabled = unavailable || !mayToggle || busy || loading;
 
   const detail = unavailable
     ? "Privacy mode is currently only available for WordPress sites."
@@ -140,8 +150,10 @@ export default function SitePrivacyModeControl({
           title={
             unavailable
               ? "Privacy mode is only available for WordPress sites."
-              : !canToggle
-                ? "You do not have permission to change privacy mode."
+              : !mayToggle
+                ? enabled
+                  ? "Only organisation admins can turn privacy mode off and make this site public."
+                  : "You do not have permission to change privacy mode."
                 : "Toggle privacy mode"
           }
         >
@@ -191,7 +203,8 @@ export default function SitePrivacyModeControl({
                 onChange={(event) => setUsernameDraft(event.target.value.toLowerCase().replace(/\s+/g, ""))}
                 autoComplete="off"
                 spellCheck={false}
-                disabled={disabled}
+                disabled={disabled || !canManageCredentials}
+                readOnly={!canManageCredentials}
               />
             </label>
 
@@ -211,24 +224,29 @@ export default function SitePrivacyModeControl({
               <button type="button" className="btn" onClick={onCopyPassword} disabled={!state.password}>
                 {copied ? "Copied" : "Copy"}
               </button>
-              <button
-                type="button"
-                className="button button-secondary"
-                onClick={() => send({ enabled: true, username: usernameDraft }, "Privacy credentials updated.")}
-                disabled={disabled || !usernameDraft || usernameDraft === state.username}
-              >
-                Save username
-              </button>
-              <button
-                type="button"
-                className="button button-secondary"
-                onClick={() =>
-                  send({ enabled: true, username: usernameDraft, regenerate: true }, "New password generated.")
-                }
-                disabled={disabled}
-              >
-                Regenerate password
-              </button>
+              {canManageCredentials ? (
+                <>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => send({ enabled: true, username: usernameDraft }, "Privacy credentials updated.")}
+                    disabled={disabled || !usernameDraft || usernameDraft === state.username}
+                  >
+                    Save username
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() =>
+                      send({ enabled: true, username: usernameDraft, regenerate: true }, "New password generated.")
+                    }
+                    disabled={disabled}
+                    title="Anyone using the current password will lose access."
+                  >
+                    Regenerate password
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
         </div>

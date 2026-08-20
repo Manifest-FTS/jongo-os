@@ -49,7 +49,14 @@ function formatBytes(n: number | null): string | null {
 type Props = {
   siteId: string;
   backups: SiteBackupRow[];
-  canManage: boolean;
+  /** Taking a snapshot — additive, so collaborators may. */
+  canCreateBackup: boolean;
+  /** Editing a note — changes nothing about the site. */
+  canAnnotateBackup: boolean;
+  /** DESTRUCTIVE: overwrites the live site. Admin only. */
+  canRestoreBackup: boolean;
+  /** Hands over every file and a database dump. Admin only. */
+  canDownloadBackup: boolean;
   /** False when this resource cannot be full-site backed up. */
   supported?: boolean;
   /** Why it is unsupported, so the empty state can explain accurately. */
@@ -102,7 +109,10 @@ function Metric({ value, label }: { value: number | string | null; label: string
 export default function SiteBackupsPanel({
   siteId,
   backups,
-  canManage,
+  canCreateBackup,
+  canAnnotateBackup,
+  canRestoreBackup,
+  canDownloadBackup,
   supported = true,
   unsupportedReason = "no_state",
   externalDatabaseHost,
@@ -332,7 +342,7 @@ export default function SiteBackupsPanel({
             Full site snapshots — files and database.
           </p> */}
         </div>
-        {canManage ? (
+        {canCreateBackup ? (
           <button
             type="button"
             className="bk-btn bk-btn--primary"
@@ -420,7 +430,7 @@ export default function SiteBackupsPanel({
                 : unsupportedReason === "external_database"
                   ? `This app stores its data in an external database${externalDatabaseHost ? ` at ${externalDatabaseHost}` : ""}, which Jongo doesn't host and can't reach. Your data is not backed up here — set up backups with that provider, or move the database onto Jongo and we'll cover it automatically.`
                   : "This app runs without a database or persistent files, so there is no data to capture — its code is the source of truth. If it should have data, its Coolify resource mapping may be out of date; re-check it in app settings."
-              : canManage
+              : canCreateBackup
                 ? "Create the first snapshot — it captures files and the database together, offsite."
                 : "Backups will appear here once your administrator creates one."}
           </p>
@@ -535,7 +545,7 @@ export default function SiteBackupsPanel({
                 )}
 
                 <div className="bk-actions">
-                  {canManage && b.restorable ? (
+                  {(canAnnotateBackup || canDownloadBackup || canRestoreBackup) && b.restorable ? (
                     <>
                       <button
                         type="button"
@@ -550,18 +560,20 @@ export default function SiteBackupsPanel({
                       </button>
                       {openMenu === b.id ? (
                         <div className="bk-menu" role="menu">
-                          <button
-                            type="button"
-                            className="bk-menu__item"
-                            onClick={() => {
-                              setOpenMenu(null);
-                              setEditingNote({ id: b.id, value: b.label ?? "" });
-                            }}
-                            disabled={busy}
-                            role="menuitem"
-                          >
-                            {b.label ? "Edit note" : "Add a note"}
-                          </button>
+                          {canAnnotateBackup ? (
+                            <button
+                              type="button"
+                              className="bk-menu__item"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                setEditingNote({ id: b.id, value: b.label ?? "" });
+                              }}
+                              disabled={busy}
+                              role="menuitem"
+                            >
+                              {b.label ? "Edit note" : "Add a note"}
+                            </button>
+                          ) : null}
                           {/*
                             A real link, not a fetch: the browser streams the
                             archive straight to disk, where fetch() would have to
@@ -572,6 +584,7 @@ export default function SiteBackupsPanel({
                             successful download never renders, so the tab closes
                             on its own.
                           */}
+                          {canDownloadBackup ? (
                           <a
                             className="bk-menu__item bk-menu__item--link"
                             href={`/api/sites/${siteId}/backups/${b.id}/download`}
@@ -589,18 +602,21 @@ export default function SiteBackupsPanel({
                           >
                             Download this backup
                           </a>
-                          <button
-                            type="button"
-                            className="bk-menu__item bk-menu__item--danger"
-                            onClick={() => {
-                              setOpenMenu(null);
-                              setPendingRestore({ id: b.id, when });
-                            }}
-                            disabled={busy}
-                            role="menuitem"
-                          >
-                            Restore this backup
-                          </button>
+                          ) : null}
+                          {canRestoreBackup ? (
+                            <button
+                              type="button"
+                              className="bk-menu__item bk-menu__item--danger"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                setPendingRestore({ id: b.id, when });
+                              }}
+                              disabled={busy}
+                              role="menuitem"
+                            >
+                              Restore this backup
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
                     </>
