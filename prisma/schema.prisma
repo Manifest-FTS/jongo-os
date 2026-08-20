@@ -183,6 +183,27 @@ model Site {
   // backupEligible so the UI can decide what to show without a Coolify call on
   // every page load.
   backupCapabilityReason String?
+  // Privacy Mode: HTTP Basic Auth in front of the live site, so a pre-launch or
+  // mid-rework site can be shared with a client without being publicly readable
+  // or indexable. Enforcement is a Traefik router written to the proxy's watched
+  // dynamic directory — see lib/privacy-mode.ts.
+  //
+  // privacyModePassword is stored in PLAINTEXT, deliberately. The product shows
+  // the current credentials so an operator can hand them to a client, which a
+  // hash cannot support. It gates a not-yet-public site rather than an account,
+  // and it is never returned to a caller who cannot already manage the site.
+  privacyModeEnabled       Boolean   @default(false)
+  privacyModeUsername      String?
+  privacyModePassword      String?
+  privacyModeUpdatedAt     DateTime?
+  privacyModeUpdatedBy     String?   @db.Uuid
+  // Whether the proxy actually reflects the flag above: 'applied' | 'failed'.
+  // Separate from privacyModeEnabled because the database write and the proxy
+  // change can disagree, and a site that believes it is private while serving
+  // publicly is the one outcome this feature must never report as success.
+  privacyModeProviderState String?
+  privacyModeProviderError String?
+
   // Set on a database resource that belongs to another app: Coolify registers
   // standalone databases as their own resources, so they were imported as
   // peer apps and listed next to the app that owns them. Maintained by the
