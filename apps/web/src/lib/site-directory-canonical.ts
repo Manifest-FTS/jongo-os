@@ -37,3 +37,27 @@ export function chooseCanonicalDirectoryCandidate<T extends DirectoryCandidate>(
 
   return current;
 }
+
+export function resolveLiveWorkspaceIdentity(input: {
+  storedName: string;
+  storedSlug?: string;
+  storedTemporaryDomainSlug?: string;
+  liveName?: string;
+  liveCanonicalSlug?: string;
+}): { name: string; slug?: string; temporaryDomainSlug?: string } {
+  const liveName = input.liveName?.trim();
+  if (!liveName || normalized(liveName) === normalized(input.storedName)) {
+    return {
+      name: input.storedName,
+      slug: input.storedSlug,
+      temporaryDomainSlug: input.storedTemporaryDomainSlug
+    };
+  }
+
+  const canonicalSlug = input.liveCanonicalSlug?.trim() || input.storedSlug;
+  return {
+    name: liveName,
+    slug: canonicalSlug,
+    temporaryDomainSlug: canonicalSlug
+  };
+}

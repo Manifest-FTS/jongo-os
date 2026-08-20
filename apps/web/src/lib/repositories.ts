@@ -3,7 +3,10 @@ import { getCoolifyOverview, type CoolifyOverview } from "./coolify";
 import { recordRepositoryCall } from "./diagnostics";
 import { buildSiteIdentityWhere, isUuid } from "./site-identity";
 import { normalizeRole } from "./roles";
-import { chooseCanonicalDirectoryCandidate } from "./site-directory-canonical";
+import {
+  chooseCanonicalDirectoryCandidate,
+  resolveLiveWorkspaceIdentity
+} from "./site-directory-canonical";
 
 export type ViewerContext = {
   userId?: string;
@@ -1913,6 +1916,13 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
               (cs) => cs.id === dbSite.coolifyServiceUuid || cs.deployTargetId === dbSite.coolifyServiceUuid
             )
           : undefined;
+        const liveIdentity = resolveLiveWorkspaceIdentity({
+          storedName: dbSite.name,
+          storedSlug: dbSite.slug ?? undefined,
+          storedTemporaryDomainSlug: temporaryDomainSlug,
+          liveName: coolifyMatch?.name,
+          liveCanonicalSlug: coolifyMatch ? toAppSlug(coolifyMatch.name, coolifyMatch.id) : undefined
+        });
         const primaryOrgProject = [...(dbSite.organization.coolifyProjectLinks ?? [])].sort((a: any, b: any) => {
           if (Boolean(a.isPrimary) !== Boolean(b.isPrimary)) {
             return a.isPrimary ? -1 : 1;
@@ -1927,8 +1937,8 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
 
         return {
           id: dbSite.id,
-          slug: dbSite.slug ?? toAppSlug(dbSite.name, dbSite.id),
-          name: dbSite.name,
+          slug: liveIdentity.slug ?? toAppSlug(liveIdentity.name, dbSite.id),
+          name: liveIdentity.name,
           description: dbSite.description ?? undefined,
           deployTargetId: coolifyMatch?.deployTargetId ?? dbSite.coolifyServiceUuid ?? "",
           clientId: dbSite.organization.slug,
@@ -1955,7 +1965,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
           coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
           coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
           gitRepositoryUrl: dbSite.gitRepositoryUrl ?? undefined,
-          temporaryDomainSlug,
+          temporaryDomainSlug: liveIdentity.temporaryDomainSlug,
           temporaryDomainSuffix,
           organizationId: dbSite.organizationId,
           ownershipState: "mapped",
