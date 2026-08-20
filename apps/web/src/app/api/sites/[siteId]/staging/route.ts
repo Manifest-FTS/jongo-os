@@ -16,6 +16,7 @@ import {
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
 import { waitForStagingCapabilityToClear } from "@/lib/staging-capability-clear";
+import { preserveResolvedStagingCapability } from "@/lib/staging-capability-refresh";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import { retryOnceAfterRateLimitError } from "@/lib/rate-limit-retry";
@@ -1569,7 +1570,7 @@ export async function POST(req: Request, { params }: Params) {
         stagingDeployTriggered = true;
         stagingDeployError = null;
         const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
-        capabilityAfterProvision = refreshedCapability;
+        capabilityAfterProvision = preserveResolvedStagingCapability(capabilityAfterProvision, refreshedCapability);
       } catch (error) {
         stagingDeployError = error instanceof Error ? error.message : "Coolify rejected the staging deploy.";
       }
