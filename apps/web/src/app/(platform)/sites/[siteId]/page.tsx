@@ -458,6 +458,7 @@ export default async function SiteOverviewPage({ params }: Params) {
 
           <article className="card">
             <SitePrivacyModeControl
+              siteId={siteId}
               isWordPress={isWordPress}
               canToggle={permissions.canTogglePrivacyMode}
               isCollaboratorView={isCollaboratorView}

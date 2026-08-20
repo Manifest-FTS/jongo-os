@@ -1,10 +1,26 @@
 # Privacy Mode End-to-End Plan
 
-## Current State
+## Current State (updated 2026-08-20 — Phases 1 and 2 implemented)
 
-- The Overview Privacy Mode card now has a UI toggle for interaction testing.
-- The toggle does not yet persist state or enforce access/content behavior.
-- Collaborator view must avoid internal implementation status text or engineering notes.
+- Persisted on `Site` (`privacyMode*` columns, migration
+  `20260820120000_add_site_privacy_mode`), including who changed it and whether
+  the proxy actually reflects it.
+- `GET/POST /api/sites/[siteId]/privacy-mode`, gated on `canTogglePrivacyMode`
+  and writing an `AuditLog` row for every attempt and outcome.
+- Enforcement is live: a Traefik router written to the proxy's watched dynamic
+  directory applies HTTP Basic Auth ahead of Coolify's own router. See
+  `lib/privacy-mode.ts` for why a separate higher-priority router is used rather
+  than editing Coolify's labels.
+- The card reads its state from the API and never reports a change the server
+  did not confirm.
+
+Not covered yet:
+
+- Staging privacy is still a stub (`StagingActionsPanel` renders it as
+  "Not available yet"); this feature targets the production resource.
+- Phase 3 — background reconciliation of proxy state and diagnostics panel
+  entries — is not implemented. `privacyModeProviderState` records the last
+  outcome, but nothing re-checks it on a schedule.
 
 ## Desired Product Behavior
 
