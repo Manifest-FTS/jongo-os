@@ -2872,8 +2872,10 @@ export async function destroyCoolifyApplication(
 
   for (const kind of orderedKinds) {
     for (const path of deletePathsByKind[kind]) {
-      const ok = await coolifyMutate(path, "DELETE");
-      if (!ok) {
+      const result = await retryOnceAfterRateLimit(
+        () => coolifyMutateWithResponse(path, "DELETE")
+      );
+      if (!result.ok) {
         continue;
       }
 
@@ -2893,8 +2895,10 @@ export async function destroyCoolifyApplication(
   ];
 
   for (const path of actionPaths) {
-    const ok = await coolifyMutate(path, "POST");
-    if (ok) {
+    const result = await retryOnceAfterRateLimit(
+      () => coolifyMutateWithResponse(path, "POST")
+    );
+    if (result.ok) {
       return {
         mode: "live",
         ok: true,

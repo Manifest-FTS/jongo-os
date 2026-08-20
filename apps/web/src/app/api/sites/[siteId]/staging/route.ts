@@ -16,8 +16,10 @@ import {
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
 import { waitForStagingCapabilityToClear } from "@/lib/staging-capability-clear";
+import { preserveResolvedStagingCapability } from "@/lib/staging-capability-refresh";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
+import { retryOnceAfterRateLimitError } from "@/lib/rate-limit-retry";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { StagingProvisioningPipeline } from "@/orchestration/staging";
 
@@ -1568,7 +1570,7 @@ export async function POST(req: Request, { params }: Params) {
         stagingDeployTriggered = true;
         stagingDeployError = null;
         const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
-        capabilityAfterProvision = refreshedCapability;
+        capabilityAfterProvision = preserveResolvedStagingCapability(capabilityAfterProvision, refreshedCapability);
       } catch (error) {
         stagingDeployError = error instanceof Error ? error.message : "Coolify rejected the staging deploy.";
       }
@@ -1751,16 +1753,18 @@ export async function POST(req: Request, { params }: Params) {
 
   if (appUuid) {
     try {
-      capability = await getCoolifyAppStagingCapability(
-        appUuid,
-        projectId,
-        // Same matching rule provisioning used to CREATE this resource. Without
-        // it, a staging copy that only relaxed matching could identify is
-        // invisible here — so jongo creates resources it then refuses to
-        // remove, and disabling staging silently leaves them running in
-        // Coolify. Whatever we were willing to provision, we must be willing
-        // to clean up.
-        STAGING_MATCH
+      capability = await retryOnceAfterRateLimitError(() =>
+        getCoolifyAppStagingCapability(
+          appUuid,
+          projectId,
+          // Same matching rule provisioning used to CREATE this resource. Without
+          // it, a staging copy that only relaxed matching could identify is
+          // invisible here — so jongo creates resources it then refuses to
+          // remove, and disabling staging silently leaves them running in
+          // Coolify. Whatever we were willing to provision, we must be willing
+          // to clean up.
+          STAGING_MATCH
+        )
       );
     } catch {
       capability = null;
@@ -1781,10 +1785,8 @@ export async function POST(req: Request, { params }: Params) {
         // resource that survived deletion but is only findable via relaxed
         // matching reads as "no longer attached", turning a failed cleanup into
         // a reported success — and leaving an orphan nobody goes looking for.
-        const afterDestroyProbe = await getCoolifyAppStagingCapability(
-          appUuid,
-          projectId,
-          STAGING_MATCH
+        const afterDestroyProbe = await retryOnceAfterRateLimitError(() =>
+          getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
         );
 
         if (!afterDestroyProbe.applicationUuid) {
