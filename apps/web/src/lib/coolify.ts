@@ -1940,6 +1940,12 @@ export async function resolveCoolifyServiceApplicationNames(serviceUuid: string)
  * container and a files volume. This is the reliable eligibility signal for
  * full-site backups; the `siteType` heuristic misclassifies both directions
  * (flags non-WordPress apps as wordpress, and misses real WordPress services).
+ *
+ * THROWS `CoolifyRateLimitError` when the API limiter is in effect. That is
+ * deliberate — returning false for "we could not ask" would classify a
+ * WordPress service as something else — but it means a caller rendering a page
+ * MUST handle it. An unguarded `await` on this in a Server Component took the
+ * backups page down with a 500 whenever the limiter tripped.
  */
 export async function isCoolifyWordPressService(serviceUuid: string): Promise<boolean> {
   if (!serviceUuid?.trim()) {

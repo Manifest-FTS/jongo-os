@@ -1,4 +1,4 @@
-import { getCoolifyAppBackupInventory, isCoolifyWordPressService, describeCoolifyBackupCapability, AppBackupInventory } from "@/lib/coolify";
+import { getCoolifyAppBackupInventory, describeCoolifyBackupCapability, AppBackupInventory } from "@/lib/coolify";
 import { describeRestorability } from "@/lib/backup-restorability";
 import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getBackupUnavailableMessage } from "@/lib/reason-messages";
@@ -126,10 +126,12 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
 
-  // Backup eligibility: any resource with persistent state (service or database),
-  // not just WordPress. isWordPressService is kept only to choose which metric
-  // columns to display (posts/pages/plugins vs volumes/databases).
-  const isWordPressService = appUuid ? await isCoolifyWordPressService(appUuid) : false;
+  // Which metric columns a row shows is decided per row, from the markers the
+  // backup itself recorded — see SiteBackupsPanel. This page used to also ask
+  // Coolify whether the resource was WordPress and then never read the answer,
+  // which cost an API call per render and, because that probe rethrows on a
+  // rate limit rather than lying, was the one call here that could take the
+  // whole page down with a 500. Removed rather than wrapped: nothing read it.
 
   // Staging resources are restored from their production counterpart, so they
   // do not get their own backups. Flag is maintained by the hourly reconciler.
