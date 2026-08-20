@@ -3,6 +3,7 @@ import { getCoolifyOverview, type CoolifyOverview } from "./coolify";
 import { recordRepositoryCall } from "./diagnostics";
 import { buildSiteIdentityWhere, isUuid } from "./site-identity";
 import { normalizeRole } from "./roles";
+import { chooseCanonicalDirectoryCandidate } from "./site-directory-canonical";
 
 export type ViewerContext = {
   userId?: string;
@@ -1596,10 +1597,19 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           continue;
         }
 
-        // Prefer DB-backed records when duplicates represent the same app.
-        if (existing.source === "coolify" && record.source === "db") {
-          mergedByKey.set(key, record);
-        }
+        const liveSite = resolvedOverview.sites.find((site) =>
+          normalizedKey(site.id) === normalizedKey(record.coolifyServiceUuid || record.deployTargetId) ||
+          normalizedKey(site.deployTargetId) === normalizedKey(record.coolifyServiceUuid || record.deployTargetId)
+        );
+        mergedByKey.set(
+          key,
+          chooseCanonicalDirectoryCandidate(
+            existing,
+            record,
+            liveSite?.name,
+            liveSite ? toAppSlug(liveSite.name, liveSite.id) : undefined
+          )
+        );
       }
 
       const mergedRecords = [...mergedByKey.values()];
