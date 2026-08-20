@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
+import { toClientFacingStagingMessage } from "@/lib/staging-client-copy";
 
 type Params = {
   params: Promise<{ siteId: string }>;
@@ -381,11 +382,14 @@ export default async function StagingPage({ params, searchParams }: Params) {
     const details = entry.details as Record<string, unknown> | null | undefined;
     const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
     const promoteAttemptId = typeof details?.promoteAttemptId === "string" ? details.promoteAttemptId : undefined;
-    const message = typeof details?.message === "string"
+    const detailedMessage = typeof details?.message === "string"
       ? details.message
       : typeof details?.provisioningMessage === "string"
         ? details.provisioningMessage
         : "Staging action recorded.";
+    const message = permissionSnapshot.canViewInternalMetadata
+      ? detailedMessage
+      : toClientFacingStagingMessage(detailedMessage) ?? "Staging action recorded.";
     const domains = Array.isArray(details?.domains)
       ? details.domains.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       : [];
@@ -492,7 +496,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
         </div>
         {!stagingConfigured && (
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
-            Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link> to trigger Jongo&apos;s auto-provision attempt. If unsupported, provision staging manually in your infrastructure panel and return here.
+            Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link>. Setup may take a few minutes; refresh this page to check progress.
           </p>
         )}
 
