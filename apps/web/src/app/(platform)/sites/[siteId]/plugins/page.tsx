@@ -229,10 +229,8 @@ export default async function SitePluginsPage({ params }: Params) {
             {updateFreshness.detail}
           </p>
         ) : null}
-      </article>
 
-      <article className="card">
-        {policy.pluginInventory.length > 0 ? (
+{policy.pluginInventory.length > 0 ? (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "0.86rem" }}>
               <thead>
@@ -274,7 +272,11 @@ export default async function SitePluginsPage({ params }: Params) {
         )}
       </article>
 
-      <article className="card">
+      {/* <article className="card">
+        
+      </article> */}
+
+      <article className="card d-none">
         <h3 className="card-title">WordPress Access</h3>
         <p className="card-muted" style={{ marginTop: 0 }}>
           Update WordPress telemetry credentials here when plugin inventory is unavailable or permissions change.
