@@ -24,6 +24,16 @@ export type CacheFlushInput = {
   fileCache?: CacheTargetStatus | null;
   /** A linked Redis object cache, flushed directly. */
   redis?: CacheTargetStatus | null;
+  /**
+   * Cloudflare's edge cache.
+   *
+   * The three above all live inside the container. None of them reach a CDN, so
+   * a site behind Cloudflare could report every local cache flushed while the
+   * public URL kept serving a stale copy from the edge — which is the same
+   * "reported success, page still stale" failure this module exists to prevent,
+   * one layer further out.
+   */
+  cloudflare?: CacheTargetStatus | null;
 };
 
 export type CacheFlushReason =
@@ -55,12 +65,16 @@ export type CacheFlushOutcome = {
 const LABELS: Record<keyof CacheFlushInput, string> = {
   wpCli: "object cache",
   fileCache: "page cache files",
-  redis: "Redis"
+  redis: "Redis",
+  cloudflare: "Cloudflare edge cache"
 };
+
+/** Report order: innermost cache first, the CDN last. */
+const TARGET_ORDER: Array<keyof CacheFlushInput> = ["wpCli", "fileCache", "redis", "cloudflare"];
 
 export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
   const details: Array<{ target: string; status: CacheTargetStatus }> = [];
-  for (const key of ["wpCli", "fileCache", "redis"] as Array<keyof CacheFlushInput>) {
+  for (const key of TARGET_ORDER) {
     const status = input[key];
     if (status === "flushed" || status === "absent" || status === "failed") {
       details.push({ target: LABELS[key], status });
@@ -88,7 +102,8 @@ export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
       // the caller renders it as a note rather than an error. It still is not a
       // success: reporting "flushed" here is the exact bug this replaced.
       reason: "nothing_to_flush",
-      message: "Nothing to flush — this site has no caching plugin, object cache or Redis.",
+      message:
+        "Nothing to flush — this site has no caching plugin, object cache, Redis or Cloudflare zone.",
       details
     };
   }
