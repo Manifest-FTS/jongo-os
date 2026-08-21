@@ -116,11 +116,12 @@ export default async function BackupsPage({ params, searchParams }: Params) {
     }
   });
 
-  const canViewInternalMetadata = Boolean(
-    session?.user?.id &&
-    workspace.organizationId &&
-    await isClientAdmin(workspace.organizationId, session.user.id)
-  );
+  // const canViewInternalMetadata = Boolean(
+  //   session?.user?.id &&
+  //   workspace.organizationId &&
+  //   await isClientAdmin(workspace.organizationId, session.user.id)
+  // );
+  const canViewInternalMetadata = false;
   // const showAdminBackupDiagnostics = permissionSnapshot.isAdmin || canViewInternalMetadata;
   const showAdminBackupDiagnostics = false;
   const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
