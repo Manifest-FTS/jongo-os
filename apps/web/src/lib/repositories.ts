@@ -190,6 +190,8 @@ export type SiteWorkspaceRecord = {
   gitRepositoryUrl?: string;
   temporaryDomainSlug?: string;
   temporaryDomainSuffix?: string;
+  /** The domain Coolify actually serves this app on, when it has one. */
+  primaryDomain?: string;
   organizationId?: string;
   ownershipState: "mapped" | "orphaned" | "unavailable";
   ownershipDiagnostic: string;
@@ -1537,6 +1539,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
           coolifyProjectName: coolifyMatch?.coolifyProjectName,
           coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
           coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
+          primaryDomain: coolifyMatch?.primaryDomain,
           resourceType: coolifyMatch?.resourceType
         };
       });
@@ -1954,6 +1957,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
             coolifyMatch?.coolifyProjectName,
           coolifyEnvironmentId: coolifyMatch?.coolifyEnvironmentId,
           coolifyEnvironmentName: coolifyMatch?.coolifyEnvironmentName,
+          primaryDomain: coolifyMatch?.primaryDomain,
           gitRepositoryUrl: dbSite.gitRepositoryUrl ?? undefined,
           temporaryDomainSlug,
           temporaryDomainSuffix,
