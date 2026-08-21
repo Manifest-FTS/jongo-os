@@ -121,8 +121,8 @@ export default async function BackupsPage({ params, searchParams }: Params) {
     workspace.organizationId &&
     await isClientAdmin(workspace.organizationId, session.user.id)
   );
-  const showAdminBackupDiagnostics = permissionSnapshot.isAdmin || canViewInternalMetadata;
-
+  // const showAdminBackupDiagnostics = permissionSnapshot.isAdmin || canViewInternalMetadata;
+  const showAdminBackupDiagnostics = false;
   const appUuid = workspace?.coolifyServiceUuid ?? (workspace.source === "coolify" ? workspace.id : undefined);
   const inventory = appUuid ? await getCoolifyAppBackupInventory(appUuid) : null;
 
