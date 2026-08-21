@@ -1,5 +1,12 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Josefin+Sans:wght@500;700&display=swap");
 
+/* Tailwind. Preflight is disabled in tailwind.config.ts — see the note there:
+   the element-level rules below would otherwise be reset out from under the
+   existing pages. These add utilities only. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --bg: #f4f5f5;
   --surface: #ffffff;
