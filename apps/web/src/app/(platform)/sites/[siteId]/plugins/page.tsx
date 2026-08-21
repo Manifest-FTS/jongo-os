@@ -276,7 +276,7 @@ export default async function SitePluginsPage({ params }: Params) {
         
       </article> */}
 
-      <article className="card d-none">
+      <article className="card hidden">
         <h3 className="card-title">WordPress Access</h3>
         <p className="card-muted" style={{ marginTop: 0 }}>
           Update WordPress telemetry credentials here when plugin inventory is unavailable or permissions change.
