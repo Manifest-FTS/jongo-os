@@ -120,7 +120,7 @@ export default function StagingActionsPanel({
           <div className="panel-row__body">
             <h4 className="panel-row__title">Flush cache</h4>
             <p className="panel-row__help">
-              Clears the staging site&apos;s object cache, page cache files and Redis.
+              Clears the staging site&apos;s object cache, page cache files, Redis and — when it is behind Cloudflare — its edge cache.
             </p>
             {error ? <p className="form-error panel-row__note">{error}</p> : null}
             {note ? <p className="card-muted panel-row__note">{note}</p> : null}

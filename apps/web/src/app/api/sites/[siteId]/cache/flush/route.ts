@@ -14,6 +14,27 @@ function hasValue(value?: string | null): boolean {
   return Boolean(value && value.trim().length > 0);
 }
 
+/**
+ * The public hostname of the resource being flushed.
+ *
+ * Read from the cached Coolify overview by resource uuid, so it is correct for
+ * a staging flush as well as production, and costs no extra Coolify call.
+ */
+async function resolveFlushDomain(resourceUuid: string): Promise<string> {
+  try {
+    const { getCoolifyOverview } = await import("@/lib/coolify");
+    const overview = await getCoolifyOverview();
+    const match = overview.sites.find(
+      (site) => site.id === resourceUuid || site.deployTargetId === resourceUuid
+    );
+    return match?.primaryDomain ?? "";
+  } catch {
+    // No domain means the Cloudflare step reports "absent", which is the right
+    // answer: we cannot know which zone to purge.
+    return "";
+  }
+}
+
 function resolveScriptPath(name: string): string | null {
   const cwd = process.cwd();
   return [
@@ -159,7 +180,40 @@ async function flushCache(request: Request, { params }: Params) {
 
   try {
     const payload = JSON.parse(line.slice("SITE_CACHE_FLUSH_RESULT=".length));
-    return NextResponse.json(payload, { status: payload?.ok ? 200 : 409 });
+
+    // Fourth target: Cloudflare's edge. It needs no host access, so it runs
+    // here rather than in the script, and the verdict is re-derived over all
+    // four. Without this a site behind a CDN could be told every cache was
+    // flushed while the public URL still served a stale copy from the edge.
+    const { purgeCloudflareCache } = await import("@/lib/cloudflare-purge");
+    const { describeCacheFlush } = await import("@/lib/cache-flush");
+
+    const purge = await purgeCloudflareCache(await resolveFlushDomain(resourceUuid));
+
+    const combined = describeCacheFlush({
+      wpCli: payload?.targets?.wpCli ?? null,
+      fileCache: payload?.targets?.fileCache ?? null,
+      redis: payload?.targets?.redis ?? null,
+      cloudflare: purge.status
+    });
+
+    return NextResponse.json(
+      {
+        ...payload,
+        ok: combined.flushed,
+        reason: combined.reason,
+        message: combined.message,
+        details: combined.details,
+        targets: { ...(payload?.targets ?? {}), cloudflare: purge.status },
+        // Named so a shared zone is visible rather than surprising, and so a
+        // refused purge says why.
+        cloudflare:
+          purge.status === "flushed"
+            ? { status: purge.status, zone: purge.zone }
+            : { status: purge.status, reason: (purge as { reason?: string }).reason ?? null }
+      },
+      { status: combined.flushed ? 200 : 409 }
+    );
   } catch {
     return NextResponse.json(
       { ok: false, message: "The cache flush result could not be read, so it cannot be confirmed as done." },

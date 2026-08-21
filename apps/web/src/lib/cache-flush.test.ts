@@ -86,3 +86,83 @@ describe("describeCacheFlush", () => {
     expect(outcome.details).toHaveLength(0);
   });
 });
+
+describe("describeCacheFlush with Cloudflare", () => {
+  it("reports a real flush when only the CDN had anything to clear", () => {
+    // The gardenstateequality.org case: all three container-local caches are
+    // absent, so this used to report "nothing to flush" while Cloudflare was
+    // still serving a stale page and only a manual dashboard purge could fix it.
+    const outcome = describeCacheFlush({
+      wpCli: "absent",
+      fileCache: "absent",
+      redis: "absent",
+      cloudflare: "flushed"
+    });
+    expect(outcome.flushed).toBe(true);
+    expect(outcome.reason).toBe("flushed");
+    expect(outcome.message).toMatch(/Cloudflare edge cache/);
+  });
+
+  it("still says nothing-to-flush when the site has no caches at all", () => {
+    const outcome = describeCacheFlush({
+      wpCli: "absent",
+      fileCache: "absent",
+      redis: "absent",
+      cloudflare: "absent"
+    });
+    expect(outcome.flushed).toBe(false);
+    expect(outcome.reason).toBe("nothing_to_flush");
+  });
+
+  it("a site with no Cloudflare still reports its other three results", () => {
+    // The requirement: an absent CDN must not turn a good local flush into a
+    // failure, or hide what did happen.
+    const outcome = describeCacheFlush({
+      wpCli: "flushed",
+      fileCache: "flushed",
+      redis: "absent",
+      cloudflare: "absent"
+    });
+    expect(outcome.flushed).toBe(true);
+    expect(outcome.reason).toBe("flushed");
+    expect(outcome.details.map((d) => d.target)).toContain("Cloudflare edge cache");
+  });
+
+  it("surfaces a failed purge as partial, because the page may still be stale", () => {
+    const outcome = describeCacheFlush({
+      wpCli: "flushed",
+      fileCache: "absent",
+      redis: "absent",
+      cloudflare: "failed"
+    });
+    expect(outcome.flushed).toBe(true);
+    expect(outcome.reason).toBe("flushed_partial");
+    expect(outcome.message).toMatch(/Cloudflare edge cache could not be cleared/);
+  });
+
+  it("is a hard failure when the CDN was the only target and it failed", () => {
+    const outcome = describeCacheFlush({
+      wpCli: "absent",
+      fileCache: "absent",
+      redis: "absent",
+      cloudflare: "failed"
+    });
+    expect(outcome.flushed).toBe(false);
+    expect(outcome.reason).toBe("flush_failed");
+  });
+
+  it("lists the CDN last, outermost cache after the local ones", () => {
+    const outcome = describeCacheFlush({
+      wpCli: "flushed",
+      fileCache: "flushed",
+      redis: "flushed",
+      cloudflare: "flushed"
+    });
+    expect(outcome.details.map((d) => d.target)).toEqual([
+      "object cache",
+      "page cache files",
+      "Redis",
+      "Cloudflare edge cache"
+    ]);
+  });
+});

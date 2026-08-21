@@ -99,7 +99,7 @@ export default function WordPressAdvancedControls({
             <div>
               <h4 style={{ margin: 0, fontSize: "0.95rem" }}>Flush Cache</h4>
               <p className="card-muted" style={{ margin: "0.25rem 0 0" }}>
-                Clear this app&apos;s object cache, page cache files and Redis.
+                Clear this app&apos;s object cache, page cache files, Redis and — when the site is behind Cloudflare — its edge cache.
               </p>
               {cacheError ? <p className="form-error" style={{ margin: "0.35rem 0 0" }}>{cacheError}</p> : null}
               {cacheNote ? <p className="card-muted" style={{ margin: "0.35rem 0 0" }}>{cacheNote}</p> : null}

@@ -294,7 +294,12 @@ try {
     reason: outcome.reason,
     message: outcome.message,
     details: outcome.details,
-    entriesRemoved: k.FILE_CACHE_ENTRIES ? Number(k.FILE_CACHE_ENTRIES) : null
+    entriesRemoved: k.FILE_CACHE_ENTRIES ? Number(k.FILE_CACHE_ENTRIES) : null,
+    // Raw per-target statuses, so a caller that can reach caches this script
+    // cannot — Cloudflare's edge, which needs no host access — can add its own
+    // result and re-derive the verdict over all four rather than parsing the
+    // rendered labels back out of `details`.
+    targets: { wpCli: k.WP_CLI ?? null, fileCache: k.FILE_CACHE ?? null, redis: k.REDIS ?? null }
   };
   console.log(`SITE_CACHE_FLUSH_RESULT=${JSON.stringify(payload)}`);
 
