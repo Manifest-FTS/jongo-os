@@ -211,10 +211,7 @@ export default async function SitePluginsPage({ params }: Params) {
         <div style={{ marginTop: "0.85rem" }}>
           <RefreshPluginInventoryButton siteId={siteId} collectedLabel={collectedLabel} />
         </div>
-        {updateFreshness?.stale ? (
-          // "Up to date" comes from WordPress's own update cache. If wp-cron has
-          // stopped, every row reads as current — reassuring and wrong — so the
-          // age of that cache is stated rather than trusted.
+        {/* {updateFreshness?.stale ? (
           <p
             style={{
               margin: "0.7rem 0 0",
@@ -228,10 +225,10 @@ export default async function SitePluginsPage({ params }: Params) {
           >
             {updateFreshness.detail}
           </p>
-        ) : null}
+        ) : null} */}
 
 {policy.pluginInventory.length > 0 ? (
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto" }} className="mt-8">
             <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "0.86rem" }}>
               <thead>
                 <tr>
