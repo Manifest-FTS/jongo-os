@@ -136,13 +136,21 @@ function buildOverviewDomains(
     suffix: workspace?.temporaryDomainSuffix
   });
 
+  // What Coolify actually serves wins. This row used to show the temporary
+  // domain unconditionally — an address built from the slug — so every app that
+  // had a real domain pointed at it displayed the wrong one.
+  const liveDomain = workspace?.primaryDomain?.trim() || "";
+  const primaryDomain = liveDomain || temporaryDomain;
+
   return [
     {
       label: "Primary domain",
-      value: temporaryDomain ?? "Not generated yet",
-      detail: temporaryDomain
-        ? "Derived from the workspace slug and temporary domain suffix."
-        : "Set a production slug in Settings to generate the site URL."
+      value: primaryDomain ?? "Not generated yet",
+      detail: liveDomain
+        ? "The domain configured for this app in its hosting environment."
+        : temporaryDomain
+          ? "Temporary address — no custom domain is configured yet."
+          : "Set a production slug in Settings to generate the site URL."
     },
     {
       label: "Deployment target",

@@ -168,7 +168,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             />
           </article>
 
-          <article className="card">
+          <article className="card hidden">
             <h3 className="card-title">SFTP Access</h3>
             <div style={{ display: "grid", gap: "0.85rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>

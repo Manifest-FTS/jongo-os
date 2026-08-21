@@ -5,6 +5,7 @@ import { detectResourceType } from "./resource-types";
 import { resolveStagingServerUuid, type ServerResolution } from "./coolify-server-resolve";
 import { encodeComposeForCoolify } from "./compose-encoding";
 import { detectDatabaseEnv } from "./database-env-detect";
+import { extractResourceDomains } from "./coolify-primary-domain";
 import { CoolifyRateLimitError, CoolifyHttpError, isNotFoundError, isRateLimitError, noteRateLimited, rateLimitCooldownRemaining } from "./coolify-rate-limit";
 import { retryOnceAfterRateLimit } from "./rate-limit-retry";
 import { extractCreatedResourceUuid } from "./staging-capability-refresh";
@@ -38,6 +39,10 @@ export type SiteOverview = {
   coolifyEnvironmentId?: string;
   coolifyEnvironmentName?: string;
   resourceType?: string;
+  /** The domain Coolify actually serves this on. Empty when none is set. */
+  primaryDomain?: string;
+  /** Every domain Coolify has, in its own order; primaryDomain is the first. */
+  domains?: string[];
 };
 
 export type CoolifyProjectRecord = {
@@ -715,6 +720,7 @@ function makeSiteOverview(
   const stagingStatus = statusFromRaw(resource.staging_status ?? resource.preview_status);
   const project = resolveProjectForResource(resource, projectsById, projectsByName, environmentById, environmentByName);
     const resourceTypeMetadata = detectResourceType(resource);
+  const domains = extractResourceDomains(resource);
 
   return {
     id,
@@ -728,7 +734,12 @@ function makeSiteOverview(
     coolifyProjectName: project.name,
     coolifyEnvironmentId: project.environmentId,
     coolifyEnvironmentName: project.environmentName,
-    resourceType: resourceTypeMetadata.type
+    resourceType: resourceTypeMetadata.type,
+    // Read from the resource payload the overview already fetched, so showing
+    // the real domain costs no additional Coolify call — this page render used
+    // to be the thing tripping the API rate limit.
+    primaryDomain: domains[0] ?? undefined,
+    domains: domains.length > 0 ? domains : undefined
   };
 }
 
