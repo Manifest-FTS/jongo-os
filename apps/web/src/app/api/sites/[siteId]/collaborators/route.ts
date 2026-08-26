@@ -11,6 +11,7 @@ import {
   isInviteExpired
 } from "@/lib/invitations";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
+import { getClientTeamMembers } from "@/lib/repositories";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -113,6 +114,21 @@ export async function GET(_req: Request, { params }: Params) {
       orderBy: { createdAt: "asc" }
     });
 
+    // App-specific rows above are the legacy, per-app grant. Client team
+    // members below are the ones who actually have access today, since access
+    // now flows from the client/project level down to every app in it — a
+    // card that only showed the (now usually empty) app-specific list looked
+    // like nobody had access to an app its own client team could fully manage.
+    const clientMembers = await getClientTeamMembers(access.orgId);
+    const clientTeam = clientMembers.map((m) => ({
+      id: m.id,
+      userId: m.userId,
+      role: m.role,
+      email: m.email,
+      fullName: m.name,
+      isOwner: m.userId === access.orgOwnerId
+    }));
+
     const pendingInvites = await db.invitation.findMany({
       where: {
         siteId: access.siteId,
@@ -141,6 +157,7 @@ export async function GET(_req: Request, { params }: Params) {
         fullName: row.user.fullName,
         createdAt: row.createdAt
       })),
+      clientTeam,
       pendingInvites: pendingInvites.map((invite: any) => ({
         id: invite.id,
         email: invite.email,
