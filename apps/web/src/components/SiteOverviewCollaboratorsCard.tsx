@@ -11,6 +11,8 @@ type CollaboratorRow = {
   fullName?: string | null;
 };
 
+type ClientTeamRow = CollaboratorRow & { isOwner: boolean };
+
 type Props = {
   siteId: string;
   currentUserId: string;
@@ -20,6 +22,7 @@ type Props = {
 export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, clientId }: Props) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<CollaboratorRow[]>([]);
+  const [clientTeam, setClientTeam] = useState<ClientTeamRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,6 +43,7 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, c
         }
         if (!cancelled) {
           setRows((data as { collaborators?: CollaboratorRow[] }).collaborators ?? []);
+          setClientTeam((data as { clientTeam?: ClientTeamRow[] }).clientTeam ?? []);
         }
       } catch {
         if (!cancelled) {
@@ -69,7 +73,7 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, c
       <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
         <div>
           <h3 className="card-title">Collaborators</h3>
-          <p className="card-muted" style={{ marginBottom: 0 }}>{rows.length} total</p>
+          <p className="card-muted" style={{ marginBottom: 0 }}>{clientTeam.length} with access via client team</p>
         </div>
         <button
           type="button"
@@ -96,7 +100,7 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, c
 
       {!loading && !error ? (
         <div style={{ display: "grid", gap: "0.55rem", marginTop: "0.9rem" }}>
-          {rows.map((row) => (
+          {clientTeam.map((row) => (
             <div
               key={row.id}
               style={{
@@ -128,15 +132,15 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, c
                 <p style={{ margin: 0, fontWeight: 600 }}>{row.fullName ?? row.email}</p>
                 <p style={{ margin: "0.15rem 0 0", color: "var(--muted)", fontSize: "0.82rem", overflow: "hidden", textOverflow: "ellipsis" }}>{row.email}</p>
               </div>
-              <span className="tag" style={{ textTransform: "capitalize" }}>{row.role}</span>
+              <span className="tag" style={{ textTransform: "capitalize" }}>{row.isOwner ? "owner" : row.role}</span>
             </div>
           ))}
         </div>
       ) : null}
 
-      {!loading && !error && rows.length === 0 ? (
+      {!loading && !error && clientTeam.length === 0 ? (
         <p className="card-muted" style={{ marginTop: "0.85rem", marginBottom: 0 }}>
-          No collaborators yet.
+          No client team members yet.
         </p>
       ) : null}
 
@@ -195,7 +199,31 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, c
               </div>
 
               <div style={{ display: "grid", gap: "0.55rem" }}>
-                <h4 style={{ margin: 0, fontSize: "0.92rem" }}>Current app-level records</h4>
+                <h4 style={{ margin: 0, fontSize: "0.92rem" }}>Client team ({clientTeam.length})</h4>
+                <p className="card-muted" style={{ margin: 0, fontSize: "0.82rem" }}>
+                  These people already have access to this app, inherited from the client team.
+                </p>
+                {clientTeam.length > 0 ? clientTeam.map((row) => (
+                  <div key={row.id} style={{ display: "grid", gridTemplateColumns: "34px minmax(0, 1fr) auto", alignItems: "center", gap: "0.6rem", paddingBottom: "0.45rem", borderBottom: "1px solid var(--border)" }}>
+                    <div
+                      aria-hidden
+                      style={{ width: "34px", height: "34px", borderRadius: "999px", background: "var(--surface)", border: "1px solid var(--border)", display: "grid", placeItems: "center", fontWeight: 700, fontSize: "0.82rem" }}
+                    >
+                      {getInitial(row)}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ margin: 0, fontWeight: 600 }}>{row.fullName ?? row.email}</p>
+                      <p style={{ margin: "0.15rem 0 0", color: "var(--muted)", fontSize: "0.82rem", overflow: "hidden", textOverflow: "ellipsis" }}>{row.email}</p>
+                    </div>
+                    <span className="tag" style={{ textTransform: "capitalize" }}>{row.isOwner ? "owner" : row.role}</span>
+                  </div>
+                )) : (
+                  <p className="card-muted" style={{ margin: 0 }}>No client team members yet.</p>
+                )}
+              </div>
+
+              <div style={{ display: "grid", gap: "0.55rem" }}>
+                <h4 style={{ margin: 0, fontSize: "0.92rem" }}>Legacy app-level records</h4>
                 <p className="card-muted" style={{ margin: 0, fontSize: "0.82rem" }}>
                   Existing app-specific collaborator records still load for compatibility, but new invites should be created from the client team page.
                 </p>
