@@ -34,6 +34,8 @@ export type CacheFlushInput = {
    * one layer further out.
    */
   cloudflare?: CacheTargetStatus | null;
+  /** Elementor's generated CSS/font cache, when the plugin is active. */
+  elementor?: CacheTargetStatus | null;
 };
 
 export type CacheFlushReason =
@@ -66,11 +68,12 @@ const LABELS: Record<keyof CacheFlushInput, string> = {
   wpCli: "object cache",
   fileCache: "page cache files",
   redis: "Redis",
-  cloudflare: "Cloudflare edge cache"
+  cloudflare: "Cloudflare edge cache",
+  elementor: "Elementor generated CSS"
 };
 
 /** Report order: innermost cache first, the CDN last. */
-const TARGET_ORDER: Array<keyof CacheFlushInput> = ["wpCli", "fileCache", "redis", "cloudflare"];
+const TARGET_ORDER: Array<keyof CacheFlushInput> = ["wpCli", "fileCache", "redis", "elementor", "cloudflare"];
 
 export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
   const details: Array<{ target: string; status: CacheTargetStatus }> = [];
@@ -103,7 +106,7 @@ export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
       // success: reporting "flushed" here is the exact bug this replaced.
       reason: "nothing_to_flush",
       message:
-        "Nothing to flush — this site has no caching plugin, object cache, Redis or Cloudflare zone.",
+        "Nothing to flush — this site has no caching plugin, object cache, Redis, active Elementor cache or Cloudflare zone.",
       details
     };
   }

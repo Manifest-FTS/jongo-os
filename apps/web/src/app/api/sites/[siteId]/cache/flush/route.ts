@@ -194,6 +194,7 @@ async function flushCache(request: Request, { params }: Params) {
       wpCli: payload?.targets?.wpCli ?? null,
       fileCache: payload?.targets?.fileCache ?? null,
       redis: payload?.targets?.redis ?? null,
+      elementor: payload?.targets?.elementor ?? null,
       cloudflare: purge.status
     });
 

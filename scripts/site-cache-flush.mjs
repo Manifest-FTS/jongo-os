@@ -8,13 +8,14 @@
  * worse than a dead button: it sends someone debugging a stale page off to look
  * anywhere but the cache.
  *
- * Three places a WordPress site keeps a cache, each independently optional:
+ * Four places a WordPress site keeps a cache, each independently optional:
  *
  *   1. the object cache, cleared with wp-cli when the image has it (the stock
  *      `wordpress` image does not);
  *   2. page cache FILES under wp-content/cache, written by WP Super Cache,
  *      W3TC, LiteSpeed, WP Rocket and friends;
- *   3. a linked Redis used as the object cache backend.
+ *   3. a linked Redis used as the object cache backend;
+ *   4. Elementor's generated CSS/font cache, when the plugin is active.
  *
  * Each is reported as flushed / absent / failed and the caller decides what
  * that adds up to (see apps/web/src/lib/cache-flush.ts). Deliberately NOT
@@ -104,6 +105,33 @@ function runSsh(script) {
   if (r.error) return { ok: false, stdout: r.stdout || "", stderr: `${r.stderr || ""}\nssh spawn failed: ${r.error.message}` };
   return { ok: r.status === 0, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
+
+// Elementor keeps its own generated CSS/font cache under
+// wp-content/uploads/elementor, separate from the object/page/Redis caches
+// above. The plugin's own "Clear Files & Data" button is exactly this call —
+// \Elementor\Plugin::$instance->files_manager->clear_cache() — so we call the
+// same method rather than guessing at which files/postmeta rows to delete
+// ourselves. class_exists() also doubles as the presence/absence check: it is
+// false unless the plugin is installed AND active.
+//
+// Base64-encoded and piped into `php` rather than passed as a `php -r`
+// argument: the script mixes bash's $VAR and PHP's $var syntax, and getting a
+// PHP source string through both bash's and Node's quoting alive is not worth
+// the risk of a subtly broken flush.
+const elementorPhp = `<?php
+$root = getenv('ROOT');
+require_once $root . '/wp-load.php';
+if (!class_exists('\\\\Elementor\\\\Plugin')) { echo 'ELEMENTOR_ABSENT'; exit(0); }
+$instance = \\Elementor\\Plugin::$instance;
+if (!isset($instance->files_manager)) { echo 'ELEMENTOR_ABSENT'; exit(0); }
+try {
+  $instance->files_manager->clear_cache();
+  echo 'ELEMENTOR_FLUSHED';
+} catch (Throwable $e) {
+  echo 'ELEMENTOR_FAILED';
+}
+`;
+const elementorPhpB64 = Buffer.from(elementorPhp, "utf8").toString("base64");
 
 function buildScript() {
   return `set -uo pipefail
@@ -211,6 +239,17 @@ else
   echo "REDIS=absent"
 fi
 
+# ── 4. Elementor's generated CSS/font cache, when the plugin is active ──
+# Needs a full WP bootstrap (wp-load.php), unlike the targets above, so it runs
+# last: a plugin that fatals during full bootstrap (seen in the wild) should
+# not take the object/file/Redis flushes down with it.
+ELEMENTOR_RAW=$(printf '%s' ${shQuote(elementorPhpB64)} | docker exec -e ROOT="$ROOT" -i "$WP" sh -lc "base64 -d | php" 2>/dev/null)
+case "$ELEMENTOR_RAW" in
+  *ELEMENTOR_FLUSHED*) echo "ELEMENTOR=flushed" ;;
+  *ELEMENTOR_ABSENT*) echo "ELEMENTOR=absent" ;;
+  *) echo "ELEMENTOR=failed" ;;
+esac
+
 echo "RESULT=ok"
 `;
 }
@@ -233,9 +272,9 @@ function parseKV(stdout) {
  * aliases — the same arrangement as parseForgotten in scripts/site-backup.mjs.
  */
 function describeCacheFlush(input) {
-  const LABELS = { wpCli: "object cache", fileCache: "page cache files", redis: "Redis" };
+  const LABELS = { wpCli: "object cache", fileCache: "page cache files", redis: "Redis", elementor: "Elementor generated CSS" };
   const details = [];
-  for (const key of ["wpCli", "fileCache", "redis"]) {
+  for (const key of ["wpCli", "fileCache", "redis", "elementor"]) {
     const status = input[key];
     if (status === "flushed" || status === "absent" || status === "failed") {
       details.push({ target: LABELS[key], status });
@@ -258,7 +297,7 @@ function describeCacheFlush(input) {
     return {
       flushed: false,
       reason: "nothing_to_flush",
-      message: "Nothing to flush — this site has no caching plugin, object cache or Redis.",
+      message: "Nothing to flush — this site has no caching plugin, object cache, Redis or active Elementor cache.",
       details
     };
   }
@@ -288,7 +327,7 @@ try {
     process.exit(1);
   }
 
-  const outcome = describeCacheFlush({ wpCli: k.WP_CLI, fileCache: k.FILE_CACHE, redis: k.REDIS });
+  const outcome = describeCacheFlush({ wpCli: k.WP_CLI, fileCache: k.FILE_CACHE, redis: k.REDIS, elementor: k.ELEMENTOR });
   const payload = {
     ok: outcome.flushed,
     reason: outcome.reason,
@@ -297,9 +336,9 @@ try {
     entriesRemoved: k.FILE_CACHE_ENTRIES ? Number(k.FILE_CACHE_ENTRIES) : null,
     // Raw per-target statuses, so a caller that can reach caches this script
     // cannot — Cloudflare's edge, which needs no host access — can add its own
-    // result and re-derive the verdict over all four rather than parsing the
-    // rendered labels back out of `details`.
-    targets: { wpCli: k.WP_CLI ?? null, fileCache: k.FILE_CACHE ?? null, redis: k.REDIS ?? null }
+    // result and re-derive the verdict over all targets rather than parsing
+    // the rendered labels back out of `details`.
+    targets: { wpCli: k.WP_CLI ?? null, fileCache: k.FILE_CACHE ?? null, redis: k.REDIS ?? null, elementor: k.ELEMENTOR ?? null }
   };
   console.log(`SITE_CACHE_FLUSH_RESULT=${JSON.stringify(payload)}`);
 
