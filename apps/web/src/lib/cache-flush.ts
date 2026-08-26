@@ -22,6 +22,16 @@ export type CacheFlushInput = {
   wpCli?: CacheTargetStatus | null;
   /** Files under wp-content/cache, written by page cache plugins. */
   fileCache?: CacheTargetStatus | null;
+  /**
+   * Elementor's generated CSS, under wp-content/uploads/elementor/css.
+   *
+   * Elementor compiles each page's styles to a file and serves that, so a
+   * design change can be live in the database while every visitor still gets
+   * the previously compiled stylesheet. `wp cache flush` does not touch it —
+   * it is not the object cache — which is why a site could report a clean
+   * flush and still render the old layout.
+   */
+  elementor?: CacheTargetStatus | null;
   /** A linked Redis object cache, flushed directly. */
   redis?: CacheTargetStatus | null;
   /**
@@ -65,12 +75,19 @@ export type CacheFlushOutcome = {
 const LABELS: Record<keyof CacheFlushInput, string> = {
   wpCli: "object cache",
   fileCache: "page cache files",
+  elementor: "Elementor CSS",
   redis: "Redis",
   cloudflare: "Cloudflare edge cache"
 };
 
 /** Report order: innermost cache first, the CDN last. */
-const TARGET_ORDER: Array<keyof CacheFlushInput> = ["wpCli", "fileCache", "redis", "cloudflare"];
+const TARGET_ORDER: Array<keyof CacheFlushInput> = [
+  "wpCli",
+  "fileCache",
+  "elementor",
+  "redis",
+  "cloudflare"
+];
 
 export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
   const details: Array<{ target: string; status: CacheTargetStatus }> = [];
@@ -103,7 +120,7 @@ export function describeCacheFlush(input: CacheFlushInput): CacheFlushOutcome {
       // success: reporting "flushed" here is the exact bug this replaced.
       reason: "nothing_to_flush",
       message:
-        "Nothing to flush — this site has no caching plugin, object cache, Redis or Cloudflare zone.",
+        "Nothing to flush — this site has no caching plugin, object cache, Elementor CSS, Redis or Cloudflare zone.",
       details
     };
   }

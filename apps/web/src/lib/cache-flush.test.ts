@@ -166,3 +166,59 @@ describe("describeCacheFlush with Cloudflare", () => {
     ]);
   });
 });
+
+describe("describeCacheFlush with Elementor", () => {
+  it("reports a real flush when only Elementor's CSS was stale", () => {
+    // The common case on this platform: no wp-cli, no caching plugin, no Redis,
+    // but a compiled stylesheet still serving the old design.
+    const outcome = describeCacheFlush({
+      wpCli: "absent",
+      fileCache: "absent",
+      elementor: "flushed",
+      redis: "absent",
+      cloudflare: "absent"
+    });
+    expect(outcome.flushed).toBe(true);
+    expect(outcome.reason).toBe("flushed");
+    expect(outcome.message).toMatch(/Elementor CSS/);
+  });
+
+  it("a site without Elementor still reports its other targets normally", () => {
+    const outcome = describeCacheFlush({
+      wpCli: "absent",
+      fileCache: "flushed",
+      elementor: "absent",
+      redis: "absent"
+    });
+    expect(outcome.flushed).toBe(true);
+    expect(outcome.details.map((d) => d.target)).toContain("Elementor CSS");
+  });
+
+  it("lists Elementor with the file caches, before Redis and the CDN", () => {
+    const outcome = describeCacheFlush({
+      wpCli: "flushed",
+      fileCache: "flushed",
+      elementor: "flushed",
+      redis: "flushed",
+      cloudflare: "flushed"
+    });
+    expect(outcome.details.map((d) => d.target)).toEqual([
+      "object cache",
+      "page cache files",
+      "Elementor CSS",
+      "Redis",
+      "Cloudflare edge cache"
+    ]);
+  });
+
+  it("surfaces a failed Elementor clear rather than hiding it behind a success", () => {
+    const outcome = describeCacheFlush({
+      wpCli: "flushed",
+      fileCache: "absent",
+      elementor: "failed",
+      redis: "absent"
+    });
+    expect(outcome.reason).toBe("flushed_partial");
+    expect(outcome.message).toMatch(/Elementor CSS could not be cleared/);
+  });
+});

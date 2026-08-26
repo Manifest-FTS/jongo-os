@@ -171,7 +171,48 @@ else
   echo "FILE_CACHE=absent"
 fi
 
-# ── 3. Persistent object cache (Redis) ──
+# ── 3. Elementor's generated CSS ──
+# Elementor compiles each page's styles into a file under
+# uploads/elementor/css and serves that, so an edited design stays invisible
+# until those files are regenerated. Nothing above clears them: they are not the
+# object cache and not a caching plugin's directory.
+#
+# Only the CONTENTS of css/ go. Its siblings under uploads/elementor —
+# custom-icons, google-fonts, screenshots, thumbs, design-system-sync — are
+# uploaded assets, not cache, and deleting those would destroy real data.
+EL_PLUGIN="$ROOT/wp-content/plugins/elementor"
+EL_CSS="$ROOT/wp-content/uploads/elementor/css"
+if ! docker exec "$WP" sh -lc "[ -d $EL_PLUGIN ]" >/dev/null 2>&1; then
+  echo "ELEMENTOR=absent"
+elif docker exec "$WP" sh -lc "command -v wp" >/dev/null 2>&1 \
+  && docker exec "$WP" sh -lc "wp plugin is-active elementor --allow-root --path=$ROOT" >/dev/null 2>&1; then
+  # Preferred when available: Elementor's own command also resets the metadata
+  # that tracks which files are current. No image on this platform ships wp-cli
+  # today, so in practice the file path below is what runs — but an image that
+  # does ship it should use the supported command rather than deleting files.
+  if docker exec "$WP" sh -lc "wp elementor flush-css --allow-root --path=$ROOT" >/dev/null 2>&1; then
+    echo "ELEMENTOR=flushed"
+  else
+    echo "ELEMENTOR=failed"
+  fi
+elif docker exec "$WP" sh -lc "[ -d $EL_CSS ]" >/dev/null 2>&1; then
+  EL_N=$(docker exec "$WP" sh -lc "find $EL_CSS -mindepth 1 -maxdepth 1 -name '*.css' | wc -l" 2>/dev/null | tr -dc '0-9')
+  if [ "\${EL_N:-0}" -gt 0 ]; then
+    if docker exec "$WP" sh -lc "find $EL_CSS -mindepth 1 -maxdepth 1 -name '*.css' -delete" >/dev/null 2>&1; then
+      echo "ELEMENTOR=flushed"
+      echo "ELEMENTOR_FILES=$EL_N"
+    else
+      echo "ELEMENTOR=failed"
+    fi
+  else
+    # Elementor is installed but has nothing compiled yet.
+    echo "ELEMENTOR=absent"
+  fi
+else
+  echo "ELEMENTOR=absent"
+fi
+
+# ── 4. Persistent object cache (Redis) ──
 # The object-cache.php drop-in is the RELIABLE signal that a persistent object
 # cache exists. Env vars are not: WordPress is normally pointed at Redis from
 # wp-config.php, so an env-only probe reports "no Redis" for a site that very
@@ -233,9 +274,18 @@ function parseKV(stdout) {
  * aliases — the same arrangement as parseForgotten in scripts/site-backup.mjs.
  */
 function describeCacheFlush(input) {
-  const LABELS = { wpCli: "object cache", fileCache: "page cache files", redis: "Redis" };
+  // Keep these two lists in step with TARGET_ORDER and LABELS in
+  // apps/web/src/lib/cache-flush.ts. Cloudflare is absent here on purpose: it
+  // is purged by the API route, which re-derives the verdict over every target,
+  // and this script has no business making network calls to a CDN.
+  const LABELS = {
+    wpCli: "object cache",
+    fileCache: "page cache files",
+    elementor: "Elementor CSS",
+    redis: "Redis"
+  };
   const details = [];
-  for (const key of ["wpCli", "fileCache", "redis"]) {
+  for (const key of ["wpCli", "fileCache", "elementor", "redis"]) {
     const status = input[key];
     if (status === "flushed" || status === "absent" || status === "failed") {
       details.push({ target: LABELS[key], status });
@@ -258,7 +308,7 @@ function describeCacheFlush(input) {
     return {
       flushed: false,
       reason: "nothing_to_flush",
-      message: "Nothing to flush — this site has no caching plugin, object cache or Redis.",
+      message: "Nothing to flush — this site has no caching plugin, object cache, Elementor CSS or Redis.",
       details
     };
   }
@@ -288,7 +338,12 @@ try {
     process.exit(1);
   }
 
-  const outcome = describeCacheFlush({ wpCli: k.WP_CLI, fileCache: k.FILE_CACHE, redis: k.REDIS });
+  const outcome = describeCacheFlush({
+    wpCli: k.WP_CLI,
+    fileCache: k.FILE_CACHE,
+    elementor: k.ELEMENTOR,
+    redis: k.REDIS
+  });
   const payload = {
     ok: outcome.flushed,
     reason: outcome.reason,
@@ -299,7 +354,13 @@ try {
     // cannot — Cloudflare's edge, which needs no host access — can add its own
     // result and re-derive the verdict over all four rather than parsing the
     // rendered labels back out of `details`.
-    targets: { wpCli: k.WP_CLI ?? null, fileCache: k.FILE_CACHE ?? null, redis: k.REDIS ?? null }
+    targets: {
+      wpCli: k.WP_CLI ?? null,
+      fileCache: k.FILE_CACHE ?? null,
+      elementor: k.ELEMENTOR ?? null,
+      redis: k.REDIS ?? null
+    },
+    elementorFilesRemoved: k.ELEMENTOR_FILES ? Number(k.ELEMENTOR_FILES) : null
   };
   console.log(`SITE_CACHE_FLUSH_RESULT=${JSON.stringify(payload)}`);
 

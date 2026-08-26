@@ -193,6 +193,7 @@ async function flushCache(request: Request, { params }: Params) {
     const combined = describeCacheFlush({
       wpCli: payload?.targets?.wpCli ?? null,
       fileCache: payload?.targets?.fileCache ?? null,
+      elementor: payload?.targets?.elementor ?? null,
       redis: payload?.targets?.redis ?? null,
       cloudflare: purge.status
     });
