@@ -5,6 +5,7 @@ import { describeForViewer } from "@/lib/site-description";
 import Link from "next/link";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import ClientDirectoryView from "@/components/ClientDirectoryView";
+import UnmappedCoolifyProjectsBanner from "@/components/UnmappedCoolifyProjectsBanner";
 
 export default async function ClientsPage() {
   const session = await auth();
@@ -43,6 +44,8 @@ export default async function ClientsPage() {
           <span>.</span>
         </div>
       )}
+
+      {isPlatformAdmin ? <UnmappedCoolifyProjectsBanner /> : null}
 
       {clients.length === 0 ? (
         <div className="card">

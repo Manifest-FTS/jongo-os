@@ -610,6 +610,12 @@ async function resolveCoolifyProjectEndpointId(projectId: string): Promise<strin
   }
 }
 
+/** Every project Coolify currently has, for cross-referencing against which ones have no linked Organization yet. */
+export async function listCoolifyProjects(): Promise<CoolifyProjectRecord[]> {
+  const projectsPayload = await coolifyFetch("/api/v1/projects");
+  return normalizeProjectRecords(projectsPayload);
+}
+
 function mockOverview(): CoolifyOverview {
   return {
     mode: "mock",
