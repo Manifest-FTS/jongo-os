@@ -32,6 +32,11 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** The stored subject is the template as typed, before per-recipient substitution -- {{tokens}} here are expected, not a bug. */
+function hasUnresolvedPlaceholder(text: string): boolean {
+  return /\{\{\s*\w+\s*\}\}/.test(text);
+}
+
 type RecipientRow = {
   userId: string;
   email: string;
@@ -165,6 +170,11 @@ export default function BroadcastHistoryView() {
                 <strong>{row.subject}</strong>
                 <span className="card-muted" style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{formatDate(row.createdAt)}</span>
               </div>
+              {hasUnresolvedPlaceholder(row.subject) ? (
+                <p className="card-muted" style={{ margin: "0.2rem 0 0", fontSize: "0.78rem", fontStyle: "italic" }}>
+                  Shown as typed -- placeholders like {"{{client_name}}"} were filled in per recipient when this sent.
+                </p>
+              ) : null}
               <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
                 <span className="tag">{SCOPE_LABELS[row.recipientScope?.scope ?? ""] ?? "Recipients"}</span>
                 <span className="tag">{DELIVERY_LABELS[row.deliveryMode] ?? row.deliveryMode}</span>

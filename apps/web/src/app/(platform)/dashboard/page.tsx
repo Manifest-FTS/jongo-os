@@ -6,6 +6,21 @@ import SiteDirectoryView from "@/components/SiteDirectoryView";
 
 export const dynamic = "force-dynamic";
 
+function formatActivityTimestamp(iso?: string): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+}
+
 type FavoriteRow = { appId: string };
 
 async function getFavoriteAppIds(userId?: string): Promise<string[]> {
@@ -191,29 +206,35 @@ export default async function DashboardPage() {
           <div className="panel-header">
             <div>
               <p className="panel-kicker">Recent activity</p>
-              <h2 className="card-title">Latest deployments</h2>
+              <h2 className="card-title">Client &amp; app activity</h2>
             </div>
           </div>
 
           {activityFeed.length === 0 ? (
-            <p className="card-muted">No recent deployments.</p>
+            <p className="card-muted">No recent activity.</p>
           ) : (
             <div className="activity-list compact">
-              {activityFeed.slice(0, 6).map((item) => (
-                <div key={item.id} className="activity-item">
-                  <div className="activity-copy">
-                    <p className="activity-title">{item.title}</p>
-                    <p className="activity-detail">
-                      {item.detail}
-                      {item.durationSeconds !== undefined && ` - ${item.durationSeconds < 60 ? `${item.durationSeconds}s` : `${Math.floor(item.durationSeconds / 60)}m`}`}
-                    </p>
+              {activityFeed.slice(0, 6).map((item) => {
+                const when = formatActivityTimestamp(item.timestamp);
+                return (
+                  <div key={item.id} className="activity-item">
+                    <div className="activity-copy">
+                      <p className="activity-title">{item.title}</p>
+                      <p className="activity-detail">
+                        {item.appName ? <strong>{item.appName}</strong> : null}
+                        {item.appName && item.clientName ? " — " : null}
+                        {item.clientName ?? (item.appName ? null : item.detail)}
+                        {item.durationSeconds !== undefined && ` (${item.durationSeconds < 60 ? `${item.durationSeconds}s` : `${Math.floor(item.durationSeconds / 60)}m`})`}
+                      </p>
+                    </div>
+                    <div className="activity-meta">
+                      {when ? <span className="card-muted" style={{ fontSize: "0.78rem", whiteSpace: "nowrap" }}>{when}</span> : null}
+                      {item.environment && <span className="status-chip unknown">{item.environment}</span>}
+                      <span className={`status-chip ${item.status}`}>{item.status}</span>
+                    </div>
                   </div>
-                  <div className="activity-meta">
-                    {item.environment && <span className="status-chip unknown">{item.environment}</span>}
-                    <span className={`status-chip ${item.status}`}>{item.status}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </article>
