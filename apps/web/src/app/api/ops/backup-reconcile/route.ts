@@ -13,6 +13,7 @@ import { orderDueRehearsals, DEFAULT_REHEARSAL_INTERVAL_DAYS } from "@/lib/backu
 import { scheduledBackupsDefaultEnabled } from "@/lib/backup-schedule";
 import { notifyBackupEvent } from "@/lib/site-notify";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
+import { syncCoolifyProjectsToOrganizations } from "@/lib/organization-reconcile";
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -81,6 +82,19 @@ export async function POST(request: Request) {
     // front instead of reporting a sweep that could not have worked.
     if (liveIndex.complete === false && isRateLimited()) {
       rateLimited = true;
+    }
+
+    // Coolify is the client-list source of truth too: a project with no
+    // linked Organization gets one created, and an Organization whose project
+    // is gone gets soft-deleted (after a grace period -- see
+    // lib/organization-reconcile.ts for the safety rails). Best-effort, same
+    // as the site import below: must not break the rest of this pass.
+    let orgSync;
+    try {
+      orgSync = await syncCoolifyProjectsToOrganizations();
+    } catch (error) {
+      console.error("[jongo] backup-reconcile: organization sync failed:", error);
+      orgSync = null;
     }
 
     // Coolify is the ownership source of truth. Only linked projects with an
@@ -750,6 +764,7 @@ export async function POST(request: Request) {
         skipped: projectSitesSkipped,
         rateLimited
       },
+      organizationSync: orgSync,
       scheduledBackups: {
         platformDefaultEnabled: scheduleDefaultOn,
         maxPerRun: maxBackupsPerRun,

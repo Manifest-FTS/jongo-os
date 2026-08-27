@@ -143,20 +143,58 @@ export function checkIsPlatformAdmin(
 }
 
 /**
+ * The full admin check: the env-configured seed admin, OR anyone the seed
+ * admin has granted platform-admin access to via PlatformAdmin. Async
+ * because the grant list lives in the database; checkIsPlatformAdmin above
+ * stays synchronous and seed-only for call sites that only need that one
+ * fast, DB-free check (e.g. "may this caller manage the admin list itself").
+ */
+export async function isPlatformAdminEmail(userEmail?: string | null): Promise<boolean> {
+  if (checkIsPlatformAdmin(userEmail)) return true;
+
+  const normalized = normalizeEmail(userEmail);
+  if (!normalized) return false;
+
+  const db = await getDb();
+  if (!db) return false;
+
+  const grant = await db.platformAdmin.findFirst({
+    where: { user: { email: { equals: normalized, mode: "insensitive" } } },
+    select: { id: true }
+  });
+  return Boolean(grant);
+}
+
+/**
  * Platform admins for display, not for access control.
  *
  * They already see and manage every client without a Collaborator row on any
  * Organization -- that row grants membership a client can review and revoke,
  * and a platform admin's access is neither: it comes from the bootstrap email
- * check above and isn't something a client team can remove. Team lists should
- * still disclose it honestly (a client asking "who can see our stuff"
- * deserves a real answer), just not as a synthetic member row that looks
- * removable when it is not.
+ * check (or a PlatformAdmin grant) and isn't something a client team can
+ * remove. Team lists should still disclose it honestly (a client asking
+ * "who can see our stuff" deserves a real answer), just not as a synthetic
+ * member row that looks removable when it is not.
  */
-export function getPlatformAdminContacts(): string[] {
-  const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim();
-  return email ? [email] : [];
+export async function getPlatformAdminContacts(): Promise<string[]> {
+  const seed = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim();
+  const contacts = seed ? [seed] : [];
+
+  const db = await getDb();
+  if (!db) return contacts;
+
+  const grants = await db.platformAdmin.findMany({ select: { user: { select: { email: true } } } });
+  const seenLower = new Set(contacts.map((email) => email.toLowerCase()));
+  for (const grant of grants) {
+    const email = grant.user?.email;
+    if (email && !seenLower.has(email.toLowerCase())) {
+      seenLower.add(email.toLowerCase());
+      contacts.push(email);
+    }
+  }
+  return contacts;
 }
+
 
 export function getPermissions(callerRole: unknown, isPlatformAdmin = false): UserPermissions {
   const role = normalizeRole(callerRole);
@@ -204,7 +242,7 @@ export async function resolveSitePermissionSnapshot(
   input: ResolveSitePermissionInput
 ): Promise<SitePermissionSnapshot> {
   const userId = input.viewer?.userId?.trim();
-  const isPlatformAdmin = checkIsPlatformAdmin(input.viewer?.email);
+  const isPlatformAdmin = await isPlatformAdminEmail(input.viewer?.email);
 
   const canViewInternalMetadata = Boolean(
     userId && input.workspace.organizationId && (await isClientAdmin(input.workspace.organizationId, userId))

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
  * permissions.ts imports its siblings by the "@/lib/..." alias, which vitest
@@ -12,7 +12,7 @@ vi.mock("@/lib/roles", async () => await import("./roles"));
 vi.mock("@/lib/db", () => ({ getDb: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/repositories", () => ({ isClientAdmin: vi.fn().mockResolvedValue(false) }));
 
-const { checkIsPlatformAdmin, getPermissions } = await import("./permissions");
+const { checkIsPlatformAdmin, getPermissions, isPlatformAdminEmail } = await import("./permissions");
 
 describe("getPermissions", () => {
   const admin = getPermissions("admin");
@@ -116,5 +116,27 @@ describe("checkIsPlatformAdmin", () => {
     expect(checkIsPlatformAdmin(null, "admin@example.com")).toBe(false);
     expect(checkIsPlatformAdmin("admin@example.com", null)).toBe(false);
     expect(checkIsPlatformAdmin("", "")).toBe(false);
+  });
+});
+
+describe("isPlatformAdminEmail", () => {
+  const originalBootstrap = process.env.BOOTSTRAP_ADMIN_EMAIL;
+
+  afterEach(() => {
+    process.env.BOOTSTRAP_ADMIN_EMAIL = originalBootstrap;
+  });
+
+  it("short-circuits true for the seed admin without needing the database", async () => {
+    process.env.BOOTSTRAP_ADMIN_EMAIL = "admin@example.com";
+    await expect(isPlatformAdminEmail("admin@example.com")).resolves.toBe(true);
+  });
+
+  it("is false for a non-seed email when the database is unavailable", async () => {
+    process.env.BOOTSTRAP_ADMIN_EMAIL = "admin@example.com";
+    await expect(isPlatformAdminEmail("someone-else@example.com")).resolves.toBe(false);
+  });
+
+  it("is false for a missing email", async () => {
+    await expect(isPlatformAdminEmail(null)).resolves.toBe(false);
   });
 });

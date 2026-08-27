@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth.config";
-import { checkIsPlatformAdmin } from "@/lib/permissions";
+import { isPlatformAdminEmail } from "@/lib/permissions";
 import NotificationsListView from "@/components/NotificationsListView";
 import ComposeBroadcastForm from "@/components/ComposeBroadcastForm";
 import BroadcastHistoryView from "@/components/BroadcastHistoryView";
@@ -15,7 +15,7 @@ function tabClassName(active: boolean) {
 
 export default async function NotificationsPage({ searchParams }: PageProps) {
   const session = await auth();
-  const isAdmin = checkIsPlatformAdmin(session?.user?.email);
+  const isAdmin = await isPlatformAdminEmail(session?.user?.email);
   const params = (await searchParams) ?? {};
   const rawTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
   const activeTab = rawTab === "compose" ? "compose" : "history";

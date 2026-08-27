@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
-import { checkIsPlatformAdmin } from "@/lib/permissions";
+import { isPlatformAdminEmail } from "@/lib/permissions";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -17,7 +17,7 @@ type Params = { params: Promise<{ id: string }> };
  */
 export async function GET(_req: Request, { params }: Params) {
   const session = await auth();
-  if (!session?.user?.id || !checkIsPlatformAdmin(session.user.email)) {
+  if (!session?.user?.id || !(await isPlatformAdminEmail(session.user.email))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

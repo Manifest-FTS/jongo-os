@@ -30,6 +30,7 @@ const routeMocks = vi.hoisted(() => ({
   describeCoolifyBackupCapability: vi.fn(),
   hasCoolifyBackupableState: vi.fn(),
   importLinkedCoolifyProjectSites: vi.fn(),
+  syncCoolifyProjectsToOrganizations: vi.fn().mockResolvedValue({ ran: false, created: 0, missingSinceSet: 0, missingSinceCleared: 0, archived: 0, archiveAborted: false }),
   isSshHostConfigured: vi.fn(),
   refreshPluginInventory: vi.fn(),
   PLUGIN_INVENTORY_REFRESH_AFTER_MINUTES: 60,
@@ -79,6 +80,10 @@ vi.mock("@/lib/coolify", () => ({
 
 vi.mock("@/lib/coolify-project-import", () => ({
   importLinkedCoolifyProjectSites: routeMocks.importLinkedCoolifyProjectSites
+}));
+
+vi.mock("@/lib/organization-reconcile", () => ({
+  syncCoolifyProjectsToOrganizations: routeMocks.syncCoolifyProjectsToOrganizations
 }));
 
 vi.mock("@/lib/platform-reconcile", () => ({

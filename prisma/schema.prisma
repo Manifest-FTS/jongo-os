@@ -67,6 +67,8 @@ model User {
   passwordResetTokens  PasswordResetToken[]
   notifications        Notification[]
   broadcastsSent       NotificationBroadcast[]
+  platformAdminGrant   PlatformAdmin?          @relation("PlatformAdminUser")
+  platformAdminsGranted PlatformAdmin[]        @relation("PlatformAdminGrantedBy")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -774,4 +776,21 @@ model NotificationBroadcast {
   notifications Notification[]
 
   @@index([createdAt])
+}
+
+// A platform admin granted beyond the single BOOTSTRAP_ADMIN_EMAIL "seed"
+// admin. The seed admin is env-configured, not a row here, and is the only
+// one who may grant/revoke this table's rows (see lib/permissions.ts) --
+// granting that power to any DB-added admin would let one compromised admin
+// account mint arbitrarily many more.
+model PlatformAdmin {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @unique @db.Uuid
+  grantedBy String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  user        User  @relation("PlatformAdminUser", fields: [userId], references: [id], onDelete: Cascade)
+  grantedByUser User? @relation("PlatformAdminGrantedBy", fields: [grantedBy], references: [id], onDelete: SetNull)
+
+  @@index([userId])
 }

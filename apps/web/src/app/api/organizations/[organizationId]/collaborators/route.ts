@@ -106,7 +106,7 @@ export async function GET(_req: Request, { params }: Params) {
         expiresAt: invite.expiresAt,
         createdAt: invite.createdAt
       })),
-      platformAdmins: getPlatformAdminContacts(),
+      platformAdmins: await getPlatformAdminContacts(),
       emailDeliveryConfigured: isSmtpConfigured()
     });
   } catch (err) {
