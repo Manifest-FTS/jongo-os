@@ -85,7 +85,7 @@ describe("syncCoolifyProjectsToOrganizations", () => {
 
   it("does not create a client for a project that is already linked", async () => {
     coolifyMocks.listCoolifyProjects.mockResolvedValue([{ id: "proj-1", name: "Acme Co" }]);
-    dbMocks.organizationFindMany.mockResolvedValue([{ id: "org-1", coolifyProjectId: "proj-1", resourceMissingSince: null }]);
+    dbMocks.organizationFindMany.mockResolvedValue([{ id: "org-1", coolifyProjectId: "proj-1" }]);
     dbMocks.userFindFirst.mockResolvedValue({ id: "owner-1" });
 
     await syncCoolifyProjectsToOrganizations();
@@ -93,66 +93,39 @@ describe("syncCoolifyProjectsToOrganizations", () => {
     expect(dbMocks.organizationCreate).not.toHaveBeenCalled();
   });
 
-  it("marks a client's project missing on first sight, without deleting it", async () => {
-    coolifyMocks.listCoolifyProjects.mockResolvedValue([]);
-    dbMocks.organizationFindMany.mockResolvedValue([
-      { id: "org-1", coolifyProjectId: "proj-gone", resourceMissingSince: null }
-    ]);
-    dbMocks.userFindFirst.mockResolvedValue({ id: "owner-1" });
-
-    const result = await syncCoolifyProjectsToOrganizations();
-
-    expect(dbMocks.organizationUpdate).toHaveBeenCalledWith({
-      where: { id: "org-1" },
-      data: { resourceMissingSince: expect.any(Date) }
-    });
-    expect(result.missingSinceSet).toBe(1);
-    expect(result.archived).toBe(0);
-  });
-
-  it("archives a client whose project has stayed missing past the grace period", async () => {
+  it("archives a client immediately once its Coolify project is gone", async () => {
     const now = new Date("2026-01-08T00:00:00Z");
     coolifyMocks.listCoolifyProjects.mockResolvedValue([]);
-    dbMocks.organizationFindMany.mockResolvedValue([
-      { id: "org-1", coolifyProjectId: "proj-gone", resourceMissingSince: new Date("2026-01-01T00:00:00Z") }
-    ]);
+    dbMocks.organizationFindMany.mockResolvedValue([{ id: "org-1", coolifyProjectId: "proj-gone" }]);
     dbMocks.userFindFirst.mockResolvedValue({ id: "owner-1" });
 
-    const result = await syncCoolifyProjectsToOrganizations({ now, graceDays: 7 });
+    const result = await syncCoolifyProjectsToOrganizations({ now });
 
     expect(dbMocks.transaction).toHaveBeenCalledTimes(1);
+    expect(dbMocks.organizationUpdate).toHaveBeenCalledWith({ where: { id: "org-1" }, data: { deletedAt: now } });
     expect(result.archived).toBe(1);
   });
 
-  it("clears resourceMissingSince when a project reappears", async () => {
+  it("does not touch a client whose project is still live", async () => {
     coolifyMocks.listCoolifyProjects.mockResolvedValue([{ id: "proj-1", name: "Acme Co" }]);
-    dbMocks.organizationFindMany.mockResolvedValue([
-      { id: "org-1", coolifyProjectId: "proj-1", resourceMissingSince: new Date("2026-01-01T00:00:00Z") }
-    ]);
+    dbMocks.organizationFindMany.mockResolvedValue([{ id: "org-1", coolifyProjectId: "proj-1" }]);
     dbMocks.userFindFirst.mockResolvedValue({ id: "owner-1" });
 
     const result = await syncCoolifyProjectsToOrganizations();
 
-    expect(dbMocks.organizationUpdate).toHaveBeenCalledWith({
-      where: { id: "org-1" },
-      data: { resourceMissingSince: null }
-    });
-    expect(result.missingSinceCleared).toBe(1);
+    expect(dbMocks.transaction).not.toHaveBeenCalled();
+    expect(result.archived).toBe(0);
   });
 
   it("refuses to archive an implausible share of clients at once", async () => {
     const now = new Date("2026-01-08T00:00:00Z");
     coolifyMocks.listCoolifyProjects.mockResolvedValue([]);
     dbMocks.organizationFindMany.mockResolvedValue(
-      Array.from({ length: 6 }, (_, i) => ({
-        id: `org-${i}`,
-        coolifyProjectId: `proj-${i}`,
-        resourceMissingSince: new Date("2026-01-01T00:00:00Z")
-      }))
+      Array.from({ length: 6 }, (_, i) => ({ id: `org-${i}`, coolifyProjectId: `proj-${i}` }))
     );
     dbMocks.userFindFirst.mockResolvedValue({ id: "owner-1" });
 
-    const result = await syncCoolifyProjectsToOrganizations({ now, graceDays: 7 });
+    const result = await syncCoolifyProjectsToOrganizations({ now });
 
     expect(dbMocks.transaction).not.toHaveBeenCalled();
     expect(result.archived).toBe(0);

@@ -7,17 +7,19 @@
  *   1. A Coolify project with no linked Organization gets one created
  *      automatically, owned by the platform's bootstrap admin.
  *   2. An Organization whose linked Coolify project can no longer be found
- *      gets soft-deleted, mirroring Site.resourceMissingSince: missing is
- *      recorded first, and only acted on after it stays missing past a grace
- *      period, so a transient Coolify API failure cannot delete a client.
- *      A batch-level circuit breaker (shared with the existing site archiver)
- *      refuses to act at all if an implausible share of clients look deleted
- *      at once -- far more likely an API problem than reality.
+ *      gets soft-deleted immediately -- a client whose Coolify project is
+ *      gone has nothing that would work in Jongo anyway, so there is no
+ *      grace period here (unlike Site, which keeps one for other reasons).
+ *      The one safety net kept is a batch-level circuit breaker (shared with
+ *      the existing site archiver): if an implausible share of clients look
+ *      deleted in the same pass, that is far more likely a Coolify API
+ *      problem than reality, and the whole batch is refused rather than acted
+ *      on.
  */
 
 import { getDb } from "@/lib/db";
 import { listCoolifyProjects } from "@/lib/coolify";
-import { decideSiteArchive, shouldAbortArchiveBatch } from "./platform-reconcile-match";
+import { shouldAbortArchiveBatch } from "./platform-reconcile-match";
 
 export function autoSyncCoolifyProjectsDefaultEnabled(
   raw: string | undefined = process.env.JONGO_AUTO_SYNC_COOLIFY_PROJECTS
@@ -30,8 +32,6 @@ export type OrganizationSyncSummary = {
   ran: boolean;
   reason?: string;
   created: number;
-  missingSinceSet: number;
-  missingSinceCleared: number;
   archived: number;
   archiveAborted: boolean;
   archiveAbortReason?: string;
@@ -57,18 +57,8 @@ async function uniqueSlug(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, ba
   return candidate;
 }
 
-export async function syncCoolifyProjectsToOrganizations(input?: {
-  graceDays?: number;
-  now?: Date;
-}): Promise<OrganizationSyncSummary> {
-  const empty: OrganizationSyncSummary = {
-    ran: false,
-    created: 0,
-    missingSinceSet: 0,
-    missingSinceCleared: 0,
-    archived: 0,
-    archiveAborted: false
-  };
+export async function syncCoolifyProjectsToOrganizations(input?: { now?: Date }): Promise<OrganizationSyncSummary> {
+  const empty: OrganizationSyncSummary = { ran: false, created: 0, archived: 0, archiveAborted: false };
 
   if (!autoSyncCoolifyProjectsDefaultEnabled()) {
     return { ...empty, reason: "disabled" };
@@ -89,11 +79,10 @@ export async function syncCoolifyProjectsToOrganizations(input?: {
 
   const liveIds = new Set(liveProjects.map((p) => p.id));
   const now = input?.now ?? new Date();
-  const graceDays = input?.graceDays ?? 7;
 
   const orgs = await db.organization.findMany({
     where: { deletedAt: null, coolifyProjectId: { not: null } },
-    select: { id: true, coolifyProjectId: true, resourceMissingSince: true }
+    select: { id: true, coolifyProjectId: true }
   });
   const linkedProjectIds = new Set(orgs.map((o: any) => o.coolifyProjectId).filter(Boolean));
 
@@ -132,36 +121,15 @@ export async function syncCoolifyProjectsToOrganizations(input?: {
   }
 
   // ── 2. Archive (soft delete) a client whose Coolify project is gone ──
-  const stillMissing = orgs.filter((o: any) => !liveIds.has(o.coolifyProjectId));
-  const reappeared = orgs.filter((o: any) => liveIds.has(o.coolifyProjectId) && o.resourceMissingSince);
+  const missing = orgs.filter((o: any) => !liveIds.has(o.coolifyProjectId));
+  const abortCheck = shouldAbortArchiveBatch({ candidates: missing.length, totalSites: orgs.length });
 
-  let missingSinceCleared = 0;
-  for (const org of reappeared) {
-    await db.organization.update({ where: { id: org.id }, data: { resourceMissingSince: null } });
-    missingSinceCleared += 1;
-  }
-
-  let missingSinceSet = 0;
-  const archiveCandidates: string[] = [];
-  for (const org of stillMissing) {
-    if (!org.resourceMissingSince) {
-      await db.organization.update({ where: { id: org.id }, data: { resourceMissingSince: now } });
-      missingSinceSet += 1;
-      continue;
-    }
-    const decision = decideSiteArchive({ missingSince: org.resourceMissingSince, now, graceDays, indexComplete: true });
-    if (decision.archive) {
-      archiveCandidates.push(org.id);
-    }
-  }
-
-  const abortCheck = shouldAbortArchiveBatch({ candidates: archiveCandidates.length, totalSites: orgs.length });
   let archived = 0;
   if (!abortCheck.abort) {
-    for (const orgId of archiveCandidates) {
+    for (const org of missing) {
       await db.$transaction([
-        db.organization.update({ where: { id: orgId }, data: { deletedAt: now } }),
-        db.site.updateMany({ where: { organizationId: orgId, deletedAt: null }, data: { deletedAt: now } })
+        db.organization.update({ where: { id: org.id }, data: { deletedAt: now } }),
+        db.site.updateMany({ where: { organizationId: org.id, deletedAt: null }, data: { deletedAt: now } })
       ]);
       archived += 1;
     }
@@ -170,8 +138,6 @@ export async function syncCoolifyProjectsToOrganizations(input?: {
   return {
     ran: true,
     created,
-    missingSinceSet,
-    missingSinceCleared,
     archived,
     archiveAborted: abortCheck.abort,
     archiveAbortReason: abortCheck.abort ? abortCheck.reason : undefined
