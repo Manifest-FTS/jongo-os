@@ -52,8 +52,8 @@ export default function DesktopNotificationPrompt() {
       role="status"
       style={{
         position: "fixed",
-        bottom: "1.25rem",
-        right: "1.25rem",
+        bottom: "150px",
+        left: "1.25rem",
         zIndex: 90,
         width: "min(360px, calc(100vw - 2.5rem))",
         background: "#ffffff",

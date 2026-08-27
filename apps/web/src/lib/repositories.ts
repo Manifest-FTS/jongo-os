@@ -232,6 +232,10 @@ export type ActivityFeedItem = {
   actor?: string;
   environment?: "production" | "staging" | "unknown";
   durationSeconds?: number;
+  /** Client/project this event belongs to, when it could be resolved. */
+  clientName?: string;
+  /** App/resource this event belongs to, when it could be resolved. */
+  appName?: string;
 };
 
 function fromMockClients(): ClientWorkspaceRecord[] {
@@ -792,10 +796,34 @@ async function hasLegacySchema(prisma: any): Promise<boolean> {
   }
 }
 
+const ACTION_TITLES: Record<string, string> = {
+  site_created: "App created",
+  site_updated: "App updated",
+  site_deleted: "App deleted",
+  deploy_triggered: "Deployment triggered"
+};
+
+/** "some_snake_case_action" -> "Some snake case action", for any action not in the map above. */
+function humanizeAction(action: string): string {
+  if (ACTION_TITLES[action]) return ACTION_TITLES[action];
+  const words = action.split("_").filter(Boolean);
+  if (words.length === 0) return action;
+  return `${words[0][0].toUpperCase()}${words[0].slice(1)} ${words.slice(1).join(" ")}`.trim();
+}
+
+function statusForAction(action: string): ActivityFeedItem["status"] {
+  if (action.includes("deploy")) return "healthy";
+  if (action.includes("deleted")) return "error";
+  if (action.includes("created")) return "healthy";
+  return "unknown";
+}
+
 export async function getActivityFeed(limit = 6, viewer?: ViewerContext): Promise<ActivityFeedItem[]> {
   const overview = await getCoolifyOverview();
   const visibleSites = await listSiteDirectory(viewer, overview);
   const visibleNames = new Set(visibleSites.map((site) => normalizedKey(site.name)));
+  const visibleOrgIds = new Set(visibleSites.map((site) => site.clientDbId).filter((id): id is string => Boolean(id)));
+  const clientNameBySiteName = new Map(visibleSites.map((site) => [normalizedKey(site.name), site.clientName]));
   const scopeApplied = shouldApplyViewerScope(viewer);
 
   const deploymentItems: ActivityFeedItem[] = overview.deployments
@@ -803,12 +831,14 @@ export async function getActivityFeed(limit = 6, viewer?: ViewerContext): Promis
     .slice(0, limit)
     .map((deployment) => ({
     id: deployment.id,
-    title: deployment.environment === "unknown" ? deployment.siteName : `${deployment.siteName} → ${deployment.environment}`,
+    title: deployment.environment === "unknown" ? "Deployment" : `Deployment → ${deployment.environment}`,
     detail: deployment.commitMessage ?? `Deployment ${deployment.status}`,
     timestamp: deployment.finishedAt,
     status: deployment.status,
     environment: deployment.environment,
-    durationSeconds: deployment.durationSeconds
+    durationSeconds: deployment.durationSeconds,
+    appName: deployment.siteName,
+    clientName: clientNameBySiteName.get(normalizedKey(deployment.siteName))
   }));
 
   const prisma = await maybeGetDb();
@@ -819,17 +849,48 @@ export async function getActivityFeed(limit = 6, viewer?: ViewerContext): Promis
 
   try {
     const auditLogs: any[] = await prisma.auditLog.findMany({
-      take: limit,
+      take: limit * 3, // over-fetch: some rows get filtered out by viewer scope below
       orderBy: { createdAt: "desc" }
     });
 
-    const auditItems: ActivityFeedItem[] = auditLogs.map((log: any) => ({
-      id: log.id,
-      title: log.action,
-      detail: log.resourceType ? `${log.resourceType}${log.resourceId ? ` ${log.resourceId}` : ""}` : "Audit event",
-      timestamp: log.createdAt?.toISOString?.(),
-      status: log.action.includes("deploy") ? "healthy" : "unknown"
-    }));
+    const scoped = scopeApplied ? auditLogs.filter((log) => visibleOrgIds.has(log.organizationId)) : auditLogs;
+    const relevant = scoped.slice(0, limit);
+
+    // Batch-resolved rather than per-row: one query each for every client/app
+    // name an audit entry might reference, instead of N+1 lookups. Soft-deleted
+    // rows are included on purpose -- a "site deleted" entry with no name is
+    // useless, and the row still exists (deletion here is a soft delete).
+    const orgIds = [...new Set(relevant.map((log) => log.organizationId).filter(Boolean))];
+    const siteIds = [...new Set(
+      relevant.filter((log) => log.resourceType === "site" || log.resourceType === "site_staging").map((log) => log.resourceId).filter(Boolean)
+    )];
+
+    const [orgs, sites] = await Promise.all([
+      orgIds.length > 0
+        ? prisma.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })
+        : Promise.resolve([] as Array<{ id: string; name: string }>),
+      siteIds.length > 0
+        ? prisma.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, name: true, slug: true } })
+        : Promise.resolve([] as Array<{ id: string; name: string; slug: string }>)
+    ]);
+    const orgNameById = new Map<string, string>(orgs.map((o: any) => [o.id, o.name]));
+    const siteById = new Map<string, any>(sites.map((s: any) => [s.id, s]));
+
+    const auditItems: ActivityFeedItem[] = relevant.map((log: any) => {
+      const clientName: string | undefined = orgNameById.get(log.organizationId);
+      const site: any = siteById.get(log.resourceId);
+      const appName: string | undefined = site?.name ?? site?.slug;
+
+      return {
+        id: log.id,
+        title: humanizeAction(log.action),
+        detail: appName ? `${appName}${clientName ? ` — ${clientName}` : ""}` : (clientName ?? "Platform event"),
+        timestamp: log.createdAt?.toISOString?.(),
+        status: statusForAction(log.action),
+        clientName,
+        appName
+      };
+    });
 
     return [...auditItems, ...deploymentItems].slice(0, limit);
   } catch {

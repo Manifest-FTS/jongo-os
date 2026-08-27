@@ -61,11 +61,26 @@ export default function NotificationBell() {
 
   useEffect(() => {
     void load();
-    // Polling rather than a socket: the tray only needs to be "roughly live",
-    // and every other piece of near-real-time state in this app (staging
-    // status, deployments) already polls on a plain interval.
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
+    // 20s while the tab has focus; browsers throttle background-tab timers
+    // regardless of the interval set here, so the poll alone cannot guarantee
+    // an alert while a different app/tab has focus for an extended stretch --
+    // that needs a service worker + Web Push subscription, a separate,
+    // larger feature. This at least keeps foreground polling snappy and,
+    // combined with the listeners below, catches up immediately the moment
+    // the tab regains focus rather than waiting out the rest of an interval.
+    const interval = setInterval(load, 20000);
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") void load();
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", load);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", load);
+    };
   }, [load]);
 
   useEffect(() => {

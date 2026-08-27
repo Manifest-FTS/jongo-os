@@ -11,6 +11,7 @@ import {
   isInviteExpired
 } from "@/lib/invitations";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
+import { getPlatformAdminContacts } from "@/lib/permissions";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -105,6 +106,7 @@ export async function GET(_req: Request, { params }: Params) {
         expiresAt: invite.expiresAt,
         createdAt: invite.createdAt
       })),
+      platformAdmins: getPlatformAdminContacts(),
       emailDeliveryConfigured: isSmtpConfigured()
     });
   } catch (err) {

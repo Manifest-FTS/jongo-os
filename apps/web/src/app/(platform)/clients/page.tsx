@@ -1,11 +1,14 @@
 import { auth } from "@/lib/auth.config";
 import { listClientWorkspaces, listSiteDirectory } from "@/lib/repositories";
+import { checkIsPlatformAdmin } from "@/lib/permissions";
+import { describeForViewer } from "@/lib/site-description";
 import Link from "next/link";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import ClientDirectoryView from "@/components/ClientDirectoryView";
 
 export default async function ClientsPage() {
   const session = await auth();
+  const isPlatformAdmin = checkIsPlatformAdmin(session?.user?.email);
   const clients = await listClientWorkspaces({
     userId: session?.user?.id,
     email: session?.user?.email
@@ -53,7 +56,7 @@ export default async function ClientsPage() {
           clients={clients.map((client) => ({
             id: client.id,
             name: client.name,
-            summary: client.summary,
+            summary: describeForViewer(client.summary, isPlatformAdmin) ?? "Client workspace",
             siteCount: siteCountsByClientId.get(client.id) ?? client.siteCount,
             memberCount: client.memberCount,
             href: `/clients/${client.id}`

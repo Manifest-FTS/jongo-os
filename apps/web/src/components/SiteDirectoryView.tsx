@@ -8,6 +8,7 @@ import ResourceTypePill from "@/components/ResourceTypePill";
 import { ToastStack, useToasts } from "@/components/Toasts";
 import { useAppDirectoryPreferences } from "@/hooks/useAppDirectoryPreferences";
 import { RESOURCE_TYPES, type ResourceType } from "@/lib/resource-types";
+import { describeForViewer } from "@/lib/site-description";
 
 type SiteItem = {
   id: string;
@@ -473,7 +474,9 @@ export default function SiteDirectoryView({
                   <div className="directory-title-row">
                     <h2 className="directory-title" style={{ fontSize: "1.06rem", lineHeight: 1.2 }}>{site.name}</h2>
                   </div>
-                  {site.description ? <p className="directory-summary">{site.description}</p> : null}
+                  {describeForViewer(site.description, !isCollaboratorView) ? (
+                    <p className="directory-summary">{describeForViewer(site.description, !isCollaboratorView)}</p>
+                  ) : null}
                   {site.clientHref ? (
                     <Link
                       href={site.clientHref}

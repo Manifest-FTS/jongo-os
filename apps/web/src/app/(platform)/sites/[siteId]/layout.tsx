@@ -6,6 +6,7 @@ import { getSiteWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyAppStagingCapability } from "@/lib/coolify";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
+import { describeForViewer } from "@/lib/site-description";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -116,8 +117,8 @@ export default async function SiteWorkspaceLayout({
         <div className="workspace-hero-body">
           <div className="workspace-hero-title-group">
             <h1 className="workspace-title">{site?.name ?? siteId}</h1>
-            {site?.description ? (
-              <p className="workspace-subtitle">{site.description}</p>
+            {describeForViewer(site?.description, isAdminViewer) ? (
+              <p className="workspace-subtitle">{describeForViewer(site?.description, isAdminViewer)}</p>
             ) : null}
           </div>
 

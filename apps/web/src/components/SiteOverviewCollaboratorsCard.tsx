@@ -23,6 +23,7 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, c
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<CollaboratorRow[]>([]);
   const [clientTeam, setClientTeam] = useState<ClientTeamRow[]>([]);
+  const [platformAdmins, setPlatformAdmins] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +45,7 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, c
         if (!cancelled) {
           setRows((data as { collaborators?: CollaboratorRow[] }).collaborators ?? []);
           setClientTeam((data as { clientTeam?: ClientTeamRow[] }).clientTeam ?? []);
+          setPlatformAdmins((data as { platformAdmins?: string[] }).platformAdmins ?? []);
         }
       } catch {
         if (!cancelled) {
@@ -141,6 +143,13 @@ export default function SiteOverviewCollaboratorsCard({ siteId, currentUserId, c
       {!loading && !error && clientTeam.length === 0 ? (
         <p className="card-muted" style={{ marginTop: "0.85rem", marginBottom: 0 }}>
           No client team members yet.
+        </p>
+      ) : null}
+
+      {!loading && !error && platformAdmins.length > 0 ? (
+        <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.8rem" }}>
+          Platform admin{platformAdmins.length === 1 ? "" : "s"} ({platformAdmins.join(", ")}) also has full access
+          to this app for support, independent of this list.
         </p>
       ) : null}
 
