@@ -122,6 +122,13 @@ model Organization {
   coolifyProjectId   String? @unique
   coolifyProjectName String?
 
+  // Maintained by the hourly reconciler (see lib/organization-reconcile.ts),
+  // same pattern as Site.resourceMissingSince: set the first time this
+  // Organization's Coolify project is not found live, cleared if it
+  // reappears, and only acted on (soft delete) after it stays missing past
+  // the grace period -- a transient Coolify API blip must not delete a client.
+  resourceMissingSince DateTime?
+
   // Relations
   owner               User                             @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   sites               Site[]
