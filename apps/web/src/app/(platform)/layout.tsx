@@ -5,6 +5,7 @@ import { getGravatarUrl } from "@/lib/gravatar";
 import { getInitials } from "@/lib/profile";
 import BrandLogo from "@/components/BrandLogo";
 import { ChevronDownIcon } from "@/components/JongoIcons";
+import DesktopNotificationPrompt from "@/components/DesktopNotificationPrompt";
 import NotificationBell from "@/components/NotificationBell";
 import PlatformPrimaryNav from "@/components/navigation/PlatformPrimaryNav";
 import SignOutButton from "@/components/auth/SignOutButton";
@@ -82,6 +83,8 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           </p>
         </footer>
       </div>
+
+      <DesktopNotificationPrompt />
     </div>
   );
 }
