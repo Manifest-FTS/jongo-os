@@ -31,21 +31,21 @@ export type ResolvedRecipient = {
   appName: string | null;
 };
 
-/** {{client_name}}, {{app_name}}, {{action_link}} — the only variables the composer exposes. */
+/** {{recipient_name}}, {{client_name}}, {{app_name}}, {{action_link}} — the variables the composer exposes. */
 export function applyTemplateVariables(
   template: string,
-  vars: { client_name?: string; app_name?: string; action_link?: string }
+  vars: { recipient_name?: string; client_name?: string; app_name?: string; action_link?: string }
 ): string {
-  return template.replace(/\{\{\s*(client_name|app_name|action_link)\s*\}\}/g, (_match, key: string) => {
+  return template.replace(/\{\{\s*(recipient_name|client_name|app_name|action_link)\s*\}\}/g, (_match, key: string) => {
     const value = vars[key as keyof typeof vars];
     return value && value.trim() ? value : "";
   });
 }
 
 /**
- * {{client_name}} greets the person, not their organization — "Hi {{client_name}},"
- * reads as a name in every seeded template. Falls back to the org name, then the
- * part of the email before the @, so the placeholder never renders empty.
+ * {{recipient_name}} greets the person; {{client_name}} names their
+ * client/organization. Falls back to the client name, then the part of the
+ * email before the @, so the placeholder never renders empty.
  */
 export function deriveRecipientFirstName(input: { fullName: string | null; email: string; clientName: string | null }): string {
   const firstFromFullName = input.fullName?.trim().split(/\s+/)[0];
@@ -288,7 +288,8 @@ export async function sendBroadcast(input: {
     await db.notification.createMany({
       data: recipients.map((r) => {
         const vars = {
-          client_name: deriveRecipientFirstName(r),
+          recipient_name: deriveRecipientFirstName(r),
+          client_name: r.clientName ?? undefined,
           app_name: r.appName ?? undefined,
           action_link: input.actionLink
         };
@@ -321,7 +322,8 @@ export async function sendBroadcast(input: {
       if (optedOut.has(recipient.userId)) continue;
 
       const vars = {
-        client_name: deriveRecipientFirstName(recipient),
+        recipient_name: deriveRecipientFirstName(recipient),
+        client_name: recipient.clientName ?? undefined,
         app_name: recipient.appName ?? undefined,
         action_link: input.actionLink
       };

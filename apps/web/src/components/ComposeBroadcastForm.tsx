@@ -59,6 +59,32 @@ export default function ComposeBroadcastForm() {
     [clients]
   );
 
+  // Switching scope clears the other pickers' selections rather than just
+  // hiding them: a check made under "Apps" and left behind after switching to
+  // "Members" is invisible but still real state, and that mismatch between
+  // what's on screen and what would actually send is the exact confusion this
+  // fixes.
+  function changeScope(next: Scope) {
+    setScope(next);
+    setSelectedClientIds([]);
+    setSelectedSiteIds([]);
+    setSelectedUserIds([]);
+  }
+
+  const selectionSummary = useMemo(() => {
+    if (scope === "all") return "Every client and their team members.";
+    if (scope === "clients") {
+      const names = clients.filter((c) => selectedClientIds.includes(c.id)).map((c) => c.name);
+      return names.length > 0 ? names.join(", ") : "No clients selected yet.";
+    }
+    if (scope === "apps") {
+      const names = allApps.filter((a) => selectedSiteIds.includes(a.id)).map((a) => `${a.name} (${a.clientName})`);
+      return names.length > 0 ? names.join(", ") : "No apps selected yet.";
+    }
+    const names = members.filter((m) => selectedUserIds.includes(m.id)).map((m) => m.fullName || m.email);
+    return names.length > 0 ? names.join(", ") : "No team members selected yet.";
+  }, [scope, clients, selectedClientIds, allApps, selectedSiteIds, members, selectedUserIds]);
+
   function applyTemplate(key: string) {
     setTemplateKey(key);
     const template = templates.find((t) => t.templateKey === key);
@@ -134,12 +160,17 @@ export default function ComposeBroadcastForm() {
               key={s}
               type="button"
               className={`tab-link${scope === s ? " is-active" : ""}`}
-              onClick={() => setScope(s)}
+              onClick={() => changeScope(s)}
             >
               {s === "all" ? "All Clients / Collaborators" : s === "clients" ? "Specific Client(s)" : s === "apps" ? "Specific App(s)" : "Specific Team Member(s)"}
             </button>
           ))}
         </div>
+
+        <p className="card-muted" style={{ marginTop: "0.6rem", fontSize: "0.82rem" }}>
+          <strong>Selected: </strong>
+          {selectionSummary}
+        </p>
 
         {scope === "clients" ? (
           <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.75rem", maxHeight: "220px", overflow: "auto" }}>
@@ -201,8 +232,9 @@ export default function ComposeBroadcastForm() {
           </button>
         </div>
         <p className="card-muted" style={{ marginTop: "0.5rem", fontSize: "0.82rem" }}>
-          Use <code>{"{{client_name}}"}</code> (each recipient's first name), <code>{"{{app_name}}"}</code> and{" "}
-          <code>{"{{action_link}}"}</code> — each is filled in per recipient.
+          Placeholders, filled in per recipient: <code>{"{{recipient_name}}"}</code> (their first name),{" "}
+          <code>{"{{client_name}}"}</code> (their client/organization), <code>{"{{app_name}}"}</code> (only set when
+          targeting specific apps) and <code>{"{{action_link}}"}</code>.
         </p>
       </div>
 
