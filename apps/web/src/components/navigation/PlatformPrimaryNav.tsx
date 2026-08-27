@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { SVGProps } from "react";
-import { BuildingOfficeIcon, DashboardIcon, ServerIcon, SettingsIcon } from "@/components/JongoIcons";
+import { BellIcon, BuildingOfficeIcon, DashboardIcon, ServerIcon, SettingsIcon } from "@/components/JongoIcons";
 
 type NavItem = {
   href: string;
@@ -16,7 +16,8 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardIcon, match: "exact" },
   { href: "/clients", label: "Clients", icon: BuildingOfficeIcon, match: "prefix" },
   { href: "/apps", label: "Apps", icon: ServerIcon, match: "prefix" },
-  { href: "/settings", label: "Settings", icon: SettingsIcon, match: "prefix" }
+  { href: "/settings", label: "Settings", icon: SettingsIcon, match: "prefix" },
+  { href: "/notifications", label: "Notifications", icon: BellIcon, match: "prefix" }
 ];
 
 function isItemActive(pathname: string, item: NavItem) {

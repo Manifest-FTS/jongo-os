@@ -24,6 +24,19 @@ enum SiteCollaboratorRole {
   collaborator
 }
 
+enum NotificationType {
+  system_backup
+  suspension
+  maintenance
+  general
+}
+
+enum NotificationDeliveryMode {
+  in_app
+  email
+  in_app_and_email
+}
+
 // ============================================================
 // Users and Authentication
 // ============================================================
@@ -52,6 +65,8 @@ model User {
   invitationsSent      Invitation[]         @relation("InvitationInvitedBy")
   invitationsAccepted  Invitation[]         @relation("InvitationAcceptedBy")
   passwordResetTokens  PasswordResetToken[]
+  notifications        Notification[]
+  broadcastsSent       NotificationBroadcast[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -62,12 +77,14 @@ model User {
 }
 
 model UserProfileSettings {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String    @unique @db.Uuid
-  username    String?   @unique
-  profileRole String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                    String    @unique @db.Uuid
+  username                  String?   @unique
+  profileRole               String?
+  emailNotificationsEnabled Boolean   @default(true)
+  backupAlertsEnabled       Boolean   @default(true)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
   deletedAt   DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -111,6 +128,7 @@ model Organization {
   invitations         Invitation[]
   apiTokens           ApiToken[]
   auditLogs           AuditLog[]
+  notifications       Notification[]
 
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
@@ -229,6 +247,7 @@ model Site {
   wordpressPluginInventory WordPressPluginInventory?
   backups                  SiteBackup[]
   sftpAccounts             SftpAccount[]
+  notifications            Notification[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -686,4 +705,73 @@ model NotificationChannel {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
+}
+
+// ============================================================
+// Notifications & Admin Broadcasts (TSK-00951)
+// ============================================================
+
+// One row per recipient per event. Both system-generated (system_backup) and
+// admin-authored (suspension/maintenance/general) notifications land here, so
+// the tray and /notifications page have a single source to read.
+model Notification {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String           @db.Uuid
+  clientId    String?          @db.Uuid
+  appId       String?          @db.Uuid
+  broadcastId String?          @db.Uuid
+  type        NotificationType @default(general)
+  title       String
+  message     String
+  readAt      DateTime?
+  // Hides a notification from the top-bar tray without deleting its history —
+  // "Dismiss" and "Clear All" both set this rather than removing the row, so
+  // the full /notifications page can still show everything under "All".
+  dismissedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client    Organization?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  app       Site?                  @relation(fields: [appId], references: [id], onDelete: SetNull)
+  broadcast NotificationBroadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
+
+  @@index([userId, dismissedAt, createdAt])
+  @@index([userId, readAt])
+  @@index([broadcastId])
+}
+
+// Reusable copy for the admin composer's template picker. Seeded with the
+// three keys the composer ships with; admins are not expected to create new
+// keys through the UI in this iteration, only fill in the two built-in ones.
+model NotificationTemplate {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateKey  String   @unique
+  subject      String
+  bodyTemplate String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// One row per "Compose Broadcast" send. Exists separately from Notification
+// because a broadcast to "All Clients" can fan out to hundreds of recipient
+// rows, and the admin's Activity History tab needs to show the send itself
+// (who, what, how many, delivery mode) rather than one line per recipient.
+model NotificationBroadcast {
+  id               String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdBy        String                   @db.Uuid
+  templateKey      String?
+  subject          String
+  message          String
+  deliveryMode     NotificationDeliveryMode @default(in_app)
+  // { scope: "all" | "clients" | "apps" | "members", clientIds?, siteIds?, userIds? }
+  recipientScope   Json
+  recipientCount   Int                      @default(0)
+  emailSentCount   Int                      @default(0)
+  emailFailedCount Int                      @default(0)
+  createdAt        DateTime                 @default(now())
+
+  createdByUser User           @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  notifications Notification[]
+
+  @@index([createdAt])
 }

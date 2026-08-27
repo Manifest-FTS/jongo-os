@@ -455,19 +455,20 @@ export async function notifyBackupEvent(input: {
         id: true,
         slug: true,
         name: true,
+        organizationId: true,
         backupAlertSentAt: true,
         organization: {
           select: {
-            owner: { select: { email: true } },
+            owner: { select: { id: true, email: true } },
             collaborators: {
               where: { deletedAt: null },
-              select: { user: { select: { email: true } } }
+              select: { user: { select: { id: true, email: true } } }
             }
           }
         },
         collaborators: {
           where: { deletedAt: null },
-          select: { user: { select: { email: true } } }
+          select: { user: { select: { id: true, email: true } } }
         }
       }
     });
@@ -490,6 +491,21 @@ export async function notifyBackupEvent(input: {
     });
     if (recipients.length === 0) {
       return { attempted: 0, sent: 0, skippedReason: "no_recipients" };
+    }
+
+    // Same set, keyed by userId rather than email: needed to create in-app
+    // notifications and to look up each person's own preference toggles,
+    // neither of which collectSiteRecipients (email-only, already covered by
+    // its own tests) can answer.
+    const recipientUsers = new Map<string, string>();
+    for (const candidate of [
+      site.organization?.owner,
+      ...(site.organization?.collaborators ?? []).map((c: any) => c?.user),
+      ...(site.collaborators ?? []).map((c: any) => c?.user)
+    ]) {
+      if (candidate?.id && !recipientUsers.has(candidate.id)) {
+        recipientUsers.set(candidate.id, candidate.email ?? "");
+      }
     }
 
     // Only needed for the two events that reference it, so it is not fetched
@@ -523,9 +539,47 @@ export async function notifyBackupEvent(input: {
       actorEmail: input.actorEmail
     });
 
+    // In-app notification: one row per recipient, for the two events the
+    // request scopes this to — a completed or failed backup. Best-effort:
+    // must not block the email send below if it fails.
+    if (input.event === "backup_succeeded" || input.event === "backup_failed") {
+      try {
+        await (db as any).notification.createMany({
+          data: [...recipientUsers.keys()].map((userId) => ({
+            userId,
+            clientId: site.organizationId,
+            appId: site.id,
+            type: "system_backup" as const,
+            title: message.subject,
+            message: message.text
+          }))
+        });
+      } catch (error) {
+        console.error(`notifyBackupEvent(${input.event}): failed to create in-app notifications:`, error);
+      }
+    }
+
+    // Preference toggles: emailNotificationsEnabled is the blanket opt-out,
+    // backupAlertsEnabled narrows it further for the backup events
+    // specifically. A user missing a UserProfileSettings row has never
+    // touched either toggle, so they default to true (opted in).
+    const prefRows = await (db as any).userProfileSettings.findMany({
+      where: { userId: { in: [...recipientUsers.keys()] } },
+      select: { userId: true, emailNotificationsEnabled: true, backupAlertsEnabled: true }
+    });
+    const prefsByUser = new Map(prefRows.map((p: any) => [p.userId, p]));
+    const isBackupEvent = input.event === "backup_succeeded" || input.event === "backup_failed";
+    const emailableUsers = [...recipientUsers.entries()].filter(([userId]) => {
+      const pref = prefsByUser.get(userId) as { emailNotificationsEnabled?: boolean; backupAlertsEnabled?: boolean } | undefined;
+      if (pref?.emailNotificationsEnabled === false) return false;
+      if (isBackupEvent && pref?.backupAlertsEnabled === false) return false;
+      return true;
+    });
+
     const { sendTransactionalEmail } = await import("@/lib/email");
     let sent = 0;
-    for (const to of recipients) {
+    for (const [, to] of emailableUsers) {
+      if (!to) continue;
       try {
         const result = await sendTransactionalEmail({
           to,
