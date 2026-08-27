@@ -43,6 +43,18 @@ export function applyTemplateVariables(
 }
 
 /**
+ * {{client_name}} greets the person, not their organization — "Hi {{client_name}},"
+ * reads as a name in every seeded template. Falls back to the org name, then the
+ * part of the email before the @, so the placeholder never renders empty.
+ */
+export function deriveRecipientFirstName(input: { fullName: string | null; email: string; clientName: string | null }): string {
+  const firstFromFullName = input.fullName?.trim().split(/\s+/)[0];
+  if (firstFromFullName) return firstFromFullName;
+  if (input.clientName?.trim()) return input.clientName.trim();
+  return input.email.split("@")[0] ?? input.email;
+}
+
+/**
  * Every user with access to the given clients, deduplicated by userId. Mirrors
  * the owner + org-collaborator union used everywhere else access is resolved
  * (see getClientTeamMembers / resolveSitePermissionSnapshot) rather than
@@ -274,19 +286,22 @@ export async function sendBroadcast(input: {
 
   if (includesInApp && recipients.length > 0) {
     await db.notification.createMany({
-      data: recipients.map((r) => ({
-        userId: r.userId,
-        clientId: r.clientId,
-        appId: r.appId,
-        broadcastId: broadcast.id,
-        type: "general" as const,
-        title: input.subject,
-        message: applyTemplateVariables(input.message, {
-          client_name: r.clientName ?? undefined,
+      data: recipients.map((r) => {
+        const vars = {
+          client_name: deriveRecipientFirstName(r),
           app_name: r.appName ?? undefined,
           action_link: input.actionLink
-        })
-      }))
+        };
+        return {
+          userId: r.userId,
+          clientId: r.clientId,
+          appId: r.appId,
+          broadcastId: broadcast.id,
+          type: "general" as const,
+          title: applyTemplateVariables(input.subject, vars),
+          message: applyTemplateVariables(input.message, vars)
+        };
+      })
     });
   }
 
@@ -305,24 +320,26 @@ export async function sendBroadcast(input: {
     for (const recipient of recipients) {
       if (optedOut.has(recipient.userId)) continue;
 
-      const body = applyTemplateVariables(input.message, {
-        client_name: recipient.clientName ?? undefined,
+      const vars = {
+        client_name: deriveRecipientFirstName(recipient),
         app_name: recipient.appName ?? undefined,
         action_link: input.actionLink
-      });
+      };
+      const subject = applyTemplateVariables(input.subject, vars);
+      const body = applyTemplateVariables(input.message, vars);
 
       try {
         const html = renderTransactionalEmail({
-          preheader: input.subject,
+          preheader: subject,
           badge: { tone: "info", label: "Announcement" },
-          title: input.subject,
+          title: subject,
           intro: body,
           footnote: "You are receiving this because you have access to a client managed on Jongo."
         });
 
         const result = await sendTransactionalEmail({
           to: recipient.email,
-          subject: input.subject,
+          subject,
           text: body,
           html
         });
