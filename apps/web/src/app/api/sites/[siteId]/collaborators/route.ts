@@ -12,6 +12,7 @@ import {
 } from "@/lib/invitations";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
 import { getClientTeamMembers } from "@/lib/repositories";
+import { getPlatformAdminContacts } from "@/lib/permissions";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -158,6 +159,7 @@ export async function GET(_req: Request, { params }: Params) {
         createdAt: row.createdAt
       })),
       clientTeam,
+      platformAdmins: getPlatformAdminContacts(),
       pendingInvites: pendingInvites.map((invite: any) => ({
         id: invite.id,
         email: invite.email,

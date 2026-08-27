@@ -27,11 +27,13 @@ type CollaboratorsResponse = {
     fullName?: string | null;
     avatarUrl?: string | null;
   }>;
+  platformAdmins?: string[];
 };
 
 export default function ClientOverviewCollaboratorsCard({ organizationId, currentUserId }: Props) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<TeamMember[]>([]);
+  const [platformAdmins, setPlatformAdmins] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +70,7 @@ export default function ClientOverviewCollaboratorsCard({ organizationId, curren
               avatarUrl: member.avatarUrl ?? null
             }))
           );
+          setPlatformAdmins((data as CollaboratorsResponse).platformAdmins ?? []);
         }
       } catch {
         if (!cancelled) {
@@ -167,6 +170,13 @@ export default function ClientOverviewCollaboratorsCard({ organizationId, curren
       {organizationId && !loading && !error && rows.length === 0 ? (
         <p className="card-muted" style={{ marginTop: "0.85rem", marginBottom: 0 }}>
           No team members yet.
+        </p>
+      ) : null}
+
+      {organizationId && !loading && !error && platformAdmins.length > 0 ? (
+        <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.8rem" }}>
+          Platform admin{platformAdmins.length === 1 ? "" : "s"} ({platformAdmins.join(", ")}) also has full access
+          to this client for support, independent of this list.
         </p>
       ) : null}
 

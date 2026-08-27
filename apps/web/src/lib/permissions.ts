@@ -142,6 +142,22 @@ export function checkIsPlatformAdmin(
   return Boolean(viewer && configured && viewer === configured);
 }
 
+/**
+ * Platform admins for display, not for access control.
+ *
+ * They already see and manage every client without a Collaborator row on any
+ * Organization -- that row grants membership a client can review and revoke,
+ * and a platform admin's access is neither: it comes from the bootstrap email
+ * check above and isn't something a client team can remove. Team lists should
+ * still disclose it honestly (a client asking "who can see our stuff"
+ * deserves a real answer), just not as a synthetic member row that looks
+ * removable when it is not.
+ */
+export function getPlatformAdminContacts(): string[] {
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim();
+  return email ? [email] : [];
+}
+
 export function getPermissions(callerRole: unknown, isPlatformAdmin = false): UserPermissions {
   const role = normalizeRole(callerRole);
   const isAdmin = role === "admin" || isPlatformAdmin;
