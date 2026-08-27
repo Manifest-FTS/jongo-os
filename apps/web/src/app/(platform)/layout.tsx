@@ -4,7 +4,8 @@ import { getDb } from "@/lib/db";
 import { getGravatarUrl } from "@/lib/gravatar";
 import { getInitials } from "@/lib/profile";
 import BrandLogo from "@/components/BrandLogo";
-import { BellIcon, ChevronDownIcon } from "@/components/JongoIcons";
+import { ChevronDownIcon } from "@/components/JongoIcons";
+import NotificationBell from "@/components/NotificationBell";
 import PlatformPrimaryNav from "@/components/navigation/PlatformPrimaryNav";
 import SignOutButton from "@/components/auth/SignOutButton";
 import UserAvatar from "@/components/UserAvatar";
@@ -55,9 +56,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           </Link>
 
           <div className="topbar-actions">
-            <button type="button" className="topbar-icon-button" aria-label="Notifications">
-              <BellIcon className="topbar-icon" />
-            </button>
+            <NotificationBell />
             <details className="user-menu">
               <summary className="user-menu-trigger">
                 <UserAvatar imageUrl={imageUrl} initials={userInitials} alt={userLabel} size={26} />
