@@ -336,8 +336,7 @@ async function main() {
           data: {
             slug,
             name: orgGroup.organizationName,
-            ownerId: owner.id,
-            description: "Imported from approved Coolify ownership mapping"
+            ownerId: owner.id
           },
           select: { id: true, slug: true, coolifyProjectId: true, coolifyProjectName: true }
         });
@@ -403,8 +402,7 @@ async function main() {
             name: site.name,
             coolifyServiceUuid: site.id,
             coolifyProjectId: site.coolifyProjectId || orgGroup.coolifyProjectId,
-            coolifyProjectName: site.coolifyProjectName || orgGroup.coolifyProjectName,
-            description: "Imported from approved Coolify ownership mapping"
+            coolifyProjectName: site.coolifyProjectName || orgGroup.coolifyProjectName
           }
         });
         siteInserted += 1;
