@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth.config";
 import { listClientWorkspaces, listSiteDirectory } from "@/lib/repositories";
-import { checkIsPlatformAdmin } from "@/lib/permissions";
+import { isPlatformAdminEmail } from "@/lib/permissions";
 import { describeForViewer } from "@/lib/site-description";
 import Link from "next/link";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
@@ -8,7 +8,7 @@ import ClientDirectoryView from "@/components/ClientDirectoryView";
 
 export default async function ClientsPage() {
   const session = await auth();
-  const isPlatformAdmin = checkIsPlatformAdmin(session?.user?.email);
+  const isPlatformAdmin = await isPlatformAdminEmail(session?.user?.email);
   const clients = await listClientWorkspaces({
     userId: session?.user?.id,
     email: session?.user?.email

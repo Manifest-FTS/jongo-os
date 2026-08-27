@@ -159,7 +159,7 @@ export async function GET(_req: Request, { params }: Params) {
         createdAt: row.createdAt
       })),
       clientTeam,
-      platformAdmins: getPlatformAdminContacts(),
+      platformAdmins: await getPlatformAdminContacts(),
       pendingInvites: pendingInvites.map((invite: any) => ({
         id: invite.id,
         email: invite.email,

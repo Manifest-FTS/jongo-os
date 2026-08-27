@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { checkIsPlatformAdmin } from "@/lib/permissions";
+import { isPlatformAdminEmail } from "@/lib/permissions";
 import { sendBroadcast, type BroadcastDeliveryMode, type BroadcastScope } from "@/lib/notifications";
 
 const SCOPES: BroadcastScope[] = ["all", "clients", "apps", "members"];
@@ -12,7 +12,7 @@ const MODES: BroadcastDeliveryMode[] = ["in_app", "email", "in_app_and_email"];
  */
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user?.id || !checkIsPlatformAdmin(session.user.email)) {
+  if (!session?.user?.id || !(await isPlatformAdminEmail(session.user.email))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

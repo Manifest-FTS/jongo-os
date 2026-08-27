@@ -13,6 +13,8 @@ import DesktopNotificationSettings from "@/components/DesktopNotificationSetting
 import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
 import PendingBadge from "@/components/PendingBadge";
 import ProfileSettingsForm from "@/components/ProfileSettingsForm";
+import PlatformAdminsPanel from "@/components/PlatformAdminsPanel";
+import { isPlatformAdminEmail } from "@/lib/permissions";
 
 type SettingsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -58,7 +60,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const runtime = getRuntimeConfigStatus();
   const sessionEmail = normalizeEmail(session.user.email);
   const bootstrapAdminEmail = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const isPlatformAdmin = Boolean(bootstrapAdminEmail && sessionEmail === bootstrapAdminEmail);
+  const isPlatformAdmin = Boolean(bootstrapAdminEmail && sessionEmail === bootstrapAdminEmail) || (await isPlatformAdminEmail(session.user.email));
   const canViewDiagnostics = isPlatformAdmin && canAccessRuntimeDiagnostics({ sessionEmail: session.user.email });
   const requestedTab = resolveSettingsTab((await searchParams)?.tab);
   const activeTab = requestedTab === "platform" && !isPlatformAdmin ? "profile" : requestedTab;
@@ -231,6 +233,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         isPlatformAdmin ? (
           <>
             <div className="grid" style={{ marginBottom: "2rem" }}>
+              <PlatformAdminsPanel />
               <OwnershipSyncPanel />
 
               <article className="card tone-card">
