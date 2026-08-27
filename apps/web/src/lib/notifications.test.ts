@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyTemplateVariables } from "./notifications";
+import { applyTemplateVariables, deriveRecipientFirstName } from "./notifications";
 
 describe("applyTemplateVariables", () => {
   it("substitutes all three supported placeholders", () => {
@@ -23,5 +23,23 @@ describe("applyTemplateVariables", () => {
 
   it("substitutes repeated placeholders", () => {
     expect(applyTemplateVariables("{{client_name}} / {{client_name}}", { client_name: "Acme" })).toBe("Acme / Acme");
+  });
+});
+
+describe("deriveRecipientFirstName", () => {
+  it("takes the first token of the full name", () => {
+    expect(deriveRecipientFirstName({ fullName: "Jane Smith", email: "jane@acme.com", clientName: "Acme" })).toBe("Jane");
+  });
+
+  it("falls back to the client name when there is no full name", () => {
+    expect(deriveRecipientFirstName({ fullName: null, email: "jane@acme.com", clientName: "Acme" })).toBe("Acme");
+  });
+
+  it("falls back to the email local part when neither name is available", () => {
+    expect(deriveRecipientFirstName({ fullName: null, email: "jane@acme.com", clientName: null })).toBe("jane");
+  });
+
+  it("ignores a blank full name", () => {
+    expect(deriveRecipientFirstName({ fullName: "   ", email: "jane@acme.com", clientName: "Acme" })).toBe("Acme");
   });
 });

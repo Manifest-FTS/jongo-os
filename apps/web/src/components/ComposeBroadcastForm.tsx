@@ -201,7 +201,8 @@ export default function ComposeBroadcastForm() {
           </button>
         </div>
         <p className="card-muted" style={{ marginTop: "0.5rem", fontSize: "0.82rem" }}>
-          Use <code>{"{{client_name}}"}</code>, <code>{"{{app_name}}"}</code> and <code>{"{{action_link}}"}</code> — each is filled in per recipient.
+          Use <code>{"{{client_name}}"}</code> (each recipient's first name), <code>{"{{app_name}}"}</code> and{" "}
+          <code>{"{{action_link}}"}</code> — each is filled in per recipient.
         </p>
       </div>
 
