@@ -9,6 +9,7 @@ import { getGravatarUrl } from "@/lib/gravatar";
 import { splitFullName } from "@/lib/profile";
 import { GlobeIcon, LockIcon, UserIcon } from "@/components/JongoIcons";
 import EmailTestPanel from "@/components/EmailTestPanel";
+import DesktopNotificationSettings from "@/components/DesktopNotificationSettings";
 import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
 import PendingBadge from "@/components/PendingBadge";
 import ProfileSettingsForm from "@/components/ProfileSettingsForm";
@@ -168,7 +169,10 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             />
           </article>
 
-          <article className="card hidden">
+          <div style={{ display: "grid", gap: "1rem", alignContent: "start" }}>
+            <DesktopNotificationSettings />
+
+            <article className="card hidden">
             <h3 className="card-title">SFTP Access</h3>
             <div style={{ display: "grid", gap: "0.85rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
@@ -196,6 +200,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               </div>
             </div>
           </article>
+          </div>
         </div>
       ) : null}
 

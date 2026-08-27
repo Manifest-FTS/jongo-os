@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BellIcon } from "@/components/JongoIcons";
+import { playAlertSound, showDesktopNotification } from "@/lib/desktop-notifications";
 
 type NotificationRow = {
   id: string;
@@ -30,13 +31,28 @@ export default function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Ids already seen, so a desktop alert only fires for what is genuinely new
+  // since the last poll -- not for the whole list every 60 seconds, and not
+  // for anything already unread on the very first load of a session.
+  const seenIdsRef = useRef<Set<string> | null>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/notifications?limit=5", { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json().catch(() => ({}));
-      setRows((data as { notifications?: NotificationRow[] }).notifications ?? []);
+      const notifications = (data as { notifications?: NotificationRow[] }).notifications ?? [];
+
+      if (seenIdsRef.current) {
+        const unseen = notifications.filter((n) => !n.readAt && !seenIdsRef.current!.has(n.id));
+        for (const n of unseen) {
+          showDesktopNotification(n.title, n.message);
+        }
+        if (unseen.length > 0) playAlertSound();
+      }
+      seenIdsRef.current = new Set(notifications.map((n) => n.id));
+
+      setRows(notifications);
       setUnreadCount((data as { unreadCount?: number }).unreadCount ?? 0);
     } catch {
       // Silent: the tray simply stays at its last-known state.

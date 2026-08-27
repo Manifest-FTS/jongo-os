@@ -2,17 +2,21 @@ import { describe, expect, it } from "vitest";
 import { applyTemplateVariables, deriveRecipientFirstName } from "./notifications";
 
 describe("applyTemplateVariables", () => {
-  it("substitutes all three supported placeholders", () => {
-    const result = applyTemplateVariables("Hi {{client_name}}, see {{app_name}}: {{action_link}}", {
-      client_name: "Acme",
-      app_name: "acme.com",
-      action_link: "https://jongo.app/clients/acme"
-    });
-    expect(result).toBe("Hi Acme, see acme.com: https://jongo.app/clients/acme");
+  it("substitutes all four supported placeholders", () => {
+    const result = applyTemplateVariables(
+      "Hi {{recipient_name}} at {{client_name}}, see {{app_name}}: {{action_link}}",
+      {
+        recipient_name: "Jane",
+        client_name: "Acme",
+        app_name: "acme.com",
+        action_link: "https://jongo.app/clients/acme"
+      }
+    );
+    expect(result).toBe("Hi Jane at Acme, see acme.com: https://jongo.app/clients/acme");
   });
 
   it("drops a placeholder to an empty string when no value is supplied", () => {
-    expect(applyTemplateVariables("Hi {{client_name}}!", {})).toBe("Hi !");
+    expect(applyTemplateVariables("Hi {{recipient_name}}!", {})).toBe("Hi !");
   });
 
   it("leaves unrelated braces alone", () => {
