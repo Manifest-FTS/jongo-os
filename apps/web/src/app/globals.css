@@ -2816,3 +2816,91 @@ button .card:hover {
 .btn--primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
 
 .split-2--spaced { margin-top: var(--space-4); }
+
+/* Public fallback for newly connected platform domains. */
+.jongo-parking-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  color: #f7fbf7;
+  background:
+    linear-gradient(145deg, rgba(5, 27, 25, 0.97), rgba(15, 50, 41, 0.93)),
+    repeating-linear-gradient(45deg, rgba(158, 200, 119, 0.05) 0 1px, transparent 1px 14px);
+}
+
+.jongo-parking-content {
+  width: min(42rem, calc(100% - 2.5rem));
+  margin: auto;
+  padding: 3rem 0;
+  text-align: center;
+}
+
+.jongo-parking-mark {
+  width: 5.5rem;
+  height: 5.5rem;
+  object-fit: contain;
+  animation: jongo-parking-rotate 16s linear infinite;
+}
+
+.jongo-parking-eyebrow {
+  margin: 1.5rem 0 0.75rem;
+  color: #b9db98;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.jongo-parking-content h1 {
+  margin: 0;
+  font-size: clamp(2.25rem, 7vw, 4.25rem);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.jongo-parking-domain {
+  margin: 1rem 0 0;
+  color: #e8bb55;
+  font-family: "Josefin Sans", sans-serif;
+  font-size: clamp(1.25rem, 4vw, 2rem);
+  overflow-wrap: anywhere;
+}
+
+.jongo-parking-copy {
+  max-width: 31rem;
+  margin: 1.5rem auto;
+  color: #d4ded7;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.jongo-parking-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.65rem 1.1rem;
+  border: 1px solid #b9db98;
+  border-radius: 6px;
+  color: #f7fbf7;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.jongo-parking-link:hover { background: #b9db98; color: #123128; }
+
+.jongo-parking-footer {
+  padding: 1.25rem;
+  border-top: 1px solid rgba(232, 250, 235, 0.18);
+  color: #b8c8bd;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.jongo-parking-footer a { color: #e8bb55; text-decoration: none; }
+.jongo-parking-footer a:hover { text-decoration: underline; }
+
+@keyframes jongo-parking-rotate { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .jongo-parking-mark { animation: none; }
+}

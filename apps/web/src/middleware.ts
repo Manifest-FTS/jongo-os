@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const PUBLIC_PATHS = [
+  "/parked",
   "/auth/login",
   "/auth/register",
   "/auth/error",
@@ -20,8 +21,27 @@ const PUBLIC_PATHS = [
   "/api/internal/wordpress-collector"
 ];
 
+const PARKING_SUFFIX = ".mfts.link";
+
+function parkedDomainHost(req: NextRequest): string | null {
+  const host = (req.headers.get("host") ?? "").split(":")[0].toLowerCase();
+  if (!host.endsWith(PARKING_SUFFIX) || host === PARKING_SUFFIX.slice(1)) {
+    return null;
+  }
+
+  return host;
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const parkedHost = parkedDomainHost(req);
+  if (parkedHost && pathname !== "/parked" && !pathname.startsWith("/_next") && !pathname.startsWith("/assets")) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/parked";
+    url.searchParams.set("domain", parkedHost);
+    return NextResponse.rewrite(url);
+  }
 
   const ownershipSyncToken = process.env.OWNERSHIP_SYNC_TOKEN;
   const backupReconcileToken = process.env.BACKUP_RECONCILE_TOKEN;
