@@ -4,6 +4,12 @@ import type { NextRequest } from "next/server";
 
 const PUBLIC_PATHS = [
   "/parked",
+  // The public hosting signup page: the one surface someone with no account is
+  // meant to land on, so it must never redirect to /auth/login.
+  "/hosting",
+  "/contact",
+  "/api/contact",
+  "/pricing",
   "/auth/login",
   "/auth/register",
   "/auth/error",
@@ -60,7 +66,12 @@ export async function middleware(req: NextRequest) {
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/assets") ||
-    pathname.startsWith("/favicon")
+    pathname.startsWith("/favicon") ||
+    // EXACT match, deliberately not a PUBLIC_PATHS entry: that list is matched
+    // with startsWith, so "/" in it would make every route on the platform
+    // public. The root page itself decides where to send you — the dashboard
+    // when signed in, the public hosting page when not.
+    pathname === "/"
   ) {
     return NextResponse.next();
   }

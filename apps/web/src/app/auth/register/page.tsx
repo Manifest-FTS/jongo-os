@@ -3,8 +3,9 @@
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import BrandLogo from "@/components/BrandLogo";
+import SelectedPlanNotice from "@/components/SelectedPlanNotice";
 import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
 import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
 
@@ -88,6 +89,11 @@ export default function RegisterPage() {
           <p className="auth-subtitle">
             Or <Link href="/auth/login" className="auth-inline-link">sign in to your existing account</Link>
           </p>
+          {/* Suspense so reading the query string cannot opt the form itself
+              out of prerendering. */}
+          <Suspense fallback={null}>
+            <SelectedPlanNotice />
+          </Suspense>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
