@@ -91,7 +91,9 @@ export default function WordPressAdvancedControls({
 
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
-      <article className="card">
+      {/* id: the overview's "Flush cache" quick action links to #cache, so the
+          fragment has to land on something. */}
+      <article className="card" id="cache">
         <h2 style={{ margin: 0 }}>Quick Actions</h2>
 
         <div style={{ marginTop: "0.9rem", display: "grid", gap: "0.8rem" }}>
