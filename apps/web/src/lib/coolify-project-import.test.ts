@@ -135,7 +135,17 @@ vi.mock("@/lib/wordpress-plugin-inventory", () => ({
 }));
 
 import { getCoolifyOverview } from "@/lib/coolify";
-import { importLinkedCoolifyProjectSites } from "./coolify-project-import";
+// This module is mocked above (as `routeMocks.importLinkedCoolifyProjectSites`)
+// so the reconcile-route test can assert the route calls it. The three tests
+// that exercise the REAL implementation therefore have to reach past that mock
+// deliberately.
+//
+// Until vitest.config.ts existed, `@/` did not resolve under vitest, so the
+// vi.mock above and the relative import here were two different modules and
+// this happened by accident — the mock silently did nothing for these tests.
+const { importLinkedCoolifyProjectSites } = await vi.importActual<
+  typeof import("./coolify-project-import")
+>("./coolify-project-import");
 import { POST as backupReconcilePOST } from "../app/api/ops/backup-reconcile/route";
 
 describe("importLinkedCoolifyProjectSites", () => {
