@@ -380,6 +380,17 @@ export default async function StagingPage({ params, searchParams }: Params) {
         }
       })
     : [];
+  // "Last synced from production" on the canvas. The sync route records this
+  // entry; before it did, there was no source for the fact at all, so an older
+  // site can legitimately have synced with nothing logged — hence "Not recorded
+  // yet" rather than "Never".
+  const stagingFactsUrl = reportedStagingDomains[0] ?? preferredDomainValue ?? null;
+
+  const lastSyncedFromProduction = stagingAuditLogs.find((entry) => {
+    const details = entry.details as Record<string, unknown> | null | undefined;
+    return details?.actionType === "staging_synced_from_production";
+  })?.createdAt ?? null;
+
   const stagingAuditItems: StagingAuditHistoryItem[] = stagingAuditLogs.map((entry) => {
     const details = entry.details as Record<string, unknown> | null | undefined;
     const actionType = typeof details?.actionType === "string" ? details.actionType : undefined;
@@ -458,7 +469,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
             />
             <StagingSiteFacts
               siteId={siteId}
-              stagingUrl={reportedStagingDomains[0] ?? preferredDomainValue ?? null}
+              stagingUrl={stagingFactsUrl}
             />
           </div>
         </article>
@@ -496,6 +507,63 @@ export default async function StagingPage({ params, searchParams }: Params) {
             {stagingConfigured ? "Enabled" : "Not configured"}
           </span>
         </div>
+        {stagingConfigured ? (
+          <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.9rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "0.75rem",
+                padding: "0.7rem 0.8rem",
+                border: "1px solid var(--border)",
+                borderRadius: "10px"
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: "0.76rem", color: "var(--muted)" }}>Staging URL</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.9rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {stagingFactsUrl ?? "Not assigned yet"}
+                </p>
+              </div>
+              {stagingFactsUrl ? (
+                <a
+                  href={`https://${stagingFactsUrl}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary"
+                  style={{ padding: "0.35rem 0.65rem", fontSize: "0.8rem", flexShrink: 0 }}
+                >
+                  Open
+                </a>
+              ) : null}
+            </div>
+            {/* No "Sync now" here on purpose: the real control is in the
+                staging actions panel on this same page, and a second button
+                would be a second place to keep the permission checks right. */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "0.75rem",
+                padding: "0.7rem 0.8rem",
+                border: "1px solid var(--border)",
+                borderRadius: "10px"
+              }}
+            >
+              <div>
+                <p style={{ margin: 0, fontSize: "0.76rem", color: "var(--muted)" }}>Last synced from production</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.9rem", fontWeight: 600 }}>
+                  {lastSyncedFromProduction
+                    ? `${formatAgo(lastSyncedFromProduction.toISOString())} (${lastSyncedFromProduction.toLocaleString()})`
+                    : "Not recorded yet"}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {!stagingConfigured && (
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem" }}>
             Enable staging in <Link href={`/apps/${siteId}/settings`} className="action-link">Settings</Link>. Setup may take a few minutes; refresh this page to check progress.
