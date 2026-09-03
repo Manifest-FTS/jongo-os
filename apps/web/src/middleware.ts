@@ -10,6 +10,10 @@ const PUBLIC_PATHS = [
   "/contact",
   "/api/contact",
   "/pricing",
+  // Domain registration and transfer. The search endpoints have to answer an
+  // anonymous visitor on the homepage, so they cannot sit behind auth.
+  "/domains",
+  "/api/domains",
   "/auth/login",
   "/auth/register",
   "/auth/error",

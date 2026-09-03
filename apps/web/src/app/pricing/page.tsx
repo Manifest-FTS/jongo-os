@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { COMPARISON, PLANS, PRICING_FAQ, type ComparisonValue } from "@/lib/public-plans";
 import { COMPANY_NAME, CURRENCY_LABEL, contactEmail, currentYear } from "@/lib/public-site";
+import { btnPrimary, btnSecondary, card, cx, publicPage } from "@/lib/public-ui";
 
 /**
  * Public pricing page.
@@ -16,40 +17,6 @@ export const metadata: Metadata = {
   title: "Pricing | Jongo",
   description:
     "Managed hosting priced per project, for WordPress, Next.js, Nuxt and Node. Nightly offsite backups and free migration on every plan."
-};
-
-const PAGE_BG =
-  "radial-gradient(circle at 12% 18%, rgba(212, 175, 55, 0.20), transparent 36%), " +
-  "radial-gradient(circle at 88% 10%, rgba(255, 47, 176, 0.12), transparent 38%), " +
-  "linear-gradient(180deg, #f9faf9 0%, #eef1f1 100%)";
-
-const CARD: React.CSSProperties = {
-  background: "linear-gradient(180deg, #ffffff 0%, #fbfcfc 100%)",
-  border: "1px solid var(--border)",
-  borderRadius: "14px",
-  boxShadow: "var(--shadow)"
-};
-
-const PRIMARY: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: "8px",
-  padding: "12px 18px",
-  fontSize: "14.5px",
-  fontWeight: 600,
-  lineHeight: 1,
-  background: "linear-gradient(180deg, #a8d287 0%, #8dc267 100%)",
-  color: "#16231f",
-  border: "1px solid transparent",
-  textDecoration: "none"
-};
-
-const SECONDARY: React.CSSProperties = {
-  ...PRIMARY,
-  background: "#f5f8f4",
-  color: "#28412f",
-  border: "1px solid var(--border)"
 };
 
 /** A yes/no renders as a mark; anything else is a limit, printed as written. */
@@ -77,7 +44,7 @@ export default function PricingPage() {
   const email = contactEmail();
 
   return (
-    <div style={{ background: PAGE_BG, minHeight: "100vh" }}>
+    <div className={publicPage}>
       <header className="hosting-nav">
         <Link href="/hosting" className="hosting-brand">
           <img src="/assets/images/jongo-logomark-color.png" alt="" width={30} height={30} />
@@ -90,38 +57,35 @@ export default function PricingPage() {
           <Link href="/auth/login" className="hosting-nav__signin">
             Sign in
           </Link>
-          <Link href="/auth/register" style={{ ...PRIMARY, display: "inline-flex", padding: "9.5px 16px" }}>
+          <Link href="/auth/register" className={cx(btnPrimary, "px-4 py-[9.5px]")}>
             Get started
           </Link>
         </div>
       </header>
 
       <section className="pricing-head">
-        <h1 className="hosting-h1" style={{ fontSize: "clamp(1.9rem, 1.3rem + 2vw, 2.75rem)" }}>
+        <h1 className="hosting-h1 text-[clamp(1.9rem,1.3rem+2vw,2.75rem)]">
           Priced per project, not per surprise.
         </h1>
-        <p className="hosting-lede" style={{ maxWidth: "620px", margin: "0 auto" }}>
+        <p className="hosting-lede max-w-[620px] mx-auto">
           Every plan includes nightly offsite backups, free migration and the same dashboard. The
           difference is how many projects you run and how far back you can restore.
         </p>
       </section>
 
-      <section className="hosting-section" style={{ paddingTop: 0, paddingBottom: "56px" }}>
-        <div className="hosting-grid-3" style={{ alignItems: "start" }}>
+      <section className="hosting-section pt-0 pb-14">
+        <div className="hosting-grid-3 items-start">
           {PLANS.map((plan) => (
             <article
               key={plan.id}
-              style={{
-                ...CARD,
-                padding: "26px",
-                position: "relative",
-                ...(plan.featured
-                  ? { border: "2px solid #8dc267", boxShadow: "0 18px 38px rgba(21, 34, 34, 0.12)" }
-                  : {})
-              }}
+              className={cx(
+                card,
+                "p-[26px] relative",
+                plan.featured && "border-2 border-solid border-[#8dc267] shadow-featured"
+              )}
             >
               {plan.featured ? <span className="hosting-badge">Most agencies start here</span> : null}
-              <img src={plan.icon} alt="" width={42} height={42} style={{ display: "block", marginBottom: "16px" }} />
+              <img src={plan.icon} alt="" width={42} height={42} className="block mb-4" />
               <h2 className="hosting-plan__name">{plan.name}</h2>
               <p className="hosting-plan__blurb">{plan.blurb}</p>
               <p className="hosting-plan__price">
@@ -130,7 +94,7 @@ export default function PricingPage() {
               </p>
               <Link
                 href={`/auth/register?plan=${plan.id}`}
-                style={{ ...(plan.featured ? PRIMARY : SECONDARY), marginBottom: "20px" }}
+                className={cx(plan.featured ? btnPrimary : btnSecondary, "flex px-[18px] py-3 text-[14.5px] mb-5")}
               >
                 Choose {plan.name}
               </Link>
@@ -145,14 +109,14 @@ export default function PricingPage() {
             </article>
           ))}
         </div>
-        <p className="hosting-fineprint" style={{ marginTop: "22px" }}>
+        <p className="hosting-fineprint mt-[22px]">
           Prices in {CURRENCY_LABEL}, excluding tax. No minimum term.
         </p>
       </section>
 
       {/* comparison */}
       <section className="hosting-pricing">
-        <div className="hosting-section" style={{ paddingTop: "56px", paddingBottom: "56px" }}>
+        <div className="hosting-section py-14">
           <h2 className="hosting-h2">Everything, side by side</h2>
           <p className="hosting-sub">
             Rows marked WordPress are conveniences that only exist for WordPress sites. Everything
@@ -206,11 +170,11 @@ export default function PricingPage() {
       </section>
 
       {/* faq */}
-      <section className="hosting-section" style={{ paddingTop: "64px" }}>
+      <section className="hosting-section pt-16">
         <h2 className="hosting-h2">Questions people actually ask</h2>
         <div className="pricing-faq">
           {PRICING_FAQ.map((item) => (
-            <div key={item.q} style={{ ...CARD, padding: "20px 22px" }}>
+            <div key={item.q} className={cx(card, "px-[22px] py-5")}>
               <h3 className="contact-route__title">{item.q}</h3>
               <p className="hosting-body">{item.a}</p>
             </div>
@@ -218,18 +182,18 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <section className="hosting-section" style={{ paddingTop: 0 }}>
+      <section className="hosting-section pt-0">
         <div className="hosting-closing">
           <div>
-            <h2 className="hosting-h2" style={{ fontSize: "27px", marginBottom: "9px" }}>
+            <h2 className="hosting-h2 text-[27px] mb-[9px]">
               More than 20 projects?
             </h2>
-            <p className="hosting-body" style={{ fontSize: "15.5px" }}>
+            <p className="hosting-body text-[15.5px]">
               There is a separate rate card for agencies and resellers. Tell us roughly how many sites
               you look after and we will send it over.
             </p>
           </div>
-          <Link href="/contact" style={{ ...PRIMARY, display: "inline-flex", padding: "13px 24px", fontSize: "15.5px", flexShrink: 0 }}>
+          <Link href="/contact" className={cx(btnPrimary, "px-6 py-[13px] text-[15.5px] shrink-0")}>
             Ask about agency pricing
           </Link>
         </div>

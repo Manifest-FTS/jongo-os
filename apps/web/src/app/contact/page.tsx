@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import ContactForm from "@/components/ContactForm";
 import { COMPANY_NAME, RESPONSE_TIME, contactEmail, currentYear } from "@/lib/public-site";
+import { btnPrimary, card, cx, publicPage } from "@/lib/public-ui";
 
 /**
  * Public contact page.
@@ -15,18 +16,6 @@ export const metadata: Metadata = {
   title: "Contact | Jongo",
   description:
     "Talk to us about migrating WordPress, Next.js, Nuxt or Node sites onto managed hosting — or ask about agency pricing."
-};
-
-const PAGE_BG =
-  "radial-gradient(circle at 12% 18%, rgba(212, 175, 55, 0.20), transparent 36%), " +
-  "radial-gradient(circle at 88% 10%, rgba(255, 47, 176, 0.12), transparent 38%), " +
-  "linear-gradient(180deg, #f9faf9 0%, #eef1f1 100%)";
-
-const CARD: React.CSSProperties = {
-  background: "linear-gradient(180deg, #ffffff 0%, #fbfcfc 100%)",
-  border: "1px solid var(--border)",
-  borderRadius: "14px",
-  boxShadow: "var(--shadow)"
 };
 
 function buildRoutes(email: string): { title: string; body: string; action: React.ReactNode }[] {
@@ -58,7 +47,7 @@ export default function ContactPage() {
   const routes = buildRoutes(email);
 
   return (
-    <div style={{ background: PAGE_BG, minHeight: "100vh" }}>
+    <div className={publicPage}>
       <header className="hosting-nav">
         <Link href="/hosting" className="hosting-brand">
           <img src="/assets/images/jongo-logomark-color.png" alt="" width={30} height={30} />
@@ -73,20 +62,7 @@ export default function ContactPage() {
           </Link>
           <Link
             href="/hosting#pricing"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "8px",
-              padding: "9.5px 16px",
-              fontSize: "14.5px",
-              fontWeight: 600,
-              lineHeight: 1,
-              background: "linear-gradient(180deg, #a8d287 0%, #8dc267 100%)",
-              color: "#16231f",
-              border: "1px solid transparent",
-              textDecoration: "none"
-            }}
+            className={cx(btnPrimary, "px-4 py-[9.5px] text-[14.5px]")}
           >
             See plans
           </Link>
@@ -95,7 +71,7 @@ export default function ContactPage() {
 
       <section className="contact-hero">
         <div className="contact-hero__copy">
-          <h1 className="hosting-h1" style={{ fontSize: "clamp(1.9rem, 1.3rem + 2vw, 2.75rem)" }}>
+          <h1 className="hosting-h1 text-[clamp(1.9rem,1.3rem+2vw,2.75rem)]">
             Tell us what you need moved.
           </h1>
           <p className="hosting-lede">
@@ -106,7 +82,7 @@ export default function ContactPage() {
 
           <div className="contact-routes">
             {routes.map((route) => (
-              <div key={route.title} style={{ ...CARD, padding: "18px 20px" }}>
+              <div key={route.title} className={cx(card, "px-5 py-[18px]")}>
                 <h3 className="contact-route__title">{route.title}</h3>
                 <p className="hosting-body">{route.body}</p>
                 <div className="contact-route__action">{route.action}</div>
@@ -115,7 +91,7 @@ export default function ContactPage() {
           </div>
         </div>
 
-        <div style={{ ...CARD, padding: "28px" }}>
+        <div className={cx(card, "p-7")}>
           <ContactForm contactEmail={email} responseTime={RESPONSE_TIME} />
         </div>
       </section>

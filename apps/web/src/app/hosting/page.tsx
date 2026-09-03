@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { COMPANY_NAME, CURRENCY_LABEL, contactEmail, currentYear } from "@/lib/public-site";
 import { PLANS } from "@/lib/public-plans";
+import DomainSearch from "@/components/DomainSearch";
+import HeroDashboardPreview from "@/components/HeroDashboardPreview";
+import { SUGGESTED_TLDS, formatCents } from "@/lib/domain-search";
+import { getPricesForTlds, isPorkbunConfigured } from "@/lib/porkbun";
+import { btnPrimary, btnSecondary, card, cardHealthy, cx, publicPage } from "@/lib/public-ui";
 
 /**
  * Public hosting signup page.
@@ -20,48 +25,24 @@ import { PLANS } from "@/lib/public-plans";
  * a second, parallel signup path.
  */
 
+/**
+ * Regenerated hourly rather than per request.
+ *
+ * Loading TLD prices made this page async, which by default turns a static
+ * marketing page into a server render on every visit. The prices change about
+ * never, so ISR is the right trade: the homepage stays a cached static document
+ * and picks up new prices within the hour.
+ *
+ * If the price lookup fails during a build, the search box renders without its
+ * price row and the next revalidation repairs it — the page never blocks and
+ * never invents a figure.
+ */
+export const revalidate = 3600;
+
 export const metadata: Metadata = {
   title: "Hosting for WordPress, Next.js and whatever you ship next | Jongo",
   description:
     "Managed hosting for the sites and apps you look after — WordPress, Next.js, Nuxt, Node and the databases behind them. Nightly offsite backups, one-click staging and free migration."
-};
-
-const PAGE_BG =
-  "radial-gradient(circle at 12% 18%, rgba(212, 175, 55, 0.20), transparent 36%), " +
-  "radial-gradient(circle at 88% 10%, rgba(255, 47, 176, 0.12), transparent 38%), " +
-  "linear-gradient(180deg, #f9faf9 0%, #eef1f1 100%)";
-
-const CARD: React.CSSProperties = {
-  background: "linear-gradient(180deg, #ffffff 0%, #fbfcfc 100%)",
-  border: "1px solid var(--border)",
-  borderRadius: "14px",
-  boxShadow: "var(--shadow)"
-};
-
-const PRIMARY: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: "8px",
-  fontWeight: 600,
-  lineHeight: 1,
-  background: "linear-gradient(180deg, #a8d287 0%, #8dc267 100%)",
-  color: "#16231f",
-  border: "1px solid transparent",
-  textDecoration: "none"
-};
-
-const SECONDARY: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: "8px",
-  fontWeight: 600,
-  lineHeight: 1,
-  background: "#f5f8f4",
-  color: "#28412f",
-  border: "1px solid var(--border)",
-  textDecoration: "none"
 };
 
 const STACKS = ["WordPress", "Next.js", "Nuxt", "Node", "Static", "Postgres · MySQL · Redis"];
@@ -79,7 +60,7 @@ function Icon({ children }: { children: React.ReactNode }) {
       strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ marginBottom: "14px" }}
+      className="mb-3.5"
       aria-hidden
     >
       {children}
@@ -185,11 +166,34 @@ const STEPS = [
   }
 ];
 
-export default function HostingPage() {
+/**
+ * TLD prices for the hero's search box.
+ *
+ * From the unauthenticated, unthrottled pricing endpoint, so this costs the
+ * availability rate limit nothing. Failure degrades to an empty list and the
+ * search box simply omits the price row — it never blocks the page or invents
+ * a number.
+ */
+async function loadTldPrices() {
+  if (!isPorkbunConfigured()) return [];
+  try {
+    const prices = await getPricesForTlds(SUGGESTED_TLDS);
+    return prices.map((entry) => ({
+      tld: entry.tld,
+      registrationDisplay: formatCents(entry.registrationCents),
+      transferDisplay: formatCents(entry.transferCents)
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export default async function HostingPage() {
   const email = contactEmail();
+  const tldPrices = await loadTldPrices();
 
   return (
-    <div style={{ background: PAGE_BG, minHeight: "100vh" }}>
+    <div className={publicPage}>
       {/* nav */}
       <header className="hosting-nav">
         <Link href="/hosting" className="hosting-brand">
@@ -197,13 +201,16 @@ export default function HostingPage() {
           <span>Jongo</span>
         </Link>
         <div className="hosting-nav__actions">
+          <Link href="/domains" className="hosting-nav__signin">
+            Domains
+          </Link>
           <Link href="/pricing" className="hosting-nav__signin">
             Pricing
           </Link>
           <Link href="/auth/login" className="hosting-nav__signin">
             Sign in
           </Link>
-          <Link href="/auth/register" style={{ ...PRIMARY, padding: "9.5px 16px", fontSize: "14.5px" }}>
+          <Link href="/auth/register" className={cx(btnPrimary, "px-4 py-[9.5px] text-[14.5px]")}>
             Get started
           </Link>
         </div>
@@ -212,74 +219,61 @@ export default function HostingPage() {
       {/* hero */}
       <section className="hosting-hero">
         <div className="hosting-hero__copy">
+          {/* The pill carries the domain proposition; the fix-it-free promo gets
+              its own card below rather than being said twice in a row. */}
           <span className="hosting-pill">
             <span className="hosting-pill__dot" aria-hidden />
-            Free migration from your current host
+            Register or transfer — WHOIS privacy included, free
           </span>
-          <h1 className="hosting-h1">Hosting for WordPress, Next.js and whatever you ship next.</h1>
+          <h1 className="hosting-h1">Find your domain. We&apos;ll host it too.</h1>
           <p className="hosting-lede">
-            One managed platform for everything you look after — WordPress, Next.js, Nuxt, Node apps
-            and the databases behind them. Nightly offsite backups, one-click staging, and a
-            dashboard a non-technical client can actually use.
+            Register or transfer a domain in about a minute, then point it at managed
+            hosting — WordPress, Next.js, Nuxt, Node — with nightly offsite backups.
           </p>
-          <div className="hosting-cta-row">
-            <Link href="/auth/register" style={{ ...PRIMARY, padding: "13px 22px", fontSize: "15.5px" }}>
-              Start hosting
+
+          <div className="mt-[22px]">
+            <DomainSearch initialPrices={tldPrices} />
+          </div>
+
+          <div className="hosting-cta-row mt-5">
+            <Link href="/domains/transfer" className={cx(btnSecondary, "px-5 py-3 text-[15px]")}>
+              Transfer a domain in
             </Link>
-            <Link href="#migration" style={{ ...SECONDARY, padding: "13px 22px", fontSize: "15.5px" }}>
-              Talk to us first
+            <Link href="#migration" className={cx(btnSecondary, "px-5 py-3 text-[15px]")}>
+              Move my hosting
             </Link>
           </div>
-          <p className="hosting-fineprint">No card required to start · Cancel any time</p>
-          <div className="hosting-stacks">
-            <span className="hosting-stacks__label">Runs:</span>
-            {STACKS.map((stack) => (
-              <span key={stack} className="hosting-stack">
-                {stack}
-              </span>
-            ))}
-          </div>
+          <p className="hosting-fineprint">
+            Free WHOIS privacy · Transfers include a year&apos;s renewal · Free migration
+          </p>
         </div>
 
-        {/* dashboard glimpse */}
-        <div style={{ ...CARD, padding: "18px" }} aria-hidden>
-          <div className="hosting-glimpse__head">
-            <span className="hosting-glimpse__site">app.northfield.co.uk</span>
-            <span className="hosting-glimpse__badge">
-              <span className="hosting-glimpse__dot" />
-              Healthy
-            </span>
+        {/* The real dashboard, in miniature — same tokens as the app itself. */}
+        <HeroDashboardPreview />
+      </section>
+
+      {/* The fix-it-free promo, stated properly rather than only as a pill. */}
+      <section className="hosting-section py-2">
+        <div className={cx(cardHealthy, "flex items-center justify-between gap-[18px] flex-wrap px-6 py-5")}>
+          <div className="min-w-[260px] flex-[1_1_420px]">
+            <h2 className="hosting-h2 text-[22px] mb-1.5">
+              Need something fixed on your site today?
+            </h2>
+            <p className="hosting-body m-0 text-[15px]">
+              Transfer your hosting to us and we will fix it for free as part of moving you
+              in — the white screen, the failed update, the plugin conflict, the site that
+              will not load. You do not pay us to repair what you are bringing over.
+            </p>
           </div>
-          <div className="hosting-glimpse__stats">
-            <div>
-              <p>Last backup</p>
-              <strong>2h ago</strong>
-            </div>
-            <div>
-              <p>Staging</p>
-              <strong>Ready</strong>
-            </div>
-            <div>
-              <p>Stack</p>
-              <strong>Next.js</strong>
-            </div>
-          </div>
-          <div className="hosting-glimpse__rows">
-            <div>
-              <span>Redeploy from main</span>
-              <span>a1f9c2e · 3m ago</span>
-            </div>
-            <div>
-              <span>Restore a backup</span>
-              <span>14 snapshots kept</span>
-            </div>
-            <div>
-              <span>SFTP access</span>
-              <span>sftp://northfield@…</span>
-            </div>
-          </div>
+          <Link
+            href="/contact"
+            className={cx(btnPrimary, "px-6 py-[13px] text-[15.5px] shrink-0")}
+          >
+            Tell us what is broken
+          </Link>
         </div>
       </section>
+
 
       {/* features */}
       <section className="hosting-section">
@@ -289,7 +283,7 @@ export default function HostingPage() {
         </p>
         <div className="hosting-grid-3">
           {FEATURES.map((feature) => (
-            <article key={feature.title} style={{ ...CARD, padding: "22px" }}>
+            <article key={feature.title} className={cx(card, "p-[22px]")}>
               <Icon>{feature.icon}</Icon>
               <h3 className="hosting-h3">
                 {feature.title}
@@ -303,26 +297,23 @@ export default function HostingPage() {
 
       {/* pricing */}
       <section className="hosting-pricing" id="pricing">
-        <div className="hosting-section" style={{ paddingTop: "66px", paddingBottom: "66px" }}>
+        <div className="hosting-section py-[66px]">
           <h2 className="hosting-h2">Simple plans, priced per project</h2>
           <p className="hosting-sub">
             Move up or down at any time. Agency volume pricing starts at ten projects.
           </p>
-          <div className="hosting-grid-3" style={{ alignItems: "start" }}>
+          <div className="hosting-grid-3 items-start">
             {PLANS.map((plan) => (
               <article
                 key={plan.id}
-                style={{
-                  ...CARD,
-                  padding: "26px",
-                  position: "relative",
-                  ...(plan.featured
-                    ? { border: "2px solid #8dc267", boxShadow: "0 18px 38px rgba(21, 34, 34, 0.12)" }
-                    : {})
-                }}
+                className={cx(
+                  card,
+                  "p-[26px] relative",
+                  plan.featured && "border-2 border-solid border-[#8dc267] shadow-featured"
+                )}
               >
                 {plan.featured ? <span className="hosting-badge">Most agencies start here</span> : null}
-                <img src={plan.icon} alt="" width={42} height={42} style={{ display: "block", marginBottom: "16px" }} />
+                <img src={plan.icon} alt="" width={42} height={42} className="block mb-4" />
                 <h3 className="hosting-plan__name">{plan.name}</h3>
                 <p className="hosting-plan__blurb">{plan.blurb}</p>
                 <p className="hosting-plan__price">
@@ -331,13 +322,7 @@ export default function HostingPage() {
                 </p>
                 <Link
                   href={`/auth/register?plan=${plan.id}`}
-                  style={{
-                    ...(plan.featured ? PRIMARY : SECONDARY),
-                    display: "flex",
-                    padding: "12px 18px",
-                    fontSize: "14.5px",
-                    marginBottom: "20px"
-                  }}
+                  className={cx(plan.featured ? btnPrimary : btnSecondary, "flex px-[18px] py-3 text-[14.5px] mb-5")}
                 >
                   Choose {plan.name}
                 </Link>
@@ -352,7 +337,7 @@ export default function HostingPage() {
               </article>
             ))}
           </div>
-          <p className="hosting-fineprint" style={{ marginTop: "22px" }}>
+          <p className="hosting-fineprint mt-[22px]">
             Prices in {CURRENCY_LABEL}, excluding tax.{" "}
             <Link href="/pricing">Compare every feature</Link>, or{" "}
             <Link href="/contact">ask about agency pricing</Link> for more than 20 projects.
@@ -364,18 +349,18 @@ export default function HostingPage() {
       <section className="hosting-section hosting-migration" id="migration">
         <div>
           <h2 className="hosting-h2">We move it. You keep working.</h2>
-          <p className="hosting-body" style={{ fontSize: "16px", marginBottom: "20px" }}>
+          <p className="hosting-body text-base mb-5">
             Send us access to your current host — or the repo, if it is an app — and we do the move,
             including the database, the uploads and the DNS cutover. Nothing goes live until you have
             seen it running on a staging URL and told us it looks right.
           </p>
-          <Link href="/auth/register" style={{ ...PRIMARY, padding: "12px 20px", fontSize: "15px" }}>
+          <Link href="/auth/register" className={cx(btnPrimary, "px-5 py-3 text-[15px]")}>
             Start a migration
           </Link>
         </div>
         <div className="hosting-steps">
           {STEPS.map((step) => (
-            <div key={step.n} style={{ ...CARD, padding: "18px 20px" }}>
+            <div key={step.n} className={cx(card, "px-5 py-[18px]")}>
               <span className="hosting-steps__n">{step.n}</span>
               <div>
                 <p className="hosting-steps__title">{step.title}</p>
@@ -387,17 +372,17 @@ export default function HostingPage() {
       </section>
 
       {/* closing */}
-      <section className="hosting-section" style={{ paddingTop: 0 }}>
+      <section className="hosting-section pt-0">
         <div className="hosting-closing">
           <div>
-            <h2 className="hosting-h2" style={{ fontSize: "27px", marginBottom: "9px" }}>
+            <h2 className="hosting-h2 text-[27px] mb-[9px]">
               Move your first project this week.
             </h2>
-            <p className="hosting-body" style={{ fontSize: "15.5px" }}>
+            <p className="hosting-body text-[15.5px]">
               Set up an account in a couple of minutes. We will handle the migration from there.
             </p>
           </div>
-          <Link href="/auth/register" style={{ ...PRIMARY, padding: "13px 24px", fontSize: "15.5px", flexShrink: 0 }}>
+          <Link href="/auth/register" className={cx(btnPrimary, "px-6 py-[13px] text-[15.5px] shrink-0")}>
             Create your account
           </Link>
         </div>

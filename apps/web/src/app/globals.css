@@ -2,10 +2,16 @@
 
 /* Tailwind. Preflight is disabled in tailwind.config.ts — see the note there:
    the element-level rules below would otherwise be reset out from under the
-   existing pages. These add utilities only. */
+   existing pages. These add utilities only.
+
+   `@tailwind utilities` is NOT here — it is at the END of this file. Utilities
+   have to come last or the hand-written rules below beat them at equal
+   specificity, and a utility that cannot override anything is not a utility.
+   Concretely: `.grid` is defined below with its own grid-template-columns, so
+   with utilities at the top a `grid grid-cols-3` silently rendered as
+   auto-fit columns instead of three. See the note at the bottom. */
 @tailwind base;
 @tailwind components;
-@tailwind utilities;
 
 :root {
   --bg: #f4f5f5;
@@ -3656,3 +3662,20 @@ button .card:hover {
     position: static;
   }
 }
+
+/* ── Tailwind utilities, last ───────────────────────────────────────────────
+   Deliberately at the end of the file rather than the top.
+
+   CSS resolves ties by source order, and every rule above is a single class
+   selector — exactly the specificity of a Tailwind utility. With `@tailwind
+   utilities` at the top, every rule in this file silently outranked every
+   utility. The visible symptom was `.grid` (line ~372): it sets
+   `grid-template-columns: repeat(auto-fit, minmax(240px, 1fr))`, which beat
+   `grid-cols-3` and collapsed multi-column layouts into one column.
+
+   `grid` is the ONLY class name defined in this file that Tailwind also
+   generates, so moving utilities here changes nothing else. Existing markup
+   using `.grid` is unaffected: Tailwind's `.grid` sets only `display: grid`
+   (the same value this file already sets) and does not touch the
+   grid-template-columns or gap that the rule above supplies. */
+@tailwind utilities;
