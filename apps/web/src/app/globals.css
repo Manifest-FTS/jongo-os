@@ -2904,3 +2904,755 @@ button .card:hover {
 @media (prefers-reduced-motion: reduce) {
   .jongo-parking-mark { animation: none; }
 }
+
+/* ── Public hosting signup page (/hosting) ──────────────────────────────────
+   Scoped to this page only. It is the one surface an anonymous visitor sees,
+   so it sets its own rhythm rather than inheriting the dashboard's dense
+   layout — but every colour, radius and shadow comes from the tokens above. */
+
+.hosting-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 22px 40px;
+}
+
+.hosting-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.hosting-brand span {
+  font-family: "Josefin Sans", "Inter", sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.hosting-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hosting-nav__signin {
+  font-size: 14.5px;
+  font-weight: 600;
+  padding: 9px 14px;
+  text-decoration: none;
+}
+
+.hosting-hero {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 60px 40px 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: 64px;
+  align-items: center;
+}
+
+.hosting-hero__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.hosting-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #cfdeca;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #4a7a35;
+}
+
+.hosting-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+}
+
+.hosting-h1 {
+  font-size: clamp(2rem, 1.3rem + 2.4vw, 3.25rem);
+  line-height: 1.08;
+  font-weight: 700;
+  margin: 0;
+}
+
+.hosting-lede {
+  font-size: 17.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 540px;
+  margin: 0;
+}
+
+.hosting-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.hosting-fineprint {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.hosting-stacks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 18px;
+  border-top: 1px solid #e0e6e3;
+}
+
+.hosting-stacks__label {
+  font-size: 12.5px;
+  color: var(--muted);
+  align-self: center;
+  margin-right: 4px;
+}
+
+.hosting-stack {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #3d4a4a;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 11px;
+}
+
+.hosting-glimpse__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.hosting-glimpse__site {
+  font-family: "Josefin Sans", "Inter", sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.hosting-glimpse__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #157347;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: 999px;
+  padding: 4px 9px;
+}
+
+.hosting-glimpse__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--privacy-green);
+}
+
+.hosting-glimpse__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.hosting-glimpse__stats div {
+  background: var(--surface-alt);
+  border: 1px solid #e7ebeb;
+  border-radius: 10px;
+  padding: 11px 12px;
+}
+
+.hosting-glimpse__stats p {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0 0 5px;
+}
+
+.hosting-glimpse__stats strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.hosting-glimpse__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hosting-glimpse__rows div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #e7ebeb;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.hosting-glimpse__rows div span:first-child {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.hosting-glimpse__rows div span:last-child {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.hosting-section {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 26px 40px 76px;
+}
+
+.hosting-h2 {
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 1.875rem);
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+
+.hosting-h3 {
+  font-size: 17px;
+  font-weight: 650;
+  margin: 0 0 7px;
+}
+
+.hosting-sub {
+  font-size: 16px;
+  color: var(--muted);
+  margin: 0 0 34px;
+  max-width: 640px;
+}
+
+.hosting-body {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+
+.hosting-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.hosting-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #4a7a35;
+  background: rgba(158, 200, 119, 0.2);
+  border-radius: 999px;
+  padding: 3px 9px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.hosting-pricing {
+  background: rgba(255, 255, 255, 0.55);
+  border-top: 1px solid #e4e9e6;
+  border-bottom: 1px solid #e4e9e6;
+}
+
+.hosting-badge {
+  position: absolute;
+  top: -11px;
+  left: 26px;
+  background: linear-gradient(180deg, #a8d287 0%, #8dc267 100%);
+  color: #16231f;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+
+.hosting-plan__name {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.hosting-plan__blurb {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.hosting-plan__price {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0 0 20px;
+}
+
+.hosting-plan__price span {
+  font-family: "Josefin Sans", "Inter", sans-serif;
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.hosting-plan__price small {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.hosting-plan__features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  color: #3d4a4a;
+  line-height: 1.45;
+}
+
+.hosting-plan__features li {
+  display: flex;
+  gap: 9px;
+}
+
+.hosting-plan__features li span {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.hosting-migration {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 56px;
+  align-items: center;
+  padding-top: 68px;
+}
+
+.hosting-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hosting-steps > div {
+  display: flex;
+  gap: 14px;
+}
+
+.hosting-steps__n {
+  font-family: "Josefin Sans", "Inter", sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  min-width: 20px;
+}
+
+.hosting-steps__title {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0 0 4px;
+}
+
+.hosting-closing {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(158, 200, 119, 0.2), transparent 42%),
+    linear-gradient(145deg, #ffffff 0%, #f3f8ef 100%);
+  border: 1px solid #cfdeca;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 46px 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+.hosting-footer {
+  border-top: 1px solid #e4e9e6;
+  background: rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 34px 40px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.hosting-footer > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hosting-footer__links {
+  display: flex;
+  gap: 24px;
+}
+
+/* Phone and tablet. The hero and migration blocks are the only two-column
+   layouts, and the plan grid is the only three-column one. */
+@media (max-width: 900px) {
+  .hosting-hero,
+  .hosting-migration {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 34px;
+  }
+
+  .hosting-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hosting-nav,
+  .hosting-hero,
+  .hosting-section,
+  .hosting-footer {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .hosting-hero {
+    padding-top: 32px;
+    padding-bottom: 40px;
+  }
+
+  .hosting-closing {
+    padding: 30px 24px;
+  }
+
+  /* 44px minimum hit target on touch. */
+  .hosting-cta-row a,
+  .hosting-plan__features + a,
+  .hosting-nav__actions a {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 560px) {
+  .hosting-nav__signin {
+    display: none;
+  }
+}
+
+/* Plan carried over from /hosting — see components/SelectedPlanNotice.tsx. */
+.auth-plan-notice {
+  margin: 0.6rem 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+  background: rgba(158, 200, 119, 0.14);
+  border: 1px solid rgba(158, 200, 119, 0.4);
+  border-radius: 999px;
+  padding: 6px 14px;
+  display: inline-block;
+}
+
+.auth-plan-notice strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+/* ── Public contact page (/contact) ─────────────────────────────────────────
+   Shares the .hosting-* chrome; only the two-column split and the form need
+   rules of their own. */
+
+.contact-hero {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 40px 76px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: 56px;
+  align-items: start;
+}
+
+.contact-hero__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.contact-routes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.contact-route__title {
+  font-size: 15.5px;
+  font-weight: 650;
+  margin: 0 0 5px;
+}
+
+.contact-route__action {
+  margin-top: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.contact-route__meta {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.contact-form__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.contact-textarea {
+  resize: vertical;
+  min-height: 140px;
+  line-height: 1.5;
+}
+
+.contact-optional {
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.contact-fineprint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Off-screen rather than display:none — some bots skip hidden inputs, and a
+   person never reaches it because it is aria-hidden and not tabbable. */
+.contact-honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.contact-sent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.contact-sent h3 {
+  font-size: 19px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.contact-sent p {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.contact-sent .btn {
+  margin-top: 6px;
+}
+
+@media (max-width: 900px) {
+  .contact-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+    padding: 24px 20px 48px;
+  }
+
+  .contact-form__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Public pricing page (/pricing) ─────────────────────────────────────────
+   Shares .hosting-* chrome. Only the centred header and the comparison table
+   need rules of their own. */
+
+.pricing-head {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 40px 34px;
+  text-align: center;
+}
+
+.pricing-head .hosting-h1 {
+  margin-bottom: 14px;
+}
+
+.pricing-table__scroll {
+  /* The table is the one element that cannot reflow into a phone width, so it
+     scrolls inside its own box rather than making the page scroll sideways. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.pricing-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.pricing-table th,
+.pricing-table td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eef1f1;
+  vertical-align: middle;
+}
+
+.pricing-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding-top: 16px;
+  padding-bottom: 14px;
+  z-index: 1;
+}
+
+.pricing-table thead th:not(:first-child),
+.pricing-table td {
+  text-align: center;
+  width: 132px;
+}
+
+.pricing-table__plan {
+  display: block;
+  font-family: "Josefin Sans", "Inter", sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.pricing-table__price {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.pricing-table thead th.is-featured,
+.pricing-table td.is-featured {
+  background: rgba(158, 200, 119, 0.08);
+}
+
+.pricing-table__group th {
+  font-family: "Josefin Sans", "Inter", sans-serif;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-alt);
+  padding-top: 14px;
+  padding-bottom: 10px;
+}
+
+.pricing-table tbody th[scope="row"] {
+  font-weight: 500;
+  color: var(--text);
+  min-width: 300px;
+}
+
+.pricing-table tbody tr:last-child th,
+.pricing-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pricing-yes {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(158, 200, 119, 0.22);
+  color: #4a7a35;
+}
+
+.pricing-no {
+  color: #b9c2c2;
+  font-size: 15px;
+}
+
+.pricing-value {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+/* The screen-reader label for the otherwise-empty first header cell. */
+.pricing-table__srlabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.pricing-faq {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .pricing-head {
+    padding: 24px 20px 26px;
+  }
+
+  .pricing-faq {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Sticky headers fight a horizontally scrolling table on touch. */
+  .pricing-table thead th {
+    position: static;
+  }
+}
