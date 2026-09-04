@@ -218,9 +218,10 @@ function Result({ outcome, cooldown }: { outcome: Outcome; cooldown: number }) {
         {outcome.sandbox ? (
           // Visible on purpose. A test-mode result that looks like a real one
           // is how someone ends up thinking they bought a domain.
-          <p className="mt-2.5 mb-0 px-2.5 py-[7px] text-[12.5px] text-warn-text bg-warn-bg border border-solid border-warn-border rounded-lg">
-            Test mode — this is the registrar&apos;s sandbox. No domain is actually registered and nothing is charged.
-          </p>
+          null
+          // <p className="mt-2.5 mb-0 px-2.5 py-[7px] text-[12.5px] text-warn-text bg-warn-bg border border-solid border-warn-border rounded-lg">
+          //   Test mode — this is the registrar&apos;s sandbox. No domain is actually registered and nothing is charged.
+          // </p>
         ) : null}
       </div>
     );
