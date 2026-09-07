@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { decideDeferral, resolveMaxDeferralHours } from "@/lib/backup-deferral";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   }
 
   const backupId = typeof body.backupId === "string" ? body.backupId.trim() : "";
-  const status = typeof body.status === "string" ? body.status.trim() : "";
+  let status = typeof body.status === "string" ? body.status.trim() : "";
   if (!backupId) {
     return NextResponse.json({ error: "backupId is required." }, { status: 400 });
   }
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
   // deploy costing a day of protection. Rewinding it to the last backup that
   // actually succeeded makes the site due again on the next hourly pass, which
   // is the whole point of deferring rather than failing.
+  let escalatedFrom: string | null = null;
   if (status === "deferred") {
     try {
       const { db } = await import("@/lib/db");
@@ -43,23 +45,47 @@ export async function POST(request: Request) {
         where: { id: backupId },
         select: { siteId: true, status: true }
       });
-      const deleted = await db.siteBackup.deleteMany({ where: { id: backupId, status: "running" } });
 
-      let rewound = false;
-      if (row?.siteId && (deleted?.count ?? 0) > 0) {
-        const lastSuccess = await db.siteBackup.findFirst({
-          where: { siteId: row.siteId, status: "success" },
-          orderBy: { completedAt: "desc" },
-          select: { completedAt: true }
-        });
-        await db.site.update({
-          where: { id: row.siteId },
-          data: { lastScheduledBackupAt: lastSuccess?.completedAt ?? null }
-        });
-        rewound = true;
+      const lastSuccess = row?.siteId
+        ? await db.siteBackup.findFirst({
+            where: { siteId: row.siteId, status: "success" },
+            orderBy: { completedAt: "desc" },
+            select: { completedAt: true }
+          })
+        : null;
+
+      // Politeness has a deadline. A collision that keeps recurring — a stale
+      // restic lock left by a killed prune, a deploy guard that never clears —
+      // would otherwise drop every placeholder row forever and alert nobody,
+      // because backup alerting is event-based and a deferral is not an event.
+      // The site would simply stop being backed up in silence. Past the limit
+      // this stops deferring and falls through to record a real failure.
+      const decision = decideDeferral({
+        lastSuccessAt: lastSuccess?.completedAt ?? null,
+        maxDeferralHours: resolveMaxDeferralHours(process.env.JONGO_MAX_DEFERRAL_HOURS)
+      });
+
+      if (decision.action === "defer") {
+        const deleted = await db.siteBackup.deleteMany({ where: { id: backupId, status: "running" } });
+
+        let rewound = false;
+        if (row?.siteId && (deleted?.count ?? 0) > 0) {
+          await db.site.update({
+            where: { id: row.siteId },
+            data: { lastScheduledBackupAt: lastSuccess?.completedAt ?? null }
+          });
+          rewound = true;
+        }
+
+        return NextResponse.json({ ok: true, backupId, status, removed: deleted?.count ?? 0, rewound });
       }
 
-      return NextResponse.json({ ok: true, backupId, status, removed: deleted?.count ?? 0, rewound });
+      // Record it as the failure it has become, keeping the reason the run
+      // gave so the catalogue says what was actually blocking rather than
+      // just "failed".
+      escalatedFrom = decision.reason;
+      status = "failed";
+      body.error = [body.error, `deferral escalated: ${decision.reason}`].filter(Boolean).join(" — ");
     } catch (error) {
       return NextResponse.json(
         { error: `Failed to clear deferred backup: ${error instanceof Error ? error.message : "unknown"}` },
@@ -182,7 +208,17 @@ export async function POST(request: Request) {
       // the catalogue row is the thing that must not be lost.
     }
 
-    return NextResponse.json({ ok: true, backupId: updated.id, status: updated.status, prunedRows, alerted, slackSent });
+    return NextResponse.json({
+      ok: true,
+      backupId: updated.id,
+      status: updated.status,
+      prunedRows,
+      alerted,
+      slackSent,
+      // Non-null when a run reported itself as deferred and was recorded as a
+      // failure anyway, because the app had gone too long without a success.
+      escalatedFrom
+    });
   } catch (error) {
     return NextResponse.json(
       { error: `Failed to record backup: ${error instanceof Error ? error.message : "unknown"}` },

@@ -239,7 +239,26 @@ if docker ps --format '{{.Names}} {{.Image}}' | grep -qE 'coolify-helper'; then
 fi
 
 CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E "(^|-)$RUUID($|-)" || true)
-[ -n "$CONTAINERS" ] || { echo "RESULT=fail_no_containers"; exit 1; }
+if [ -z "$CONTAINERS" ]; then
+  # No RUNNING container for this resource. docker ps only lists running ones,
+  # so this covers both "the app is restarting right now" and "the app is
+  # stopped" — and from here they are indistinguishable.
+  #
+  # This was a hard failure, which made a stopped app email its owner a backup
+  # failure every single day, forever. It accounted for 17 of the 22 recorded
+  # failures on this platform: one Supabase resource that has never had a single
+  # container, and one app whose containers went away and which then failed
+  # nightly. Neither is a backup that broke; both are apps that are not running.
+  #
+  # Deferring is right for the transient case (a restart between hourly passes
+  # costs nothing) and is made safe for the permanent case by the escalation in
+  # /api/ops/site-backup-record: once the app has gone past the deferral limit
+  # with no successful backup, this is recorded as a real failure and does
+  # alert. So a restart is quiet, and an app that is actually staying down is
+  # still reported — with a message that says so, instead of "fail_no_containers".
+  echo "RESULT=deferred_no_containers"
+  exit 0
+fi
 
 STAGE=${shQuote(`/var/backups/jongo/${siteSlug || "unknown"}`)}
 rm -rf "$STAGE"; mkdir -p "$STAGE"
@@ -405,11 +424,44 @@ OUT=$(/usr/bin/restic -r "$REPO" backup ${resticLabelFlags} \\
   --tag "backup=$BID" \\
   ${resticExcludeFlags} \\
   --files-from "$PATHS_FILE" 2>&1)
+RC=$?
 rm -f "$PATHS_FILE"
 echo "$OUT" | tail -5
+# Success is decided by the snapshot line, NOT by $RC, and that is deliberate:
+# restic exits 3 when some source files could not be read (a file deleted or
+# rewritten mid-run, which happens constantly on a live site) while still
+# writing a perfectly good snapshot. Failing on exit code alone would throw
+# those away. $RC is captured for the error report, not for the verdict.
 SNAP=$(echo "$OUT" | grep -oE 'snapshot [0-9a-f]{8,} saved' | grep -oE '[0-9a-f]{8,}' | tail -1)
 rm -rf "$STAGE"
-[ -n "$SNAP" ] || { echo "RESULT=fail_restic"; exit 1; }
+if [ -z "$SNAP" ]; then
+  # Hand back what restic ACTUALLY said. Recording a bare "fail_restic" told
+  # the owner their backup failed and gave nobody a way to find out why; the
+  # reason was already on stdout and was being thrown away here.
+  echo "RESTIC_RC=$RC"
+  echo "RESTIC_ERR_B64=$(printf '%s' "$OUT" | tail -c 1200 | base64 | tr -d '\n')"
+
+  # A locked repository is not a failed backup — it is this same "something
+  # else is using the resource" condition the host flock above already treats
+  # as a deferral, just detected at the B2 layer instead of on the host.
+  #
+  # All 46 sites share ONE restic repository, and restic prune (the nightly
+  # offsite job) takes an EXCLUSIVE lock on it. Any backup overlapping that
+  # window cannot get a lock, gives up, and was being recorded as a failure —
+  # which is exactly the "fails some of the time" pattern, because whether a
+  # backup collides with the prune is purely a matter of timing.
+  #
+  # Deferring instead means /api/ops/site-backup-record drops the placeholder
+  # row and rewinds lastScheduledBackupAt to the last success, so the site is
+  # due again on the very next hourly pass. Nothing is lost and nobody is paged.
+  if printf '%s' "$OUT" | grep -qiE 'unable to create lock|already locked|repository is already locked'; then
+    echo "RESULT=deferred_repo_locked"
+    exit 0
+  fi
+
+  echo "RESULT=fail_restic"
+  exit 1
+fi
 echo "SNAPSHOT=$SNAP"
 
 # ── Retention: without this, every backup is kept forever and B2 grows without
@@ -506,6 +558,34 @@ function decodeContainers(encoded) {
   }
 }
 
+/**
+ * What actually went wrong, for the `error` column.
+ *
+ * The RESULT token alone ("fail_restic") names the STAGE that failed and not
+ * the reason, which is the difference between a backups page that says "this
+ * failed" and one that says why. restic's own last lines are the reason.
+ */
+function describeFailure(k) {
+  const token = String(k.RESULT || "unknown failure");
+  let detail = "";
+  try {
+    detail = Buffer.from(String(k.RESTIC_ERR_B64 || ""), "base64").toString("utf8");
+  } catch {
+    detail = "";
+  }
+  // restic's progress output is mostly carriage-returned status lines; the
+  // last few real lines are the ones carrying the error.
+  const lines = detail
+    .split(/[\r\n]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-4);
+
+  const rc = k.RESTIC_RC ? ` (restic exit ${k.RESTIC_RC})` : "";
+  const because = lines.length ? `: ${lines.join(" / ")}` : "";
+  return `${token}${rc}${because}`.slice(0, 900);
+}
+
 try {
   console.log(`[site-backup] host=${sshHost} resource=${resourceUuid} backup=${backupId}`);
   const r = runSsh(buildScript());
@@ -577,7 +657,7 @@ try {
     comments: num(k.COMMENTS),
     wpVersion: k.WP_VERSION || null,
     label: label || null,
-    error: ok ? null : (k.RESULT || "unknown failure")
+    error: ok ? null : describeFailure(k)
   };
   console.log(`SITE_BACKUP_RESULT=${JSON.stringify(payload)}`);
 
