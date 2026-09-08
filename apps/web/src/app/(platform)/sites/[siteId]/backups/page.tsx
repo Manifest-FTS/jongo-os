@@ -381,6 +381,33 @@ export default async function BackupsPage({ params, searchParams }: Params) {
   // SiteWorkspaceRecord — a missing field in one of that type's select blocks
   // fails silently as `undefined`, which would quietly show "off" to a customer
   // whose backups are actually on.
+  // Metric strip from the canvas. Every value comes from data already loaded
+  // above, so this adds no queries.
+  const successfulBackups = siteBackupRows.filter((row) => row.status === "success");
+  const latestSuccessful = successfulBackups[0] ?? null;
+  const newestBackupBytes = successfulBackups.find((row) => row.sizeBytes !== null)?.sizeBytes ?? null;
+
+  function formatAge(iso: string | null): string {
+    if (!iso) return "Never";
+    const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    return `${Math.floor(hours / 24)}d`;
+  }
+
+  function formatSize(bytes: number | null): string {
+    if (bytes === null || !Number.isFinite(bytes) || bytes <= 0) return "—";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+  }
+
   const scheduleSummary = await (async () => {
     try {
       const { getDb } = await import("@/lib/db");
@@ -527,6 +554,25 @@ export default async function BackupsPage({ params, searchParams }: Params) {
           )}
         </article>
       ) : null}
+
+      <section className="metric-strip">
+        <article className="card metric-card">
+          <p className="metric-value">{formatAge(latestSuccessful?.completedAt ?? latestSuccessful?.startedAt ?? null)}</p>
+          <p className="metric-label">Last backup</p>
+        </article>
+        <article className="card metric-card">
+          <p className="metric-value">{backupTotal}</p>
+          <p className="metric-label">Snapshots kept</p>
+        </article>
+        <article className="card metric-card">
+          <p className="metric-value small">{formatSize(newestBackupBytes)}</p>
+          <p className="metric-label">Offsite size</p>
+        </article>
+        <article className="card metric-card">
+          <p className="metric-value small">{scheduleSummary?.enabled ? scheduleSummary.frequencyLabel : "Off"}</p>
+          <p className="metric-label">Schedule</p>
+        </article>
+      </section>
 
       <SiteBackupsPanel
         siteId={siteId}

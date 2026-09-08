@@ -122,6 +122,35 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
+    // Record the sync so the staging page can say when it last happened. The
+    // page had no source for "last synced from production" because nothing was
+    // ever written here. Logging must never turn a successful sync into a
+    // failure, so it is best-effort.
+    try {
+      const { db } = await import("@/lib/db");
+      await db.auditLog.create({
+        data: {
+          organizationId: workspace.organizationId,
+          actorId: session.user.id,
+          action: "site_updated",
+          resourceType: "site_staging",
+          resourceId: workspace.id,
+          details: {
+            actionType: "staging_synced_from_production",
+            productionServiceUuid,
+            stagingServiceUuid,
+            stagingUrl,
+            direction: "production-to-staging",
+            message: payload.message ?? "Production content was synced to staging."
+          },
+          ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "unknown",
+          userAgent: request.headers.get("user-agent") ?? undefined
+        }
+      });
+    } catch (error) {
+      console.error("staging sync: audit log write failed", error);
+    }
+
     return NextResponse.json({
       ok: true,
       message: payload.message ?? "Production content was synced to staging."
