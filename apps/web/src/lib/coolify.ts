@@ -9,6 +9,7 @@ import { extractResourceDomains } from "./coolify-primary-domain";
 import { CoolifyRateLimitError, CoolifyHttpError, isNotFoundError, isRateLimitError, noteRateLimited, rateLimitCooldownRemaining } from "./coolify-rate-limit";
 import { retryOnceAfterRateLimit } from "./rate-limit-retry";
 import { extractCreatedResourceUuid } from "./staging-capability-refresh";
+import { buildStagingClonePlan } from "./coolify-staging-clone";
 import { pickStagingTarget } from "./staging-target-match";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
@@ -1155,7 +1156,11 @@ export type CoolifyActionResult = {
     | "resource_deleted"
     | "resource_already_absent"
     | "forbidden"
-    | "environment_create_failed";
+    | "environment_create_failed"
+    /* clone -> move staging provisioning (lib/coolify-staging-clone.ts) */
+    | "cloned_from_production"
+    | "clone_unaddressable"
+    | "move_failed";
   /** HTTP status from Coolify, when the failure came from a rejected request. */
   status?: number;
   /** UUID returned by Coolify when this action creates a resource. */
@@ -2795,6 +2800,129 @@ export async function provisionCoolifyStagingFromProduction(
     : provisioningResource.kind === "application"
       ? [...applicationCandidateRequests, ...serviceCandidateRequests, ...fallbackCandidateRequests]
       : [...serviceCandidateRequests, ...applicationCandidateRequests, ...fallbackCandidateRequests];
+
+  // ── Preferred path: clone production, then move the clone into staging ──
+  //
+  // This runs BEFORE the speculative candidate list below. Those candidates
+  // guess at endpoints (/staging, /duplicate) that do not exist and send a body
+  // the real /clone route rejects outright — see lib/coolify-staging-clone.ts.
+  // The result was an empty staging environment and a message claiming Coolify
+  // had no such feature.
+  //
+  // Staging must be a COPY of production, so this clones (with volume data) and
+  // then moves the copy into the staging environment, because Coolify's clone
+  // endpoint cannot target an environment by itself.
+  const cloneIntoStaging = async (): Promise<CoolifyActionResult | null> => {
+    if (provisioningResource.kind === "unknown") return null;
+
+    const stagingEnv = await resolveStagingEnvironment();
+    const stagingEnvironmentUuid = stagingEnv?.stagingEnvironmentId ?? "";
+    if (!stagingEnvironmentUuid) return null;
+
+    const kind = provisioningResource.kind === "service" ? "service" : "application";
+    const base = kind === "service" ? "services" : "applications";
+
+    let destinationUuid = "";
+    let productionName: string | undefined;
+    try {
+      const detail = await coolifyFetch(`/api/v1/${base}/${encodeURIComponent(provisioningResource.uuid)}`);
+      if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+        const record = detail as Record<string, unknown>;
+        const destination = record.destination;
+        if (destination && typeof destination === "object" && !Array.isArray(destination)) {
+          destinationUuid = stringValue(destination as Record<string, unknown>, ["uuid"], "");
+        }
+        productionName = stringValue(record, ["name"], "") || undefined;
+      }
+    } catch {
+      return null;
+    }
+
+    const plan = buildStagingClonePlan({
+      kind,
+      sourceUuid: provisioningResource.uuid,
+      destinationUuid,
+      stagingEnvironmentUuid,
+      productionName
+    });
+    if (!plan.ok) {
+      provisioningAttempts.push({
+        path: `clone_precondition:${plan.reason}`,
+        method: "POST",
+        ok: false,
+        error: plan.message
+      });
+      return null;
+    }
+
+    const cloneResult = await retryOnceAfterRateLimit(
+      () => coolifyMutateWithResponse(plan.clone.path, "POST", plan.clone.body)
+    );
+    provisioningAttempts.push({
+      path: plan.clone.path,
+      method: "POST",
+      ok: cloneResult.ok,
+      status: cloneResult.status,
+      error: cloneResult.error
+    });
+    if (!cloneResult.ok) return null;
+
+    const clonedUuid = extractCreatedResourceUuid(cloneResult.body);
+    if (!clonedUuid) {
+      // The copy exists but cannot be addressed, so it cannot be moved. Report
+      // that plainly: something IS now sitting in the production environment.
+      return {
+        mode: "live",
+        ok: false,
+        message:
+          "Coolify cloned the app but did not return an id for the copy, so it could not be moved into staging. The copy is still in the production environment and needs moving or deleting by hand.",
+        reason: "clone_unaddressable",
+        attempts: provisioningAttempts
+      };
+    }
+
+    const moveRequest = plan.move(clonedUuid);
+    const moveResult = await retryOnceAfterRateLimit(
+      () => coolifyMutateWithResponse(moveRequest.path, "POST", moveRequest.body)
+    );
+    provisioningAttempts.push({
+      path: moveRequest.path,
+      method: "POST",
+      ok: moveResult.ok,
+      status: moveResult.status,
+      error: moveResult.error
+    });
+    if (!moveResult.ok) {
+      // Half-done is the one state worth naming exactly, because a clone left in
+      // production looks like a duplicate app to whoever finds it next.
+      return {
+        mode: "live",
+        ok: false,
+        message: `The staging copy was created but could not be moved into the staging environment${
+          moveResult.error ? `: ${moveResult.error}` : "."
+        } It is currently in the production environment as "${clonedUuid}".`,
+        reason: "move_failed",
+        status: moveResult.status,
+        resourceUuid: clonedUuid,
+        attempts: provisioningAttempts
+      };
+    }
+
+    const verifiedClone = await verifyStagingTarget();
+    return {
+      mode: "live",
+      ok: true,
+      message: verifiedClone
+        ? "Staging cloned from production."
+        : "Staging cloned from production and is still settling.",
+      reason: "cloned_from_production",
+      resourceUuid: clonedUuid,
+      attempts: provisioningAttempts
+    };
+  };
+
+  const clonedStaging = await cloneIntoStaging();
+  if (clonedStaging) return clonedStaging;
 
   for (const request of candidateRequests) {
     const result = await retryOnceAfterRateLimit(
