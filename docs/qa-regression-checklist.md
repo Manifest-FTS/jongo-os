@@ -1,6 +1,6 @@
 # Jongo QA Regression Checklist
 
-Use this checklist weekly and after every deployment release requested by Arun. Execute it against dedicated, disposable QA projects wherever possible. Do not use a customer production site for destructive provisioning, promotion, backup, or teardown checks.
+Use this checklist monthly and after every major deployment release requested by team leads (Arun, Kevin). Execute it against new or dedicated, disposable QA projects wherever possible. Do not use a customer production site for destructive provisioning, promotion, backup, or teardown checks.
 
 ## Metadata And Execution Header
 
