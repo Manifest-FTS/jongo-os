@@ -14,7 +14,7 @@ Use this checklist monthly and after every major deployment release requested by
 
 ### Run Criteria
 
-- [ ] Run this checklist once per week and after a deployment release requested by Arun.
+- [ ] Run this checklist once per month and after a deployment release requested by Arun or Kevin.
   - Expected: the run is dated, tied to a Jongo build or commit, and uses a unique test project slug.
 - [ ] Before starting, confirm the Jongo operational layer, Coolify connection, DNS, and backup destination are reachable.
   - Expected: no unresolved platform incident prevents testing; record any exception below and mark affected checks as blocked rather than passed.
