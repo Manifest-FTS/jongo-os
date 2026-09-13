@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Props = {
   imageUrl?: string | null;
@@ -10,43 +10,42 @@ type Props = {
   size?: number;
 };
 
+/**
+ * Initials always render; the photo sits on top of them. Gravatar is asked
+ * for a transparent image when an email has none (d=blank), so the initials
+ * show through without a failed request. onError still covers an uploaded
+ * avatar that no longer loads.
+ */
 export default function UserAvatar({ imageUrl, initials, alt, title, size = 40 }: Props) {
   const [failed, setFailed] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    setFailed(false);
+    // An image that failed before hydration never reaches onError.
+    const img = imgRef.current;
+    setFailed(Boolean(img && img.complete && img.naturalWidth === 0));
   }, [imageUrl]);
-
-  if (imageUrl && !failed) {
-    return (
-      <img
-        src={imageUrl}
-        alt={alt}
-        title={title}
-        width={size}
-        height={size}
-        onError={() => setFailed(true)}
-        style={{
-          width: `${size}px`,
-          height: `${size}px`,
-          borderRadius: "999px",
-          objectFit: "cover",
-          display: "inline-block",
-          background: "#eef3ee",
-          border: "1px solid rgba(0, 0, 0, 0.06)"
-        }}
-      />
-    );
-  }
 
   return (
     <span
-      className="user-avatar"
+      className="user-avatar relative overflow-hidden"
+      role="img"
       aria-label={alt}
       title={title}
       style={{ width: `${size}px`, height: `${size}px`, fontSize: size >= 56 ? "1.1rem" : undefined }}
     >
-      {initials}
+      <span aria-hidden="true">{initials}</span>
+      {imageUrl && !failed ? (
+        <img
+          ref={imgRef}
+          src={imageUrl}
+          alt=""
+          width={size}
+          height={size}
+          onError={() => setFailed(true)}
+          className="absolute inset-0 h-full w-full rounded-full object-cover"
+        />
+      ) : null}
     </span>
   );
 }
