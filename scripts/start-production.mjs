@@ -122,6 +122,14 @@ try {
     startBackgroundProcess("Starting Coolify deletion watcher", ["run", "ops:coolify-deletion:watcher"]);
   }
 
+  // Resource usage metering. On by default: usage history only exists from the
+  // moment collection starts, so every day it is off is a day the 30/60/90-day
+  // views can never show. Set USAGE_COLLECT_ENABLED=false to opt out.
+  const usageCollectEnabled = (process.env.USAGE_COLLECT_ENABLED || "true").trim().toLowerCase() !== "false";
+  if (usageCollectEnabled) {
+    startBackgroundProcess("Starting usage collector", ["run", "ops:usage-collect:scheduler"]);
+  }
+
   await runStep("Starting web application", ["run", "start:web"], {
     HOSTNAME: process.env.HOSTNAME || "0.0.0.0"
   });

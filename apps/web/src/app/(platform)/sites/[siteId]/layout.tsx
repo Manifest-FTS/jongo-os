@@ -93,6 +93,7 @@ export default async function SiteWorkspaceLayout({
     ...(showStagingTab ? [{ name: "Staging", href: `/apps/${siteId}/staging` } as WorkspaceTab] : []),
     ...(showBackupsTab ? [{ name: "Backups", href: `/apps/${siteId}/backups` } as WorkspaceTab] : []),
     ...(isAdminViewer ? [{ name: "Analytics", href: `/apps/${siteId}/analytics` } as WorkspaceTab] : []),
+    { name: "Usage", href: `/apps/${siteId}/usage` },
     { name: "Advanced", href: `/apps/${siteId}/settings` }
   ];
 

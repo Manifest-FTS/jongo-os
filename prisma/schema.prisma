@@ -794,3 +794,84 @@ model PlatformAdmin {
 
   @@index([userId])
 }
+
+// ============================================================
+// Resource usage metering
+// ============================================================
+//
+// Filled every few minutes by /api/ops/usage-collect from kernel counters on
+// the Docker host (scripts/usage-collect.sh). Stored as HOURLY buckets rather
+// than raw samples: CPU time and network bytes come from cumulative counters,
+// so the delta between any two readings is exact and one row per app per hour
+// loses nothing a 30/60/90-day view needs. Memory is a gauge, so each bucket
+// keeps a running sum + sample count (for the average) and the peak.
+
+/// One app (or one unattributed platform container group) for one hour.
+model UsageHourly {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  hourStart      DateTime
+  host           String
+  /// The Site id, or "infra:<name>" / "unmapped:<coolify uuid>" for containers
+  /// that belong to no Jongo app — shown to admins as overhead, never to clients.
+  subjectKey     String
+  siteId         String?  @db.Uuid
+  label          String
+  /// CPU time used, in core-seconds (3600 = one vCPU busy for an hour).
+  cpuCoreSeconds Float    @default(0)
+  /// Sum of working-set bytes across samples; divide by memSamples for the mean.
+  memSumBytes    BigInt   @default(0)
+  memSamples     Int      @default(0)
+  memPeakBytes   BigInt   @default(0)
+  netRxBytes     BigInt   @default(0)
+  netTxBytes     BigInt   @default(0)
+  /// Transmit bytes of public-facing (Traefik-routed) containers only, so an
+  /// app's traffic to its own database is not billed as egress.
+  egressBytes    BigInt   @default(0)
+  /// Persistent volume bytes, last measured within this hour (hourly job).
+  diskBytes      BigInt?
+  containers     Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([hourStart, host, subjectKey])
+  @@index([siteId, hourStart])
+  @@index([hourStart])
+}
+
+/// Whole-server totals for one hour: the denominator for "share of server".
+model UsageHostHourly {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  hourStart        DateTime
+  host             String
+  /// Seconds of this hour covered by readings — the denominator for averages.
+  coveredSeconds   Float    @default(0)
+  cpuCores         Int
+  cpuBusySeconds   Float    @default(0)
+  memTotalBytes    BigInt
+  memUsedSumBytes  BigInt   @default(0)
+  memSamples       Int      @default(0)
+  memUsedPeakBytes BigInt   @default(0)
+  netRxBytes       BigInt   @default(0)
+  netTxBytes       BigInt   @default(0)
+  diskTotalBytes   BigInt
+  diskUsedBytes    BigInt
+  updatedAt        DateTime @updatedAt
+
+  @@unique([hourStart, host])
+  @@index([hourStart])
+}
+
+/// The last cumulative counters seen per container ("c:<id>"), per host
+/// ("h:<host>") and the last disk sizing ("d:<host>"). Only used to compute
+/// deltas; pruned when a container has not been seen for two days.
+model UsageCounterState {
+  key         String    @id
+  host        String
+  collectedAt DateTime
+  startedAt   DateTime?
+  cpuUsec     BigInt    @default(0)
+  netRxBytes  BigInt    @default(0)
+  netTxBytes  BigInt    @default(0)
+  updatedAt   DateTime  @updatedAt
+
+  @@index([collectedAt])
+}
