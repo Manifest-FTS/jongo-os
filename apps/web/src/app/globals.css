@@ -175,8 +175,12 @@ main {
   gap: 1rem;
 }
 
+/* minmax(0, 1fr), not the implicit auto column: an auto column grows to its
+   widest child, so one wide table widened the whole page on phones even
+   though the table sits in its own overflow-x-auto box. */
 .app-content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.15rem;
 }
 
@@ -383,6 +387,7 @@ main {
 
 .page-stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -883,6 +888,7 @@ main {
 
 .directory-results.directory-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.7rem;
 }
 
@@ -1702,6 +1708,7 @@ main {
 /* ── Workspace shell ─────────────────────────────────────────────── */
 .workspace-shell {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -3321,9 +3328,12 @@ button .card:hover {
   gap: 10px;
 }
 
+/* Wraps on phones: five links in one row are wider than a 375px screen. */
 .hosting-footer__links {
   display: flex;
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  min-width: 0;
 }
 
 /* Phone and tablet. The hero and migration blocks are the only two-column
