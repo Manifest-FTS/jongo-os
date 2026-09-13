@@ -42,6 +42,8 @@
     "ops:verify-backup:restore-test": "node ./scripts/verify-jongo-backup.mjs --restore-test",
     "ops:backup-reconcile:scheduler": "node ./scripts/backup-reconcile-scheduler.mjs",
     "ops:coolify-deletion:watcher": "node ./scripts/coolify-deletion-watcher.mjs",
+    "ops:usage-collect": "node ./scripts/usage-collector-scheduler.mjs --once",
+    "ops:usage-collect:scheduler": "node ./scripts/usage-collector-scheduler.mjs",
     "dev:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1 -Dev",
     "start:web:env": "powershell -ExecutionPolicy Bypass -File ./scripts/start-web-with-env.ps1",
     "docker:up": "docker compose up --build -d",

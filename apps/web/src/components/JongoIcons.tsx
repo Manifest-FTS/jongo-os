@@ -75,6 +75,17 @@ export function ServerIcon(props: IconProps) {
   );
 }
 
+export function ChartBarIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 20h16" />
+      <path d="M7 16v-5" />
+      <path d="M12 16V7" />
+      <path d="M17 16v-8" />
+    </BaseIcon>
+  );
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

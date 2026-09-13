@@ -101,6 +101,13 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Ticked every few minutes by scripts/usage-collector-scheduler.mjs, which sends
+  // BACKUP_RECONCILE_TOKEN (or OWNERSHIP_SYNC_TOKEN). Without this the POST is a
+  // 307 to /auth/login and no usage is ever recorded. The route re-checks the token.
+  if (pathname === "/api/ops/usage-collect" && (hasBackupReconcileToken || hasOpsToken)) {
+    return NextResponse.next();
+  }
+
   // Ticked every minute by scripts/coolify-deletion-watcher.mjs. Without it here
   // the POST is redirected to /auth/login (307); fetch follows a 307 with the
   // method intact, so the watcher saw "HTTP 405" from the login page and no
