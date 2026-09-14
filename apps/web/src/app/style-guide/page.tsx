@@ -2,6 +2,15 @@
 
 import React, { useState, useMemo } from "react";
 import "./style-guide.css";
+import {
+  HOSTING_TIERS,
+  SLA_TIERS,
+  ALL_PLANS,
+  PRICING_MATRIX_ROWS,
+  PRICING_FAQ,
+  type TierPlan
+} from "@/lib/public-plans";
+import { formatBytes, formatVcpuHours, formatCores, formatRate } from "@/lib/usage-format";
 
 type ColorSwatch = {
   name: string;
@@ -216,6 +225,40 @@ const BRAND_DOWNLOADS = [
   }
 ];
 
+// Mock daily usage points for live visualization demo (30 days)
+const MOCK_USAGE_DAYS = [
+  { day: "2026-08-15", bytes: 14200000000, coreSeconds: 18400 },
+  { day: "2026-08-16", bytes: 12100000000, coreSeconds: 15200 },
+  { day: "2026-08-17", bytes: 18400000000, coreSeconds: 22100 },
+  { day: "2026-08-18", bytes: 24500000000, coreSeconds: 31000 },
+  { day: "2026-08-19", bytes: 21800000000, coreSeconds: 27800 },
+  { day: "2026-08-20", bytes: 19500000000, coreSeconds: 24500 },
+  { day: "2026-08-21", bytes: 16200000000, coreSeconds: 19800 },
+  { day: "2026-08-22", bytes: 13500000000, coreSeconds: 16400 },
+  { day: "2026-08-23", bytes: 11800000000, coreSeconds: 14200 },
+  { day: "2026-08-24", bytes: 26400000000, coreSeconds: 34200 },
+  { day: "2026-08-25", bytes: 29800000000, coreSeconds: 39500 },
+  { day: "2026-08-26", bytes: 33400000000, coreSeconds: 44100 },
+  { day: "2026-08-27", bytes: 31200000000, coreSeconds: 41000 },
+  { day: "2026-08-28", bytes: 28500000000, coreSeconds: 36800 },
+  { day: "2026-08-29", bytes: 22100000000, coreSeconds: 28400 },
+  { day: "2026-08-30", bytes: 18900000000, coreSeconds: 23500 },
+  { day: "2026-08-31", bytes: 34200000000, coreSeconds: 46200 },
+  { day: "2026-09-01", bytes: 38100000000, coreSeconds: 51200 },
+  { day: "2026-09-02", bytes: 36400000000, coreSeconds: 48900 },
+  { day: "2026-09-03", bytes: 41200000000, coreSeconds: 54300 },
+  { day: "2026-09-04", bytes: 39500000000, coreSeconds: 52100 },
+  { day: "2026-09-05", bytes: 27400000000, coreSeconds: 35600 },
+  { day: "2026-09-06", bytes: 24100000000, coreSeconds: 31200 },
+  { day: "2026-09-07", bytes: 43500000000, coreSeconds: 58400 },
+  { day: "2026-09-08", bytes: 46800000000, coreSeconds: 62100 },
+  { day: "2026-09-09", bytes: 44200000000, coreSeconds: 59300 },
+  { day: "2026-09-10", bytes: 48900000000, coreSeconds: 65400 },
+  { day: "2026-09-11", bytes: 51200000000, coreSeconds: 69200 },
+  { day: "2026-09-12", bytes: 47600000000, coreSeconds: 63800 },
+  { day: "2026-09-13", bytes: 53400000000, coreSeconds: 71500 }
+];
+
 export default function StyleGuidePage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("brand");
@@ -226,11 +269,24 @@ export default function StyleGuidePage() {
   const [stagingEnabled, setStagingEnabled] = useState<boolean>(true);
   const [backupScheduleEnabled, setBackupScheduleEnabled] = useState<boolean>(true);
 
+  // Pricing & Subscription state
+  const [isAnnual, setIsAnnual] = useState<boolean>(true);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>("pro");
+  const [devHoursUsed, setDevHoursUsed] = useState<number>(1.25);
+  const [extraBandwidthGb, setExtraBandwidthGb] = useState<number>(0);
+  const [extraStorageGb, setExtraStorageGb] = useState<number>(0);
+  const [extraDevHours, setExtraDevHours] = useState<number>(0);
+
+  // Usage visualization state
+  const [chartMetric, setChartMetric] = useState<"bytes" | "vcpu">("bytes");
+  const [chartHoverIndex, setChartHoverIndex] = useState<number | null>(null);
+  const [usageWindowDays, setUsageWindowDays] = useState<number>(30);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
-    }, 2200);
+    }, 2400);
   };
 
   const copyToClipboard = async (text: string, label: string) => {
@@ -258,7 +314,7 @@ export default function StyleGuidePage() {
     }, 1800);
   };
 
-  // Icons catalog
+  // Icon Library
   const ICONS = [
     {
       id: "server",
@@ -315,7 +371,7 @@ export default function StyleGuidePage() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
           <line x1="2" y1="12" x2="22" y2="12" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10z" />
         </svg>
       )
     },
@@ -460,6 +516,23 @@ export default function StyleGuidePage() {
     return ICONS.filter((i) => i.name.toLowerCase().includes(iconSearch.toLowerCase()));
   }, [iconSearch]);
 
+  // Selected plan lookup
+  const currentPlan = ALL_PLANS.find((p) => p.id === selectedPlanId) || ALL_PLANS[1];
+
+  // Calculate simulated overages
+  const estimatedOverageTotal = useMemo(() => {
+    const bwRate = currentPlan.id === "enterprise-sla" ? 0.03 : 0.05;
+    const stRate = currentPlan.id === "enterprise-sla" ? 0.15 : 0.20;
+    const devRate = currentPlan.id === "starter" ? 120 : currentPlan.id === "pro" ? 100 : 90;
+    return extraBandwidthGb * bwRate + extraStorageGb * stRate + extraDevHours * devRate;
+  }, [extraBandwidthGb, extraStorageGb, extraDevHours, currentPlan]);
+
+  // Chart rendering geometry
+  const chartPoints = MOCK_USAGE_DAYS.slice(30 - usageWindowDays);
+  const maxChartValue = Math.max(
+    ...chartPoints.map((p) => (chartMetric === "bytes" ? p.bytes : p.coreSeconds / 3600))
+  );
+
   return (
     <div className="sg-root">
       {/* Toast */}
@@ -493,18 +566,24 @@ export default function StyleGuidePage() {
           </a>
 
           <ul className="sg-nav-links">
-            <li><a href="#brand" className={`sg-nav-link ${activeTab === "brand" ? "active" : ""}`} onClick={() => setActiveTab("brand")}>01 · Logo & Brand</a></li>
+            <li><a href="#brand" className={`sg-nav-link ${activeTab === "brand" ? "active" : ""}`} onClick={() => setActiveTab("brand")}>01 · Logo</a></li>
             <li><a href="#colors" className={`sg-nav-link ${activeTab === "colors" ? "active" : ""}`} onClick={() => setActiveTab("colors")}>02 · Palette</a></li>
-            <li><a href="#typography" className={`sg-nav-link ${activeTab === "typography" ? "active" : ""}`} onClick={() => setActiveTab("typography")}>03 · Typography</a></li>
+            <li><a href="#typography" className={`sg-nav-link ${activeTab === "typography" ? "active" : ""}`} onClick={() => setActiveTab("typography")}>03 · Type</a></li>
             <li><a href="#components" className={`sg-nav-link ${activeTab === "components" ? "active" : ""}`} onClick={() => setActiveTab("components")}>04 · Components</a></li>
-            <li><a href="#operations" className={`sg-nav-link ${activeTab === "operations" ? "active" : ""}`} onClick={() => setActiveTab("operations")}>05 · Operations</a></li>
-            <li><a href="#icons" className={`sg-nav-link ${activeTab === "icons" ? "active" : ""}`} onClick={() => setActiveTab("icons")}>06 · Icon Library</a></li>
-            <li><a href="#downloads" className={`sg-nav-link ${activeTab === "downloads" ? "active" : ""}`} onClick={() => setActiveTab("downloads")}>07 · Downloads</a></li>
+            <li><a href="#usage" className={`sg-nav-link ${activeTab === "usage" ? "active" : ""}`} onClick={() => setActiveTab("usage")}>05 · Usage Stats</a></li>
+            <li><a href="#pricing" className={`sg-nav-link ${activeTab === "pricing" ? "active" : ""}`} onClick={() => setActiveTab("pricing")}>06 · Pricing Matrix</a></li>
+            <li><a href="#subscriptions" className={`sg-nav-link ${activeTab === "subscriptions" ? "active" : ""}`} onClick={() => setActiveTab("subscriptions")}>07 · Subscriptions</a></li>
+            <li><a href="#operations" className={`sg-nav-link ${activeTab === "operations" ? "active" : ""}`} onClick={() => setActiveTab("operations")}>08 · Operations</a></li>
+            <li><a href="#icons" className={`sg-nav-link ${activeTab === "icons" ? "active" : ""}`} onClick={() => setActiveTab("icons")}>09 · Icons</a></li>
+            <li><a href="#downloads" className={`sg-nav-link ${activeTab === "downloads" ? "active" : ""}`} onClick={() => setActiveTab("downloads")}>10 · Downloads</a></li>
           </ul>
 
           <div className="sg-nav-actions">
+            <a href="/pricing" className="sg-btn sg-btn-secondary sg-btn-sm">
+              Live Pricing →
+            </a>
             <a href="/" className="sg-btn sg-btn-primary sg-btn-sm">
-              Back to Dashboard →
+              Dashboard →
             </a>
           </div>
         </div>
@@ -524,25 +603,25 @@ export default function StyleGuidePage() {
           <p className="sg-hero-lede">
             Jongo is the self-hosted operations layer for Coolify, Next.js, WordPress, databases, and managed domains. 
             This brand manual establishes our visual identity, human-readable domain standards (<code style={{ background: "#eef1f1", padding: "0.2rem 0.4rem", borderRadius: "6px" }}>[slug].mfts.link</code>), 
-            token architecture, and production-tested UI components.
+            transparent pricing matrix, usage telemetry data visualizations, and production-tested UI components.
           </p>
 
           <div className="sg-hero-stats">
             <div className="sg-stat-card">
-              <span className="sg-stat-val">100%</span>
-              <span className="sg-stat-lbl">Self-Hosted / Open-Source</span>
+              <span className="sg-stat-val">Starter · $45</span>
+              <span className="sg-stat-lbl">2GB RAM / 250GB Egress</span>
             </div>
             <div className="sg-stat-card">
-              <span className="sg-stat-val">.mfts.link</span>
-              <span className="sg-stat-lbl">Human-Readable Domains</span>
+              <span className="sg-stat-val">Pro · $75</span>
+              <span className="sg-stat-lbl">4GB / 3 Dev Hrs Qtr</span>
             </div>
             <div className="sg-stat-card">
-              <span className="sg-stat-val">1-Click</span>
-              <span className="sg-stat-lbl">Staging-to-Prod Promotion</span>
+              <span className="sg-stat-val">Core · $149</span>
+              <span className="sg-stat-lbl">8GB / 12h Next-Day SLA</span>
             </div>
             <div className="sg-stat-card">
-              <span className="sg-stat-val">B2 / Restic</span>
-              <span className="sg-stat-lbl">Offsite Automated Backups</span>
+              <span className="sg-stat-val">Enterprise · $349</span>
+              <span className="sg-stat-lbl">16GB / 4h 24/7 SLA</span>
             </div>
           </div>
         </header>
@@ -559,7 +638,6 @@ export default function StyleGuidePage() {
           </div>
 
           <div className="sg-logo-grid">
-            {/* Logo 1: Full Color Light */}
             <div className="sg-logo-card">
               <div className="sg-logo-stage light">
                 <img src="/assets/brand/jongo-logo-color.svg" alt="Jongo Color Logo" width={220} height={60} />
@@ -580,7 +658,6 @@ export default function StyleGuidePage() {
               </div>
             </div>
 
-            {/* Logo 2: Full Color Dark */}
             <div className="sg-logo-card">
               <div className="sg-logo-stage dark">
                 <img src="/assets/brand/jongo-logo-darkbg.svg" alt="Jongo Dark BG Logo" width={220} height={60} />
@@ -601,7 +678,6 @@ export default function StyleGuidePage() {
               </div>
             </div>
 
-            {/* Logo 3: Monochrome White */}
             <div className="sg-logo-card">
               <div className="sg-logo-stage midnight">
                 <img src="/assets/brand/jongo-logo-white.svg" alt="Jongo White Logo" width={220} height={60} />
@@ -622,7 +698,6 @@ export default function StyleGuidePage() {
               </div>
             </div>
 
-            {/* Logo 4: Isolated Leaf Mark (Color) */}
             <div className="sg-logo-card">
               <div className="sg-logo-stage light">
                 <img src="/assets/brand/jongo-logomark-color.svg" alt="Jongo Logomark Color" width={72} height={72} />
@@ -643,7 +718,6 @@ export default function StyleGuidePage() {
               </div>
             </div>
 
-            {/* Logo 5: Isolated Leaf Mark (White) */}
             <div className="sg-logo-card">
               <div className="sg-logo-stage dark">
                 <img src="/assets/brand/jongo-logomark-white.svg" alt="Jongo Logomark White" width={72} height={72} />
@@ -778,7 +852,6 @@ export default function StyleGuidePage() {
             </div>
           </div>
 
-          {/* Interactive Font Tester */}
           <div className="sg-component-card">
             <div className="sg-component-header">
               <h3 className="sg-component-title">Interactive Font Specimen Tester</h3>
@@ -815,7 +888,6 @@ export default function StyleGuidePage() {
             </p>
           </div>
 
-          {/* Buttons Specimen */}
           <div className="sg-component-card">
             <div className="sg-component-header">
               <h3 className="sg-component-title">Action Triggers & Buttons</h3>
@@ -840,7 +912,6 @@ export default function StyleGuidePage() {
             </div>
           </div>
 
-          {/* Badges & Status Pills */}
           <div className="sg-component-card">
             <div className="sg-component-header">
               <h3 className="sg-component-title">Status Indicators & Badges</h3>
@@ -865,7 +936,6 @@ export default function StyleGuidePage() {
             </div>
           </div>
 
-          {/* Domain Pills */}
           <div className="sg-component-card">
             <div className="sg-component-header">
               <h3 className="sg-component-title">Human-Readable Domain Formatting</h3>
@@ -889,89 +959,593 @@ export default function StyleGuidePage() {
               </div>
             </div>
           </div>
+        </section>
 
-          {/* Form & Toggle Controls */}
-          <div className="sg-component-card">
-            <div className="sg-component-header">
-              <h3 className="sg-component-title">Environment Toggles & Input Controls</h3>
-              <span className="sg-component-badge">Form Patterns</span>
+        {/* SECTION 5: USAGE STATS & DATA VISUALIZATIONS */}
+        <section className="sg-section" id="usage">
+          <div className="sg-section-header">
+            <div className="sg-eyebrow">05 · Telemetry & Metrics</div>
+            <h2 className="sg-section-title">Usage Statistics & Data Visualizations</h2>
+            <p className="sg-section-desc">
+              Data visualizations follow a strict single-series, accessible, and tactile geometry. 
+              Hover or click columns to inspect daily egress traffic, compute vCPU-hours, and active container loads.
+            </p>
+          </div>
+
+          {/* Interactive Usage Column Chart */}
+          <div className="sg-chart-container mb-6">
+            <div className="sg-chart-toolbar">
+              <div>
+                <h3 style={{ fontSize: "1.15rem", fontWeight: 700, color: "#14231c", margin: 0 }}>
+                  Daily {chartMetric === "bytes" ? "Egress Bandwidth" : "vCPU Compute Hours"}
+                </h3>
+                <p style={{ fontSize: "0.82rem", color: "#6c7778", margin: "0.2rem 0 0" }}>
+                  Trailing {usageWindowDays} days · Hover columns for daily value inspections
+                </p>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                {/* Metric toggle */}
+                <div className="sg-billing-switcher" style={{ padding: "0.2rem" }}>
+                  <button
+                    className={`sg-billing-btn ${chartMetric === "bytes" ? "active" : ""}`}
+                    onClick={() => setChartMetric("bytes")}
+                    style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
+                  >
+                    Bandwidth (GB)
+                  </button>
+                  <button
+                    className={`sg-billing-btn ${chartMetric === "vcpu" ? "active" : ""}`}
+                    onClick={() => setChartMetric("vcpu")}
+                    style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
+                  >
+                    Compute (vCPU-h)
+                  </button>
+                </div>
+
+                {/* Window range */}
+                <select
+                  value={usageWindowDays}
+                  onChange={(e) => setUsageWindowDays(Number(e.target.value))}
+                  style={{
+                    padding: "0.4rem 0.75rem",
+                    borderRadius: "8px",
+                    border: "1px solid #dde1e1",
+                    fontSize: "0.82rem",
+                    fontWeight: 600,
+                    color: "#14231c",
+                    background: "#ffffff"
+                  }}
+                >
+                  <option value={14}>Last 14 days</option>
+                  <option value={30}>Last 30 days</option>
+                </select>
+              </div>
             </div>
-            <div className="sg-specimen-box" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.25rem", width: "100%" }}>
-              <div style={{ background: "#ffffff", padding: "1rem", borderRadius: "10px", border: "1px solid #dde1e1", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <strong style={{ display: "block", fontSize: "0.9rem", color: "#14231c" }}>Staging Environment</strong>
-                  <small style={{ color: "#6c7778" }}>Isolated container + database stack</small>
-                </div>
-                <button
-                  onClick={() => setStagingEnabled(!stagingEnabled)}
-                  style={{
-                    width: "48px",
-                    height: "26px",
-                    borderRadius: "9999px",
-                    background: stagingEnabled ? "#9ec877" : "#dde1e1",
-                    position: "relative",
-                    border: "none",
-                    cursor: "pointer",
-                    transition: "all 0.2s ease"
-                  }}
-                >
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: "3px",
-                      left: stagingEnabled ? "25px" : "3px",
-                      width: "20px",
-                      height: "20px",
-                      borderRadius: "50%",
-                      background: "#ffffff",
-                      boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
-                      transition: "all 0.2s ease"
-                    }}
-                  />
-                </button>
-              </div>
 
-              <div style={{ background: "#ffffff", padding: "1rem", borderRadius: "10px", border: "1px solid #dde1e1", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <strong style={{ display: "block", fontSize: "0.9rem", color: "#14231c" }}>Daily Automated Backup</strong>
-                  <small style={{ color: "#6c7778" }}>24h RPO offsite sync to B2</small>
-                </div>
-                <button
-                  onClick={() => setBackupScheduleEnabled(!backupScheduleEnabled)}
-                  style={{
-                    width: "48px",
-                    height: "26px",
-                    borderRadius: "9999px",
-                    background: backupScheduleEnabled ? "#9ec877" : "#dde1e1",
-                    position: "relative",
-                    border: "none",
-                    cursor: "pointer",
-                    transition: "all 0.2s ease"
-                  }}
-                >
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: "3px",
-                      left: backupScheduleEnabled ? "25px" : "3px",
-                      width: "20px",
-                      height: "20px",
-                      borderRadius: "50%",
-                      background: "#ffffff",
-                      boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
-                      transition: "all 0.2s ease"
-                    }}
-                  />
-                </button>
+            {/* SVG Chart */}
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <svg viewBox="0 0 720 180" style={{ width: "100%", height: "auto", minWidth: "540px", display: "block" }}>
+                {/* Horizontal Grid lines */}
+                <line x1={60} x2={710} y1={20} y2={20} stroke="#e4e7ec" strokeWidth={1} strokeDasharray="3 3" />
+                <line x1={60} x2={710} y1={80} y2={80} stroke="#e4e7ec" strokeWidth={1} strokeDasharray="3 3" />
+                <line x1={60} x2={710} y1={140} y2={140} stroke="#e4e7ec" strokeWidth={1} />
+
+                {/* Y Axis labels */}
+                <text x={52} y={24} textAnchor="end" fontSize={10} fill="#667085" fontFamily="monospace">
+                  {chartMetric === "bytes" ? formatBytes(maxChartValue) : `${maxChartValue.toFixed(1)} vCPU-h`}
+                </text>
+                <text x={52} y={84} textAnchor="end" fontSize={10} fill="#667085" fontFamily="monospace">
+                  {chartMetric === "bytes" ? formatBytes(maxChartValue / 2) : `${(maxChartValue / 2).toFixed(1)} vCPU-h`}
+                </text>
+                <text x={52} y={144} textAnchor="end" fontSize={10} fill="#667085" fontFamily="monospace">
+                  0
+                </text>
+
+                {/* Columns */}
+                {chartPoints.map((pt, idx) => {
+                  const val = chartMetric === "bytes" ? pt.bytes : pt.coreSeconds / 3600;
+                  const colWidth = (640 / chartPoints.length) - 4;
+                  const colHeight = (val / maxChartValue) * 120;
+                  const x = 65 + idx * (640 / chartPoints.length);
+                  const y = 140 - colHeight;
+                  const isHovered = chartHoverIndex === idx;
+
+                  return (
+                    <g key={pt.day} onMouseEnter={() => setChartHoverIndex(idx)} onMouseLeave={() => setChartHoverIndex(null)}>
+                      <rect
+                        x={x}
+                        y={y}
+                        width={Math.max(4, colWidth)}
+                        height={Math.max(2, colHeight)}
+                        rx={3}
+                        fill={isHovered ? "#3b6f22" : "#4f8a2f"}
+                        style={{ cursor: "pointer", transition: "fill 0.15s ease" }}
+                      />
+                      {/* Transparent hit area */}
+                      <rect x={x - 2} y={10} width={colWidth + 4} height={140} fill="transparent" style={{ cursor: "pointer" }} />
+                    </g>
+                  );
+                })}
+
+                {/* Tooltip */}
+                {chartHoverIndex !== null && chartPoints[chartHoverIndex] && (
+                  <g pointerEvents="none">
+                    {(() => {
+                      const pt = chartPoints[chartHoverIndex];
+                      const valText = chartMetric === "bytes" ? formatBytes(pt.bytes) : `${(pt.coreSeconds / 3600).toFixed(2)} vCPU-h`;
+                      const xPos = Math.min(Math.max(65 + chartHoverIndex * (640 / chartPoints.length) - 40, 65), 580);
+                      return (
+                        <>
+                          <rect x={xPos} y={15} width={115} height={42} rx={6} fill="#14231c" stroke="#244235" />
+                          <text x={xPos + 8} y={32} fontSize={11.5} fontWeight={700} fill="#9ec877">
+                            {valText}
+                          </text>
+                          <text x={xPos + 8} y={47} fontSize={9.5} fill="#9cb5aa" fontFamily="monospace">
+                            {pt.day}
+                          </text>
+                        </>
+                      );
+                    })()}
+                  </g>
+                )}
+              </svg>
+            </div>
+          </div>
+
+          {/* Quota & Resource Meters */}
+          <div className="sg-quota-grid mb-6">
+            <div className="sg-quota-card">
+              <div className="sg-quota-header">
+                <span>Egress Bandwidth</span>
+                <span style={{ color: "#4f8a2f" }}>OK</span>
               </div>
+              <div className="sg-quota-val">184.2 GB <small style={{ fontSize: "0.85rem", color: "#6c7778" }}>/ 250 GB</small></div>
+              <div className="sg-quota-bar-track">
+                <div className="sg-quota-bar-fill ok" style={{ width: "73.6%" }} />
+              </div>
+              <span style={{ fontSize: "0.75rem", color: "#6c7778" }}>74% of 250 GB Starter quota used</span>
+            </div>
+
+            <div className="sg-quota-card">
+              <div className="sg-quota-header">
+                <span>SSD Storage</span>
+                <span style={{ color: "#d4af37" }}>WARN</span>
+              </div>
+              <div className="sg-quota-val">21.8 GB <small style={{ fontSize: "0.85rem", color: "#6c7778" }}>/ 25 GB</small></div>
+              <div className="sg-quota-bar-track">
+                <div className="sg-quota-bar-fill warn" style={{ width: "87.2%" }} />
+              </div>
+              <span style={{ fontSize: "0.75rem", color: "#d4af37", fontWeight: 600 }}>87% used · nearing plan threshold</span>
+            </div>
+
+            <div className="sg-quota-card">
+              <div className="sg-quota-header">
+                <span>Memory Allocation</span>
+                <span style={{ color: "#4f8a2f" }}>OK</span>
+              </div>
+              <div className="sg-quota-val">1.42 GB <small style={{ fontSize: "0.85rem", color: "#6c7778" }}>/ 2.0 GB</small></div>
+              <div className="sg-quota-bar-track">
+                <div className="sg-quota-bar-fill ok" style={{ width: "71%" }} />
+              </div>
+              <span style={{ fontSize: "0.75rem", color: "#6c7778" }}>71% active container consumption</span>
+            </div>
+
+            <div className="sg-quota-card">
+              <div className="sg-quota-header">
+                <span>Compute vCPU</span>
+                <span style={{ color: "#4f8a2f" }}>OK</span>
+              </div>
+              <div className="sg-quota-val">0.34 cores <small style={{ fontSize: "0.85rem", color: "#6c7778" }}>/ 1 vCPU</small></div>
+              <div className="sg-quota-bar-track">
+                <div className="sg-quota-bar-fill ok" style={{ width: "34%" }} />
+              </div>
+              <span style={{ fontSize: "0.75rem", color: "#6c7778" }}>Avg busy cores across trailing window</span>
             </div>
           </div>
         </section>
 
-        {/* SECTION 5: OPERATIONS SIMULATION */}
+        {/* SECTION 6: PRICING PLANS & ESCALATION MATRIX */}
+        <section className="sg-section" id="pricing">
+          <div className="sg-section-header">
+            <div className="sg-eyebrow">06 · Transparent Commercial Stack</div>
+            <h2 className="sg-section-title">Transparent Pricing Matrix</h2>
+            <p className="sg-section-desc">
+              Two transparent cloud hosting tiers and two high-assurance managed SLA tiers. All plans include 
+              unlimited projects, automated staging, wildcard SSL, daily offsite backups, and zero per-seat fees.
+            </p>
+
+            {/* Monthly / Yearly Toggle */}
+            <div style={{ marginTop: "1.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+              <div className="sg-billing-switcher">
+                <button
+                  className={`sg-billing-btn ${!isAnnual ? "active" : ""}`}
+                  onClick={() => setIsAnnual(false)}
+                >
+                  Monthly Billing
+                </button>
+                <button
+                  className={`sg-billing-btn ${isAnnual ? "active" : ""}`}
+                  onClick={() => setIsAnnual(true)}
+                >
+                  Yearly Billing
+                </button>
+              </div>
+              {isAnnual && (
+                <span className="sg-discount-tag">
+                  🎉 Save 2 Months (~20% off annual plans)
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Hosting Tiers Subheading */}
+          <div style={{ marginBottom: "1.5rem" }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#4f8a2f", background: "#ecfdf5", padding: "0.25rem 0.65rem", borderRadius: "9999px", border: "1px solid #a7f3d0" }}>
+              Two Cloud Hosting Tiers
+            </span>
+          </div>
+
+          <div className="sg-pricing-grid" style={{ marginBottom: "3rem" }}>
+            {HOSTING_TIERS.map((tier) => (
+              <div key={tier.id} className={`sg-plan-card ${tier.featured ? "featured" : ""}`}>
+                {tier.badge && <span className="sg-plan-badge">{tier.badge}</span>}
+                <div>
+                  <div className="sg-plan-category">{tier.categoryLabel}</div>
+                  <h3 className="sg-plan-name">{tier.name}</h3>
+                  <p className="sg-plan-blurb">{tier.blurb}</p>
+
+                  <div className="sg-plan-price-box">
+                    <span className="sg-plan-price">
+                      ${isAnnual ? Math.round(tier.annualPrice / 12) : tier.monthlyPrice}
+                    </span>
+                    <span className="sg-plan-period"> / month</span>
+                    {isAnnual ? (
+                      <div className="sg-plan-annual-sub">Billed annually at ${tier.annualPrice}/yr</div>
+                    ) : (
+                      <div style={{ fontSize: "0.78rem", color: "#6c7778", marginTop: "0.2rem" }}>Billed monthly, no lock-in</div>
+                    )}
+                  </div>
+
+                  <div className="sg-plan-compute-box">
+                    <strong style={{ color: "#1e332a", display: "block", marginBottom: "0.25rem" }}>Compute & Bandwidth:</strong>
+                    • {tier.compute.ram} · {tier.compute.vcpu}
+                    <br />
+                    • {tier.compute.bandwidth}
+                    <br />
+                    • {tier.compute.storage}
+                    <div style={{ marginTop: "0.5rem", paddingTop: "0.4rem", borderTop: "1px solid #dde1e1" }}>
+                      <strong>Support:</strong> {tier.supportSla}
+                      <br />
+                      <strong>Dev Time:</strong> {tier.devHours}
+                    </div>
+                  </div>
+
+                  <ul className="sg-plan-features-list">
+                    {tier.features.map((feat) => (
+                      <li key={feat} className="sg-plan-feature-item">
+                        <span className="sg-plan-feature-icon">✓</span>
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <button
+                    onClick={() => {
+                      setSelectedPlanId(tier.id);
+                      showToast(`Selected ${tier.name}`);
+                    }}
+                    className={`sg-btn ${tier.featured ? "sg-btn-primary" : "sg-btn-forest"}`}
+                    style={{ width: "100%", justifyContent: "center" }}
+                  >
+                    {selectedPlanId === tier.id ? "✓ Current Selection" : `Choose ${tier.name}`}
+                  </button>
+
+                  <div className="sg-plan-overage-footer">
+                    Overages: {tier.overageRates.bandwidth} egress · {tier.overageRates.storage} storage · {tier.overageRates.adHocDev} dev
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* SLA Tiers Subheading */}
+          <div style={{ marginBottom: "1.5rem" }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#d4af37", background: "#fffbeb", padding: "0.25rem 0.65rem", borderRadius: "9999px", border: "1px solid #fde68a" }}>
+              Two Managed SLA & Enterprise Tiers
+            </span>
+          </div>
+
+          <div className="sg-pricing-grid" style={{ marginBottom: "3.5rem" }}>
+            {SLA_TIERS.map((tier) => (
+              <div key={tier.id} className={`sg-plan-card ${tier.featured ? "featured" : ""}`}>
+                {tier.badge && <span className="sg-plan-badge" style={{ background: "#1e332a" }}>{tier.badge}</span>}
+                <div>
+                  <div className="sg-plan-category" style={{ color: "#d4af37" }}>{tier.categoryLabel}</div>
+                  <h3 className="sg-plan-name">{tier.name}</h3>
+                  <p className="sg-plan-blurb">{tier.blurb}</p>
+
+                  <div className="sg-plan-price-box">
+                    <span className="sg-plan-price">
+                      ${isAnnual ? Math.round(tier.annualPrice / 12) : tier.monthlyPrice}
+                    </span>
+                    <span className="sg-plan-period"> / month</span>
+                    {isAnnual ? (
+                      <div className="sg-plan-annual-sub">Billed annually at ${tier.annualPrice}/yr</div>
+                    ) : (
+                      <div style={{ fontSize: "0.78rem", color: "#6c7778", marginTop: "0.2rem" }}>Billed monthly, no lock-in</div>
+                    )}
+                  </div>
+
+                  <div className="sg-plan-compute-box">
+                    <strong style={{ color: "#1e332a", display: "block", marginBottom: "0.25rem" }}>Compute & Bandwidth:</strong>
+                    • {tier.compute.ram} · {tier.compute.vcpu}
+                    <br />
+                    • {tier.compute.bandwidth}
+                    <br />
+                    • {tier.compute.storage}
+                    <div style={{ marginTop: "0.5rem", paddingTop: "0.4rem", borderTop: "1px solid #dde1e1" }}>
+                      <strong>Support SLA:</strong> {tier.supportSla}
+                      <br />
+                      <strong>Included Dev:</strong> {tier.devHours}
+                      {tier.uptimeGuarantee && (
+                        <>
+                          <br />
+                          <strong>Uptime:</strong> {tier.uptimeGuarantee}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <ul className="sg-plan-features-list">
+                    {tier.features.map((feat) => (
+                      <li key={feat} className="sg-plan-feature-item">
+                        <span className="sg-plan-feature-icon">✓</span>
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <button
+                    onClick={() => {
+                      setSelectedPlanId(tier.id);
+                      showToast(`Selected ${tier.name}`);
+                    }}
+                    className={`sg-btn ${tier.featured ? "sg-btn-primary" : "sg-btn-forest"}`}
+                    style={{ width: "100%", justifyContent: "center" }}
+                  >
+                    {selectedPlanId === tier.id ? "✓ Current Selection" : `Choose ${tier.name}`}
+                  </button>
+
+                  <div className="sg-plan-overage-footer">
+                    Overages: {tier.overageRates.bandwidth} egress · {tier.overageRates.storage} storage · {tier.overageRates.adHocDev} dev
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* SECTION 5.3: JONGO USAGE & ESCALATION MATRIX TABLE */}
+          <div>
+            <h3 style={{ fontSize: "1.4rem", fontWeight: 700, color: "#14231c", marginBottom: "0.5rem" }}>
+              Jongo Usage & Escalation Matrix
+            </h3>
+            <p style={{ fontSize: "0.9rem", color: "#6c7778", marginBottom: "1.25rem" }}>
+              How system usage, allocations, developer time, SLAs, and overage rates apply across all four plans:
+            </p>
+
+            <div className="sg-matrix-wrapper">
+              <table className="sg-matrix-table">
+                <thead>
+                  <tr>
+                    <th className="sg-matrix-th" style={{ width: "24%" }}>Metric / Service</th>
+                    <th className="sg-matrix-th" style={{ width: "19%" }}>Starter Cloud</th>
+                    <th className="sg-matrix-th sg-matrix-col-featured" style={{ width: "19%" }}>Pro Cloud</th>
+                    <th className="sg-matrix-th" style={{ width: "19%" }}>Core SLA</th>
+                    <th className="sg-matrix-th" style={{ width: "19%" }}>Enterprise SLA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PRICING_MATRIX_ROWS.map((row) => (
+                    <tr key={row.metric} style={{ background: row.highlight ? "#fcfdfb" : "transparent" }}>
+                      <td>
+                        <span className="sg-matrix-row-title">{row.metric}</span>
+                        <span className="sg-matrix-category-tag">{row.category}</span>
+                      </td>
+                      <td>{row.starter}</td>
+                      <td className="sg-matrix-col-featured">{row.pro}</td>
+                      <td>{row.coreSla}</td>
+                      <td>{row.enterpriseSla}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 7: SUBSCRIPTION ELEMENTS UI/UX */}
+        <section className="sg-section" id="subscriptions">
+          <div className="sg-section-header">
+            <div className="sg-eyebrow">07 · Subscription UX</div>
+            <h2 className="sg-section-title">Subscription Management & Dev Hours</h2>
+            <p className="sg-section-desc">
+              Dedicated components for client subscription visibility, included developer time tracking, and transparent overage estimation.
+            </p>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "1.5rem", marginBottom: "2rem" }}>
+            {/* Active Subscription Status Card */}
+            <div className="sg-component-card">
+              <div className="sg-component-header">
+                <div>
+                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#10b981", textTransform: "uppercase" }}>Active Subscription</span>
+                  <h3 className="sg-component-title" style={{ marginTop: "0.2rem" }}>{currentPlan.name}</h3>
+                </div>
+                <span className="sg-badge sg-badge-success">
+                  <span className="sg-badge-dot" /> Auto-Renew Active
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", fontSize: "0.85rem" }}>
+                <div>
+                  <span style={{ color: "#6c7778", display: "block" }}>Billing Cadence</span>
+                  <strong style={{ color: "#14231c" }}>{isAnnual ? `Annual ($${currentPlan.annualPrice}/yr)` : `Monthly ($${currentPlan.monthlyPrice}/mo)`}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#6c7778", display: "block" }}>Next Invoice Date</span>
+                  <strong style={{ color: "#14231c" }}>Oct 1, 2026</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#6c7778", display: "block" }}>Payment Method</span>
+                  <strong style={{ color: "#14231c" }}>Visa •••• 4242</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#6c7778", display: "block" }}>SLA Response Window</span>
+                  <strong style={{ color: "#4f8a2f" }}>{currentPlan.supportSla}</strong>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
+                <button className="sg-btn sg-btn-secondary sg-btn-sm" onClick={() => showToast("Downloading itemized invoice PDF...")}>
+                  Download Invoice PDF
+                </button>
+                <button className="sg-btn sg-btn-ghost sg-btn-sm" onClick={() => showToast("Opening plan upgrade drawer...")}>
+                  Change Tier →
+                </button>
+              </div>
+            </div>
+
+            {/* Dev Hours Allocation Gauge */}
+            <div className="sg-dev-gauge-card">
+              <div className="sg-dev-gauge-header">
+                <div>
+                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#9ec877", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Included Dev Hours Tracker
+                  </span>
+                  <h3 className="sg-dev-gauge-title">
+                    {devHoursUsed} of 3.0 Hours Used
+                  </h3>
+                </div>
+                <span className="sg-badge sg-badge-forest">Q3 2026</span>
+              </div>
+
+              <div className="sg-dev-gauge-bar-track">
+                <div className="sg-dev-gauge-bar-fill" style={{ width: `${(devHoursUsed / 3) * 100}%` }} />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#9cb5aa" }}>
+                <span>{(3 - devHoursUsed).toFixed(2)} hours remaining</span>
+                <span>Resets in 17 days (Oct 1)</span>
+              </div>
+
+              <div style={{ background: "rgba(255,255,255,0.06)", padding: "0.75rem", borderRadius: "8px", fontSize: "0.78rem", color: "#e6f3ed", lineHeight: 1.4 }}>
+                <strong>Usage Policy:</strong> Light maintenance, DNS updates, plugin patching, or performance tuning. Use-it-or-lose-it quarterly cycle.
+              </div>
+
+              <button
+                className="sg-btn sg-btn-primary sg-btn-sm"
+                onClick={() => {
+                  setDevHoursUsed((prev) => Math.min(3, prev + 0.5));
+                  showToast("Simulated 0.5 hr task logged!");
+                }}
+                style={{ width: "100%", justifyContent: "center" }}
+              >
+                + Request Developer Task (0.5 hr)
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Overage & Escalation Calculator */}
+          <div className="sg-component-card">
+            <div className="sg-component-header">
+              <div>
+                <h3 className="sg-component-title">Predictable Overage Cost Estimator</h3>
+                <p style={{ fontSize: "0.82rem", color: "#6c7778", margin: "0.2rem 0 0" }}>
+                  Zero punitive surprise penalties. Slide to preview estimated cost for burst traffic, storage expansion, or extra dev hours on {currentPlan.name}.
+                </p>
+              </div>
+              <span className="sg-component-badge">Interactive Estimator</span>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1.5rem" }}>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem", fontSize: "0.85rem" }}>
+                  <span style={{ fontWeight: 600, color: "#14231c" }}>Extra Egress Bandwidth</span>
+                  <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{extraBandwidthGb} GB (+${(extraBandwidthGb * (currentPlan.id === "enterprise-sla" ? 0.03 : 0.05)).toFixed(2)})</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={2000}
+                  step={50}
+                  value={extraBandwidthGb}
+                  onChange={(e) => setExtraBandwidthGb(Number(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+                <small style={{ color: "#6c7778", fontSize: "0.75rem" }}>Rate: {currentPlan.overageRates.bandwidth}</small>
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem", fontSize: "0.85rem" }}>
+                  <span style={{ fontWeight: 600, color: "#14231c" }}>Extra SSD Storage</span>
+                  <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{extraStorageGb} GB (+${(extraStorageGb * (currentPlan.id === "enterprise-sla" ? 0.15 : 0.20)).toFixed(2)})</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={500}
+                  step={10}
+                  value={extraStorageGb}
+                  onChange={(e) => setExtraStorageGb(Number(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+                <small style={{ color: "#6c7778", fontSize: "0.75rem" }}>Rate: {currentPlan.overageRates.storage}</small>
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem", fontSize: "0.85rem" }}>
+                  <span style={{ fontWeight: 600, color: "#14231c" }}>Ad-Hoc Dev Hours</span>
+                  <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{extraDevHours} hrs (+${(extraDevHours * (currentPlan.id === "starter" ? 120 : currentPlan.id === "pro" ? 100 : 90)).toFixed(2)})</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={20}
+                  step={1}
+                  value={extraDevHours}
+                  onChange={(e) => setExtraDevHours(Number(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+                <small style={{ color: "#6c7778", fontSize: "0.75rem" }}>Rate: {currentPlan.overageRates.adHocDev}</small>
+              </div>
+            </div>
+
+            <div style={{ background: "#f8f9f9", border: "1px solid #dde1e1", borderRadius: "10px", padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+              <div>
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#6c7778", textTransform: "uppercase" }}>Estimated Total Additions</span>
+                <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#1e332a" }}>+${estimatedOverageTotal.toFixed(2)} / month</div>
+              </div>
+              <button className="sg-btn sg-btn-secondary sg-btn-sm" onClick={() => {
+                setExtraBandwidthGb(0);
+                setExtraStorageGb(0);
+                setExtraDevHours(0);
+                showToast("Reset estimator values");
+              }}>
+                Reset Estimator
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 8: OPERATIONS SIMULATION */}
         <section className="sg-section" id="operations">
           <div className="sg-section-header">
-            <div className="sg-eyebrow">05 · Operational Patterns</div>
+            <div className="sg-eyebrow">08 · Operational Patterns</div>
             <h2 className="sg-section-title">Promotion, Telemetry & Backup Workflows</h2>
             <p className="sg-section-desc">
               Jongo replaces manual SSH deployments with auditable workflows. Below are the production patterns for staging promotion, terminal telemetry, and backup verification.
@@ -979,7 +1553,6 @@ export default function StyleGuidePage() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "1.5rem" }}>
-            {/* Interactive Promote Card */}
             <div className="sg-component-card">
               <div className="sg-component-header">
                 <h3 className="sg-component-title">Promote Staging to Production</h3>
@@ -1017,7 +1590,6 @@ export default function StyleGuidePage() {
               </button>
             </div>
 
-            {/* Terminal Telemetry Block */}
             <div className="sg-terminal">
               <div className="sg-terminal-bar">
                 <div className="sg-terminal-dots">
@@ -1045,10 +1617,10 @@ export default function StyleGuidePage() {
           </div>
         </section>
 
-        {/* SECTION 6: ICON LIBRARY */}
+        {/* SECTION 9: ICON LIBRARY */}
         <section className="sg-section" id="icons">
           <div className="sg-section-header">
-            <div className="sg-eyebrow">06 · Icon Library</div>
+            <div className="sg-eyebrow">09 · Icon Library</div>
             <h2 className="sg-section-title">Operational SVG Iconography</h2>
             <p className="sg-section-desc">
               Pixel-aligned 24×24 SVG icons designed for high-density dashboards, container cards, and deployment telemetry. Click any icon to copy its JSX component tag.
@@ -1087,10 +1659,10 @@ export default function StyleGuidePage() {
           </div>
         </section>
 
-        {/* SECTION 7: DOWNLOADS HUB */}
+        {/* SECTION 10: DOWNLOADS HUB */}
         <section className="sg-section" id="downloads">
           <div className="sg-section-header">
-            <div className="sg-eyebrow">07 · Asset Hub</div>
+            <div className="sg-eyebrow">10 · Asset Hub</div>
             <h2 className="sg-section-title">Brand Downloads & Token Packages</h2>
             <p className="sg-section-desc">
               Download official vector assets, logo packages, design tokens, and font licensing for use in external tooling, presentations, and product development.
@@ -1129,6 +1701,9 @@ export default function StyleGuidePage() {
           <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
             <a href="#top" className="sg-btn sg-btn-secondary sg-btn-sm">
               ↑ Back to Top
+            </a>
+            <a href="/pricing" className="sg-btn sg-btn-primary sg-btn-sm">
+              View Transparent Pricing →
             </a>
             <a href="/" className="sg-btn sg-btn-forest sg-btn-sm">
               Launch Jongo Dashboard →
