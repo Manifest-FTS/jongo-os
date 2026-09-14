@@ -1,0 +1,62 @@
+{
+  "name": "Jongo Design Tokens",
+  "version": "1.0.0",
+  "brand": {
+    "name": "Jongo",
+    "description": "Self-hosted operations and deployment platform for modern web services",
+    "url": "https://jongo.app",
+    "primaryDomainPattern": "[project-name].mfts.link",
+    "stagingDomainPattern": "staging-[project-name].mfts.link"
+  },
+  "colors": {
+    "primary": {
+      "forest": "#1e332a",
+      "forestDark": "#14231c",
+      "forestBorder": "#244235",
+      "forestHover": "#2b4a3c"
+    },
+    "accent": {
+      "green": "#9ec877",
+      "greenStrong": "#7fb45c",
+      "privacyGreen": "#10b981",
+      "gold": "#d4af37",
+      "goldAmber": "#ffc548",
+      "magenta": "#ff2fb0",
+      "magentaCoral": "#e27479",
+      "cyan": "#3af0ff"
+    },
+    "neutral": {
+      "bg": "#f4f5f5",
+      "surface": "#ffffff",
+      "surfaceAlt": "#f8f9f9",
+      "text": "#152222",
+      "muted": "#6c7778",
+      "border": "#dde1e1"
+    }
+  },
+  "typography": {
+    "display": {
+      "family": "Josefin Sans, sans-serif",
+      "weights": [500, 600, 700]
+    },
+    "body": {
+      "family": "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
+      "weights": [400, 500, 600, 700]
+    },
+    "mono": {
+      "family": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    }
+  },
+  "radii": {
+    "sm": "6px",
+    "md": "10px",
+    "lg": "14px",
+    "xl": "20px",
+    "full": "9999px"
+  },
+  "shadows": {
+    "card": "0 10px 25px rgba(21, 34, 34, 0.08)",
+    "elevated": "0 14px 32px rgba(14, 24, 20, 0.22)",
+    "glow": "0 0 20px rgba(158, 200, 119, 0.35)"
+  }
+}
