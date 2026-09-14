@@ -33,7 +33,7 @@ export default async function AnalyticsPage({ params }: Params) {
   return (
     <div className="page-stack">
       {/* Deployment count summary — factual, not misleading */}
-      <section className="metric-strip">
+      <section className="grid">
         <article className="card metric-card">
           <p className="metric-value">{deployments.length}</p>
           <p className="metric-label">Total Deploys</p>
