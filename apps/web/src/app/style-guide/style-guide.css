@@ -756,6 +756,348 @@
   margin: 0;
 }
 
+/* ============================================================ */
+/* NEW SECTIONS: USAGE VISUALIZATIONS & SUBSCRIPTIONS / PRICING */
+/* ============================================================ */
+
+/* Billing Toggle */
+.sg-billing-switcher {
+  display: inline-flex;
+  align-items: center;
+  background: #ffffff;
+  padding: 0.3rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  gap: 0.35rem;
+}
+
+.sg-billing-btn {
+  border: none;
+  background: transparent;
+  padding: 0.5rem 1.15rem;
+  border-radius: 9999px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #6c7778;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sg-billing-btn.active {
+  background: #1e332a;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(30, 51, 42, 0.25);
+}
+
+.sg-discount-tag {
+  background: rgba(16, 185, 129, 0.15);
+  color: #065f46;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+}
+
+/* Pricing Grid */
+.sg-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.sg-plan-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.75rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.sg-plan-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px rgba(21, 34, 34, 0.12);
+  border-color: #7fb45c;
+}
+
+.sg-plan-card.featured {
+  border: 2px solid #7fb45c;
+  box-shadow: 0 14px 34px rgba(127, 180, 92, 0.18);
+}
+
+.sg-plan-badge {
+  position: absolute;
+  top: -12px;
+  right: 20px;
+  background: #7fb45c;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  box-shadow: 0 4px 10px rgba(127, 180, 92, 0.35);
+}
+
+.sg-plan-category {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7fb45c;
+  margin-bottom: 0.35rem;
+}
+
+.sg-plan-name {
+  font-family: var(--jongo-font-display, "Josefin Sans", sans-serif);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #14231c;
+  margin: 0 0 0.4rem;
+}
+
+.sg-plan-blurb {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0 0 1.25rem;
+  min-height: 38px;
+}
+
+.sg-plan-price-box {
+  margin-bottom: 1.25rem;
+}
+
+.sg-plan-price {
+  font-family: var(--jongo-font-display, "Josefin Sans", sans-serif);
+  font-size: 2.3rem;
+  font-weight: 700;
+  color: #14231c;
+}
+
+.sg-plan-period {
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.sg-plan-annual-sub {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #065f46;
+  margin-top: 0.2rem;
+}
+
+.sg-plan-compute-box {
+  background: #f8f9f9;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.sg-plan-features-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.sg-plan-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+  color: #4b5556;
+  line-height: 1.4;
+}
+
+.sg-plan-feature-icon {
+  color: #10b981;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sg-plan-overage-footer {
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+  padding-top: 0.85rem;
+  margin-top: 1rem;
+}
+
+/* Escalation Matrix Table */
+.sg-matrix-wrapper {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow-x: auto;
+  box-shadow: var(--shadow);
+  margin-top: 1.5rem;
+}
+
+.sg-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.86rem;
+}
+
+.sg-matrix-table th,
+.sg-matrix-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #eef1f1;
+}
+
+.sg-matrix-th {
+  background: #f8f9f9;
+  color: #14231c;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.sg-matrix-row-title {
+  font-weight: 600;
+  color: #14231c;
+}
+
+.sg-matrix-category-tag {
+  font-size: 0.72rem;
+  color: var(--muted);
+  display: block;
+  font-weight: 500;
+}
+
+.sg-matrix-col-featured {
+  background: #fbfdf9;
+  font-weight: 600;
+  color: #1e332a;
+}
+
+/* Dev Hours Tracker Gauge */
+.sg-dev-gauge-card {
+  background: #14231c;
+  border: 1px solid #244235;
+  border-radius: 14px;
+  padding: 1.5rem;
+  color: #ffffff;
+  box-shadow: 0 14px 32px rgba(14, 24, 20, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sg-dev-gauge-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sg-dev-gauge-title {
+  font-family: var(--jongo-font-display, "Josefin Sans", sans-serif);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.sg-dev-gauge-bar-track {
+  height: 12px;
+  background: #1e332a;
+  border-radius: 9999px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid #244235;
+}
+
+.sg-dev-gauge-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #9ec877 0%, #10b981 100%);
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+/* Resource Quota Meter */
+.sg-quota-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.sg-quota-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sg-quota-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sg-quota-val {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #14231c;
+}
+
+.sg-quota-bar-track {
+  height: 7px;
+  background: #eef1f1;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.sg-quota-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+.sg-quota-bar-fill.ok { background: #4f8a2f; }
+.sg-quota-bar-fill.warn { background: #d4af37; }
+.sg-quota-bar-fill.over { background: #ef4444; }
+
+/* Interactive Column Chart in Style Guide */
+.sg-chart-container {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.sg-chart-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 /* Footer */
 .sg-footer {
   margin-top: 5rem;
