@@ -1,0 +1,39 @@
+/**
+ * Jongo Brand Palette & CSS Variables
+ * https://jongo.app
+ */
+
+:root {
+  /* Brand Core / Forest */
+  --jongo-forest: #1e332a;
+  --jongo-forest-dark: #14231c;
+  --jongo-forest-border: #244235;
+  --jongo-forest-hover: #2b4a3c;
+
+  /* Brand Accents */
+  --jongo-green: #9ec877;
+  --jongo-green-strong: #7fb45c;
+  --jongo-privacy-green: #10b981;
+  --jongo-gold: #d4af37;
+  --jongo-amber: #ffc548;
+  --jongo-magenta: #ff2fb0;
+  --jongo-coral: #e27479;
+  --jongo-cyan: #3af0ff;
+
+  /* Neutrals & Surfaces */
+  --jongo-bg: #f4f5f5;
+  --jongo-surface: #ffffff;
+  --jongo-surface-alt: #f8f9f9;
+  --jongo-text: #152222;
+  --jongo-muted: #6c7778;
+  --jongo-border: #dde1e1;
+
+  /* Typography */
+  --jongo-font-display: "Josefin Sans", "Inter", sans-serif;
+  --jongo-font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --jongo-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Elevation */
+  --jongo-shadow-card: 0 10px 25px rgba(21, 34, 34, 0.08);
+  --jongo-shadow-elevated: 0 14px 32px rgba(14, 24, 20, 0.22);
+}
