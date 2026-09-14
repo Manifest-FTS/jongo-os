@@ -209,7 +209,7 @@ export default async function UsagePage({ searchParams }: Params) {
             {fleetView ? " · totals include platform overhead and containers with no Jongo app" : ""}
           </p>
 
-          <section className="metric-strip">
+          <section className="grid">
             <UsageMeter
               label="Compute"
               value={total.cpu}

@@ -76,7 +76,7 @@ export default async function AppUsagePage({ params, searchParams }: Params) {
         <>
           <p className="card-muted m-0 text-[0.86rem]">{describeCoverage(hours, days)}</p>
 
-          <section className="metric-strip">
+          <section className="grid">
             <UsageMeter
               label="Memory"
               value={row.memAvgBytes}
