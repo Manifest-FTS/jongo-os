@@ -16,6 +16,14 @@ describe("normalizeStagingNameKey / stripStageHints", () => {
   it("strips two stacked environment suffixes", () => {
     expect(stripStageHints(normalizeStagingNameKey("acme-staging-prod"))).toBe("acme");
   });
+
+  it("keeps a leading staging- so relaxed containment cannot hand one app's copy to its siblings", () => {
+    // Stripping it made "staging-acme" contain-match both acme.org and
+    // acme.education, locking the sibling's switch.
+    const key = stripStageHints(normalizeStagingNameKey("staging-acme"));
+    expect(key).toBe("staging-acme");
+    expect(isStagingSibling("acme.education", "staging-acme", { relaxed: true }).match).toBe(false);
+  });
 });
 
 describe("isStagingSibling — strict (the enable path)", () => {
@@ -108,5 +116,50 @@ describe("pickStagingTarget", () => {
     });
     expect(picked.adoptedWithoutNameMatch).toBe(false);
     expect(picked.selected?.uuid).toBe("u1");
+  });
+});
+
+describe("pickStagingTarget — the copy Jongo recorded", () => {
+  // The reported case: copies named after the temporary-domain slug, which
+  // looks nothing like the production name. With one copy the lone-candidate
+  // rule found it by luck; a second copy made both invisible, so the switch
+  // locked and the Staging page said "target missing".
+  const twoUnnamedCopies = [
+    { uuid: "old", name: "staging-acmeco" },
+    { uuid: "new", name: "staging-ac" }
+  ];
+
+  it("finds the recorded copy even when no name matches and there are two", () => {
+    for (const relaxed of [false, true]) {
+      const picked = pickStagingTarget("acme.org", twoUnnamedCopies, {
+        relaxed,
+        allowLoneCandidateFallback: relaxed,
+        pinnedUuid: "new"
+      });
+      expect(picked.selected?.uuid).toBe("new");
+      expect(picked.pinned).toBe(true);
+    }
+  });
+
+  it("wins over a name match to a different copy", () => {
+    const picked = pickStagingTarget("acme", [
+      { uuid: "named", name: "acme-staging" },
+      { uuid: "recorded", name: "staging-x" }
+    ], { pinnedUuid: "recorded" });
+    expect(picked.selected?.uuid).toBe("recorded");
+  });
+
+  it("falls back to the name rules when the recorded copy is gone", () => {
+    const picked = pickStagingTarget("acme", [{ uuid: "named", name: "acme-staging" }], { pinnedUuid: "deleted" });
+    expect(picked.selected?.uuid).toBe("named");
+    expect(picked.pinned).toBe(false);
+  });
+
+  it("never selects the production resource, even if it was recorded by mistake", () => {
+    const picked = pickStagingTarget("acme", [{ uuid: "prod", name: "acme" }], {
+      excludeUuid: "prod",
+      pinnedUuid: "prod"
+    });
+    expect(picked.selected).toBeUndefined();
   });
 });

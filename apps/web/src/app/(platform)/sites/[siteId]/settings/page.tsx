@@ -106,6 +106,7 @@ export default async function SiteSettingsPage({ params }: Params) {
             showInfrastructureDetails={canViewInternalMetadata}
             initialStagingEnabled={Boolean(workspace.stagingEnabled)}
             hasDetectedStagingTarget={stagingTargetAttached}
+            hasOwnStagingTarget={Boolean(stagingCapability?.pinned)}
           />
 
           <div style={{ display: "grid", gap: "1rem" }}>
@@ -187,6 +188,7 @@ export default async function SiteSettingsPage({ params }: Params) {
               siteId={siteId}
               initialEnabled={Boolean(workspace.stagingEnabled)}
               hasDetectedStagingTarget={stagingTargetAttached}
+              hasOwnStagingTarget={Boolean(stagingCapability?.pinned)}
               showInfrastructureDetails={canViewInternalMetadata}
             />
           </div>

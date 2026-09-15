@@ -8,10 +8,11 @@ describe("toClientFacingStagingMessage", () => {
     )).toBe("Staging setup is still finishing. Wait a few minutes and refresh.");
   });
 
-  it("turns residual-resource instructions into a simple wait state", () => {
+  it("turns residual-resource instructions into an honest state with a next step", () => {
+    // It used to promise "still being removed", which nothing was doing.
     expect(toClientFacingStagingMessage(
       "Re-enable is blocked while staging resources still exist. Finish unprovisioning in Coolify first."
-    )).toBe("Staging is still being removed. Wait a few minutes and try again.");
+    )).toBe("An old staging copy still exists and has to be removed first. If this doesn't clear in a few minutes, contact support.");
   });
 
   it("preserves already client-safe messages", () => {

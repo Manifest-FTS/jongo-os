@@ -10,6 +10,7 @@ import { CoolifyRateLimitError, CoolifyHttpError, isNotFoundError, isRateLimitEr
 import { retryOnceAfterRateLimit } from "./rate-limit-retry";
 import { extractCreatedResourceUuid } from "./staging-capability-refresh";
 import { pickStagingTarget } from "./staging-target-match";
+import { readStagingTargetPin } from "./staging-target-pin";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
 
@@ -3148,6 +3149,8 @@ export type StagingCapabilityRecord = {
   status?: "healthy" | "degraded" | "error" | "unknown";
   stagingCandidateCount?: number;
   stagingMatchedCandidateCount?: number;
+  /** The target is the copy Jongo recorded for this app, not a name match. */
+  pinned?: boolean;
   note?: string;
   /** ISO timestamp of when this probe ran. */
   checkedAt: string;
@@ -3871,7 +3874,7 @@ export async function getCoolifyAppBackupInventory(appUuid: string): Promise<App
 export async function getCoolifyAppStagingCapability(
   appUuid: string,
   projectId?: string,
-  options?: { relaxedTargetMatch?: boolean }
+  options?: { relaxedTargetMatch?: boolean; pinnedTargetUuid?: string | null }
 ): Promise<StagingCapabilityRecord> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
@@ -3881,6 +3884,13 @@ export async function getCoolifyAppStagingCapability(
   if (!baseUrl || !token) {
     return { detected: false, note: "missing_credentials", checkedAt };
   }
+
+  // The copy Jongo recorded for this app wins over every name rule, strict and
+  // relaxed alike: it is identity, not a guess. Looked up here rather than
+  // threaded through the twenty-odd callers, so they cannot disagree.
+  const pinnedTargetUuid = options?.pinnedTargetUuid !== undefined
+    ? options.pinnedTargetUuid
+    : await readStagingTargetPin(appUuid);
 
   try {
     const extractResourceName = (value: Record<string, unknown> | null | undefined): string =>
@@ -3909,7 +3919,8 @@ export async function getCoolifyAppStagingCapability(
         // its name is fine for display and fatal for enabling, so it rides with
         // the relaxed flag rather than being unconditional.
         allowLoneCandidateFallback: relaxedTargetMatch,
-        excludeUuid: appUuid
+        excludeUuid: appUuid,
+        pinnedUuid: pinnedTargetUuid
       });
 
       return {
@@ -4156,6 +4167,7 @@ export async function getCoolifyAppStagingCapability(
       status,
       stagingCandidateCount,
       stagingMatchedCandidateCount,
+      pinned: Boolean(pinnedTargetUuid && stagingAppUuid === pinnedTargetUuid),
       note: "full_staging_detected",
       checkedAt
     };

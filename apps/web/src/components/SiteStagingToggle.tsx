@@ -8,6 +8,8 @@ type Props = {
   siteId: string;
   initialEnabled: boolean;
   hasDetectedStagingTarget: boolean;
+  /** The detected copy is the one Jongo recorded for this app, so enabling re-attaches it. */
+  hasOwnStagingTarget?: boolean;
   showInfrastructureDetails?: boolean;
 };
 
@@ -29,6 +31,7 @@ type StagingStatusResponse = {
   stagingCapability?: {
     detected?: boolean;
     applicationUuid?: string;
+    pinned?: boolean;
   };
 };
 
@@ -43,11 +46,13 @@ export default function SiteStagingToggle({
   siteId,
   initialEnabled,
   hasDetectedStagingTarget,
+  hasOwnStagingTarget = false,
   showInfrastructureDetails = false
 }: Props) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
   const [detectedStagingTarget, setDetectedStagingTarget] = useState(hasDetectedStagingTarget);
+  const [ownStagingTarget, setOwnStagingTarget] = useState(hasOwnStagingTarget);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -66,6 +71,10 @@ export default function SiteStagingToggle({
     setDetectedStagingTarget(hasDetectedStagingTarget);
   }, [hasDetectedStagingTarget]);
 
+  useEffect(() => {
+    setOwnStagingTarget(hasOwnStagingTarget);
+  }, [hasOwnStagingTarget]);
+
   async function refreshStagingTargetStatus() {
     try {
       const response = await fetch(`/api/sites/${siteId}/staging`, { method: "GET" });
@@ -75,6 +84,7 @@ export default function SiteStagingToggle({
 
       const status = (await response.json()) as StagingStatusResponse;
       setDetectedStagingTarget(Boolean(status?.stagingCapability?.applicationUuid));
+      setOwnStagingTarget(Boolean(status?.stagingCapability?.pinned));
     } catch {
       // Ignore best-effort status refresh failures.
     }
@@ -104,6 +114,7 @@ export default function SiteStagingToggle({
           const stagingConfigured = Boolean(status?.stagingConfigured);
           const stagingDetected = Boolean(status?.stagingCapability?.applicationUuid);
           setDetectedStagingTarget(stagingDetected);
+          setOwnStagingTarget(Boolean(status?.stagingCapability?.pinned));
 
           if (nextEnabled) {
             if (stagingEnabled && (stagingConfigured || stagingDetected)) {
@@ -249,7 +260,10 @@ export default function SiteStagingToggle({
   }
 
   const interactionLocked = loading || finalizing;
-  const enableBlockedByResidualStaging = !enabled && detectedStagingTarget;
+  // Locked only for a copy Jongo did not record. The app's own recorded copy
+  // is re-attached by enabling, so it must never lock the switch.
+  const enableBlockedByResidualStaging = !enabled && detectedStagingTarget && !ownStagingTarget;
+  const canReattachOwnStaging = !enabled && detectedStagingTarget && ownStagingTarget;
   const toggleDisabled = interactionLocked || enableBlockedByResidualStaging;
   const isDisableAction = pendingAction === "disable";
   const isEnableAction = pendingAction === "enable";
@@ -319,11 +333,17 @@ export default function SiteStagingToggle({
         <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Locked until staging is fully deleted</p>
       ) : null}
 
+      {!interactionLocked && canReattachOwnStaging ? (
+        <p className="m-0 max-w-[320px] text-right text-[0.78rem] text-muted">
+          Your staging copy still exists. Turning staging on reconnects it.
+        </p>
+      ) : null}
+
       {enableBlockedByResidualStaging ? (
         <p style={{ margin: 0, fontSize: "0.78rem", color: "#a15c00", maxWidth: "320px", textAlign: "right" }}>
           {showInfrastructureDetails
             ? "Re-enable is blocked while staging resources still exist. Finish unprovisioning in Coolify first."
-            : "Staging is still being removed. Wait a few minutes and try again."}
+            : "An old staging copy still exists and has to be removed first. If this doesn't clear in a few minutes, contact support."}
         </p>
       ) : null}
 

@@ -16,6 +16,7 @@ import {
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
 import { waitForStagingCapabilityToClear } from "@/lib/staging-capability-clear";
+import { writeStagingTargetPin } from "@/lib/staging-target-pin";
 import {
   preserveResolvedStagingCapability,
   resolveStagingSyncReadiness
@@ -1327,10 +1328,16 @@ export async function POST(req: Request, { params }: Params) {
 
   if (body.enabled) {
     if (!site.stagingEnabled && appUuid) {
-      const residualCapability = await waitForStagingCapabilityToClear(async () => {
-        return await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
-      }, 6, 1500);
-      if (residualCapability.applicationUuid) {
+      // This app's own recorded copy is not residue: turning staging back on
+      // re-attaches it (the existing-target path below). The lock is only for a
+      // copy Jongo did not record, typically one whose removal is still running.
+      const firstLook = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
+      const residualCapability = firstLook.pinned
+        ? null
+        : await waitForStagingCapabilityToClear(async () => {
+            return await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
+          }, 6, 1500);
+      if (residualCapability?.applicationUuid) {
         const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
         return NextResponse.json({
           error: "Staging re-enable is locked until existing staging resources are fully removed.",
@@ -1372,6 +1379,10 @@ export async function POST(req: Request, { params }: Params) {
     const currentCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
     const currentStagingTargetResolved = Boolean(currentCapability.detected && currentCapability.applicationUuid);
     if (currentStagingTargetResolved) {
+      // Only a strict or recorded match reaches here, so it is safe to record.
+      if (currentCapability.applicationUuid) {
+        await writeStagingTargetPin(site.id, currentCapability.applicationUuid);
+      }
       let capabilityAfterExistingCheck = currentCapability;
       let currentStagingRunning = capabilityAfterExistingCheck.status === "healthy";
       let stagingDeployTriggered = false;
@@ -1586,6 +1597,13 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     const stagingTargetResolved = Boolean(capabilityAfterProvision.detected && capabilityAfterProvision.applicationUuid);
+
+    // Record the copy by the uuid Coolify returned when creating it: the one
+    // answer here that is not a name guess. Without it the next disable cannot
+    // find this copy, and the next enable builds another.
+    if (provisionResult.resourceUuid) {
+      await writeStagingTargetPin(site.id, provisionResult.resourceUuid);
+    }
 
     let stagingDomainApplied = false;
     let stagingDeployTriggered = false;
@@ -1891,6 +1909,12 @@ export async function POST(req: Request, { params }: Params) {
 
   const destroyed = Boolean(destroyResult?.ok);
   const destroyActionType = destroyed ? "staging_disable_destroy" : "staging_disable_requested";
+  // Forget the copy only once it is gone. If it survived (cleanup skipped or
+  // failed), keeping the record lets the next enable re-attach it instead of
+  // locking the switch or building a second copy.
+  if (destroyed) {
+    await writeStagingTargetPin(site.id, null);
+  }
 
   await tryRecordStagingAuditLog({
     organizationId: site.organizationId,
