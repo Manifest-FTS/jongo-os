@@ -106,27 +106,6 @@
   gap: 0.6rem;
   flex-shrink: 0;
 }
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-decoration: none;
-  transition: all 0.15s ease;
-}
-
-.sg-nav-link:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.sg-nav-link.active {
-  color: #14231c;
-  background: linear-gradient(135deg, #ffeac4 0%, #ffd6e4 100%);
-}
-
-.sg-nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
 
 /* Hero Section */
 .sg-hero {
