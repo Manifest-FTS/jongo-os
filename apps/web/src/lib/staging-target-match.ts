@@ -116,6 +116,9 @@ export type StagingTargetSelection = {
  * it is identity, not a guess, and it is the only rule that still works once a
  * second copy lands in the same environment.
  *
+ * `excludeUuids` are copies recorded for OTHER apps. They are removed before
+ * any rule runs, so no name match or lone-candidate fallback can adopt them.
+ *
  * `allowLoneCandidateFallback` is the "there is only one thing here, it must be
  * ours" rule. It is genuinely useful for display on a single-app project and
  * genuinely dangerous when enabling staging, so it is opt-in and reported
@@ -128,11 +131,14 @@ export function pickStagingTarget(
     relaxed?: boolean;
     allowLoneCandidateFallback?: boolean;
     excludeUuid?: string;
+    excludeUuids?: string[];
     pinnedUuid?: string | null;
   } = {}
 ): StagingTargetSelection {
+  const excluded = new Set(options.excludeUuids ?? []);
   const sanitized = candidates.filter(
-    (candidate) => candidate.uuid.length > 0 && candidate.uuid !== options.excludeUuid
+    (candidate) =>
+      candidate.uuid.length > 0 && candidate.uuid !== options.excludeUuid && !excluded.has(candidate.uuid)
   );
 
   const matched = sanitized.filter((candidate) => isStagingSibling(rootName, candidate.name, options).match);

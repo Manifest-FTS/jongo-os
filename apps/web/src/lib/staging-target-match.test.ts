@@ -155,6 +155,25 @@ describe("pickStagingTarget — the copy Jongo recorded", () => {
     expect(picked.pinned).toBe(false);
   });
 
+  it("does not adopt a sibling's recorded copy through the lone-candidate rule", () => {
+    // Two apps share a project; once the other copies are gone, the sibling's
+    // copy is the only resource left in the staging environment.
+    const picked = pickStagingTarget("acme.education", [{ uuid: "sibling-copy", name: "staging-ac" }], {
+      relaxed: true,
+      allowLoneCandidateFallback: true,
+      excludeUuids: ["sibling-copy"]
+    });
+    expect(picked.selected).toBeUndefined();
+    expect(picked.candidateCount).toBe(0);
+  });
+
+  it("does not select a sibling's recorded copy even when the name matches", () => {
+    const picked = pickStagingTarget("acme", [{ uuid: "sibling-copy", name: "acme-staging" }], {
+      excludeUuids: ["sibling-copy"]
+    });
+    expect(picked.selected).toBeUndefined();
+  });
+
   it("never selects the production resource, even if it was recorded by mistake", () => {
     const picked = pickStagingTarget("acme", [{ uuid: "prod", name: "acme" }], {
       excludeUuid: "prod",

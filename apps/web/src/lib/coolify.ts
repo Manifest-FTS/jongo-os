@@ -10,7 +10,7 @@ import { CoolifyRateLimitError, CoolifyHttpError, isNotFoundError, isRateLimitEr
 import { retryOnceAfterRateLimit } from "./rate-limit-retry";
 import { extractCreatedResourceUuid } from "./staging-capability-refresh";
 import { pickStagingTarget } from "./staging-target-match";
-import { readStagingTargetPin } from "./staging-target-pin";
+import { readStagingTargetPins } from "./staging-target-pin";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
 
@@ -3886,11 +3886,15 @@ export async function getCoolifyAppStagingCapability(
   }
 
   // The copy Jongo recorded for this app wins over every name rule, strict and
-  // relaxed alike: it is identity, not a guess. Looked up here rather than
-  // threaded through the twenty-odd callers, so they cannot disagree.
+  // relaxed alike: it is identity, not a guess. Copies recorded for OTHER apps
+  // are never candidates, so a sibling in the same project cannot adopt one
+  // through the lone-candidate rule. Looked up here rather than threaded
+  // through the twenty-odd callers, so they cannot disagree.
+  const recordedTargets = await readStagingTargetPins(appUuid);
   const pinnedTargetUuid = options?.pinnedTargetUuid !== undefined
     ? options.pinnedTargetUuid
-    : await readStagingTargetPin(appUuid);
+    : recordedTargets.own;
+  const otherAppsTargets = recordedTargets.others.filter((uuid) => uuid !== pinnedTargetUuid);
 
   try {
     const extractResourceName = (value: Record<string, unknown> | null | undefined): string =>
@@ -3920,6 +3924,7 @@ export async function getCoolifyAppStagingCapability(
         // the relaxed flag rather than being unconditional.
         allowLoneCandidateFallback: relaxedTargetMatch,
         excludeUuid: appUuid,
+        excludeUuids: otherAppsTargets,
         pinnedUuid: pinnedTargetUuid
       });
 
