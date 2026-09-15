@@ -12,7 +12,9 @@ export function toClientFacingStagingMessage(value?: string | null): string | nu
     normalized.includes("fully removed") ||
     normalized.includes("unprovision")
   ) {
-    return "Staging is still being removed. Wait a few minutes and try again.";
+    // Not "being removed": nothing removes a copy on its own, so that promise
+    // left people refreshing for days. Say what is true and who can fix it.
+    return "An old staging copy still exists and has to be removed first. If this doesn't clear in a few minutes, contact support.";
   }
 
   if (

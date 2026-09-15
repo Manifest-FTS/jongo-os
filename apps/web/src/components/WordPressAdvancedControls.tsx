@@ -11,6 +11,8 @@ type Props = {
   showInfrastructureDetails?: boolean;
   initialStagingEnabled: boolean;
   hasDetectedStagingTarget: boolean;
+  /** The detected staging copy is the one Jongo recorded for this app. */
+  hasOwnStagingTarget?: boolean;
 };
 
 /**
@@ -45,7 +47,8 @@ export default function WordPressAdvancedControls({
   canFlushCache,
   showInfrastructureDetails = false,
   initialStagingEnabled,
-  hasDetectedStagingTarget
+  hasDetectedStagingTarget,
+  hasOwnStagingTarget = false
 }: Props) {
   const [flushingCache, setFlushingCache] = useState(false);
   const [cacheError, setCacheError] = useState<string | null>(null);
@@ -130,6 +133,7 @@ export default function WordPressAdvancedControls({
               siteId={siteId}
               initialEnabled={initialStagingEnabled}
               hasDetectedStagingTarget={hasDetectedStagingTarget}
+              hasOwnStagingTarget={hasOwnStagingTarget}
               showInfrastructureDetails={showInfrastructureDetails}
             />
           </div>

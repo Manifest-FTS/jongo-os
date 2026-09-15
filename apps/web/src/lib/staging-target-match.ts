@@ -37,6 +37,12 @@ export function normalizeStagingNameKey(value: string): string {
  * Remove environment suffixes so a production app and its staging sibling
  * reduce to the same key. Applied twice because names like `foo-staging-prod`
  * carry two.
+ *
+ * A leading `staging-` is deliberately kept. Stripping it looks like it would
+ * recognise Jongo's own copies, but under relaxed containment it hands one
+ * app's copy to every sibling whose name shares a stem (acme.org's copy to
+ * acme.education), which locks the sibling's switch. Recorded identity
+ * (`pinnedUuid` below) is the fix for Jongo's own copies, not a looser name rule.
  */
 export function stripStageHints(value: string): string {
   return value
@@ -98,10 +104,17 @@ export type StagingTargetSelection = {
   matchedCount: number;
   /** True when the pick came from the lone-candidate fallback, not a name match. */
   adoptedWithoutNameMatch: boolean;
+  /** True when the pick is the copy Jongo recorded for this app. */
+  pinned: boolean;
 };
 
 /**
  * Choose this app's staging target from the resources in its staging environment.
+ *
+ * `pinnedUuid` is the copy Jongo recorded when it created or re-attached one.
+ * When it is still present it wins outright, in strict and relaxed mode alike:
+ * it is identity, not a guess, and it is the only rule that still works once a
+ * second copy lands in the same environment.
  *
  * `allowLoneCandidateFallback` is the "there is only one thing here, it must be
  * ours" rule. It is genuinely useful for display on a single-app project and
@@ -111,7 +124,12 @@ export type StagingTargetSelection = {
 export function pickStagingTarget(
   rootName: string,
   candidates: StagingCandidate[],
-  options: { relaxed?: boolean; allowLoneCandidateFallback?: boolean; excludeUuid?: string } = {}
+  options: {
+    relaxed?: boolean;
+    allowLoneCandidateFallback?: boolean;
+    excludeUuid?: string;
+    pinnedUuid?: string | null;
+  } = {}
 ): StagingTargetSelection {
   const sanitized = candidates.filter(
     (candidate) => candidate.uuid.length > 0 && candidate.uuid !== options.excludeUuid
@@ -119,12 +137,24 @@ export function pickStagingTarget(
 
   const matched = sanitized.filter((candidate) => isStagingSibling(rootName, candidate.name, options).match);
 
+  const pinned = options.pinnedUuid ? sanitized.find((candidate) => candidate.uuid === options.pinnedUuid) : undefined;
+  if (pinned) {
+    return {
+      selected: pinned,
+      candidateCount: sanitized.length,
+      matchedCount: matched.length,
+      adoptedWithoutNameMatch: false,
+      pinned: true
+    };
+  }
+
   if (matched.length === 0 && options.allowLoneCandidateFallback && sanitized.length === 1) {
     return {
       selected: sanitized[0],
       candidateCount: sanitized.length,
       matchedCount: 0,
-      adoptedWithoutNameMatch: true
+      adoptedWithoutNameMatch: true,
+      pinned: false
     };
   }
 
@@ -132,6 +162,7 @@ export function pickStagingTarget(
     selected: matched[0],
     candidateCount: sanitized.length,
     matchedCount: matched.length,
-    adoptedWithoutNameMatch: false
+    adoptedWithoutNameMatch: false,
+    pinned: false
   };
 }

@@ -176,6 +176,11 @@ model Site {
   coolifyProjectName    String?
   gitRepositoryUrl      String?
   stagingEnabled        Boolean @default(false)
+  // The Coolify resource Jongo created or re-attached as this app's staging
+  // copy. Names alone could not tie "staging-acme" to "acme.org", so turning
+  // staging off left the copy running and turning it on built a second one.
+  // Set on enable, cleared when disable removes the copy.
+  stagingTargetUuid     String?
   temporaryDomainSlug   String?
   temporaryDomainSuffix String?
 
