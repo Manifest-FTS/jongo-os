@@ -47,6 +47,7 @@ export async function buildLiveResourceIndex(): Promise<LiveResourceIndex> {
   // the projects' environment lists (the /projects list omits environments, so
   // each project's detail is read once per run).
   const environmentNameById = new Map<number, string>();
+  const environmentProjectById = new Map<number, string>();
   try {
     const projects = await coolifyFetch("/api/v1/projects");
     if (Array.isArray(projects)) {
@@ -60,7 +61,10 @@ export async function buildLiveResourceIndex(): Promise<LiveResourceIndex> {
           for (const e of envs) {
             const env = e as Record<string, unknown>;
             const id = Number(env.id);
-            if (Number.isFinite(id)) environmentNameById.set(id, String(env.name ?? ""));
+            if (Number.isFinite(id)) {
+              environmentNameById.set(id, String(env.name ?? ""));
+              environmentProjectById.set(id, uuid);
+            }
           }
         } catch {
           // Skip a project we cannot read; staging detection degrades, not fails.
@@ -94,6 +98,9 @@ export async function buildLiveResourceIndex(): Promise<LiveResourceIndex> {
           environmentId: Number.isFinite(environmentId) ? environmentId : undefined,
           environmentName: Number.isFinite(environmentId)
             ? environmentNameById.get(environmentId)
+            : undefined,
+          projectUuid: Number.isFinite(environmentId)
+            ? environmentProjectById.get(environmentId)
             : undefined
         });
       }

@@ -17,6 +17,7 @@ import {
 } from "@/lib/coolify";
 import { waitForStagingCapabilityToClear } from "@/lib/staging-capability-clear";
 import { writeStagingTargetPin } from "@/lib/staging-target-pin";
+import { claimStagingCopyForSite } from "@/lib/staging-target-reconcile";
 import {
   preserveResolvedStagingCapability,
   resolveStagingSyncReadiness
@@ -1327,6 +1328,14 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   if (body.enabled) {
+    // If this app already has a copy (by Jongo's own history, an exact name,
+    // or as the only copy of a one-app project), record it first. Enabling
+    // then re-attaches it instead of locking the switch or building a
+    // duplicate, without waiting for the hourly reconcile.
+    if (appUuid) {
+      await claimStagingCopyForSite(db, site.id);
+    }
+
     if (!site.stagingEnabled && appUuid) {
       // This app's own recorded copy is not residue: turning staging back on
       // re-attaches it (the existing-target path below). The lock is only for a

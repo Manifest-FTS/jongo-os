@@ -15,6 +15,11 @@ export type LiveResource = {
   environmentId?: number;
   /** Resolved from the project's environment list during index build. */
   environmentName?: string;
+  /**
+   * The owning project's uuid, resolved from the environment. Resource lists
+   * omit it (services carry only environment_id), so `projectId` is often empty.
+   */
+  projectUuid?: string;
 };
 
 /**
