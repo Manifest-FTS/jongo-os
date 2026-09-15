@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoolifyBackupCapability } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
+import { reconcileStagingTargets, type StagingTargetReconcileResult } from "@/lib/staging-target-reconcile";
 import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -234,6 +235,17 @@ export async function POST(request: Request) {
       }
     }
 
+
+    // Record which Coolify copy is each app's staging, for every app. It used
+    // to be re-guessed from names on each page load; copies named after a short
+    // slug were invisible to that guess, so disabling staging left them running
+    // and re-enabling built duplicates. See lib/staging-target-plan.ts.
+    let stagingTargets: StagingTargetReconcileResult | null = null;
+    try {
+      stagingTargets = await reconcileStagingTargets({ db, index: liveIndex });
+    } catch (error) {
+      console.error("[jongo] backup-reconcile: staging target reconcile failed:", error);
+    }
 
     for (const site of sites) {
       let appUuid = site.coolifyServiceUuid?.trim();
@@ -797,7 +809,8 @@ export async function POST(request: Request) {
         mappingsStaleUnresolved,
         stagingEnvsEnsured,
         stagingResourcesFlagged,
-        resourcesMissing
+        resourcesMissing,
+        stagingTargets
       },
       results
     });
