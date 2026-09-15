@@ -1,20 +1,18 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
   HOSTING_TIERS,
   SLA_TIERS,
+  ALL_PLANS,
   PRICING_MATRIX_ROWS,
   PRICING_FAQ,
-  type TierPlan
+  type TierPlan,
+  type MatrixRow
 } from "@/lib/public-plans";
-import { COMPANY_NAME, CURRENCY_LABEL, contactEmail, currentYear } from "@/lib/public-site";
+import { COMPANY_NAME, currentYear } from "@/lib/public-site";
 import { btnPrimary, btnSecondary, card, cx, publicPage } from "@/lib/public-ui";
-
-export const metadata: Metadata = {
-  title: "Pricing & Plans | Jongo",
-  description:
-    "Transparent cloud hosting and managed SLA tiers for WordPress, Next.js, and modern web applications. Fast deployments, nightly offsite backups, and guaranteed SLAs."
-};
 
 function PlanCard({ plan }: { plan: TierPlan }) {
   return (
@@ -94,7 +92,31 @@ function PlanCard({ plan }: { plan: TierPlan }) {
 }
 
 export default function PricingPage() {
-  const email = contactEmail();
+  const [mobileSelectedTier, setMobileSelectedTier] = useState<string>("pro");
+  const [mobileSearchQuery, setMobileSearchQuery] = useState<string>("");
+  const [mobileViewMode, setMobileViewMode] = useState<"dynamic" | "table">("dynamic");
+
+  const currentMobilePlan = useMemo(() => {
+    return ALL_PLANS.find((p) => p.id === mobileSelectedTier) || ALL_PLANS[1];
+  }, [mobileSelectedTier]);
+
+  const filteredMatrixRows = useMemo(() => {
+    if (!mobileSearchQuery.trim()) return PRICING_MATRIX_ROWS;
+    const q = mobileSearchQuery.toLowerCase();
+    return PRICING_MATRIX_ROWS.filter(
+      (r) => r.metric.toLowerCase().includes(q) || r.category.toLowerCase().includes(q)
+    );
+  }, [mobileSearchQuery]);
+
+  const getTierValue = (row: MatrixRow, tierId: string) => {
+    switch (tierId) {
+      case "starter": return row.starter;
+      case "pro": return row.pro;
+      case "core-sla": return row.coreSla;
+      case "enterprise-sla": return row.enterpriseSla;
+      default: return row.pro;
+    }
+  };
 
   return (
     <div className={publicPage}>
@@ -176,7 +198,136 @@ export default function PricingPage() {
             Comprehensive side-by-side comparison of compute allocations, support response SLAs, included developer time, and predictable overage rates across all tiers.
           </p>
 
-          <div className="pricing-table__scroll mt-8">
+          {/* DYNAMIC VERCEL-STYLE COMPARISON ON MOBILE (< md screens) */}
+          <div className="block md:hidden mt-8">
+            <div className="bg-white border border-solid border-[#dde1e1] rounded-2xl p-4 shadow-sm mb-4">
+              {/* Mobile View Toggle */}
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-solid border-[#eef1f1]">
+                <span className="text-[0.78rem] font-bold uppercase tracking-wider text-muted">Mobile Display:</span>
+                <div className="inline-flex rounded-lg border border-solid border-[#dde1e1] p-0.5 bg-[#f8f9f9]">
+                  <button
+                    onClick={() => setMobileViewMode("dynamic")}
+                    className={cx(
+                      "px-2.5 py-1 text-[0.75rem] font-semibold rounded-md transition-all",
+                      mobileViewMode === "dynamic" ? "bg-[#1e332a] text-white shadow-sm" : "text-[#6c7778]"
+                    )}
+                  >
+                    Tier Selector (Vercel Style)
+                  </button>
+                  <button
+                    onClick={() => setMobileViewMode("table")}
+                    className={cx(
+                      "px-2.5 py-1 text-[0.75rem] font-semibold rounded-md transition-all",
+                      mobileViewMode === "table" ? "bg-[#1e332a] text-white shadow-sm" : "text-[#6c7778]"
+                    )}
+                  >
+                    Full Grid Table
+                  </button>
+                </div>
+              </div>
+
+              {mobileViewMode === "dynamic" ? (
+                <div>
+                  {/* Search feature input */}
+                  <div className="mb-3">
+                    <input
+                      type="text"
+                      placeholder="Search feature or metric (e.g., RAM, SLA, Dev Time)..."
+                      value={mobileSearchQuery}
+                      onChange={(e) => setMobileSearchQuery(e.target.value)}
+                      className="w-full px-3 py-2 text-[0.88rem] rounded-lg border border-solid border-[#dde1e1] bg-[#f8f9f9] text-[#14231c]"
+                    />
+                  </div>
+
+                  {/* Plan dropdown selector */}
+                  <div className="mb-4">
+                    <label className="block text-[0.75rem] font-bold text-[#6c7778] uppercase mb-1">
+                      Active Comparison Tier:
+                    </label>
+                    <select
+                      value={mobileSelectedTier}
+                      onChange={(e) => setMobileSelectedTier(e.target.value)}
+                      className="w-full px-3 py-2.5 text-[0.95rem] font-bold rounded-lg border-2 border-solid border-[#7fb45c] bg-white text-[#14231c]"
+                    >
+                      <option value="starter">Starter Cloud — $45/mo ($450/yr)</option>
+                      <option value="pro">Pro Cloud — $75/mo ($750/yr)</option>
+                      <option value="core-sla">Core SLA (Agency) — $149/mo ($1,490/yr)</option>
+                      <option value="enterprise-sla">Enterprise SLA — $349/mo ($3,490/yr)</option>
+                    </select>
+                  </div>
+
+                  {/* Tier highlight summary */}
+                  <div className="bg-[#f7faf5] border border-solid border-[#a7f3d0] rounded-xl p-3 mb-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#4f8a2f]">
+                          {currentMobilePlan.categoryLabel}
+                        </span>
+                        <h4 className="text-[1.1rem] font-bold text-[#14231c] m-0">{currentMobilePlan.name}</h4>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[1.3rem] font-bold text-[#14231c]">${currentMobilePlan.monthlyPrice}</span>
+                        <small className="text-muted block text-[11px]">/month</small>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Feature list for selected tier */}
+                  <div className="divide-y divide-[#eef1f1]">
+                    {filteredMatrixRows.map((row) => (
+                      <div key={row.metric} className="py-2.5 flex items-center justify-between gap-2 text-[0.85rem]">
+                        <div>
+                          <strong className="block text-[#14231c]">{row.metric}</strong>
+                          <span className="text-[11px] text-muted">{row.category}</span>
+                        </div>
+                        <div className="text-right font-medium text-[#1e332a]">
+                          {getTierValue(row, mobileSelectedTier)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Link
+                    href={`/auth/register?plan=${mobileSelectedTier}`}
+                    className={cx(btnPrimary, "mt-4 w-full text-center block py-2.5 text-[0.9rem]")}
+                  >
+                    Select {currentMobilePlan.name} →
+                  </Link>
+                </div>
+              ) : (
+                /* Full scrolling table for mobile when explicitly chosen */
+                <div className="overflow-x-auto">
+                  <table className="pricing-table w-full text-left text-[0.78rem]">
+                    <thead>
+                      <tr>
+                        <th scope="col" className="w-28">Metric</th>
+                        <th scope="col">Starter</th>
+                        <th scope="col" className="is-featured">Pro</th>
+                        <th scope="col">Core SLA</th>
+                        <th scope="col">Enterprise</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {PRICING_MATRIX_ROWS.map((row) => (
+                        <tr key={row.metric} className={row.highlight ? "bg-[#fcfdfb] font-medium" : undefined}>
+                          <th scope="row" className="font-semibold text-[#14231c] py-2 pr-2">
+                            {row.metric}
+                          </th>
+                          <td className="py-2 px-1.5">{row.starter}</td>
+                          <td className="py-2 px-1.5 font-medium bg-[#f7faf5]">{row.pro}</td>
+                          <td className="py-2 px-1.5">{row.coreSla}</td>
+                          <td className="py-2 px-1.5">{row.enterpriseSla}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* DESKTOP SIDE-BY-SIDE MATRIX TABLE (>= md screens) */}
+          <div className="hidden md:block pricing-table__scroll mt-8">
             <table className="pricing-table w-full text-left">
               <thead>
                 <tr>
@@ -260,10 +411,9 @@ export default function PricingPage() {
         </div>
         <div className="hosting-footer__links">
           <Link href="/hosting">Hosting</Link>
+          <Link href="/pricing">Pricing</Link>
+          <Link href="/style-guide">Style Guide</Link>
           <Link href="/contact">Contact</Link>
-          <a href="#">Terms</a>
-          <a href="#">Privacy</a>
-          {email ? <a href={`mailto:${email}`}>{email}</a> : null}
         </div>
       </footer>
     </div>

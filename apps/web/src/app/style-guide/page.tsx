@@ -557,37 +557,82 @@ export default function StyleGuidePage() {
         </div>
       )}
 
-      {/* Sticky Navigation */}
-      <nav className="sg-nav">
+      {/* GROUPED NEREUS-STYLE STICKY TOPBAR */}
+      <div className="sg-nav">
         <div className="sg-nav-inner">
-          <a href="#top" className="sg-nav-brand">
-            <img src="/assets/brand/jongo-logo-darkbg.svg" alt="Jongo Logo" width={115} height={32} />
-            <span className="sg-nav-badge">Style Guide v1.0</span>
-          </a>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <a href="#top" className="sg-nav-brand">
+              <img src="/assets/brand/jongo-logo-darkbg.svg" alt="Jongo Logo" width={115} height={32} />
+            </a>
+            <span style={{ height: "20px", width: "1px", background: "#244235" }} />
+            <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#9ec877", letterSpacing: "0.02em" }}>
+              Brand &amp; Operations Manual
+            </span>
+          </div>
 
-          <ul className="sg-nav-links">
-            <li><a href="#brand" className={`sg-nav-link ${activeTab === "brand" ? "active" : ""}`} onClick={() => setActiveTab("brand")}>01 · Logo</a></li>
-            <li><a href="#colors" className={`sg-nav-link ${activeTab === "colors" ? "active" : ""}`} onClick={() => setActiveTab("colors")}>02 · Palette</a></li>
-            <li><a href="#typography" className={`sg-nav-link ${activeTab === "typography" ? "active" : ""}`} onClick={() => setActiveTab("typography")}>03 · Type</a></li>
-            <li><a href="#components" className={`sg-nav-link ${activeTab === "components" ? "active" : ""}`} onClick={() => setActiveTab("components")}>04 · Components</a></li>
-            <li><a href="#usage" className={`sg-nav-link ${activeTab === "usage" ? "active" : ""}`} onClick={() => setActiveTab("usage")}>05 · Usage Stats</a></li>
-            <li><a href="#pricing" className={`sg-nav-link ${activeTab === "pricing" ? "active" : ""}`} onClick={() => setActiveTab("pricing")}>06 · Pricing Matrix</a></li>
-            <li><a href="#subscriptions" className={`sg-nav-link ${activeTab === "subscriptions" ? "active" : ""}`} onClick={() => setActiveTab("subscriptions")}>07 · Subscriptions</a></li>
-            <li><a href="#operations" className={`sg-nav-link ${activeTab === "operations" ? "active" : ""}`} onClick={() => setActiveTab("operations")}>08 · Operations</a></li>
-            <li><a href="#icons" className={`sg-nav-link ${activeTab === "icons" ? "active" : ""}`} onClick={() => setActiveTab("icons")}>09 · Icons</a></li>
-            <li><a href="#downloads" className={`sg-nav-link ${activeTab === "downloads" ? "active" : ""}`} onClick={() => setActiveTab("downloads")}>10 · Downloads</a></li>
-          </ul>
+          {/* Grouped Pill Nav */}
+          <div className="sg-nav-grouped">
+            {/* Group A: Brand & Identity */}
+            <div className="sg-nav-cluster">
+              <span className="sg-nav-cluster-label">Brand</span>
+              <a href="#brand" className={`sg-nav-pill ${activeTab === "brand" ? "active" : ""}`} onClick={() => setActiveTab("brand")}>
+                01·Logo
+              </a>
+              <a href="#colors" className={`sg-nav-pill ${activeTab === "colors" ? "active" : ""}`} onClick={() => setActiveTab("colors")}>
+                02·Palette
+              </a>
+              <a href="#typography" className={`sg-nav-pill ${activeTab === "typography" ? "active" : ""}`} onClick={() => setActiveTab("typography")}>
+                03·Type
+              </a>
+            </div>
+
+            {/* Group B: UI & Telemetry */}
+            <div className="sg-nav-cluster">
+              <span className="sg-nav-cluster-label">UI &amp; Ops</span>
+              <a href="#components" className={`sg-nav-pill ${activeTab === "components" ? "active" : ""}`} onClick={() => setActiveTab("components")}>
+                04·Kit
+              </a>
+              <a href="#usage" className={`sg-nav-pill ${activeTab === "usage" ? "active" : ""}`} onClick={() => setActiveTab("usage")}>
+                05·Usage
+              </a>
+              <a href="#operations" className={`sg-nav-pill ${activeTab === "operations" ? "active" : ""}`} onClick={() => setActiveTab("operations")}>
+                08·Promote
+              </a>
+              <a href="#icons" className={`sg-nav-pill ${activeTab === "icons" ? "active" : ""}`} onClick={() => setActiveTab("icons")}>
+                09·Icons
+              </a>
+            </div>
+
+            {/* Group C: Commercial */}
+            <div className="sg-nav-cluster">
+              <span className="sg-nav-cluster-label">Commercial</span>
+              <a href="#pricing" className={`sg-nav-pill ${activeTab === "pricing" ? "active" : ""}`} onClick={() => setActiveTab("pricing")}>
+                06·Pricing
+              </a>
+              <a href="#subscriptions" className={`sg-nav-pill ${activeTab === "subscriptions" ? "active" : ""}`} onClick={() => setActiveTab("subscriptions")}>
+                07·Sub
+              </a>
+              <a href="#downloads" className={`sg-nav-pill ${activeTab === "downloads" ? "active" : ""}`} onClick={() => setActiveTab("downloads")}>
+                10·Assets
+              </a>
+            </div>
+          </div>
 
           <div className="sg-nav-actions">
-            <a href="/pricing" className="sg-btn sg-btn-secondary sg-btn-sm">
-              Live Pricing →
-            </a>
-            <a href="/" className="sg-btn sg-btn-primary sg-btn-sm">
-              Dashboard →
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="sg-btn sg-btn-secondary sg-btn-sm no-print"
+              style={{ fontSize: "0.78rem" }}
+            >
+              Print Manual ↗
+            </button>
+            <a href="/pricing" className="sg-btn sg-btn-primary sg-btn-sm">
+              Pricing →
             </a>
           </div>
         </div>
-      </nav>
+      </div>
 
       {/* Main Container */}
       <div className="sg-container" id="top">
