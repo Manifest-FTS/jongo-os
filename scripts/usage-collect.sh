@@ -18,7 +18,7 @@
 # Output is tab-separated, one record per line, first field is the type:
 #   V  <format-version>
 #   P  <pass-number>                         (live mode only)
-#   H  ts host ncpu memTotal memAvailable cpuBusyUsec netRx netTx diskSize diskUsed
+#   H  ts host ncpu memTotal memAvailable cpuBusyUsec netRx netTx diskSize diskUsed diskAvail
 #   C  ts id name startedAt netMode memLimit nanoCpus coolifyType project resource env traefik cpuUsec memCurrent inactiveFile netRx netTx
 #   M  containerId sourcePath                (disk mode)
 #   S  bytes sourcePath                      (disk mode)
@@ -58,9 +58,12 @@ host_line() {
   fi
   ds="$(df -B1 --output=size / 2>/dev/null | tail -1 | tr -d ' ')"
   du="$(df -B1 --output=used / 2>/dev/null | tail -1 | tr -d ' ')"
-  printf 'H\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  # avail excludes the blocks reserved for root, so used/(used+avail) is the
+  # percentage df and Coolify's disk alert report.
+  da="$(df -B1 --output=avail / 2>/dev/null | tail -1 | tr -d ' ')"
+  printf 'H\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$ts" "$(hostname)" "$(or_dash "$ncpu")" "$(or_dash "$mt")" "$(or_dash "$ma")" \
-    "$(or_dash "$busy")" "$nr" "$nt" "$(or_dash "$ds")" "$(or_dash "$du")"
+    "$(or_dash "$busy")" "$nr" "$nt" "$(or_dash "$ds")" "$(or_dash "$du")" "$(or_dash "$da")"
 }
 
 # Every label goes through `with ... else -` so an absent label prints "-".

@@ -25,6 +25,7 @@ import {
   type LiveSnapshot,
   type SiteRef
 } from "@/lib/usage-parse";
+import { diskUsedFraction } from "@/lib/usage-format";
 
 /*
  * TIME ZONES: every timestamp column here is TIMESTAMP WITHOUT TIME ZONE holding
@@ -221,15 +222,18 @@ export async function collectUsage(options: { forceDisk?: boolean } = {}): Promi
 
     for (const h of run.hostIncrements) {
       const sample = h.memUsedBytes > 0 ? 1 : 0;
+      const avail = h.diskAvailBytes === null ? null : Math.round(h.diskAvailBytes);
       await tx.$executeRaw`
         INSERT INTO "UsageHostHourly" (
           "hourStart", "host", "coveredSeconds", "cpuCores", "cpuBusySeconds", "memTotalBytes", "memUsedSumBytes",
-          "memSamples", "memUsedPeakBytes", "netRxBytes", "netTxBytes", "diskTotalBytes", "diskUsedBytes", "updatedAt"
+          "memSamples", "memUsedPeakBytes", "netRxBytes", "netTxBytes", "diskTotalBytes", "diskUsedBytes",
+          "diskAvailBytes", "diskAvailMinBytes", "updatedAt"
         ) VALUES (
           (to_timestamp(${h.hourStart}) AT TIME ZONE 'UTC'), ${run.host}, ${h.coveredSeconds}, ${h.cpuCores}, ${h.cpuBusySeconds}, ${Math.round(h.memTotalBytes)}::float8::bigint,
           ${Math.round(h.memUsedBytes)}::float8::bigint, ${sample}, ${Math.round(h.memUsedBytes)}::float8::bigint,
           ${Math.round(h.netRxBytes)}::float8::bigint, ${Math.round(h.netTxBytes)}::float8::bigint,
-          ${Math.round(h.diskTotalBytes)}::float8::bigint, ${Math.round(h.diskUsedBytes)}::float8::bigint, now()
+          ${Math.round(h.diskTotalBytes)}::float8::bigint, ${Math.round(h.diskUsedBytes)}::float8::bigint,
+          ${avail}::float8::bigint, ${avail}::float8::bigint, now()
         )
         ON CONFLICT ("hourStart", "host") DO UPDATE SET
           "coveredSeconds"   = "UsageHostHourly"."coveredSeconds" + EXCLUDED."coveredSeconds",
@@ -243,6 +247,9 @@ export async function collectUsage(options: { forceDisk?: boolean } = {}): Promi
           "netTxBytes"       = "UsageHostHourly"."netTxBytes" + EXCLUDED."netTxBytes",
           "diskTotalBytes"   = CASE WHEN EXCLUDED."diskTotalBytes" > 0 THEN EXCLUDED."diskTotalBytes" ELSE "UsageHostHourly"."diskTotalBytes" END,
           "diskUsedBytes"    = CASE WHEN EXCLUDED."diskUsedBytes" > 0 THEN EXCLUDED."diskUsedBytes" ELSE "UsageHostHourly"."diskUsedBytes" END,
+          "diskAvailBytes"   = COALESCE(EXCLUDED."diskAvailBytes", "UsageHostHourly"."diskAvailBytes"),
+          -- LEAST ignores NULL, so an older reading without avail never erases the hour's low.
+          "diskAvailMinBytes" = LEAST("UsageHostHourly"."diskAvailMinBytes", EXCLUDED."diskAvailMinBytes"),
           "updatedAt"        = now()`;
     }
 
@@ -436,6 +443,11 @@ export type HostSummary = {
   netTxBytes: number;
   diskTotalBytes: number;
   diskUsedBytes: number;
+  diskAvailBytes: number | null;
+  /** Latest disk use as df and Coolify's alert measure it. */
+  diskUsedFraction: number;
+  /** Highest disk use in the last 24 hours, same measure; null without readings. */
+  diskPeakFraction24h: number | null;
   hours: number;
 };
 
@@ -555,6 +567,9 @@ export async function getUsageReport(filter: UsageFilter): Promise<UsageReport> 
       LEFT JOIN disk_day dd ON dd.day = date_trunc('day', ph."hourStart")
       GROUP BY 1 ORDER BY 1`;
 
+    // The disk alert fires on a peak, and cleanup runs soon after, so the latest
+    // reading alone hides why it fired. Report the last day's high too.
+    const dayAgo = new Date(to.getTime() - 86_400_000);
     const hostRows: Array<Record<string, unknown>> = await db.$queryRaw`
       SELECT "host",
              MAX("cpuCores") AS cores, SUM("cpuBusySeconds") AS busy, SUM("coveredSeconds") AS covered_s,
@@ -564,6 +579,11 @@ export async function getUsageReport(filter: UsageFilter): Promise<UsageReport> 
              SUM("netTxBytes")::float8 AS tx,
              (ARRAY_AGG("diskTotalBytes" ORDER BY "hourStart" DESC))[1]::float8 AS disk_total,
              (ARRAY_AGG("diskUsedBytes" ORDER BY "hourStart" DESC))[1]::float8 AS disk_used,
+             (ARRAY_AGG("diskAvailBytes" ORDER BY "hourStart" DESC) FILTER (WHERE "diskAvailBytes" IS NOT NULL))[1]::float8 AS disk_avail,
+             MAX(1 - "diskAvailMinBytes"::float8 / NULLIF(("diskUsedBytes" + "diskAvailBytes")::float8, 0))
+               FILTER (WHERE "hourStart" >= (${dayAgo}::timestamptz AT TIME ZONE 'UTC') AND "diskAvailMinBytes" IS NOT NULL) AS disk_peak_df,
+             MAX("diskUsedBytes"::float8 / NULLIF("diskTotalBytes"::float8, 0))
+               FILTER (WHERE "hourStart" >= (${dayAgo}::timestamptz AT TIME ZONE 'UTC')) AS disk_peak_plain,
              COUNT(*) AS hours
       FROM "UsageHostHourly"
       WHERE "hourStart" >= (${from}::timestamptz AT TIME ZONE 'UTC') AND "hourStart" < (${to}::timestamptz AT TIME ZONE 'UTC')
@@ -642,6 +662,10 @@ export async function getUsageReport(filter: UsageFilter): Promise<UsageReport> 
         netTxBytes: toNum(h.tx),
         diskTotalBytes: toNum(h.disk_total),
         diskUsedBytes: toNum(h.disk_used),
+        diskAvailBytes: toNumOrNull(h.disk_avail),
+        diskUsedFraction: diskUsedFraction(toNum(h.disk_used), toNumOrNull(h.disk_avail), toNum(h.disk_total)),
+        // Before avail was collected, fall back to used / size for the peak.
+        diskPeakFraction24h: toNumOrNull(h.disk_peak_df) ?? toNumOrNull(h.disk_peak_plain),
         hours: toNum(h.hours)
       }))
     };

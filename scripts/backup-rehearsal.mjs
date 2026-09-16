@@ -125,7 +125,7 @@ PROBES=""
 # Probe containers must never outlive the run, however it ends: a leaked
 # database container on the production host is worse than a failed rehearsal.
 cleanup() {
-  for p in $PROBES; do docker rm -f "$p" >/dev/null 2>&1 || true; done
+  for p in $PROBES; do docker rm -f -v "$p" >/dev/null 2>&1 || true; done
   rm -rf "$TARGET"
 }
 trap cleanup EXIT INT TERM
@@ -155,7 +155,7 @@ if [ -n "$DUMPS" ]; then
     N=$((N+1))
     PROBE="jongo-rehearsal-$$-$N"
     PROBES="$PROBES $PROBE"
-    docker rm -f "$PROBE" >/dev/null 2>&1 || true
+    docker rm -f -v "$PROBE" >/dev/null 2>&1 || true
 
     # Engine from the dump's own header rather than the filename: the container
     # the dump came from may no longer exist, which is exactly the situation a
@@ -197,7 +197,7 @@ if [ -n "$DUMPS" ]; then
       TABLES_AFTER=$((TABLES_AFTER + \${n:-0}))
     fi
 
-    docker rm -f "$PROBE" >/dev/null 2>&1 || true
+    docker rm -f -v "$PROBE" >/dev/null 2>&1 || true
   done <<< "$DUMPS"
 fi
 

@@ -45,6 +45,8 @@ export type HostReading = {
   netTx: number | null;
   diskSize: number | null;
   diskUsed: number | null;
+  /** Free bytes for non-root users (df "avail"). Null from collectors that predate it. */
+  diskAvail: number | null;
 };
 
 export type ContainerReading = {
@@ -117,7 +119,8 @@ export function parseCollectorOutput(raw: string): CollectorOutput {
         if (ts === null || !f[2]) { out.rejected.push(line); break; }
         current.host = {
           ts, host: f[2], ncpu: num(f[3]), memTotal: num(f[4]), memAvailable: num(f[5]),
-          cpuBusyUsec: num(f[6]), netRx: num(f[7]), netTx: num(f[8]), diskSize: num(f[9]), diskUsed: num(f[10])
+          cpuBusyUsec: num(f[6]), netRx: num(f[7]), netTx: num(f[8]), diskSize: num(f[9]), diskUsed: num(f[10]),
+          diskAvail: num(f[11])
         };
         break;
       }
@@ -334,6 +337,8 @@ export type HostIncrement = {
   netTxBytes: number;
   diskTotalBytes: number;
   diskUsedBytes: number;
+  /** Free bytes (df "avail") at this reading; null when the collector did not report it. */
+  diskAvailBytes: number | null;
 };
 
 export type RunResult = {
@@ -458,7 +463,8 @@ export function computeRun(input: {
     cpuCores: h.ncpu ?? 0,
     memTotalBytes: h.memTotal ?? 0,
     diskTotalBytes: h.diskSize ?? 0,
-    diskUsedBytes: h.diskUsed ?? 0
+    diskUsedBytes: h.diskUsed ?? 0,
+    diskAvailBytes: h.diskAvail
   };
   const memUsed = h.memTotal !== null && h.memAvailable !== null ? Math.max(0, h.memTotal - h.memAvailable) : 0;
   const byHour = new Map<number, HostIncrement>();

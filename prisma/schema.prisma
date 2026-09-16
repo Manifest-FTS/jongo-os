@@ -859,6 +859,10 @@ model UsageHostHourly {
   netTxBytes       BigInt   @default(0)
   diskTotalBytes   BigInt
   diskUsedBytes    BigInt
+  /// Free bytes for non-root users (df "avail") at the latest reading.
+  diskAvailBytes    BigInt?
+  /// Lowest free bytes seen in the hour: the hour's peak, measured like df and Coolify.
+  diskAvailMinBytes BigInt?
   updatedAt        DateTime @updatedAt
 
   @@unique([hourStart, host])
