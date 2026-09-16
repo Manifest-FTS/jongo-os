@@ -63,6 +63,26 @@ export function formatPercent(fraction: number): string {
   return `${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`;
 }
 
+/**
+ * Share of the disk in use, computed the way `df` and Coolify's disk alert do:
+ * used / (used + available). Blocks the filesystem reserves for root count as
+ * neither, so this reads a few points above used / size, which is why the Usage
+ * page used to say 89% while Coolify alerted at 93%. Falls back to used / size
+ * for readings that did not report available space.
+ */
+export function diskUsedFraction(usedBytes: number, availBytes: number | null | undefined, totalBytes: number): number {
+  if (availBytes !== null && availBytes !== undefined && usedBytes + availBytes > 0) {
+    return usedBytes / (usedBytes + availBytes);
+  }
+  return totalBytes > 0 ? usedBytes / totalBytes : 0;
+}
+
+/** Disk percentage rounded up, as df prints it, so the page and the alert agree. */
+export function formatDiskPercent(fraction: number): string {
+  if (!Number.isFinite(fraction) || fraction <= 0) return "0%";
+  return `${Math.min(100, Math.ceil(fraction * 100 - 1e-9))}%`;
+}
+
 export function formatUsd(amount: number): string {
   return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

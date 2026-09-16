@@ -8,6 +8,7 @@ import {
   describeCoverage,
   formatBytes,
   formatCores,
+  formatDiskPercent,
   formatPercent,
   formatUsd,
   formatVcpuHours,
@@ -237,10 +238,14 @@ export default async function UsagePage({ searchParams }: Params) {
               detail="sent by public-facing apps, before compression"
             />
             <UsageMeter
-              label="Storage"
+              label="App data"
               value={total.disk}
               valueText={formatBytes(total.disk)}
-              detail={host ? `${formatPercent(total.disk / host.diskTotalBytes)} of ${formatBytes(host.diskTotalBytes)} disk` : "persistent volumes, latest"}
+              detail={
+                host
+                  ? `apps' persistent volumes · server disk is ${formatDiskPercent(host.diskUsedFraction)} full (see Server)`
+                  : "apps' persistent volumes, latest"
+              }
             />
           </section>
 
@@ -251,7 +256,7 @@ export default async function UsagePage({ searchParams }: Params) {
               points={report.daily.map((d) => ({ day: d.day, value: d.memAvgBytes }))} />
             <UsageColumnChart title="Egress per day" subtitle="bytes served to visitors" format="bytes" days={days}
               points={report.daily.map((d) => ({ day: d.day, value: d.egressBytes }))} />
-            <UsageColumnChart title="Storage per day" subtitle="persistent volumes" format="bytes" days={days}
+            <UsageColumnChart title="App data per day" subtitle="apps' persistent volumes" format="bytes" days={days}
               points={report.daily.map((d) => ({ day: d.day, value: d.diskBytes }))} />
           </section>
 
@@ -334,9 +339,25 @@ export default async function UsagePage({ searchParams }: Params) {
                 </div>
                 <div>
                   <p className="metric-label m-0">Disk used</p>
-                  <p className="mt-1 mb-0 text-[1.2rem] font-bold text-metric">{formatBytes(host.diskUsedBytes)}</p>
+                  <p
+                    className={`mt-1 mb-0 text-[1.2rem] font-bold ${host.diskUsedFraction >= 0.8 ? "text-warn-text" : "text-metric"}`}
+                  >
+                    {formatDiskPercent(host.diskUsedFraction)}
+                  </p>
                   <p className="mt-0.5 mb-0 text-[0.8rem] text-muted">
-                    of {formatBytes(host.diskTotalBytes)} · volumes account for {formatBytes(total.disk)}
+                    {formatBytes(host.diskUsedBytes)} of {formatBytes(host.diskTotalBytes)}
+                    {host.diskPeakFraction24h !== null ? (
+                      <>
+                        {" · "}
+                        <span className={host.diskPeakFraction24h >= 0.8 ? "font-semibold text-warn-text" : undefined}>
+                          peak {formatDiskPercent(host.diskPeakFraction24h)} in the last 24 h
+                        </span>
+                      </>
+                    ) : null}
+                  </p>
+                  <p className="mt-0.5 mb-0 text-[0.8rem] text-muted">
+                    Measured like Coolify&apos;s disk alert. App data is {formatBytes(total.disk)}; the rest is
+                    images, backups and logs.
                   </p>
                 </div>
                 <div>

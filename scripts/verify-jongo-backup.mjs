@@ -169,7 +169,7 @@ LATEST="$DEST_DIR/jongo-os-latest.dump"
 [ -e "$LATEST" ] || { echo "RESTORE=fail_no_dump"; exit 1; }
 
 PROBE=jongo-dr-probe-$$
-docker rm -f "$PROBE" >/dev/null 2>&1 || true
+docker rm -f -v "$PROBE" >/dev/null 2>&1 || true
 docker run -d --name "$PROBE" -e POSTGRES_PASSWORD=dr-restore -e POSTGRES_DB=${D} postgres:16-alpine >/dev/null
 # wait for readiness (max ~30s)
 for i in $(seq 1 30); do docker exec "$PROBE" pg_isready -q && break; sleep 1; done
@@ -193,7 +193,7 @@ LIVE=$(docker exec ${C} psql -U ${U} -d ${D} -tA -c \
   "SELECT COALESCE((SELECT count(*) FROM \\"Site\\"),-1)||','||COALESCE((SELECT count(*) FROM \\"User\\"),-1)||','||COALESCE((SELECT count(*) FROM \\"Organization\\"),-1)" 2>/dev/null || echo "-1,-1,-1")
 echo "LIVE_ROWS_SITE_USER_ORG=$LIVE"
 
-docker rm -f "$PROBE" >/dev/null 2>&1 || true
+docker rm -f -v "$PROBE" >/dev/null 2>&1 || true
 rm -f /tmp/$PROBE.err
 echo "TEARDOWN=ok"
 `;
