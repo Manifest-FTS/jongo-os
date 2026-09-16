@@ -103,7 +103,7 @@ export default function UsageLivePanel({ siteId, limit = 10 }: { siteId?: string
 
       {!siteId && data?.ok ? (
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-[0.86rem] tabular-nums">
+          <table className="w-full text-[0.86rem] tabular-nums !table">
             <thead>
               <tr className="text-left text-muted">
                 <th className="font-semibold py-1.5 pr-3">App</th>
