@@ -266,7 +266,7 @@ export default async function UsagePage({ searchParams }: Params) {
               <p className="card-muted m-0 text-[0.82rem]">Last {days} days · sorted by memory</p>
             </div>
             <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-[0.86rem] tabular-nums">
+              <table className="w-full text-[0.86rem] tabular-nums !table">
                 <thead>
                   <tr className="text-left text-muted">
                     <th className="font-semibold py-2 pr-3">{fleetView ? "Client" : "App"}</th>
