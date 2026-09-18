@@ -49,7 +49,11 @@ export interface UserPermissions {
 
   /** Writes to the staging copy only; production is untouched. */
   canSyncStaging: boolean;
-  /** DESTRUCTIVE — replaces production with the staging copy. */
+  /**
+   * Replaces production with the staging copy. Open to collaborators: they
+   * build on staging and should be able to ship it. The route still requires
+   * a passing backup preflight and the typed PROMOTE confirmation.
+   */
   canPromoteStaging: boolean;
   /** Creating or destroying the staging environment itself. */
   canManageStagingEnvironment: boolean;
@@ -216,6 +220,9 @@ export function getPermissions(callerRole: unknown, isPlatformAdmin = false): Us
     canFlushCache: true,
     // Overwrites the staging copy, never production.
     canSyncStaging: true,
+    // Collaborators do the work on staging, so they can ship it too. Guarded by
+    // the backup preflight and typed confirmation, not by role.
+    canPromoteStaging: true,
     // Both roles, per TSK-00829: making a site private protects it, and the
     // person who notices it is public should not have to go find an admin.
     canEnablePrivacyMode: true,
@@ -230,7 +237,6 @@ export function getPermissions(callerRole: unknown, isPlatformAdmin = false): Us
     // lower it.
     canDisablePrivacyMode: isAdmin,
     canManagePrivacyCredentials: isAdmin,
-    canPromoteStaging: isAdmin,
     canManageStagingEnvironment: isAdmin,
     canEditDomains: isAdmin,
     canViewDiagnostics: isAdmin,

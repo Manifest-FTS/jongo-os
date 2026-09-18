@@ -25,6 +25,9 @@ describe("getPermissions", () => {
     expect(collaborator.canAnnotateBackup).toBe(true);
     expect(collaborator.canFlushCache).toBe(true);
     expect(collaborator.canSyncStaging).toBe(true);
+    // Collaborators work on staging and can ship it; the promote route still
+    // demands a backup preflight and the typed PROMOTE confirmation.
+    expect(collaborator.canPromoteStaging).toBe(true);
     expect(collaborator.canEnablePrivacyMode).toBe(true);
   });
 
@@ -32,7 +35,6 @@ describe("getPermissions", () => {
     // The bug this guards: every one of these was true for collaborators, so a
     // collaborator could overwrite production or download the whole site.
     expect(collaborator.canRestoreBackup).toBe(false);
-    expect(collaborator.canPromoteStaging).toBe(false);
     expect(collaborator.canDeleteSite).toBe(false);
     expect(collaborator.canDownloadBackup).toBe(false);
     expect(collaborator.canManageSftp).toBe(false);
@@ -91,7 +93,6 @@ describe("getPermissions", () => {
       "canDownloadBackup",
       "canManageBackupSchedule",
       "canManageSftp",
-      "canPromoteStaging",
       "canManageStagingEnvironment",
       "canDisablePrivacyMode",
       "canManagePrivacyCredentials",

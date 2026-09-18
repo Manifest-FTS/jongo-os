@@ -294,9 +294,10 @@ export async function POST(req: Request, { params }: Params) {
 
   const { siteId } = await params;
 
-  // Promote REPLACES production with the staging copy. This route checked only
-  // that someone was signed in, so any collaborator could overwrite a live site.
-  // The ops-token path is exempt: it is automation, with no user to check.
+  // Promote REPLACES production with the staging copy. This route once checked
+  // only that someone was signed in, so anyone could overwrite any live site.
+  // Now the caller must have access to THIS site and canPromoteStaging (admins
+  // and collaborators). The ops-token path is exempt: it is automation.
   if (!authorizedByToken && actorId) {
     const { getSiteWorkspace } = await import("@/lib/repositories");
     const { resolveSitePermissionSnapshot } = await import("@/lib/permissions");
@@ -311,7 +312,7 @@ export async function POST(req: Request, { params }: Params) {
     });
     if (!permissions.canPromoteStaging) {
       return NextResponse.json(
-        { error: "Only organisation admins can promote staging to production." },
+        { error: "You do not have permission to promote staging to production." },
         { status: 403 }
       );
     }
