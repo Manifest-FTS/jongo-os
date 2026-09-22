@@ -359,18 +359,33 @@ if [ -n "$WP_CONTAINER" ] && [ -n "$WP_DB" ]; then
   WP_PASS=$(read_env "$WP_CONTAINER" WORDPRESS_DB_PASSWORD)
   WN=$(read_env "$WP_CONTAINER" WORDPRESS_DB_NAME); [ -n "$WN" ] || WN=wordpress
   PREFIX=$(read_env "$WP_CONTAINER" WORDPRESS_TABLE_PREFIX); [ -n "$PREFIX" ] || PREFIX=wp_
-  if ! docker exec "$WP_DB" sh -lc "mariadb -u$WU -p$WP_PASS -N -B -e \\"SELECT 1 FROM \${PREFIX}posts LIMIT 1\\" $WN" >/dev/null 2>&1; then
-    DETECTED=$(docker exec "$WP_DB" sh -lc "mariadb -u$WU -p$WP_PASS -N -B -e \\"SHOW TABLES LIKE '%posts'\\" $WN" 2>/dev/null | head -1 | sed 's/posts\$//')
-    [ -n "$DETECTED" ] && PREFIX="$DETECTED"
-  fi
+  # A mysql:8 image ships the mysql client; a mariadb image ships mariadb.
+  # Hardcoding one made every count fail silently on the other, so a backup
+  # that had captured all 178 tables was reported as 0 posts and 0 pages.
+  WP_CLIENT=$(docker exec "$WP_DB" sh -lc 'command -v mariadb || command -v mysql' 2>/dev/null | tr -d '\r')
   WPVER=$(docker exec "$WP_CONTAINER" sh -lc "grep -m1 '\\\$wp_version =' /var/www/html/wp-includes/version.php 2>/dev/null | sed \\"s/.*'\\([^']*\\)'.*/\\1/\\"" 2>/dev/null)
   PLUGINS=$(docker exec "$WP_CONTAINER" sh -lc 'ls -1 /var/www/html/wp-content/plugins 2>/dev/null | grep -v "^index.php$" | wc -l' 2>/dev/null || echo 0)
-  q() { docker exec "$WP_DB" sh -lc "mariadb -u$WU -p$WP_PASS -N -B -e \\"$1\\" $WN" 2>/dev/null || echo ""; }
   echo "WP_VERSION=$WPVER"
   echo "PLUGINS=$PLUGINS"
-  echo "POSTS=$(q "SELECT COUNT(*) FROM \${PREFIX}posts WHERE post_type='post' AND post_status='publish'")"
-  echo "PAGES=$(q "SELECT COUNT(*) FROM \${PREFIX}posts WHERE post_type='page' AND post_status='publish'")"
-  echo "COMMENTS=$(q "SELECT COUNT(*) FROM \${PREFIX}comments WHERE comment_approved='1'")"
+  if [ -n "$WP_CLIENT" ]; then
+    # MYSQL_PWD: keeps the password off the command line, and both clients read it.
+    q() { docker exec -e MYSQL_PWD="$WP_PASS" "$WP_DB" sh -lc "$WP_CLIENT -u$WU -N -B -e \\"$1\\" $WN" 2>/dev/null | head -1; }
+    # Counted, or "-" for "not counted". Never 0 by accident: a zero here reads
+    # as "this backup holds an empty site".
+    n() { printf '%s' "$1" | grep -qE '^[0-9]+$' && printf '%s' "$1" || printf -- '-'; }
+    # The prefix comes from the table that actually holds posts. Plugins add
+    # their own "%posts" tables (wp_pmxi_posts), and taking the first match
+    # counted rows in a plugin's table instead of the site's.
+    DETECTED=$(q "SELECT table_name FROM information_schema.columns WHERE table_schema='$WN' AND column_name='post_type' AND table_name LIKE '%posts' ORDER BY LENGTH(table_name) LIMIT 1" | sed 's/posts\$//')
+    [ -n "$DETECTED" ] && PREFIX="$DETECTED"
+    echo "POSTS=$(n "$(q "SELECT COUNT(*) FROM \${PREFIX}posts WHERE post_type='post' AND post_status='publish'")")"
+    echo "PAGES=$(n "$(q "SELECT COUNT(*) FROM \${PREFIX}posts WHERE post_type='page' AND post_status='publish'")")"
+    echo "COMMENTS=$(n "$(q "SELECT COUNT(*) FROM \${PREFIX}comments WHERE comment_approved='1'")")"
+  else
+    echo "POSTS=-"
+    echo "PAGES=-"
+    echo "COMMENTS=-"
+  fi
 fi
 
 # ── Stack markers ──
@@ -545,7 +560,14 @@ function parseForgotten(encoded) {
   return Array.from(new Set(ids));
 }
 
-const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+// "" and "-" mean "not measured", and must stay null: Number("") is 0, which
+// is how a backup that captured everything reported 0 posts and 0 pages.
+const num = (v) => {
+  const text = String(v ?? "").trim();
+  if (!text || text === "-") return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+};
 
 /** Container names, sent base64 because the KEY=VALUE protocol is line-based. */
 function decodeContainers(encoded) {

@@ -57,12 +57,31 @@ describe("summarizeBackupContent", () => {
       posts: 12,
       pages: 4,
       plugins: 9,
-      comments: 30
-    });
+      comments: 30,
+      databaseTables: 178
+    }, { formattedSize: "1.9 GB" });
     expect(summary.stack).toBe("wordpress");
     expect(summary.label).toBe("WordPress");
-    expect(summary.metrics.map((m) => m.label)).toEqual(["Posts", "Pages", "Plugins", "Comments", "WP Version"]);
+    expect(summary.metrics.map((m) => m.label)).toEqual([
+      "Posts", "Pages", "Plugins", "Comments", "Tables", "Size", "WP Version"
+    ]);
     expect(summary.metrics.find((m) => m.label === "Posts")?.value).toBe(12);
+    // Tables and size prove the backup holds the site even when the content
+    // counts could not be taken.
+    expect(summary.metrics.find((m) => m.label === "Tables")?.value).toBe(178);
+    expect(summary.metrics.find((m) => m.label === "Size")?.value).toBe("1.9 GB");
+  });
+
+  it("shows tables and size for a WordPress backup whose content could not be counted", () => {
+    // The reported case: the collector could not query the database client, so
+    // every count was unknown. It must read "not counted", never 0.
+    const summary = summarizeBackupContent(
+      { wpVersion: "7.0.6", posts: null, pages: null, plugins: 31, comments: null, databaseTables: 178 },
+      { formattedSize: "1.9 GB" }
+    );
+    expect(summary.metrics.find((m) => m.label === "Posts")?.value).toBeNull();
+    expect(summary.metrics.find((m) => m.label === "Tables")?.value).toBe(178);
+    expect(summary.metrics.find((m) => m.label === "Size")?.value).toBe("1.9 GB");
   });
 
   it("reports framework metrics for a Next.js app", () => {
