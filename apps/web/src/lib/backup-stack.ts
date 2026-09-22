@@ -109,6 +109,11 @@ export function summarizeBackupContent(
         { label: "Pages", value: numberOrNull(markers.pages) },
         { label: "Plugins", value: numberOrNull(markers.plugins) },
         { label: "Comments", value: numberOrNull(markers.comments) },
+        // Tables and size say whether the backup actually holds the site. The
+        // content counts can read "—" (a client the collector could not query),
+        // and without these two a complete backup then looked empty.
+        { label: "Tables", value: numberOrNull(markers.databaseTables) },
+        { label: "Size", value: size },
         { label: "WP Version", value: nonEmpty(markers.wpVersion) ? String(markers.wpVersion) : null }
       ]
     };
