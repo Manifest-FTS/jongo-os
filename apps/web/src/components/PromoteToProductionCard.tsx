@@ -67,7 +67,8 @@ type PromoteResponse = {
     | "production_deployment_in_progress"
     | "staging_to_production_preflight_blocked"
     | "promote_backup_started"
-    | "promote_backup_in_progress";
+    | "promote_backup_in_progress"
+    | "coolify_unreachable";
   actionHint?: string;
   /** Content was promoted, but the final production restart was not confirmed. */
   deployWarning?: string | null;

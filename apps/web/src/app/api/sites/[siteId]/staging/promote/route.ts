@@ -7,6 +7,7 @@ import {
   triggerCoolifyDeploy
 } from "@/lib/coolify";
 import { getBackupReadiness, getPathPreflight, shouldAutoBackupBeforePromote } from "@/lib/deploy-guards";
+import { rateLimitCooldownRemaining } from "@/lib/coolify-rate-limit";
 import { listSiteDeployments } from "@/lib/repositories";
 import { startSiteBackup } from "@/lib/site-backup-start";
 import { runUrlRewrite } from "@/lib/wp-url-rewrite-run";
@@ -27,7 +28,8 @@ type BlockingReason =
   | "production_deployment_in_progress"
   | "staging_to_production_preflight_blocked"
   | "promote_backup_started"
-  | "promote_backup_in_progress";
+  | "promote_backup_in_progress"
+  | "coolify_unreachable";
 
 type BlockingDeploymentPayload = {
   id: string;
@@ -522,9 +524,50 @@ export async function POST(req: Request, { params }: Params) {
         break;
       }
     }
+
+    // The quick retries cannot outlast Coolify's rate limit: once it is hit,
+    // Jongo stops calling Coolify for the cooldown and every read "fails". Wait
+    // it out once when it is short, rather than blocking a staging that exists.
+    const cooldownMs = rateLimitCooldownRemaining();
+    if (!stagingCapability.applicationUuid && stagingCapability.note === "fetch_error" && cooldownMs > 0 && cooldownMs <= 30_000) {
+      await sleep(cooldownMs + 500);
+      stagingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, { relaxedTargetMatch: true });
+    }
   }
 
   const backupInventory = await backupInventoryPromise;
+
+  // Coolify could not be read at all. That is not "staging is not configured",
+  // which is what this used to say: it sent people looking for a setup problem
+  // on a site whose staging was fine. Nothing has been changed yet.
+  if (site.stagingEnabled && !stagingCapability.applicationUuid && stagingCapability.note === "fetch_error") {
+    const error = "Couldn't check staging with Coolify just now. Nothing was changed.";
+    await recordStagingAuditLog({
+      organizationId: site.organizationId,
+      actorId,
+      actionType: "staging_promote_blocked",
+      resourceId: site.id,
+      details: {
+        promoteAttemptId,
+        idempotencyKey,
+        appUuid,
+        blockingReason: "coolify_unreachable",
+        capabilityNote: stagingCapability.note,
+        rateLimited: rateLimitCooldownRemaining() > 0,
+        message: error
+      },
+      req
+    });
+    return blockedPromoteResponse({
+      status: 409,
+      error,
+      promoteAttemptId,
+      idempotencyKey,
+      blockingReason: "coolify_unreachable",
+      actionHint: "Coolify is busy or unreachable. Try again in a minute.",
+      retryAfterSeconds: Math.max(30, Math.ceil(rateLimitCooldownRemaining() / 1000))
+    });
+  }
 
   const stagingConfigured = Boolean(site.stagingEnabled && stagingCapability.detected && stagingCapability.applicationUuid);
   // Jongo's own backup history: the restic snapshots that are the actual
@@ -668,6 +711,9 @@ export async function POST(req: Request, { params }: Params) {
         idempotencyKey,
         appUuid,
         preflight,
+        // Why staging looked unconfigured, so the next report can be diagnosed
+        // from the log instead of guessed.
+        capabilityNote: stagingCapability.note ?? null,
         message: "Staging-to-production promote blocked by preflight checks."
       },
       req
