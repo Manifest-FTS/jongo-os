@@ -759,23 +759,39 @@ export async function POST(req: Request, { params }: Params) {
       result = { mode: "live", deploymentId: "", message: "Content promoted; restart not confirmed." };
     }
 
+    // A restart (WordPress) finishes the promote: there is no deployment to
+    // wait for, and its placeholder id would only show as an unmatched
+    // "deployment" that never reports progress.
+    const restarted = !deployWarning && result.action === "restart";
+    const deploymentId = restarted || !result.deploymentId ? undefined : result.deploymentId;
+    const rewriteNote = urlRewrite && !urlRewrite.ok
+      ? " Links in the content could not all be updated to the production address; check pages for staging links."
+      : "";
+    const promoteMessage =
+      (deployWarning ??
+        (restarted
+          ? "Promoted. Staging's content is live on production and the site was restarted."
+          : "Promoted. Staging's content is live on production and a production deployment has started.")) + rewriteNote;
+
     await recordStagingAuditLog({
       organizationId: site.organizationId,
       actorId,
-      actionType: "staging_promote_triggered",
+      actionType: restarted ? "staging_promote_succeeded" : "staging_promote_triggered",
       resourceId: site.id,
       details: {
         promoteAttemptId,
         idempotencyKey,
         appUuid,
-        deploymentId: result.deploymentId,
+        deploymentId,
+        restarted,
         mode: result.mode,
         preflight,
         urlRewrite: urlRewrite
           ? { ok: urlRewrite.ok, rowsChanged: urlRewrite.rowsChanged, skipped: urlRewrite.skippedUnserializable, error: urlRewrite.error }
           : null,
         deployWarning,
-        message: deployWarning ?? `${result.message} ${PROMOTE_SEMANTICS_NOTE}`
+        message: promoteMessage,
+        semantics: PROMOTE_SEMANTICS_NOTE
       },
       req
     });
@@ -790,7 +806,7 @@ export async function POST(req: Request, { params }: Params) {
         stagingUrl,
         productionUrl,
         urlRowsRewritten: urlRewrite?.ok ? urlRewrite.rowsChanged : null,
-        deploymentId: result.deploymentId || null,
+        deploymentId: deploymentId ?? null,
         actorEmail: session?.user?.email ?? null
       });
     } catch (error) {
@@ -801,9 +817,10 @@ export async function POST(req: Request, { params }: Params) {
       ok: true,
       promoteAttemptId,
       idempotencyKey,
-      deploymentId: result.deploymentId,
+      deploymentId,
+      restarted,
       mode: result.mode,
-      message: deployWarning ?? `${result.message} ${PROMOTE_SEMANTICS_NOTE}`,
+      message: promoteMessage,
       deployWarning,
       preflight,
       // Surfaced, not swallowed: a promote whose URL rewrite failed leaves

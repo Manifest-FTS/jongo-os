@@ -1140,6 +1140,12 @@ export type DeployTriggerResult = {
   mode: "live" | "mock";
   deploymentId: string;
   message: string;
+  /**
+   * "restart" for a service (WordPress): Coolify creates no deployment record,
+   * and deploymentId is a placeholder that matches nothing. "deploy" queues a
+   * real, trackable deployment.
+   */
+  action?: "restart" | "deploy";
 };
 
 export type CoolifyActionResult = {
@@ -3051,6 +3057,7 @@ export async function triggerCoolifyDeploy(
         return {
           mode: "live",
           deploymentId,
+          action: request.path.endsWith("/restart") ? "restart" : "deploy",
           message: request.path.endsWith("/restart")
             ? `Restart triggered on ${environment}.`
             : `Deploy triggered on ${environment}.`
