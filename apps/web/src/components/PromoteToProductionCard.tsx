@@ -46,6 +46,8 @@ type PromoteAttemptResponse = {
   deploymentId?: string;
   deploymentStatus?: string;
   blockingReason?: string;
+  /** Finished by a restart (WordPress sites): there is no deployment to track. */
+  restarted?: boolean;
   triggeredAt?: string;
   finishedAt?: string;
   updatedAt?: string;
@@ -380,9 +382,9 @@ export default function PromoteToProductionCard({
       const defaultMessage = payload?.deploymentId
         ? `Production promotion triggered (${payload.deploymentId}).`
         : "Production promotion triggered.";
-      const attemptSuffix = payload?.promoteAttemptId ? ` Attempt ${payload.promoteAttemptId}.` : "";
+      // The attempt id is shown once, in the box below, not appended here too.
       const replaySuffix = payload?.replayed ? " (replayed request)" : "";
-      setMessage(`${payload?.message ?? defaultMessage}${attemptSuffix}${replaySuffix}`.trim());
+      setMessage(`${payload?.message ?? defaultMessage}${replaySuffix}`.trim());
       if (payload?.promoteAttemptId) {
         setLatestPromoteAttemptId(payload.promoteAttemptId);
         await fetchAttemptStatus(payload.promoteAttemptId);
@@ -536,7 +538,8 @@ export default function PromoteToProductionCard({
             }}
           >
             <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600 }}>
-              Focused attempt: {focusedAttempt.attemptId}
+              Latest promote{" "}
+              <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: "0.74rem" }}>· {focusedAttempt.attemptId}</span>
             </p>
             <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
               <span className={`status-chip ${focusedAttempt.statusTone ?? "unknown"}`}>
@@ -568,6 +571,10 @@ export default function PromoteToProductionCard({
           </p>
         ) : null}
 
+        {/* A restart-only promote (WordPress) creates no deployment, so this
+            panel could only ever say "no activity" and read like a failure. */}
+        {focusedAttempt?.restarted ? null : (
+        <>
         <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
           <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 600 }}>Production deployment status</p>
           <button
@@ -617,8 +624,10 @@ export default function PromoteToProductionCard({
             No production deployment activity recorded yet.
           </p>
         )}
+        </>
+        )}
 
-        {lastPolledAt ? (
+        {lastPolledAt && !focusedAttempt?.restarted ? (
           <p style={{ margin: 0, fontSize: "0.76rem", color: "var(--muted)" }}>
             Last checked {formatAgo(lastPolledAt)}
           </p>

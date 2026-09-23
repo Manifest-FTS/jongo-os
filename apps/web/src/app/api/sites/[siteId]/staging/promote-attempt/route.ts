@@ -28,7 +28,11 @@ type AttemptEvent = {
   deploymentId?: string;
   deploymentStatus?: string;
   blockingReason?: string;
+  /** Finished by a restart (WordPress): nothing further to track. */
+  restarted?: boolean;
 };
+
+const RESTART_PROMOTE_MESSAGE = "Promoted. Staging's content is live on production and the site was restarted.";
 
 function normalizeAttemptId(value: string | null): string {
   return value?.trim() ?? "";
@@ -157,14 +161,21 @@ export async function GET(req: Request, { params }: Params) {
       continue;
     }
 
+    const rawMessage = typeof details?.message === "string" ? details.message : "Promotion event recorded.";
+    // Attempts recorded before "restarted" existed said so only in the message,
+    // with a placeholder "dep-<time>" id that matches no deployment.
+    const restarted =
+      details?.restarted === true ||
+      (actionTypeRaw === "staging_promote_triggered" && rawMessage.startsWith("Restart triggered on production"));
     events.push({
       id: log.id,
       createdAt: log.createdAt.toISOString(),
-      actionType: actionTypeRaw,
-      message: typeof details?.message === "string" ? details.message : "Promotion event recorded.",
-      deploymentId: typeof details?.deploymentId === "string" ? details.deploymentId : undefined,
+      actionType: restarted ? "staging_promote_succeeded" : actionTypeRaw,
+      message: restarted ? RESTART_PROMOTE_MESSAGE : rawMessage,
+      deploymentId: !restarted && typeof details?.deploymentId === "string" ? details.deploymentId : undefined,
       deploymentStatus: typeof details?.deploymentStatus === "string" ? details.deploymentStatus : undefined,
-      blockingReason: typeof details?.blockingReason === "string" ? details.blockingReason : undefined
+      blockingReason: typeof details?.blockingReason === "string" ? details.blockingReason : undefined,
+      restarted
     });
   }
 
@@ -177,7 +188,7 @@ export async function GET(req: Request, { params }: Params) {
   let deploymentId = latestEvent.deploymentId;
   let deploymentStatus = latestEvent.deploymentStatus;
   let triggeredAt: string | undefined;
-  let finishedAt: string | undefined;
+  let finishedAt: string | undefined = latestEvent.restarted ? latestEvent.createdAt : undefined;
 
   if (deploymentId) {
     const deployments = await listSiteDeployments(siteId, viewer);
@@ -212,6 +223,7 @@ export async function GET(req: Request, { params }: Params) {
     deploymentId,
     deploymentStatus,
     blockingReason: latestEvent.blockingReason,
+    restarted: Boolean(latestEvent.restarted),
     triggeredAt,
     finishedAt,
     updatedAt: latestEvent.createdAt,
