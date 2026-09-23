@@ -745,7 +745,19 @@ export async function POST(req: Request, { params }: Params) {
       console.error(`[jongo] promote ${promoteAttemptId}: URL rewrite threw`, error);
     }
 
-    const result = await triggerCoolifyDeploy(appUuid, "production");
+    // By here staging's files and database ARE production. A failed restart
+    // must not report the promote as failed: that is what sent people back to
+    // press Promote again on a site that had already changed.
+    let result: Awaited<ReturnType<typeof triggerCoolifyDeploy>>;
+    let deployWarning: string | null = null;
+    try {
+      result = await triggerCoolifyDeploy(appUuid, "production");
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Coolify did not accept the restart.";
+      console.error(`[jongo] promote ${promoteAttemptId}: production restart failed after content sync: ${reason}`);
+      deployWarning = `Staging's content is live on production, but the final restart did not go through (${reason}). The site keeps running; restart it from Coolify if a change does not show.`;
+      result = { mode: "live", deploymentId: "", message: "Content promoted; restart not confirmed." };
+    }
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,
@@ -762,7 +774,8 @@ export async function POST(req: Request, { params }: Params) {
         urlRewrite: urlRewrite
           ? { ok: urlRewrite.ok, rowsChanged: urlRewrite.rowsChanged, skipped: urlRewrite.skippedUnserializable, error: urlRewrite.error }
           : null,
-        message: `${result.message} ${PROMOTE_SEMANTICS_NOTE}`
+        deployWarning,
+        message: deployWarning ?? `${result.message} ${PROMOTE_SEMANTICS_NOTE}`
       },
       req
     });
@@ -777,7 +790,7 @@ export async function POST(req: Request, { params }: Params) {
         stagingUrl,
         productionUrl,
         urlRowsRewritten: urlRewrite?.ok ? urlRewrite.rowsChanged : null,
-        deploymentId: result.deploymentId ?? null,
+        deploymentId: result.deploymentId || null,
         actorEmail: session?.user?.email ?? null
       });
     } catch (error) {
@@ -790,7 +803,8 @@ export async function POST(req: Request, { params }: Params) {
       idempotencyKey,
       deploymentId: result.deploymentId,
       mode: result.mode,
-      message: `${result.message} ${PROMOTE_SEMANTICS_NOTE}`,
+      message: deployWarning ?? `${result.message} ${PROMOTE_SEMANTICS_NOTE}`,
+      deployWarning,
       preflight,
       // Surfaced, not swallowed: a promote whose URL rewrite failed leaves
       // production serving staging asset URLs, and that must not read as a clean
@@ -817,11 +831,13 @@ export async function POST(req: Request, { params }: Params) {
       req
     });
 
+    // 500, not 502: Cloudflare replaces a 502 body with its own HTML page, and
+    // the browser then reported this real error as a "network error".
     return NextResponse.json({
       error: message,
       promoteAttemptId,
       idempotencyKey,
       preflight
-    }, { status: 502 });
+    }, { status: 500 });
   }
 }

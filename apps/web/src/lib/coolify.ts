@@ -11,6 +11,7 @@ import { retryOnceAfterRateLimit } from "./rate-limit-retry";
 import { extractCreatedResourceUuid } from "./staging-capability-refresh";
 import { pickStagingTarget } from "./staging-target-match";
 import { readStagingTargetPins } from "./staging-target-pin";
+import { deployRequestPlan, deployRetryDelaySeconds, isRetryableDeployStatus } from "./coolify-deploy-plan";
 
 export { isGeneratedCoolifyHost } from "./coolify-host";
 
@@ -2998,71 +2999,96 @@ export async function triggerCoolifyDeploy(
   }
 
   const timeoutMs = Number(process.env.COOLIFY_TIMEOUT_MS ?? 8000);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const candidateRequests: Array<{ method: "GET" | "POST"; path: string }> = [
-      { method: "GET", path: `/api/v1/services/${encodeURIComponent(serviceUuid)}/start` },
-      { method: "POST", path: `/api/v1/services/${encodeURIComponent(serviceUuid)}/start` },
-      { method: "GET", path: `/api/v1/deploy?uuid=${encodeURIComponent(serviceUuid)}` }
-    ];
+  // See lib/coolify-deploy-plan.ts: POST first (Coolify 4.3 answers GET with
+  // 405), restart for services, deploy for applications.
+  let failure: { status: number; detail: string } | null = null;
+  const noteFailure = (status: number, detail: string) => {
+    // "Not found" is the expected answer from the endpoint for the other kind of
+    // resource. Report the most informative refusal instead.
+    if (!failure || (failure.status === 404 && status !== 404)) failure = { status, detail };
+  };
 
-    let lastStatusCode = 0;
-    for (const request of candidateRequests) {
+  for (const request of deployRequestPlan(serviceUuid)) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       const startedAt = Date.now();
-      const response = await fetch(`${baseUrl}${request.path}`, {
-        method: request.method,
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        signal: controller.signal
-      });
+      // Per request, not per loop: a rate-limit wait must not eat the budget.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}${request.path}`, {
+          method: request.method,
+          cache: "no-store",
+          headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+          signal: controller.signal
+        });
+      } catch (error) {
+        noteFailure(0, error instanceof Error ? error.message : "request failed");
+        break;
+      } finally {
+        clearTimeout(timer);
+      }
 
-      if (!response.ok) {
-        lastStatusCode = response.status;
+      if (response.ok) {
+        const payload = ((await response.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
         recordCoolifyEndpointCall({
           path: request.path,
           method: request.method,
           statusCode: response.status,
-          success: false,
-          durationMs: Date.now() - startedAt,
-          error: `Coolify deploy candidate failed (${response.status})`
+          success: true,
+          responseCount: estimateResponseCount(payload),
+          durationMs: Date.now() - startedAt
         });
-        continue;
+        const deployments = Array.isArray(payload.deployments) ? (payload.deployments as Record<string, unknown>[]) : [];
+        const first = deployments[0] ?? {};
+        const deploymentId =
+          typeof first.deployment_uuid === "string"
+            ? first.deployment_uuid
+            : typeof payload.deployment_uuid === "string"
+              ? payload.deployment_uuid
+              : `dep-${Date.now()}`;
+        return {
+          mode: "live",
+          deploymentId,
+          message: request.path.endsWith("/restart")
+            ? `Restart triggered on ${environment}.`
+            : `Deploy triggered on ${environment}.`
+        };
       }
 
-      const payload = (await response.json()) as Record<string, unknown>;
+      const body = (await response.text().catch(() => "")).slice(0, 300);
+      let detail = body;
+      try {
+        const parsed = JSON.parse(body) as { message?: unknown };
+        if (typeof parsed.message === "string") detail = parsed.message;
+      } catch {
+        // Not JSON; keep the raw text.
+      }
       recordCoolifyEndpointCall({
         path: request.path,
         method: request.method,
         statusCode: response.status,
-        success: true,
-        responseCount: estimateResponseCount(payload),
-        durationMs: Date.now() - startedAt
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: `Coolify deploy candidate failed (${response.status})`
       });
-      const deployments = Array.isArray(payload.deployments) ? payload.deployments as Record<string, unknown>[] : [];
-      const first = deployments[0] ?? {};
-      const deploymentId =
-        typeof first.deployment_uuid === "string"
-          ? first.deployment_uuid
-          : typeof payload.deployment_uuid === "string"
-            ? payload.deployment_uuid
-            : `dep-${Date.now()}`;
 
-      return {
-        mode: "live",
-        deploymentId,
-        message: `Deploy triggered on ${environment}.`
-      };
+      if (isRetryableDeployStatus(response.status) && attempt === 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, deployRetryDelaySeconds(response.headers.get("retry-after")) * 1000)
+        );
+        continue;
+      }
+      noteFailure(response.status, detail);
+      break;
     }
-
-    throw new Error(`Coolify deploy failed (${lastStatusCode || 500})`);
-  } finally {
-    clearTimeout(timer);
   }
+
+  const reported = failure as { status: number; detail: string } | null;
+  throw new Error(
+    `Coolify deploy failed (${reported?.status || 500})${reported?.detail ? `: ${reported.detail}` : ""}`
+  );
 }
 
 // ─── Backup Inventory Types ───────────────────────────────────────────────────
