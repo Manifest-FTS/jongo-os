@@ -67,6 +67,8 @@ type PromoteResponse = {
     | "promote_backup_started"
     | "promote_backup_in_progress";
   actionHint?: string;
+  /** Content was promoted, but the final production restart was not confirmed. */
+  deployWarning?: string | null;
   backupId?: string;
   backupStarted?: boolean;
   blockingDeployment?: {
@@ -333,7 +335,19 @@ export default function PromoteToProductionCard({
         body: JSON.stringify({ confirmationPhrase, idempotencyKey: requestIdempotencyKey })
       });
 
-      const payload = (await response.json()) as PromoteResponse;
+      // Not always JSON: when Cloudflare answers instead of Jongo (an error page,
+      // or a timeout on a long promote) the body is HTML. That used to surface
+      // as "Network error" although the promote had run.
+      const payload = (await response.json().catch(() => null)) as PromoteResponse | null;
+      if (!payload) {
+        setStatus("error");
+        setMessage(
+          `Could not read the server's reply (HTTP ${response.status}). The promote may still have run: check the latest attempt below before trying again.`
+        );
+        await pollDeployments();
+        router.refresh();
+        return;
+      }
       if (!response.ok) {
         if ((payload?.retryAfterSeconds ?? 0) > 0 || payload?.blockingReason === "promote_cooldown") {
           const retrySeconds = Math.max(1, payload?.retryAfterSeconds ?? 0);
@@ -377,7 +391,14 @@ export default function PromoteToProductionCard({
       router.refresh();
     } catch {
       setStatus("error");
-      setMessage("Network error while promoting staging to production.");
+      setMessage(
+        "Lost the connection while promoting. The promote may still be running: check the latest attempt below before trying again."
+      );
+      try {
+        await pollDeployments();
+      } catch {
+        // Status stays as reported; the next poll will catch up.
+      }
     }
   }
 
