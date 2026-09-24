@@ -79,7 +79,8 @@ function PlanSelectButton({
   );
 }
 
-function PlanCard({ plan }: { plan: TierPlan }) {
+function PlanCard({ plan, isAnnual }: { plan: TierPlan; isAnnual: boolean }) {
+  const displayPrice = isAnnual ? Math.round(plan.annualPrice / 12) : plan.monthlyPrice;
   return (
     <article
       className={cx(
@@ -106,11 +107,17 @@ function PlanCard({ plan }: { plan: TierPlan }) {
         <h2 className="hosting-plan__name text-[1.4rem]">{plan.name}</h2>
         <p className="hosting-plan__blurb text-[0.88rem] min-h-[38px]">{plan.blurb}</p>
         <div className="hosting-plan__price my-3">
-          <span className="text-[2rem] font-bold text-[#14231c]">${plan.monthlyPrice}</span>
+          <span className="text-[2rem] font-bold text-[#14231c]">${displayPrice}</span>
           <small className="text-muted text-[0.85rem]"> / month</small>
-          <div className="text-[0.78rem] text-emerald-700 font-semibold mt-0.5">
-            or ${plan.annualPrice} / yr (Save 2 months)
-          </div>
+          {isAnnual ? (
+            <div className="text-[0.78rem] text-emerald-700 font-semibold mt-0.5">
+              Billed annually at ${plan.annualPrice}/yr
+            </div>
+          ) : (
+            <div className="text-[0.78rem] text-muted mt-0.5">
+              Billed monthly, no lock-in
+            </div>
+          )}
         </div>
 
         {/* Compute Specs Box */}
@@ -127,6 +134,12 @@ function PlanCard({ plan }: { plan: TierPlan }) {
             <strong>Support:</strong> {plan.supportSla}
             <br />
             <strong>Dev Time:</strong> {plan.devHours}
+            {plan.uptimeNote ? (
+              <>
+                <br />
+                <strong>Uptime:</strong> {plan.uptimeNote}
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -150,6 +163,7 @@ function PlanCard({ plan }: { plan: TierPlan }) {
 }
 
 export default function PricingPage() {
+  const [isAnnual, setIsAnnual] = useState<boolean>(false);
   const [mobileSelectedTier, setMobileSelectedTier] = useState<string>("pro");
   const [mobileSearchQuery, setMobileSearchQuery] = useState<string>("");
   const [mobileViewMode, setMobileViewMode] = useState<"dynamic" | "table">("dynamic");
@@ -208,42 +222,73 @@ export default function PricingPage() {
           human-readable domains (<code className="bg-[#eef1f1] px-1 py-0.5 rounded text-[0.85rem]">[slug].mfts.link</code>), 
           and developer hours included on managed tiers.
         </p>
+
+        {/* Monthly / Annual billing toggle */}
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <div className="inline-flex rounded-lg border border-solid border-[#dde1e1] p-1 bg-[#f8f9f9]">
+            <button
+              type="button"
+              onClick={() => setIsAnnual(false)}
+              className={cx(
+                "px-4 py-1.5 text-[0.85rem] font-semibold rounded-md transition-all",
+                !isAnnual ? "bg-[#1e332a] text-white shadow-sm" : "text-[#6c7778]"
+              )}
+            >
+              Monthly Billing
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAnnual(true)}
+              className={cx(
+                "px-4 py-1.5 text-[0.85rem] font-semibold rounded-md transition-all",
+                isAnnual ? "bg-[#1e332a] text-white shadow-sm" : "text-[#6c7778]"
+              )}
+            >
+              Yearly Billing
+            </button>
+          </div>
+          {isAnnual ? (
+            <span className="text-[0.8rem] font-semibold text-emerald-700">
+              🎉 Save 2 months (~20% off annual plans)
+            </span>
+          ) : null}
+        </div>
       </section>
 
       {/* SECTION 1: TWO HOSTING TIERS */}
       <section className="hosting-section pt-0 pb-10">
-        <div className="mb-6">
+        <div className="mb-6 text-center">
           <div className="inline-block text-[0.8rem] font-bold uppercase tracking-wider text-[#4f8a2f] bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
             Hosting Tiers · Cloud Infrastructure
           </div>
-          <h2 className="hosting-h2 text-left mt-2 mb-1">Standard Cloud Workloads</h2>
-          <p className="hosting-body text-left text-muted">
+          <h2 className="hosting-h2 mt-2 mb-1">Standard Cloud Workloads</h2>
+          <p className="hosting-body max-w-[620px] mx-auto text-[#4b5556]">
             Engineered for static sites, WordPress, Next.js/React applications, and full-stack projects.
           </p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6 items-stretch">
           {HOSTING_TIERS.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} />
+            <PlanCard key={plan.id} plan={plan} isAnnual={isAnnual} />
           ))}
         </div>
       </section>
 
       {/* SECTION 2: TWO SLA TIERS */}
       <section className="hosting-section pt-0 pb-14">
-        <div className="mb-6">
+        <div className="mb-6 text-center">
           <div className="inline-block text-[0.8rem] font-bold uppercase tracking-wider text-[#d4af37] bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
             SLA Tiers · Managed Agency & Enterprise
           </div>
-          <h2 className="hosting-h2 text-left mt-2 mb-1">Managed Agency & Mission-Critical SLA</h2>
-          <p className="hosting-body text-left text-muted">
+          <h2 className="hosting-h2 mt-2 mb-1">Managed Agency & Mission-Critical SLA</h2>
+          <p className="hosting-body max-w-[620px] mx-auto text-[#4b5556]">
             For multi-site portfolios, agencies, and high-traffic platforms requiring developer hours, priority response windows, and uptime guarantees.
           </p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6 items-stretch">
           {SLA_TIERS.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} />
+            <PlanCard key={plan.id} plan={plan} isAnnual={isAnnual} />
           ))}
         </div>
       </section>

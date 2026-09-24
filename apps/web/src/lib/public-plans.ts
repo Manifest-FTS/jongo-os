@@ -32,6 +32,8 @@ export type TierPlan = {
   devHours: string;
   supportSla: string;
   uptimeGuarantee?: string;
+  /** Plain-text uptime expectation for tiers that don't carry a credited SLA badge. */
+  uptimeNote?: string;
   features: string[];
   featured?: boolean;
   badge?: string;
@@ -60,6 +62,7 @@ export const HOSTING_TIERS: TierPlan[] = [
     },
     devHours: "0 Hours Included",
     supportSla: "Standard Ticketing (48-hr response)",
+    uptimeNote: "~99.5% expected uptime (best-effort, no SLA credits)",
     features: [
       "2 GB RAM / 1 vCPU (Shared)",
       "250 GB Egress / 25 GB SSD Storage",
@@ -94,8 +97,9 @@ export const HOSTING_TIERS: TierPlan[] = [
       bandwidth: "500 GB Egress Bandwidth",
       storage: "50 GB SSD Storage"
     },
-    devHours: "3 Dev Hours / Quarter",
+    devHours: "1 Dev Hour / Month",
     supportSla: "Priority SLA (24-hr response)",
+    uptimeNote: "~99.9% expected uptime (best-effort, no SLA credits)",
     features: [
       "4 GB RAM / 2 vCPUs (Dedicated allocation)",
       "500 GB Egress / 50 GB SSD Storage",
@@ -103,7 +107,7 @@ export const HOSTING_TIERS: TierPlan[] = [
       "Custom Docker & Compose configurations",
       "Automated database snapshotting",
       "Environment variable encryption & protection",
-      "3 dev hours per quarter included (use-it-or-lose-it)",
+      "1 dev hour per month included (use-it-or-lose-it)",
       "Priority 24-hour response SLA"
     ],
     overageRates: {
@@ -132,7 +136,7 @@ export const SLA_TIERS: TierPlan[] = [
       bandwidth: "1 TB Egress Bandwidth",
       storage: "100 GB SSD Storage"
     },
-    devHours: "1 Dev Hour / Month",
+    devHours: "2 Dev Hours / Month",
     supportSla: "Next-Business-Day SLA (12-hr window)",
     uptimeGuarantee: "99.9% Uptime Guarantee",
     features: [
@@ -143,7 +147,7 @@ export const SLA_TIERS: TierPlan[] = [
       "cPanel / legacy redirect migration management",
       "Domain & DNS portfolio maintenance",
       "Quarterly security & vulnerability audits",
-      "1 dev hour per month included",
+      "2 dev hours per month included",
       "12-hour Next-Business-Day response SLA",
       "99.9% Uptime Guarantee with SLA credits",
       "Itemized domain/SSL pass-through billing support"
@@ -170,7 +174,7 @@ export const SLA_TIERS: TierPlan[] = [
       bandwidth: "2 TB Egress Bandwidth",
       storage: "250 GB SSD Storage"
     },
-    devHours: "3 Dev Hours / Month ($270-$360 value)",
+    devHours: "4 Dev Hours / Month ($360+ value)",
     supportSla: "4-Hour Emergency SLA (24/7 Response)",
     uptimeGuarantee: "99.99% Uptime SLA",
     features: [
@@ -181,7 +185,7 @@ export const SLA_TIERS: TierPlan[] = [
       "High-concurrency database optimization",
       "Multi-region failover configurations",
       "Staging-to-production automated parity testing",
-      "3 dev hours per month included",
+      "4 dev hours per month included",
       "4-Hour Emergency SLA (24/7 critical response)",
       "Dedicated private Slack channel + direct phone/text line",
       "99.99% Uptime SLA backed by service credits"
@@ -261,9 +265,9 @@ export const PRICING_MATRIX_ROWS: MatrixRow[] = [
     metric: "Included Dev Time",
     category: "Support & SLA",
     starter: "0 Hours",
-    pro: "3 Hours / Qtr",
-    coreSla: "1 Hour / Month",
-    enterpriseSla: "3 Hours / Month",
+    pro: "1 Hour / Mo",
+    coreSla: "2 Hours / Mo",
+    enterpriseSla: "4 Hours / Mo",
     highlight: true
   },
   {
@@ -376,7 +380,7 @@ export const COMPARISON: ComparisonGroup[] = [
   {
     group: "Developer Time & SLA",
     rows: [
-      { label: "Included Dev Hours", starter: "0 Hours", pro: "3 Hours / Qtr", coreSla: "1 Hour / Mo", enterpriseSla: "3 Hours / Mo" },
+      { label: "Included Dev Hours", starter: "0 Hours", pro: "1 Hour / Mo", coreSla: "2 Hours / Mo", enterpriseSla: "4 Hours / Mo" },
       { label: "Support Response Window", starter: "48-Hour Email", pro: "24-Hour Priority", coreSla: "12-Hour Next-Day", enterpriseSla: "4-Hour Emergency (24/7)" },
       { label: "Uptime Commitment", starter: "99.5%", pro: "99.9%", coreSla: "99.9% Guaranteed", enterpriseSla: "99.99% + Credits" },
       { label: "Dedicated Slack Channel", starter: false, pro: false, coreSla: false, enterpriseSla: true },
@@ -387,23 +391,23 @@ export const COMPARISON: ComparisonGroup[] = [
 
 export const PRICING_FAQ: { q: string; a: string }[] = [
   {
-    q: "How does human-readable domain provisioning work?",
-    a: "Every project provisioned through Jongo defaults to clean [project-name].mfts.link format on production and staging-[project-name].mfts.link on staging, instead of raw Docker hash strings. You can link custom domains anytime."
+    q: "Do I get a real web address, or some random string?",
+    a: "Every site gets a clean, easy-to-share address like yourproject.mfts.link right out of the box — no confusing strings of letters and numbers. Staging copies get their own clearly labeled address too, so you always know which version you're looking at. Ready to use your own domain? You can connect it anytime from your dashboard."
   },
   {
-    q: "How do included dev hours work on Pro and SLA plans?",
-    a: "Included dev hours can be utilized for light updates, plugin maintenance, package upgrades, DNS changes, or performance tuning. On Pro Cloud, 3 hours are allotted quarterly. On SLA plans, dev hours refresh monthly."
+    q: "How do the included support hours work?",
+    a: "Every plan above Starter includes a set number of hours each month for small requests — things like content updates, plugin or package updates, DNS changes, or performance tuning. Hours refresh monthly and don't roll over, so use them when you need them. Need more time in a given month? You can always add extra hours at your plan's ad-hoc rate."
   },
   {
-    q: "How are overages calculated and billed?",
-    a: "Bandwidth and storage overages are tracked in 1 GB increments with no surprise spikes. You will see warning alerts in your Jongo dashboard at 80% usage before any overage fees apply."
+    q: "What happens if I go over my bandwidth or storage?",
+    a: "We track usage in small, transparent increments and never charge a surprise fee. You'll get a heads-up in your dashboard once you hit 80% of your included bandwidth or storage, and any overage after that is billed at your plan's flat per-GB rate."
   },
   {
-    q: "What is the difference between Hosting and SLA tiers?",
-    a: "Hosting tiers provide self-hosted compute and platform tooling. SLA tiers add dedicated developer oversight, faster response windows (down to 4-hour 24/7 emergency response), and direct Slack/phone channels."
+    q: "What's the real difference between a Hosting plan and an SLA plan?",
+    a: "Hosting plans (Starter, Pro) give you reliable infrastructure and platform tooling, with best-effort uptime and standard support response windows. SLA plans (Core, Enterprise) add a formal uptime guarantee backed by service credits, faster guaranteed response times, more included support hours, and a direct line to our team — built for teams that can't afford downtime."
   },
   {
-    q: "Is there any long-term contract or seat fee?",
-    a: "No seat fees (unlimited collaborators on all plans) and no minimum term. You can switch between monthly and annual billing (save ~2 months on annual) or cancel at any time."
+    q: "Am I locked into a contract?",
+    a: "No contracts, no per-seat fees, and no minimum term on any plan. Pay monthly for flexibility, or switch to annual billing to save the equivalent of two months. You can change plans or cancel anytime from your account."
   }
 ];
