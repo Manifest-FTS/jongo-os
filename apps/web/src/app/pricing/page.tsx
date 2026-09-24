@@ -20,7 +20,8 @@ function PlanCard({ plan }: { plan: TierPlan }) {
       className={cx(
         card,
         "p-[26px] relative flex flex-col justify-between",
-        plan.featured && "border-2 border-solid border-[#8dc267] shadow-featured"
+        // Matches .sg-plan-card.featured in the style guide: accent-strong border + green-tinted shadow.
+        plan.featured && "border-2 border-solid border-accent-strong shadow-[0_14px_34px_rgba(127,180,92,0.18)]"
       )}
     >
       {plan.badge ? (
@@ -164,7 +165,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6 items-stretch max-w-4xl">
+        <div className="grid md:grid-cols-2 gap-6 items-stretch">
           {HOSTING_TIERS.map((plan) => (
             <PlanCard key={plan.id} plan={plan} />
           ))}
@@ -183,7 +184,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6 items-stretch max-w-4xl">
+        <div className="grid md:grid-cols-2 gap-6 items-stretch">
           {SLA_TIERS.map((plan) => (
             <PlanCard key={plan.id} plan={plan} />
           ))}
