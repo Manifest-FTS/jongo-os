@@ -8,6 +8,31 @@ import BrandLogo from "@/components/BrandLogo";
 import SelectedPlanNotice from "@/components/SelectedPlanNotice";
 import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
 import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
+import { ALL_PLANS } from "@/lib/public-plans";
+
+/**
+ * Reads `?plan=` off `window.location` instead of `useSearchParams()` so this
+ * function can live outside the Suspense boundary that guards the form (see
+ * SelectedPlanNotice) without opting the page out of static prerendering.
+ */
+async function startCheckoutForSelectedPlan(): Promise<string | null> {
+  const planId = new URLSearchParams(window.location.search).get("plan");
+  if (!planId || !ALL_PLANS.some((plan) => plan.id === planId)) {
+    return null;
+  }
+
+  try {
+    const response = await fetch("/api/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId })
+    });
+    const payload = await response.json();
+    return response.ok && typeof payload?.url === "string" ? payload.url : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -62,6 +87,14 @@ export default function RegisterPage() {
         }
 
         setError(getCredentialSignInErrorMessage(result.error));
+        return;
+      }
+
+      // A plan was carried in from /pricing: send the new account straight to
+      // Stripe Checkout rather than dropping it into the dashboard unpaid.
+      const checkoutUrl = await startCheckoutForSelectedPlan();
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
         return;
       }
 
