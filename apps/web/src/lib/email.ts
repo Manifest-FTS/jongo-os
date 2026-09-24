@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { renderTransactionalEmail } from "./email-layout";
 
 export type EmailProviderMode = "disabled" | "smtp" | "smtp2go_api";
 
@@ -164,32 +165,19 @@ export async function sendInviteEmail(input: {
     "If you did not expect this invite, ignore this email."
   ].join("\n");
 
-  const html = [
-    "<div style=\"margin:0;padding:24px;background:#f3f8ef;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#1f2937;\">",
-    "  <table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" width=\"100%\" style=\"max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #d8e3d4;border-radius:16px;overflow:hidden;\">",
-    "    <tr>",
-    "      <td style=\"padding:18px 22px;background:linear-gradient(120deg,#eef8e6 0%,#fff6f0 55%,#f3f9ff 100%);border-bottom:1px solid #e2ece4;\">",
-    "        <div style=\"font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#4b6352;font-weight:700;\">Manifest FTS</div>",
-    "        <div style=\"margin-top:4px;font-size:22px;line-height:1.2;color:#102a1d;font-weight:800;\">Jongo</div>",
-    "      </td>",
-    "    </tr>",
-    "    <tr>",
-    "      <td style=\"padding:24px 22px 12px;\">",
-    `        <h1 style=\"margin:0 0 10px;font-size:22px;line-height:1.25;color:#102a1d;\">You are invited to join ${escapeHtml(input.scopeLabel)}</h1>`,
-    `        <p style=\"margin:0 0 16px;font-size:14px;line-height:1.5;color:#425466;\">Your access level is <strong style=\"color:#173f2d;\">${escapeHtml(input.role)}</strong>.</p>`,
-    `        <a href=\"${escapeHtml(input.inviteUrl)}\" style=\"display:inline-block;padding:12px 18px;border-radius:10px;background:#1f6f4a;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;\">Accept invitation</a>`,
-    "      </td>",
-    "    </tr>",
-    "    <tr>",
-    "      <td style=\"padding:14px 22px 20px;\">",
-    `        <p style=\"margin:0 0 8px;font-size:12px;color:#5f6f66;\">Expires: ${escapeHtml(expiry)}</p>`,
-    `        <p style=\"margin:0 0 10px;font-size:12px;color:#5f6f66;word-break:break-all;\">Invite URL: ${escapeHtml(input.inviteUrl)}</p>`,
-    "        <p style=\"margin:0;font-size:12px;color:#7b8794;\">If you did not expect this invite, you can safely ignore this email.</p>",
-    "      </td>",
-    "    </tr>",
-    "  </table>",
-    "</div>"
-  ].join("");
+  const html = renderTransactionalEmail({
+    preheader: `You've been invited to join ${input.scopeLabel} as ${input.role}.`,
+    badge: { tone: "info", label: "Team invitation" },
+    title: `You're invited to join ${input.scopeLabel}`,
+    intro: `You've been invited to join ${input.scopeLabel} on Jongo.`,
+    rows: [
+      { label: "Workspace", value: input.scopeLabel },
+      { label: "Role", value: input.role },
+      { label: "Expires", value: expiry }
+    ],
+    cta: { label: "Accept invitation", url: input.inviteUrl },
+    footnote: "If you did not expect this invite, you can safely ignore this email."
+  });
 
   return sendTransactionalEmail({
     to: input.to,
@@ -206,7 +194,18 @@ export async function sendInviteAcceptedEmail(input: {
 }): Promise<EmailResult> {
   const subject = `Invitation accepted for ${input.scopeLabel}`;
   const text = `${input.acceptedByEmail} accepted an invitation for ${input.scopeLabel}.`;
-  const html = `<p><strong>${escapeHtml(input.acceptedByEmail)}</strong> accepted an invitation for <strong>${escapeHtml(input.scopeLabel)}</strong>.</p>`;
+
+  const html = renderTransactionalEmail({
+    preheader: `${input.acceptedByEmail} accepted an invitation for ${input.scopeLabel}.`,
+    badge: { tone: "success", label: "Invitation accepted" },
+    title: `${input.acceptedByEmail} joined ${input.scopeLabel}`,
+    intro: `${input.acceptedByEmail} accepted their invitation and now has access to ${input.scopeLabel}.`,
+    rows: [
+      { label: "Workspace", value: input.scopeLabel },
+      { label: "New member", value: input.acceptedByEmail }
+    ],
+    footnote: "You're receiving this because you manage this workspace on Jongo."
+  });
 
   return sendTransactionalEmail({
     to: input.to,
@@ -232,16 +231,24 @@ export async function sendPasswordResetEmail(input: {
     "If you did not request this, you can safely ignore this email. Your password will not change."
   ].join("\n");
 
-  const html = [
-    "<p>You requested a password reset for your Jongo account.</p>",
-    `<p><a href="${escapeHtml(input.resetUrl)}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;font-weight:600;">Reset password</a></p>`,
-    `<p>Or copy this link: <code>${escapeHtml(input.resetUrl)}</code></p>`,
-    `<p style="color:#6b7280;font-size:0.9em;">This link expires at ${escapeHtml(expiry)}.</p>`,
-    `<p style="color:#6b7280;font-size:0.9em;">If you did not request this, you can safely ignore this email.</p>`
-  ].join("");
+  const html = renderTransactionalEmail({
+    preheader: `Reset link expires ${expiry}.`,
+    badge: { tone: "warning", label: "Password reset requested" },
+    title: "Reset your Jongo password",
+    intro: "We received a request to reset the password for your Jongo account.",
+    rows: [{ label: "Expires", value: expiry }],
+    cta: { label: "Reset password", url: input.resetUrl },
+    callout: {
+      tone: "info",
+      title: "Didn't request this?",
+      body: "You can safely ignore this email — your password will not change unless you open the link above."
+    },
+    footnote: "If you did not request this, no action is needed."
+  });
 
   return sendTransactionalEmail({ to: input.to, subject, text, html });
 }
+
 
 function escapeHtml(value: string): string {
   return value
