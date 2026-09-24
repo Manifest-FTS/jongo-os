@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import {
   HOSTING_TIERS,
   SLA_TIERS,
@@ -13,6 +14,70 @@ import {
 } from "@/lib/public-plans";
 import { COMPANY_NAME, currentYear } from "@/lib/public-site";
 import { btnPrimary, btnSecondary, card, cx, publicPage } from "@/lib/public-ui";
+import { showErrorToast } from "@/lib/ui/toast";
+
+/**
+ * Signed-in visitors skip the registration form and go straight through
+ * Checkout for their existing account; signed-out visitors still land on
+ * /auth/register?plan=, which starts Checkout right after the account is
+ * created (see auth/register/page.tsx).
+ */
+function PlanSelectButton({
+  plan,
+  className,
+  label
+}: {
+  plan: TierPlan;
+  className?: string;
+  label?: string;
+}) {
+  const { data: session, status } = useSession();
+  const [pending, setPending] = useState(false);
+
+  const buttonClass = className ?? cx(
+    plan.featured ? btnPrimary : btnSecondary,
+    "flex items-center justify-center px-[18px] py-2.5 text-[14.5px] mb-5 w-full text-center"
+  );
+  const text = label ?? `Select ${plan.name}`;
+
+  if (status === "authenticated" && session?.user) {
+    return (
+      <button
+        type="button"
+        disabled={pending}
+        className={cx(buttonClass, pending && "opacity-70 cursor-not-allowed")}
+        onClick={async () => {
+          setPending(true);
+          try {
+            const response = await fetch("/api/billing/checkout", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ planId: plan.id })
+            });
+            const payload = await response.json();
+            if (!response.ok || typeof payload?.url !== "string") {
+              showErrorToast(payload?.error || "Could not start checkout. Please try again.");
+              setPending(false);
+              return;
+            }
+            window.location.href = payload.url;
+          } catch {
+            showErrorToast("Could not start checkout. Please try again.");
+            setPending(false);
+          }
+        }}
+      >
+        {pending ? "Starting checkout…" : text}
+      </button>
+    );
+  }
+
+  return (
+    <Link href={`/auth/register?plan=${plan.id}`} className={buttonClass}>
+      {text}
+    </Link>
+  );
+}
 
 function PlanCard({ plan }: { plan: TierPlan }) {
   return (
@@ -58,22 +123,14 @@ function PlanCard({ plan }: { plan: TierPlan }) {
             <br />
             • {plan.compute.storage}
           </div>
-          <div className="mt-2 pt-2 border-t border-solid border-[#dde1e1] text-[#1e332a] font-medium">
+          <div className="mt-2.5 text-[#1e332a] font-medium">
             <strong>Support:</strong> {plan.supportSla}
             <br />
             <strong>Dev Time:</strong> {plan.devHours}
           </div>
         </div>
 
-        <Link
-          href={`/auth/register?plan=${plan.id}`}
-          className={cx(
-            plan.featured ? btnPrimary : btnSecondary,
-            "flex items-center justify-center px-[18px] py-2.5 text-[14.5px] mb-5 w-full text-center"
-          )}
-        >
-          Select {plan.name}
-        </Link>
+        <PlanSelectButton plan={plan} />
 
         <ul className="hosting-plan__features text-[0.84rem]">
           {plan.features.map((item) => (
@@ -85,7 +142,7 @@ function PlanCard({ plan }: { plan: TierPlan }) {
         </ul>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-dashed border-[#dde1e1] text-[0.75rem] text-muted">
+      <div className="mt-4 text-[0.75rem] text-muted">
         Overages: {plan.overageRates.bandwidth} bandwidth · {plan.overageRates.storage} SSD · {plan.overageRates.adHocDev} ad-hoc dev
       </div>
     </article>
@@ -288,12 +345,11 @@ export default function PricingPage() {
                     ))}
                   </div>
 
-                  <Link
-                    href={`/auth/register?plan=${mobileSelectedTier}`}
+                  <PlanSelectButton
+                    plan={currentMobilePlan}
                     className={cx(btnPrimary, "mt-4 w-full text-center block py-2.5 text-[0.9rem]")}
-                  >
-                    Select {currentMobilePlan.name} →
-                  </Link>
+                    label={`Select ${currentMobilePlan.name} \u2192`}
+                  />
                 </div>
               ) : (
                 /* Full scrolling table for mobile when explicitly chosen */

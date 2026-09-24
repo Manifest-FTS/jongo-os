@@ -124,6 +124,13 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Same reasoning as the Coolify webhook above: Stripe authenticates itself
+  // via the raw-body signature (see api/billing/webhook/route.ts), so gating
+  // it on a session here would turn every delivery into a 307 to /auth/login.
+  if (pathname === "/api/billing/webhook") {
+    return NextResponse.next();
+  }
+
   // Result callbacks from the backup/restore scripts. These run detached on the
   // server and report back with a machine token — without them listed here the
   // middleware redirects the POST to /login (307), the result is never recorded,

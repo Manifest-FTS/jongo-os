@@ -52,6 +52,16 @@ model User {
   authProvider    String? // 'local', 'github', 'google', etc.
   authProviderId  String? // external provider ID
 
+  // Billing (Stripe). Subscription is per-account, not per-organization: a
+  // user's plan caps the usage across every client/org they create, so there
+  // is one subscription to track here rather than one per Organization.
+  stripeCustomerId             String?   @unique
+  stripeSubscriptionId         String?   @unique
+  subscriptionPlanId           String? // TierPlan.id from lib/public-plans.ts
+  subscriptionInterval         String? // 'monthly' | 'annual'
+  subscriptionStatus           String? // Stripe subscription status, e.g. 'active', 'past_due', 'canceled'
+  subscriptionCurrentPeriodEnd DateTime?
+
   // Relations
   profileSettings      UserProfileSettings?
   organizations        Organization[]
