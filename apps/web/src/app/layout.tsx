@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import AppToaster from "@/components/AppToaster";
+import SessionProviderWrapper from "@/components/SessionProviderWrapper";
 
 export const metadata: Metadata = {
   title: "Jongo",
@@ -14,9 +15,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        {children}
-        <AppToaster />
+        <SessionProviderWrapper>
+          {children}
+          <AppToaster />
+        </SessionProviderWrapper>
       </body>
     </html>
   );
 }
+
