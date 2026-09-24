@@ -123,7 +123,7 @@ function PlanCard({ plan }: { plan: TierPlan }) {
             <br />
             • {plan.compute.storage}
           </div>
-          <div className="mt-2 pt-2 border-t border-solid border-[#dde1e1] text-[#1e332a] font-medium">
+          <div className="mt-2.5 text-[#1e332a] font-medium">
             <strong>Support:</strong> {plan.supportSla}
             <br />
             <strong>Dev Time:</strong> {plan.devHours}
@@ -142,7 +142,7 @@ function PlanCard({ plan }: { plan: TierPlan }) {
         </ul>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-dashed border-[#dde1e1] text-[0.75rem] text-muted">
+      <div className="mt-4 text-[0.75rem] text-muted">
         Overages: {plan.overageRates.bandwidth} bandwidth · {plan.overageRates.storage} SSD · {plan.overageRates.adHocDev} ad-hoc dev
       </div>
     </article>
