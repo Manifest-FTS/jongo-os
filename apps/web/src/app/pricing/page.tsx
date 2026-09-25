@@ -200,9 +200,6 @@ export default function PricingPage() {
           <span>Jongo</span>
         </Link>
         <div className="hosting-nav__actions">
-          <Link href="/style-guide" className="hosting-nav__signin text-[0.88rem] font-semibold text-[#4f8a2f]">
-            Style Guide
-          </Link>
           <Link href="/contact" className="hosting-nav__signin">
             Contact
           </Link>
@@ -510,7 +507,6 @@ export default function PricingPage() {
         <div className="hosting-footer__links">
           <Link href="/hosting">Hosting</Link>
           <Link href="/pricing">Pricing</Link>
-          <Link href="/style-guide">Style Guide</Link>
           <Link href="/contact">Contact</Link>
         </div>
       </footer>
