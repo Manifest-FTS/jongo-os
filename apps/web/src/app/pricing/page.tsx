@@ -24,10 +24,12 @@ import { showErrorToast } from "@/lib/ui/toast";
  */
 function PlanSelectButton({
   plan,
+  isAnnual,
   className,
   label
 }: {
   plan: TierPlan;
+  isAnnual: boolean;
   className?: string;
   label?: string;
 }) {
@@ -52,7 +54,7 @@ function PlanSelectButton({
             const response = await fetch("/api/billing/checkout", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ planId: plan.id })
+              body: JSON.stringify({ planId: plan.id, interval: isAnnual ? "annual" : "monthly" })
             });
             const payload = await response.json();
             if (!response.ok || typeof payload?.url !== "string") {
@@ -73,7 +75,7 @@ function PlanSelectButton({
   }
 
   return (
-    <Link href={`/auth/register?plan=${plan.id}`} className={buttonClass}>
+    <Link href={`/auth/register?plan=${plan.id}&interval=${isAnnual ? "annual" : "monthly"}`} className={buttonClass}>
       {text}
     </Link>
   );
@@ -143,7 +145,7 @@ function PlanCard({ plan, isAnnual }: { plan: TierPlan; isAnnual: boolean }) {
           </div>
         </div>
 
-        <PlanSelectButton plan={plan} />
+        <PlanSelectButton plan={plan} isAnnual={isAnnual} />
 
         <ul className="hosting-plan__features text-[0.84rem]">
           {plan.features.map((item) => (
@@ -163,7 +165,7 @@ function PlanCard({ plan, isAnnual }: { plan: TierPlan; isAnnual: boolean }) {
 }
 
 export default function PricingPage() {
-  const [isAnnual, setIsAnnual] = useState<boolean>(false);
+  const [isAnnual, setIsAnnual] = useState<boolean>(true);
   const [mobileSelectedTier, setMobileSelectedTier] = useState<string>("pro");
   const [mobileSearchQuery, setMobileSearchQuery] = useState<string>("");
   const [mobileViewMode, setMobileViewMode] = useState<"dynamic" | "table">("dynamic");
@@ -215,42 +217,34 @@ export default function PricingPage() {
 
       <section className="pricing-head">
         <h1 className="hosting-h1 text-[clamp(1.9rem,1.3rem+2vw,2.75rem)]">
-          Transparent Hosting & Managed SLA Tiers
+          Transparent Pricing Matrix
         </h1>
         <p className="hosting-lede max-w-[680px] mx-auto">
-          Operator-grade self-hosted infrastructure. Zero surprise overages, included staging environments, 
-          human-readable domains (<code className="bg-[#eef1f1] px-1 py-0.5 rounded text-[0.85rem]">[slug].mfts.link</code>), 
-          and developer hours included on managed tiers.
+          Two transparent cloud hosting tiers and two high-assurance managed SLA tiers. All plans include
+          unlimited projects, automated staging, wildcard SSL, daily offsite backups, and zero per-seat fees.
         </p>
 
-        {/* Monthly / Annual billing toggle */}
-        <div className="mt-6 flex flex-col items-center gap-2">
-          <div className="inline-flex rounded-lg border border-solid border-[#dde1e1] p-1 bg-[#f8f9f9]">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <div className="sg-billing-switcher">
             <button
               type="button"
               onClick={() => setIsAnnual(false)}
-              className={cx(
-                "px-4 py-1.5 text-[0.85rem] font-semibold rounded-md transition-all",
-                !isAnnual ? "bg-[#1e332a] text-white shadow-sm" : "text-[#6c7778]"
-              )}
+              aria-pressed={!isAnnual}
+              className={cx("sg-billing-btn", !isAnnual && "active")}
             >
               Monthly Billing
             </button>
             <button
               type="button"
               onClick={() => setIsAnnual(true)}
-              className={cx(
-                "px-4 py-1.5 text-[0.85rem] font-semibold rounded-md transition-all",
-                isAnnual ? "bg-[#1e332a] text-white shadow-sm" : "text-[#6c7778]"
-              )}
+              aria-pressed={isAnnual}
+              className={cx("sg-billing-btn", isAnnual && "active")}
             >
               Yearly Billing
             </button>
           </div>
           {isAnnual ? (
-            <span className="text-[0.8rem] font-semibold text-emerald-700">
-              🎉 Save 2 months (~20% off annual plans)
-            </span>
+            <span className="sg-discount-tag">🎉 Save 2 Months (~20% off annual plans)</span>
           ) : null}
         </div>
       </section>
@@ -259,7 +253,7 @@ export default function PricingPage() {
       <section className="hosting-section pt-0 pb-10">
         <div className="mb-6 text-center">
           <div className="inline-block text-[0.8rem] font-bold uppercase tracking-wider text-[#4f8a2f] bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-            Hosting Tiers · Cloud Infrastructure
+            Two Cloud Hosting Tiers
           </div>
           <h2 className="hosting-h2 mt-2 mb-1">Standard Cloud Workloads</h2>
           <p className="hosting-body max-w-[620px] mx-auto text-[#4b5556]">
@@ -369,8 +363,9 @@ export default function PricingPage() {
                         <h4 className="text-[1.1rem] font-bold text-[#14231c] m-0">{currentMobilePlan.name}</h4>
                       </div>
                       <div className="text-right">
-                        <span className="text-[1.3rem] font-bold text-[#14231c]">${currentMobilePlan.monthlyPrice}</span>
+                        <span className="text-[1.3rem] font-bold text-[#14231c]">${isAnnual ? Math.round(currentMobilePlan.annualPrice / 12) : currentMobilePlan.monthlyPrice}</span>
                         <small className="text-muted block text-[11px]">/month</small>
+                        {isAnnual && <small className="text-muted block text-[11px]">Billed ${currentMobilePlan.annualPrice}/yr</small>}
                       </div>
                     </div>
                   </div>
@@ -392,6 +387,7 @@ export default function PricingPage() {
 
                   <PlanSelectButton
                     plan={currentMobilePlan}
+                    isAnnual={isAnnual}
                     className={cx(btnPrimary, "mt-4 w-full text-center block py-2.5 text-[0.9rem]")}
                     label={`Select ${currentMobilePlan.name} \u2192`}
                   />

@@ -767,46 +767,6 @@
 /* NEW SECTIONS: USAGE VISUALIZATIONS & SUBSCRIPTIONS / PRICING */
 /* ============================================================ */
 
-/* Billing Toggle */
-.sg-billing-switcher {
-  display: inline-flex;
-  align-items: center;
-  background: #ffffff;
-  padding: 0.3rem;
-  border-radius: 9999px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  gap: 0.35rem;
-}
-
-.sg-billing-btn {
-  border: none;
-  background: transparent;
-  padding: 0.5rem 1.15rem;
-  border-radius: 9999px;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: #6c7778;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.sg-billing-btn.active {
-  background: #1e332a;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(30, 51, 42, 0.25);
-}
-
-.sg-discount-tag {
-  background: rgba(16, 185, 129, 0.15);
-  color: #065f46;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.2rem 0.6rem;
-  border-radius: 9999px;
-}
-
 /* Pricing Grid */
 .sg-pricing-grid {
   display: grid;
