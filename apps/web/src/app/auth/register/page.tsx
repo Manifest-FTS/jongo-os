@@ -16,7 +16,9 @@ import { ALL_PLANS } from "@/lib/public-plans";
  * SelectedPlanNotice) without opting the page out of static prerendering.
  */
 async function startCheckoutForSelectedPlan(): Promise<string | null> {
-  const planId = new URLSearchParams(window.location.search).get("plan");
+  const params = new URLSearchParams(window.location.search);
+  const planId = params.get("plan");
+  const interval = params.get("interval") === "annual" ? "annual" : "monthly";
   if (!planId || !ALL_PLANS.some((plan) => plan.id === planId)) {
     return null;
   }
@@ -25,7 +27,7 @@ async function startCheckoutForSelectedPlan(): Promise<string | null> {
     const response = await fetch("/api/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planId })
+      body: JSON.stringify({ planId, interval })
     });
     const payload = await response.json();
     return response.ok && typeof payload?.url === "string" ? payload.url : null;
