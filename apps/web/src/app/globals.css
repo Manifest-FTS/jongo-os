@@ -14,6 +14,9 @@
 @tailwind components;
 
 :root {
+  /* Light only, on purpose: see the viewport note in app/layout.tsx. Stops
+     phone dark modes from recolouring the page into unreadable contrast. */
+  color-scheme: only light;
   --bg: #f4f5f5;
   --surface: #ffffff;
   --surface-alt: #f8f9f9;
@@ -56,6 +59,21 @@ h3 {
 
 a {
   color: inherit;
+}
+
+/* Form controls without a class fall back to the browser's own colours, which
+   follow the phone's dark mode. Pin them to the light palette like the rest;
+   any class that sets its own colours still wins. */
+input,
+select,
+textarea {
+  color: var(--text);
+  background-color: var(--surface);
+}
+
+::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
 main {

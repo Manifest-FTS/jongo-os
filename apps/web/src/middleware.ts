@@ -3,6 +3,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const PUBLIC_PATHS = [
+  // Crawler and AI-assistant files (app/robots.ts, sitemap.ts, llms*.txt,
+  // opengraph-image). They redirected to the sign-in page before, so search
+  // engines and assistants saw a login form instead of the site map.
+  "/robots.txt",
+  "/sitemap.xml",
+  "/llms.txt",
+  "/llms-full.txt",
+  "/opengraph-image",
   "/parked",
   // The public hosting signup page: the one surface someone with no account is
   // meant to land on, so it must never redirect to /auth/login.

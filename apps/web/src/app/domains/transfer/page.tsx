@@ -5,6 +5,8 @@ import { getPricesForTlds, getTldPricing, isRegistrarConfigured } from "@/lib/re
 import { COMPANY_NAME, RESPONSE_TIME, contactEmail, currentYear } from "@/lib/public-site";
 import { btnPrimary, btnSecondary, card, cardHealthy, cx, pill, publicPage } from "@/lib/public-ui";
 import PublicSiteHeader from "@/components/PublicSiteHeader";
+import JsonLd from "@/components/JsonLd";
+import { breadcrumbJsonLd, faqJsonLd, jsonLdGraph, pageMetadata, serviceJsonLd } from "@/lib/seo";
 
 /**
  * Public domain transfer page.
@@ -26,11 +28,11 @@ import PublicSiteHeader from "@/components/PublicSiteHeader";
  * and payment (Stripe) before Namecheap is asked to start the transfer.
  */
 
-export const metadata: Metadata = {
-  title: "Transfer a domain | Jongo",
-  description:
-    "Move your domain to Jongo. Transfers include a year's renewal, WHOIS privacy is free, and we fix what is broken on your site as part of moving you in."
-};
+export const metadata: Metadata = pageMetadata({
+  path: "/domains/transfer",
+  title: "Transfer a domain",
+  description: "Move your domain to Jongo: transfers include a year's renewal, WHOIS privacy is free, your site stays online, and we fix what is broken on it as part of moving you in."
+});
 
 export const dynamic = "force-dynamic";
 
@@ -111,6 +113,11 @@ export default async function DomainTransferPage({ searchParams }: Params) {
 
   return (
     <div className={publicPage}>
+      <JsonLd data={jsonLdGraph(
+          breadcrumbJsonLd([{ name: "Domains", path: "/domains" }, { name: "Transfer a domain", path: "/domains/transfer" }]),
+          serviceJsonLd({ path: "/domains/transfer", name: "Domain transfer", description: "Move your domain to Jongo: transfers include a year's renewal, WHOIS privacy is free, your site stays online, and we fix what is broken on it as part of moving you in.", serviceType: "Domain name transfer" }),
+          faqJsonLd(FAQ, "/domains/transfer")
+        )} />
       <PublicSiteHeader />
 
       <section className="pricing-head">

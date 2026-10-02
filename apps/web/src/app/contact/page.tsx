@@ -4,6 +4,8 @@ import ContactForm from "@/components/ContactForm";
 import { COMPANY_NAME, RESPONSE_TIME, contactEmail, currentYear } from "@/lib/public-site";
 import { btnPrimary, card, cx, publicPage } from "@/lib/public-ui";
 import PublicSiteHeader from "@/components/PublicSiteHeader";
+import JsonLd from "@/components/JsonLd";
+import { breadcrumbJsonLd, jsonLdGraph, organizationJsonLd, pageMetadata } from "@/lib/seo";
 
 /**
  * Public contact page.
@@ -13,11 +15,11 @@ import PublicSiteHeader from "@/components/PublicSiteHeader";
  * /api/contact.
  */
 
-export const metadata: Metadata = {
-  title: "Contact | Jongo",
-  description:
-    "Talk to us about migrating WordPress, Next.js, Nuxt or Node sites onto managed hosting — or ask about agency pricing."
-};
+export const metadata: Metadata = pageMetadata({
+  path: "/contact",
+  title: "Contact",
+  description: "Talk to the Jongo team about moving WordPress, Next.js, Nuxt or Node sites onto managed hosting, agency pricing, or a broken site that needs fixing today."
+});
 
 function buildRoutes(email: string): { title: string; body: string; action: React.ReactNode }[] {
   return [
@@ -49,6 +51,7 @@ export default function ContactPage() {
 
   return (
     <div className={publicPage}>
+      <JsonLd data={jsonLdGraph(organizationJsonLd(), breadcrumbJsonLd([{ name: "Contact", path: "/contact" }]))} />
       <PublicSiteHeader />
 
       <section className="contact-hero">

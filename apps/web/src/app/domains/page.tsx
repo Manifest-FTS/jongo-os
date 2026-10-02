@@ -6,6 +6,8 @@ import { checkAvailability, getPricesForTlds, getTldPricing, isRegistrarConfigur
 import { COMPANY_NAME, contactEmail, currentYear } from "@/lib/public-site";
 import { btnPrimary, btnSecondary, card, cardHealthy, cx, noticeWarn, publicPage } from "@/lib/public-ui";
 import PublicSiteHeader from "@/components/PublicSiteHeader";
+import JsonLd from "@/components/JsonLd";
+import { breadcrumbJsonLd, jsonLdGraph, pageMetadata, serviceJsonLd } from "@/lib/seo";
 
 /**
  * Public domain registration page.
@@ -23,11 +25,11 @@ import PublicSiteHeader from "@/components/PublicSiteHeader";
  * include Jongo's markup (lib/registrar.ts); wholesale never reaches a page.
  */
 
-export const metadata: Metadata = {
-  title: "Register a domain | Jongo",
-  description:
-    "Register a domain and host it in the same place. Free WHOIS privacy, transfers include a year's renewal, and free migration of your existing site."
-};
+export const metadata: Metadata = pageMetadata({
+  path: "/domains",
+  title: "Register a domain",
+  description: "Search and register a domain, with free WHOIS privacy and DNS set up for you, then host the site in the same place. Transfers include a year's renewal."
+});
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +66,10 @@ export default async function DomainsPage({ searchParams }: Params) {
 
   return (
     <div className={publicPage}>
+      <JsonLd data={jsonLdGraph(
+          breadcrumbJsonLd([{ name: "Register a domain", path: "/domains" }]),
+          serviceJsonLd({ path: "/domains", name: "Domain registration", description: "Search and register a domain, with free WHOIS privacy and DNS set up for you, then host the site in the same place. Transfers include a year's renewal.", serviceType: "Domain name registration" })
+        )} />
       <PublicSiteHeader />
 
       <section className="pricing-head">
