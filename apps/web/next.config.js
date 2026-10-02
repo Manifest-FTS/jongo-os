@@ -5,6 +5,12 @@ const nextConfig = {
   },
   async redirects() {
     return [
+      // The hosting page is the homepage now; keep old links and bookmarks working.
+      {
+        source: '/hosting',
+        destination: '/',
+        permanent: true
+      },
       {
         source: '/sites',
         destination: '/apps',

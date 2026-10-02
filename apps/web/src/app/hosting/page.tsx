@@ -7,13 +7,14 @@ import HeroDashboardPreview from "@/components/HeroDashboardPreview";
 import { SUGGESTED_TLDS, formatCents } from "@/lib/domain-search";
 import { getPricesForTlds, isRegistrarConfigured } from "@/lib/registrar";
 import { btnPrimary, btnSecondary, card, cardHealthy, cx, publicPage } from "@/lib/public-ui";
+import PublicSiteHeader from "@/components/PublicSiteHeader";
 
 /**
- * Public hosting signup page.
+ * The homepage (served at "/" by app/page.tsx; /hosting redirects there).
  *
- * Deliberately a server component with no session lookup: it is the one page
- * that must render for someone who has never signed in, so it is listed in
- * middleware's PUBLIC_PATHS and touches neither auth() nor the database.
+ * Deliberately a server component with no session lookup: it must render for
+ * someone who has never signed in, and it stays static. The header works out
+ * who is signed in in the browser (components/PublicSiteHeader.tsx).
  *
  * Styling follows the app's own vocabulary (globals.css tokens, .btn/.card
  * geometry) as inline styles, the same way the dashboard components do, rather
@@ -194,27 +195,7 @@ export default async function HostingPage() {
 
   return (
     <div className={publicPage}>
-      {/* nav */}
-      <header className="hosting-nav">
-        <Link href="/hosting" className="hosting-brand">
-          <img src="/assets/images/jongo-logomark-color.png" alt="" width={30} height={30} />
-          <span>Jongo</span>
-        </Link>
-        <div className="hosting-nav__actions">
-          <Link href="/domains" className="hosting-nav__signin">
-            Domains
-          </Link>
-          <Link href="/pricing" className="hosting-nav__signin">
-            Pricing
-          </Link>
-          <Link href="/auth/login" className="hosting-nav__signin">
-            Sign in
-          </Link>
-          <Link href="/auth/register" className={cx(btnPrimary, "px-4 py-[9.5px] text-[14.5px]")}>
-            Get started
-          </Link>
-        </div>
-      </header>
+      <PublicSiteHeader />
 
       {/* hero */}
       <section className="hosting-hero">
