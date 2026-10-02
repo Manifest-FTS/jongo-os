@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { SUGGESTED_TLDS, formatCents } from "@/lib/domain-search";
-import { getPricesForTlds, isPorkbunConfigured } from "@/lib/porkbun";
+import { getPricesForTlds, isRegistrarConfigured } from "@/lib/registrar";
 
 export const runtime = "nodejs";
 
@@ -15,14 +15,14 @@ export const runtime = "nodejs";
  *
  * Prices are informational. The figure that gets charged is the one returned
  * by the availability check at the moment of ordering, which the registry
- * validates against the order — see lib/porkbun.ts.
+ * validates against the order — see lib/registrar.ts.
  */
 
 /** Revalidate hourly at the edge as well as in the library cache. */
 export const revalidate = 3600;
 
 export async function GET() {
-  if (!isPorkbunConfigured()) {
+  if (!isRegistrarConfigured()) {
     // Honest 503 rather than an empty price list, which would render as a row
     // of dashes and look like every TLD costs nothing.
     return NextResponse.json(

@@ -141,6 +141,7 @@ model Organization {
   apiTokens           ApiToken[]
   auditLogs           AuditLog[]
   notifications       Notification[]
+  domains             Domain[]
 
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
@@ -893,4 +894,75 @@ model UsageCounterState {
   updatedAt   DateTime  @updatedAt
 
   @@index([collectedAt])
+}
+
+// ============================================================
+// Domains (Namecheap registrar + Cloudflare DNS)
+// ============================================================
+
+// A domain a client owns through Jongo. Registered at Namecheap; DNS served by
+// a Cloudflare zone whose nameservers Jongo sets at Namecheap.
+model Domain {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String    @db.Uuid
+  name             String    @unique // lowercase, e.g. acme.org
+  // pending_payment | registering | transfer_pending | active | failed | expired
+  status           String    @default("pending_payment")
+  registrar        String    @default("namecheap")
+  registrarDomainId String?
+  transferId       String?
+  cloudflareZoneId String?
+  nameservers      String[]  @default([])
+  // pending | active | error: whether the domain resolves through Cloudflare yet
+  dnsStatus        String?
+  expiresAt        DateTime?
+  lastError        String?
+  createdById      String?   @db.Uuid
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  charges      DomainCharge[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+// One purchase: a registration, renewal or transfer. All four price figures
+// are stored as charged, so margin can be audited later against what Namecheap
+// actually billed, whatever the markup is by then.
+model DomainCharge {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  domainId                String    @db.Uuid
+  operation               String // register | renew | transfer
+  years                   Int
+  // pending_payment | paid | fulfilling | fulfilled | failed | refunded | expired
+  status                  String    @default("pending_payment")
+  currency                String    @default("usd")
+  wholesaleCents          Int // Namecheap cost quoted at checkout (price + ICANN fee)
+  markupPercent           Float
+  markupCents             Int
+  clientCents             Int // what the client paid
+  registrarChargedCents   Int? // what Namecheap actually charged (ChargedAmount)
+  stripeCheckoutSessionId String?   @unique
+  stripePaymentIntentId   String?
+  stripeRefundId          String?
+  registrarOrderId        String?
+  registrarTransactionId  String?
+  // Needed only until the order is placed, then cleared.
+  registrantContact       Json?
+  eppCode                 String?
+  error                   String?
+  createdById             String?   @db.Uuid
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  paidAt                  DateTime?
+  fulfilledAt             DateTime?
+
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId])
+  @@index([status])
 }

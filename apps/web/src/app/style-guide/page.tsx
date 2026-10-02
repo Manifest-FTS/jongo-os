@@ -1218,7 +1218,7 @@ export default function StyleGuidePage() {
               </div>
               {isAnnual && (
                 <span className="sg-discount-tag">
-                  🎉 Save 2 Months (~20% off annual plans)
+                  🎉 Save 2 Months (~17% off annual plans)
                 </span>
               )}
             </div>

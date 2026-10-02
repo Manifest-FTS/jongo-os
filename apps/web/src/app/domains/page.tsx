@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import DomainSearch from "@/components/DomainSearch";
 import { SUGGESTED_TLDS, formatCents, parseDomain } from "@/lib/domain-search";
-import { checkAvailability, getPricesForTlds, getTldPricing, isPorkbunConfigured } from "@/lib/porkbun";
+import { checkAvailability, getPricesForTlds, getTldPricing, isRegistrarConfigured } from "@/lib/registrar";
 import { COMPANY_NAME, contactEmail, currentYear } from "@/lib/public-site";
 import { btnPrimary, btnSecondary, card, cardHealthy, cx, noticeWarn, publicPage } from "@/lib/public-ui";
 
@@ -12,21 +12,14 @@ import { btnPrimary, btnSecondary, card, cardHealthy, cx, noticeWarn, publicPage
  * Arriving with `?domain=` — which is how the homepage hero hands off a name
  * someone just searched — this checks that one name and shows the price. The
  * check is almost always free: the same domain was checked seconds ago on the
- * homepage and the result is still in the five-minute cache (lib/porkbun.ts).
+ * homepage and the result is still in the five-minute cache (lib/registrar.ts).
  *
- * ## Why there is no "buy now" button here
+ * ## Ordering
  *
- * Registration calls Porkbun's `domain/create`, which draws on JONGO'S account
- * balance — the registrar bills us, not the visitor. This codebase has no
- * payment integration, so a public button that placed a real order would let
- * anyone spend the company's registrar credit. That is not a hypothetical: the
- * only reason it is harmless today is that the configured keys are sandbox
- * ones, and the same code with live keys is an open faucet.
- *
- * So the public path funnels to signup with the domain carried through, the
- * same way `?plan=` already works, and the order itself lives behind
- * /api/domains/order, which requires an authenticated admin. When billing is
- * wired up, the button belongs here — not before.
+ * "Register it" goes to /my-domains/new, which needs an account (sign-in
+ * carries the domain through) and takes payment through Stripe BEFORE anything
+ * is ordered at Namecheap: see lib/domain-orders.ts. Prices shown here already
+ * include Jongo's markup (lib/registrar.ts); wholesale never reaches a page.
  */
 
 export const metadata: Metadata = {
@@ -38,7 +31,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 async function loadPrices() {
-  if (!isPorkbunConfigured()) return [];
+  if (!isRegistrarConfigured()) return [];
   try {
     const prices = await getPricesForTlds(SUGGESTED_TLDS);
     return prices.map((entry) => ({
@@ -63,7 +56,7 @@ export default async function DomainsPage({ searchParams }: Params) {
   const email = contactEmail();
 
   // Only check when a name was actually handed over, so an idle visit to
-  // /domains costs nothing against the one-per-ten-seconds limit.
+  // /domains costs nothing against Namecheap's per-minute API limit.
   const knownTlds = requested ? await getTldPricing().catch(() => new Map()) : new Map();
   const parsed = requested ? parseDomain(requested, knownTlds.keys()) : null;
   const availability = parsed ? await checkAvailability(parsed.domain) : null;
@@ -244,15 +237,21 @@ function RequestedDomain({
               {availability.premium ? " This is a premium name, priced by the registry." : ""}
             </p>
           </div>
-          {/* Funnels to signup rather than ordering: see the note at the top of
-              this file — there is no billing, so no public button may spend the
-              company's registrar balance. */}
-          <Link
-            href={`/auth/register?domain=${encodeURIComponent(domain)}`}
-            className={cx(btnPrimary, "px-[22px] py-[13px] text-[15px] shrink-0")}
-          >
-            Create an account to claim it
-          </Link>
+          {availability.premium ? (
+            <Link
+              href={`/contact?subject=${encodeURIComponent(`Premium domain ${domain}`)}`}
+              className={cx(btnPrimary, "px-[22px] py-[13px] text-[15px] shrink-0")}
+            >
+              Ask for a quote
+            </Link>
+          ) : (
+            <Link
+              href={`/my-domains/new?op=register&domain=${encodeURIComponent(domain)}`}
+              className={cx(btnPrimary, "px-[22px] py-[13px] text-[15px] shrink-0")}
+            >
+              Register it
+            </Link>
+          )}
         </div>
         <p className="mt-3.5 mb-0 text-[0.86rem] text-muted">
           We hold nothing until it is registered — a domain is only yours once the order goes

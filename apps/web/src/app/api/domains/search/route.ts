@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { RateLimiter } from "@/lib/contact-request";
 import { formatCents, normalizeDomainQuery, parseDomain } from "@/lib/domain-search";
-import { checkAvailability, getTldPricing, isPorkbunConfigured } from "@/lib/porkbun";
+import { checkAvailability, getTldPricing, isRegistrarConfigured } from "@/lib/registrar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,9 +11,9 @@ export const dynamic = "force-dynamic";
  *
  * ## Why this endpoint checks exactly one domain
  *
- * Upstream allows ONE availability check every ten seconds for the whole
- * account. A "search" that fanned out over six TLDs would need a minute of
- * wall-clock and would lock every other visitor out for that whole minute. So
+ * Namecheap allows about 50 API calls a minute for the whole account, shared
+ * with orders and renewals. A "search" that fanned out over six TLDs would use
+ * that budget six times as fast and lock other visitors out. So
  * the contract here is one domain per request: the client asks about the exact
  * name someone typed, and the UI offers the other TLDs as PRICES (free, from
  * /api/domains/pricing) with a per-row "check" button rather than checking
@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
  *
  * - Per IP, here: stops one visitor (or a script) consuming the shared budget.
  *   Generous enough for a person trying a few names.
- * - Global, in lib/porkbun.ts: the gate and cache that keep us inside the
+ * - Global, in lib/registrar.ts: the gate and cache that keep us inside the
  *   upstream limit no matter how many visitors there are.
  *
  * A refusal from either is reported as `unknown`/`rate_limited` with a retry
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!isPorkbunConfigured()) {
+  if (!isRegistrarConfigured()) {
     return NextResponse.json(
       { ok: false, reason: "not_configured", message: "Domain search is not connected yet." },
       { status: 503 }

@@ -4,7 +4,7 @@
  *
  * ## The problem
  *
- * Porkbun's `domain/checkDomain` allows ONE call every ten seconds, and the
+ * Registrar availability checks are rate limited account-wide, and the
  * limit is per API key — which means per Jongo, not per visitor. A domain
  * search box wired straight to it works perfectly for the developer testing it
  * and collapses the moment two people use the site at once: the second visitor

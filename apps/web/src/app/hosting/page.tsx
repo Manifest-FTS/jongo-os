@@ -5,7 +5,7 @@ import { PLANS } from "@/lib/public-plans";
 import DomainSearch from "@/components/DomainSearch";
 import HeroDashboardPreview from "@/components/HeroDashboardPreview";
 import { SUGGESTED_TLDS, formatCents } from "@/lib/domain-search";
-import { getPricesForTlds, isPorkbunConfigured } from "@/lib/porkbun";
+import { getPricesForTlds, isRegistrarConfigured } from "@/lib/registrar";
 import { btnPrimary, btnSecondary, card, cardHealthy, cx, publicPage } from "@/lib/public-ui";
 
 /**
@@ -175,7 +175,7 @@ const STEPS = [
  * a number.
  */
 async function loadTldPrices() {
-  if (!isPorkbunConfigured()) return [];
+  if (!isRegistrarConfigured()) return [];
   try {
     const prices = await getPricesForTlds(SUGGESTED_TLDS);
     return prices.map((entry) => ({

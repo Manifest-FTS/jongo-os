@@ -241,7 +241,7 @@ export default function PricingPage() {
             </button>
           </div>
           {isAnnual ? (
-            <span className="sg-discount-tag">🎉 Save 2 Months (~20% off annual plans)</span>
+            <span className="sg-discount-tag">🎉 Save 2 Months (~17% off annual plans)</span>
           ) : null}
         </div>
       </section>
