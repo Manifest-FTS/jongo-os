@@ -5,6 +5,7 @@ import { SUGGESTED_TLDS, formatCents, parseDomain } from "@/lib/domain-search";
 import { checkAvailability, getPricesForTlds, getTldPricing, isRegistrarConfigured } from "@/lib/registrar";
 import { COMPANY_NAME, contactEmail, currentYear } from "@/lib/public-site";
 import { btnPrimary, btnSecondary, card, cardHealthy, cx, noticeWarn, publicPage } from "@/lib/public-ui";
+import PublicSiteHeader from "@/components/PublicSiteHeader";
 
 /**
  * Public domain registration page.
@@ -63,26 +64,7 @@ export default async function DomainsPage({ searchParams }: Params) {
 
   return (
     <div className={publicPage}>
-      <header className="hosting-nav">
-        <Link href="/hosting" className="hosting-brand">
-          <img src="/assets/images/jongo-logomark-color.png" alt="" width={30} height={30} />
-          <span>Jongo</span>
-        </Link>
-        <div className="hosting-nav__actions">
-          <Link href="/domains/transfer" className="hosting-nav__signin">
-            Transfers
-          </Link>
-          <Link href="/pricing" className="hosting-nav__signin">
-            Pricing
-          </Link>
-          <Link href="/auth/login" className="hosting-nav__signin">
-            Sign in
-          </Link>
-          <Link href="/auth/register" className={cx(btnPrimary, "px-4 py-[9.5px] text-[14.5px]")}>
-            Get started
-          </Link>
-        </div>
-      </header>
+      <PublicSiteHeader />
 
       <section className="pricing-head">
         <h1 className="hosting-h1 text-[clamp(1.9rem,1.3rem+2vw,2.6rem)]">
@@ -198,7 +180,7 @@ export default async function DomainsPage({ searchParams }: Params) {
           <span>© {currentYear()} {COMPANY_NAME}. All rights reserved.</span>
         </div>
         <div className="hosting-footer__links">
-          <Link href="/hosting">Hosting</Link>
+          <Link href="/">Home</Link>
           <Link href="/domains/transfer">Transfers</Link>
           <Link href="/pricing">Pricing</Link>
           <Link href="/contact">Contact</Link>

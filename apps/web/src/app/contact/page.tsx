@@ -3,6 +3,7 @@ import Link from "next/link";
 import ContactForm from "@/components/ContactForm";
 import { COMPANY_NAME, RESPONSE_TIME, contactEmail, currentYear } from "@/lib/public-site";
 import { btnPrimary, card, cx, publicPage } from "@/lib/public-ui";
+import PublicSiteHeader from "@/components/PublicSiteHeader";
 
 /**
  * Public contact page.
@@ -48,26 +49,7 @@ export default function ContactPage() {
 
   return (
     <div className={publicPage}>
-      <header className="hosting-nav">
-        <Link href="/hosting" className="hosting-brand">
-          <img src="/assets/images/jongo-logomark-color.png" alt="" width={30} height={30} />
-          <span>Jongo</span>
-        </Link>
-        <div className="hosting-nav__actions">
-          <Link href="/pricing" className="hosting-nav__signin">
-            Pricing
-          </Link>
-          <Link href="/auth/login" className="hosting-nav__signin">
-            Sign in
-          </Link>
-          <Link
-            href="/hosting#pricing"
-            className={cx(btnPrimary, "px-4 py-[9.5px] text-[14.5px]")}
-          >
-            See plans
-          </Link>
-        </div>
-      </header>
+      <PublicSiteHeader />
 
       <section className="contact-hero">
         <div className="contact-hero__copy">
@@ -102,7 +84,7 @@ export default function ContactPage() {
           <span>© {currentYear()} {COMPANY_NAME}. All rights reserved.</span>
         </div>
         <div className="hosting-footer__links">
-          <Link href="/hosting">Hosting</Link>
+          <Link href="/">Home</Link>
           <Link href="/pricing">Pricing</Link>
           <Link href="/auth/login">Sign in</Link>
           <a href="#">Terms</a>
