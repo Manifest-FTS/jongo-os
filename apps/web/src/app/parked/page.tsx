@@ -1,4 +1,8 @@
 import { headers } from "next/headers";
+import { NOINDEX } from "@/lib/seo";
+
+// Shown for a client domain that is not live yet: never index it as Jongo content.
+export const metadata = NOINDEX;
 
 function displayDomain(value: string | null): string {
   const fallback = value?.split(":")[0].trim().toLowerCase() || "this domain";

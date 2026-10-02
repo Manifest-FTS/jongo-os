@@ -10,6 +10,10 @@ import NotificationBell from "@/components/NotificationBell";
 import PlatformPrimaryNav from "@/components/navigation/PlatformPrimaryNav";
 import SignOutButton from "@/components/auth/SignOutButton";
 import UserAvatar from "@/components/UserAvatar";
+import { NOINDEX } from "@/lib/seo";
+
+// The signed-in app: never indexed (it is behind sign-in anyway).
+export const metadata = NOINDEX;
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();

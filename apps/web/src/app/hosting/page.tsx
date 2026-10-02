@@ -8,6 +8,8 @@ import { SUGGESTED_TLDS, formatCents } from "@/lib/domain-search";
 import { getPricesForTlds, isRegistrarConfigured } from "@/lib/registrar";
 import { btnPrimary, btnSecondary, card, cardHealthy, cx, publicPage } from "@/lib/public-ui";
 import PublicSiteHeader from "@/components/PublicSiteHeader";
+import JsonLd from "@/components/JsonLd";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, jsonLdGraph, organizationJsonLd, pageMetadata, plansJsonLd, serviceJsonLd, websiteJsonLd } from "@/lib/seo";
 
 /**
  * The homepage (served at "/" by app/page.tsx; /hosting redirects there).
@@ -40,11 +42,12 @@ import PublicSiteHeader from "@/components/PublicSiteHeader";
  */
 export const revalidate = 3600;
 
-export const metadata: Metadata = {
-  title: "Hosting for WordPress, Next.js and whatever you ship next | Jongo",
-  description:
-    "Managed hosting for the sites and apps you look after — WordPress, Next.js, Nuxt, Node and the databases behind them. Nightly offsite backups, one-click staging and free migration."
-};
+export const metadata: Metadata = pageMetadata({
+  path: "/",
+  title: `${SITE_NAME}: ${SITE_TAGLINE}`,
+  description: SITE_DESCRIPTION,
+  absoluteTitle: true
+});
 
 const STACKS = ["WordPress", "Next.js", "Nuxt", "Node", "Static", "Postgres · MySQL · Redis"];
 
@@ -195,6 +198,12 @@ export default async function HostingPage() {
 
   return (
     <div className={publicPage}>
+      <JsonLd data={jsonLdGraph(
+          organizationJsonLd(),
+          websiteJsonLd(),
+          serviceJsonLd({ path: "/", name: "Managed web hosting", description: SITE_DESCRIPTION, serviceType: "Managed web hosting" }),
+          plansJsonLd()
+        )} />
       <PublicSiteHeader />
 
       {/* hero */}
