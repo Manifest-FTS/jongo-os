@@ -41,6 +41,22 @@ export async function POST(req: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
+
+        // Domain orders (lib/domain-orders.ts). Payment is recorded here; the
+        // Namecheap order runs after the reply, because a registrar call can
+        // outlast Stripe's webhook timeout and a timed-out delivery is retried
+        // for days. The hourly reconcile picks up anything this misses.
+        if (session.metadata?.jongoKind === "domain") {
+          const { fulfilDomainCharge, recordDomainPayment } = await import("@/lib/domain-orders");
+          const chargeId = await recordDomainPayment(session as never);
+          if (chargeId) {
+            void fulfilDomainCharge(chargeId).catch((error) =>
+              console.error(`[billing/webhook] domain order ${chargeId} failed:`, error)
+            );
+          }
+          break;
+        }
+
         const userId = session.metadata?.jongoUserId || session.client_reference_id;
         if (!userId || typeof session.subscription !== "string") {
           break;
@@ -91,6 +107,15 @@ export async function POST(req: Request) {
               : {})
           }
         });
+        break;
+      }
+
+      case "checkout.session.expired": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        if (session.metadata?.jongoKind === "domain") {
+          const { handleDomainCheckoutExpired } = await import("@/lib/domain-orders");
+          await handleDomainCheckoutExpired(session as never);
+        }
         break;
       }
 

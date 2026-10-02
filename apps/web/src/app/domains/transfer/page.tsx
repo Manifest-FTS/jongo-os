@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SUGGESTED_TLDS, formatCents, parseDomain } from "@/lib/domain-search";
-import { getPricesForTlds, getTldPricing, isPorkbunConfigured } from "@/lib/porkbun";
+import { getPricesForTlds, getTldPricing, isRegistrarConfigured } from "@/lib/registrar";
 import { COMPANY_NAME, RESPONSE_TIME, contactEmail, currentYear } from "@/lib/public-site";
 import { btnPrimary, btnSecondary, card, cardHealthy, cx, pill, publicPage } from "@/lib/public-ui";
 
@@ -17,13 +17,12 @@ import { btnPrimary, btnSecondary, card, cardHealthy, cx, pill, publicPage } fro
  *
  * A transfer needs an auth code from the losing registrar, which means a
  * conversation, not a checkout. Checking availability would spend one of the
- * account's six-per-minute checks to tell someone what they already know
+ * account's per-minute API budget to tell someone what they already know
  * (their own domain is registered — to them). So this page quotes transfer
  * PRICES from the unthrottled pricing endpoint and collects the request.
  *
- * The order itself goes through /api/domains/order, which is auth-gated: see
- * the note in app/domains/page.tsx for why nothing public may place an order
- * while there is no billing integration.
+ * "Start this transfer" goes to /my-domains/new, which takes the auth code
+ * and payment (Stripe) before Namecheap is asked to start the transfer.
  */
 
 export const metadata: Metadata = {
@@ -77,7 +76,7 @@ const FAQ = [
 ];
 
 async function loadTransferPrices() {
-  if (!isPorkbunConfigured()) return [];
+  if (!isRegistrarConfigured()) return [];
   try {
     const prices = await getPricesForTlds(SUGGESTED_TLDS);
     return prices.map((entry) => ({
@@ -181,7 +180,7 @@ export default async function DomainTransferPage({ searchParams }: Params) {
             </p>
             <div className="flex gap-2.5 flex-wrap mt-4">
               <Link
-                href={`/contact?subject=${encodeURIComponent(`Transfer ${parsed.domain}`)}`}
+                href={`/my-domains/new?op=transfer&domain=${encodeURIComponent(parsed.domain)}`}
                 className={cx(btnPrimary, "px-5 py-3 text-[14.5px]")}
               >
                 Start this transfer

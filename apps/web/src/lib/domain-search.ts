@@ -4,7 +4,7 @@
  * This module is deliberately pure — no network, no env, no clock. Everything
  * here is the part that has to be RIGHT rather than the part that has to be
  * fast, and the money conversion in particular is worth testing properly:
- * Porkbun's endpoints disagree about units, and getting that wrong charges a
+ * Registrar APIs disagree about units, and getting that wrong charges a
  * customer the wrong amount.
  *
  * ## The unit trap
@@ -32,7 +32,7 @@ export type ParsedDomain = {
  * The TLDs offered when someone types a bare word with no dot.
  *
  * Kept short on purpose. Each one the UI offers to CHECK costs a call against
- * a limit of one per ten seconds account-wide (see lib/porkbun.ts), so a
+ * a shared per-minute limit account-wide (see lib/namecheap.ts), so a
  * generous list here is not generosity — it is a queue. Prices for these come
  * from the unthrottled pricing endpoint, so showing them is free; checking
  * them is not.

@@ -97,7 +97,7 @@ export const HOSTING_TIERS: TierPlan[] = [
       bandwidth: "500 GB Egress Bandwidth",
       storage: "50 GB SSD Storage"
     },
-    devHours: "1 Dev Hour / Month",
+    devHours: "3 Dev Hours / Quarter",
     supportSla: "Priority SLA (24-hr response)",
     uptimeNote: "~99.9% expected uptime (best-effort, no SLA credits)",
     features: [
@@ -107,7 +107,7 @@ export const HOSTING_TIERS: TierPlan[] = [
       "Custom Docker & Compose configurations",
       "Automated database snapshotting",
       "Environment variable encryption & protection",
-      "1 dev hour per month included (use-it-or-lose-it)",
+      "3 dev hours per quarter included (use-it-or-lose-it)",
       "Priority 24-hour response SLA"
     ],
     overageRates: {
@@ -136,7 +136,7 @@ export const SLA_TIERS: TierPlan[] = [
       bandwidth: "1 TB Egress Bandwidth",
       storage: "100 GB SSD Storage"
     },
-    devHours: "2 Dev Hours / Month",
+    devHours: "1 Dev Hour / Month",
     supportSla: "Next-Business-Day SLA (12-hr window)",
     uptimeGuarantee: "99.9% Uptime Guarantee",
     features: [
@@ -147,7 +147,7 @@ export const SLA_TIERS: TierPlan[] = [
       "cPanel / legacy redirect migration management",
       "Domain & DNS portfolio maintenance",
       "Quarterly security & vulnerability audits",
-      "2 dev hours per month included",
+      "1 dev hour per month included",
       "12-hour Next-Business-Day response SLA",
       "99.9% Uptime Guarantee with SLA credits",
       "Itemized domain/SSL pass-through billing support"
@@ -174,7 +174,7 @@ export const SLA_TIERS: TierPlan[] = [
       bandwidth: "2 TB Egress Bandwidth",
       storage: "250 GB SSD Storage"
     },
-    devHours: "4 Dev Hours / Month ($360+ value)",
+    devHours: "3 Dev Hours / Month ($270–$360 value)",
     supportSla: "4-Hour Emergency SLA (24/7 Response)",
     uptimeGuarantee: "99.99% Uptime SLA",
     features: [
@@ -185,7 +185,7 @@ export const SLA_TIERS: TierPlan[] = [
       "High-concurrency database optimization",
       "Multi-region failover configurations",
       "Staging-to-production automated parity testing",
-      "4 dev hours per month included",
+      "3 dev hours per month included",
       "4-Hour Emergency SLA (24/7 critical response)",
       "Dedicated private Slack channel + direct phone/text line",
       "99.99% Uptime SLA backed by service credits"
@@ -265,9 +265,9 @@ export const PRICING_MATRIX_ROWS: MatrixRow[] = [
     metric: "Included Dev Time",
     category: "Support & SLA",
     starter: "0 Hours",
-    pro: "1 Hour / Mo",
-    coreSla: "2 Hours / Mo",
-    enterpriseSla: "4 Hours / Mo",
+    pro: "3 Hours / Qtr",
+    coreSla: "1 Hour / Mo",
+    enterpriseSla: "3 Hours / Mo",
     highlight: true
   },
   {
@@ -380,7 +380,7 @@ export const COMPARISON: ComparisonGroup[] = [
   {
     group: "Developer Time & SLA",
     rows: [
-      { label: "Included Dev Hours", starter: "0 Hours", pro: "1 Hour / Mo", coreSla: "2 Hours / Mo", enterpriseSla: "4 Hours / Mo" },
+      { label: "Included Dev Hours", starter: "0 Hours", pro: "3 Hours / Qtr", coreSla: "1 Hour / Mo", enterpriseSla: "3 Hours / Mo" },
       { label: "Support Response Window", starter: "48-Hour Email", pro: "24-Hour Priority", coreSla: "12-Hour Next-Day", enterpriseSla: "4-Hour Emergency (24/7)" },
       { label: "Uptime Commitment", starter: "99.5%", pro: "99.9%", coreSla: "99.9% Guaranteed", enterpriseSla: "99.99% + Credits" },
       { label: "Dedicated Slack Channel", starter: false, pro: false, coreSla: false, enterpriseSla: true },
@@ -396,7 +396,7 @@ export const PRICING_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How do the included support hours work?",
-    a: "Every plan above Starter includes a set number of hours each month for small requests — things like content updates, plugin or package updates, DNS changes, or performance tuning. Hours refresh monthly and don't roll over, so use them when you need them. Need more time in a given month? You can always add extra hours at your plan's ad-hoc rate."
+    a: "Every plan above Starter includes hours for small requests — things like content updates, plugin or package updates, DNS changes, or performance tuning. Pro includes 3 hours per quarter; Core SLA 1 hour and Enterprise SLA 3 hours each month. Hours refresh each period and don't roll over, so use them when you need them. Need more time? You can always add extra hours at your plan's ad-hoc rate."
   },
   {
     q: "What happens if I go over my bandwidth or storage?",

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoolifyBackupCapability } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
 import { reconcileStagingTargets, type StagingTargetReconcileResult } from "@/lib/staging-target-reconcile";
+import { reconcileDomains, type DomainReconcileResult } from "@/lib/domain-orders";
 import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -245,6 +246,16 @@ export async function POST(request: Request) {
       stagingTargets = await reconcileStagingTargets({ db, index: liveIndex });
     } catch (error) {
       console.error("[jongo] backup-reconcile: staging target reconcile failed:", error);
+    }
+
+    // Domain orders: retry paid orders the registrar could not take, finish
+    // transfers, set up DNS that is not live yet, refresh expiry dates.
+    // Best-effort, like the steps above: it must not break the backup pass.
+    let domains: DomainReconcileResult | null = null;
+    try {
+      domains = await reconcileDomains();
+    } catch (error) {
+      console.error("[jongo] backup-reconcile: domain reconcile failed:", error);
     }
 
     for (const site of sites) {
@@ -810,7 +821,8 @@ export async function POST(request: Request) {
         stagingEnvsEnsured,
         stagingResourcesFlagged,
         resourcesMissing,
-        stagingTargets
+        stagingTargets,
+        domains
       },
       results
     });
