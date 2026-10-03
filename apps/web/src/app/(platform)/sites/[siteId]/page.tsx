@@ -53,6 +53,16 @@ function formatAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+/** The metric-strip form: "2h", not "2h ago". Dash when there is nothing to age. */
+function formatAgeShort(iso: string | null): string {
+  if (!iso) return "—";
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.floor(hrs / 24)}d`;
+}
+
 function getLastSuccessfulBackupTime(inventory: AppBackupInventory | null): string | null {
   if (!inventory?.recentExecutions?.length) return null;
   const successful = inventory.recentExecutions.find((item) => item.status === "success" && item.finishedAt);
@@ -288,6 +298,41 @@ export default async function SiteOverviewPage({ params }: Params) {
     }
   })();
 
+  // The canvas's metric strip. Snapshots and plugins are counted from data this
+  // page can reach cheaply — a count and a cached row, no live probe. Where a
+  // number genuinely is not known the card shows a dash rather than a zero,
+  // because "0 plugins" and "we have not looked yet" are different facts.
+  const snapshotCount: number | null = workspace.id
+    ? await (async () => {
+        const { getDb } = await import("@/lib/db");
+        const prisma = await getDb();
+        if (!prisma || !("siteBackup" in prisma)) return null;
+        try {
+          return await (prisma as any).siteBackup.count({ where: { siteId: workspace.id, status: "success" } });
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+
+  const pluginCount: number | null = isWordPress && workspace.id
+    ? await (async () => {
+        try {
+          const { readCachedPluginInventory } = await import("@/lib/wordpress-plugin-inventory");
+          const cached = await readCachedPluginInventory(workspace.id);
+          return cached ? cached.plugins.length : null;
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+
+  // Coolify returns deployments per application; the overview already holds them
+  // for this site, so this is a filter rather than another API call.
+  const siteDeployments = (overview.deployments ?? [])
+    .filter((deployment) => deployment.siteName === site?.name)
+    .slice(0, 3);
+
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
@@ -407,6 +452,23 @@ export default async function SiteOverviewPage({ params }: Params) {
     <div style={{ display: "grid", gap: "1rem" }}>
       <section style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
         <div style={{ flex: "3 1 680px", minWidth: "320px" }}>
+          <section className="metric-strip" style={{ marginBottom: "1rem" }}>
+            <article className="card metric-card">
+              <p className="metric-value">{formatAgeShort(lastSuccessfulBackup)}</p>
+              <p className="metric-label">Last backup</p>
+            </article>
+            <article className="card metric-card">
+              <p className="metric-value">{snapshotCount === null ? "—" : snapshotCount}</p>
+              <p className="metric-label">Snapshots</p>
+            </article>
+            {isWordPress ? (
+              <article className="card metric-card">
+                <p className="metric-value">{pluginCount === null ? "—" : pluginCount}</p>
+                <p className="metric-label">Plugins</p>
+              </article>
+            ) : null}
+          </section>
+
           {nestedDatabases.length > 0 ? (
             <article className="card" style={{ marginBottom: "1rem" }}>
               <h3 className="card-title">
@@ -458,6 +520,43 @@ export default async function SiteOverviewPage({ params }: Params) {
               </Link>
             </p>
           </article>
+
+          <article className="card" style={{ marginTop: "1rem" }}>
+            <h3 className="card-title">Recent deployments</h3>
+            {siteDeployments.length > 0 ? (
+              <div style={{ display: "grid", gap: "0.55rem", marginTop: "0.8rem" }}>
+                {siteDeployments.map((deployment) => (
+                  <div
+                    key={deployment.id}
+                    style={{ display: "flex", alignItems: "center", gap: "0.75rem", fontSize: "0.87rem" }}
+                  >
+                    <span
+                      className={`status-chip ${deployment.status}`}
+                      style={{ width: "80px", justifyContent: "center", flexShrink: 0 }}
+                    >
+                      {deployment.status === "healthy"
+                        ? "Success"
+                        : deployment.status === "error"
+                          ? "Failed"
+                          : deployment.status === "degraded"
+                            ? "Partial"
+                            : "Unknown"}
+                    </span>
+                    <span style={{ flexGrow: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {deployment.commitMessage?.trim() || "Deployment"}
+                    </span>
+                    <span style={{ color: "var(--muted)", flexShrink: 0 }}>
+                      {deployment.finishedAt ? formatAgo(deployment.finishedAt) : "In progress"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="card-muted" style={{ marginTop: "0.6rem" }}>
+                No deployments have been recorded for this app yet.
+              </p>
+            )}
+          </article>
         </div>
 
         <div style={{ flex: "1 1 280px", minWidth: "260px", display: "grid", gap: "1rem" }}>
@@ -478,6 +577,31 @@ export default async function SiteOverviewPage({ params }: Params) {
               canManageCredentials={permissions.canManagePrivacyCredentials}
               isCollaboratorView={isCollaboratorView}
             />
+          </article>
+
+          {/* The canvas's Quick actions. These are links to the real controls,
+              not duplicates of them: a second flush button would be a second
+              place to keep the permission rules right. Each entry appears only
+              when this viewer may actually use what it leads to. */}
+          <article className="card">
+            <h3 className="card-title">Quick actions</h3>
+            <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem" }}>
+              {permissions.canFlushCache ? (
+                <Link href={`/apps/${siteId}/settings#cache`} className="btn btn-secondary" style={{ justifyContent: "flex-start" }}>
+                  Flush cache
+                </Link>
+              ) : null}
+              {permissions.canCreateBackup ? (
+                <Link href={`/apps/${siteId}/backups`} className="btn btn-secondary" style={{ justifyContent: "flex-start" }}>
+                  Back up now
+                </Link>
+              ) : null}
+              {stagingConfigured ? (
+                <Link href={`/apps/${siteId}/staging`} className="btn btn-secondary" style={{ justifyContent: "flex-start" }}>
+                  Open staging
+                </Link>
+              ) : null}
+            </div>
           </article>
         </div>
       </section>

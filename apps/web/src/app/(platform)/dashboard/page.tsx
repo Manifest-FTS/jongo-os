@@ -92,6 +92,15 @@ export default async function DashboardPage() {
   const favoriteAppIds = await getFavoriteAppIds(session?.user?.id);
   const favoriteAppIdSet = new Set(favoriteAppIds);
   const starredApps = visibleSiteDirectory.filter((site) => favoriteAppIdSet.has(site.id));
+
+  // Anything not healthy, worst first. The dashboard already counted these for
+  // the metric strip but never said WHICH apps they were, so the number sent
+  // you to the Apps directory to find them by hand.
+  const attentionOrder: Record<string, number> = { error: 0, degraded: 1, unknown: 2 };
+  const needsAttention = visibleSiteDirectory
+    .filter((site) => site.status !== "healthy")
+    .sort((a, b) => (attentionOrder[a.status] ?? 3) - (attentionOrder[b.status] ?? 3))
+    .slice(0, 6);
   const adminChecks = session?.user?.id
     ? await Promise.all(uniqueClientDbIds.map((clientDbId) => isClientAdmin(clientDbId, session.user.id)))
     : [];
@@ -99,14 +108,20 @@ export default async function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <section className="page-head compact-head" style={{ marginTop: "1.1rem" }}>
-        <div>
-          <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-            {isDaytime ? <DayIcon style={{ width: "2.05rem", height: "2.05rem" }} /> : <EveningIcon style={{ width: "2.05rem", height: "2.05rem" }} />}
-            <span>{salutation}, {firstName}</span>
-          </h1>
-          <p className="page-subtitle">Welcome to Jongo OS beta</p>
-        </div>
+      {/* The canvas puts the greeting on the page-hero card and replaces the
+          static welcome line with what the workspace actually looks like today. */}
+      <section className="card page-hero" style={{ marginTop: "1.1rem" }}>
+        <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+          {isDaytime ? <DayIcon style={{ width: "2.05rem", height: "2.05rem" }} /> : <EveningIcon style={{ width: "2.05rem", height: "2.05rem" }} />}
+          <span>{salutation}, {firstName}</span>
+        </h1>
+        <p className="page-subtitle" style={{ marginTop: "0.45rem" }}>
+          {visibleSiteDirectory.length} app{visibleSiteDirectory.length === 1 ? "" : "s"} across {clients.length} client
+          {clients.length === 1 ? "" : "s"}.
+          {needsAttention.length > 0
+            ? ` ${needsAttention.length} need${needsAttention.length === 1 ? "s" : ""} attention.`
+            : " All healthy right now."}
+        </p>
       </section>
 
       <section className="metric-strip dashboard-metric-strip">
@@ -133,6 +148,48 @@ export default async function DashboardPage() {
           </article>
         )}
       </section>
+
+      {needsAttention.length > 0 ? (
+        <article className="card">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", marginBottom: "0.85rem", flexWrap: "wrap" }}>
+            <div>
+              <h2 className="card-title" style={{ margin: 0 }}>Needs attention</h2>
+              <p className="card-muted" style={{ marginTop: "0.2rem", fontSize: "0.85rem" }}>
+                {needsAttention.length} app{needsAttention.length === 1 ? "" : "s"} not reporting healthy.
+              </p>
+            </div>
+            <Link href="/apps" className="tab-link">View all apps</Link>
+          </div>
+
+          <div style={{ display: "grid", gap: "0.6rem" }}>
+            {needsAttention.map((site) => (
+              <Link
+                key={site.id}
+                href={`/apps/${site.slug ?? site.id}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "1rem",
+                  padding: "0.8rem 0.9rem",
+                  border: "1px solid #e7ebeb",
+                  borderRadius: "12px",
+                  background: "var(--surface)",
+                  textDecoration: "none",
+                  color: "inherit"
+                }}
+              >
+                <div style={{ minWidth: 0, flexGrow: 1 }}>
+                  <p style={{ margin: 0, fontSize: "0.92rem", fontWeight: 650 }}>{site.name}</p>
+                  {site.clientName ? (
+                    <p className="card-muted" style={{ margin: "2px 0 0", fontSize: "0.79rem" }}>{site.clientName}</p>
+                  ) : null}
+                </div>
+                <span className={`status-chip ${site.status}`}>{site.status}</span>
+              </Link>
+            ))}
+          </div>
+        </article>
+      ) : null}
 
       <section className="dashboard-shell">
         <div className="page-stack">
