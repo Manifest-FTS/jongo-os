@@ -18,7 +18,8 @@ function planLine(plan: TierPlan): string {
   return (
     `- **${plan.name}** — ${dollars(plan.monthlyPrice)}/month or ${dollars(plan.annualPrice)}/year. ` +
     `${plan.compute.ram}, ${plan.compute.vcpu}, ${plan.compute.bandwidth}, ${plan.compute.storage}. ` +
-    `Support: ${plan.supportSla}. Included developer time: ${plan.devHours}. ` +
+    `Support: ${plan.supportSla}. ` +
+    (plan.devHours ? `Included developer time: ${plan.devHours}. ` : "") +
     `Overages: ${plan.overageRates.bandwidth} bandwidth, ${plan.overageRates.storage} storage, ${plan.overageRates.adHocDev} extra developer time.`
   );
 }
@@ -69,7 +70,7 @@ export function buildLlmsFullTxt(): string {
     lines.push(`- Support: ${plan.supportSla}.`);
     if (plan.uptimeGuarantee) lines.push(`- Uptime: ${plan.uptimeGuarantee}.`);
     else if (plan.uptimeNote) lines.push(`- Uptime: ${plan.uptimeNote}.`);
-    lines.push(`- Included developer time: ${plan.devHours}.`);
+    if (plan.devHours) lines.push(`- Included developer time: ${plan.devHours}.`);
     lines.push(
       `- Overage rates: bandwidth ${plan.overageRates.bandwidth}, storage ${plan.overageRates.storage}, ad-hoc developer time ${plan.overageRates.adHocDev}.`
     );

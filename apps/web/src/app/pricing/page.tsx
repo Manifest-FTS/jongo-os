@@ -135,8 +135,12 @@ function PlanCard({ plan, isAnnual }: { plan: TierPlan; isAnnual: boolean }) {
           </div>
           <div className="mt-2.5 text-[#1e332a] font-medium">
             <strong>Support:</strong> {plan.supportSla}
-            <br />
-            <strong>Dev Time:</strong> {plan.devHours}
+            {plan.devHours ? (
+              <>
+                <br />
+                <strong>Dev Time:</strong> {plan.devHours}
+              </>
+            ) : null}
             {plan.uptimeNote ? (
               <>
                 <br />

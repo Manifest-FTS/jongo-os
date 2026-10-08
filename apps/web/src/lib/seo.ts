@@ -176,7 +176,7 @@ export function planJsonLd(plan: TierPlan): JsonLd {
       { "@type": "PropertyValue", name: "vCPU", value: plan.compute.vcpu },
       { "@type": "PropertyValue", name: "Bandwidth", value: plan.compute.bandwidth },
       { "@type": "PropertyValue", name: "Storage", value: plan.compute.storage },
-      { "@type": "PropertyValue", name: "Included developer time", value: plan.devHours },
+      { "@type": "PropertyValue", name: "Included developer time", value: plan.devHours ?? "None" },
       { "@type": "PropertyValue", name: "Support", value: plan.supportSla },
       { "@type": "PropertyValue", name: "Bandwidth overage", value: plan.overageRates.bandwidth },
       { "@type": "PropertyValue", name: "Storage overage", value: plan.overageRates.storage },

@@ -29,7 +29,8 @@ export type TierPlan = {
     bandwidth: string;
     storage: string;
   };
-  devHours: string;
+  /** Omitted for tiers with no included dev time. */
+  devHours?: string;
   supportSla: string;
   uptimeGuarantee?: string;
   /** Plain-text uptime expectation for tiers that don't carry a credited SLA badge. */
@@ -60,7 +61,6 @@ export const HOSTING_TIERS: TierPlan[] = [
       bandwidth: "250 GB Egress Bandwidth",
       storage: "25 GB SSD Storage"
     },
-    devHours: "0 Hours Included",
     supportSla: "Standard Ticketing (48-hr response)",
     uptimeNote: "~99.5% expected uptime (best-effort, no SLA credits)",
     features: [
@@ -97,8 +97,8 @@ export const HOSTING_TIERS: TierPlan[] = [
       bandwidth: "500 GB Egress Bandwidth",
       storage: "50 GB SSD Storage"
     },
-    devHours: "3 Dev Hours / Quarter",
-    supportSla: "Priority SLA (24-hr response)",
+    devHours: "1 Dev Hour / Quarter ($120 value)",
+    supportSla: "12-Hour Response Time (Mon–Sat, excluding Sundays)",
     uptimeNote: "~99.9% expected uptime (best-effort, no SLA credits)",
     features: [
       "4 GB RAM / 2 vCPUs (Dedicated allocation)",
@@ -107,8 +107,8 @@ export const HOSTING_TIERS: TierPlan[] = [
       "Custom Docker & Compose configurations",
       "Automated database snapshotting",
       "Environment variable encryption & protection",
-      "3 dev hours per quarter included (use-it-or-lose-it)",
-      "Priority 24-hour response SLA"
+      "1 dev hour per quarter included ($120 value)",
+      "12-hour response time (Mon–Sat, excluding Sundays)"
     ],
     overageRates: {
       bandwidth: "$0.05 / GB",
@@ -136,8 +136,8 @@ export const SLA_TIERS: TierPlan[] = [
       bandwidth: "1 TB Egress Bandwidth",
       storage: "100 GB SSD Storage"
     },
-    devHours: "1 Dev Hour / Month",
-    supportSla: "Next-Business-Day SLA (12-hr window)",
+    devHours: "3 Dev Hours / Quarter ($360 value)",
+    supportSla: "12-Hour Response Time (Mon–Sat, excluding Sundays)",
     uptimeGuarantee: "99.9% Uptime Guarantee",
     features: [
       "8 GB RAM / 4 vCPUs",
@@ -147,8 +147,8 @@ export const SLA_TIERS: TierPlan[] = [
       "cPanel / legacy redirect migration management",
       "Domain & DNS portfolio maintenance",
       "Quarterly security & vulnerability audits",
-      "1 dev hour per month included",
-      "12-hour Next-Business-Day response SLA",
+      "3 dev hours per quarter included ($360 value)",
+      "12-hour response time (Mon–Sat, excluding Sundays)",
       "99.9% Uptime Guarantee with SLA credits",
       "Itemized domain/SSL pass-through billing support"
     ],
@@ -174,8 +174,8 @@ export const SLA_TIERS: TierPlan[] = [
       bandwidth: "2 TB Egress Bandwidth",
       storage: "250 GB SSD Storage"
     },
-    devHours: "3 Dev Hours / Month ($270–$360 value)",
-    supportSla: "4-Hour Emergency SLA (24/7 Response)",
+    devHours: "5 Dev Hours / Quarter ($600 value)",
+    supportSla: "12-Hour Response Time (Mon–Sat, excluding Sundays)",
     uptimeGuarantee: "99.99% Uptime SLA",
     features: [
       "16 GB RAM / 8 vCPUs (Isolated containers)",
@@ -185,8 +185,8 @@ export const SLA_TIERS: TierPlan[] = [
       "High-concurrency database optimization",
       "Multi-region failover configurations",
       "Staging-to-production automated parity testing",
-      "3 dev hours per month included",
-      "4-Hour Emergency SLA (24/7 critical response)",
+      "5 dev hours per quarter included ($600 value)",
+      "12-hour response time (Mon–Sat, excluding Sundays)",
       "Dedicated private Slack channel + direct phone/text line",
       "99.99% Uptime SLA backed by service credits"
     ],
@@ -264,19 +264,19 @@ export const PRICING_MATRIX_ROWS: MatrixRow[] = [
   {
     metric: "Included Dev Time",
     category: "Support & SLA",
-    starter: "0 Hours",
-    pro: "3 Hours / Qtr",
-    coreSla: "1 Hour / Mo",
-    enterpriseSla: "3 Hours / Mo",
+    starter: "None",
+    pro: "1 Dev Hr / Quarter ($120 value)",
+    coreSla: "3 Dev Hrs / Quarter ($360 value)",
+    enterpriseSla: "5 Dev Hrs / Quarter ($600 value)",
     highlight: true
   },
   {
     metric: "Support SLA",
     category: "Support & SLA",
     starter: "48-Hour Email",
-    pro: "24-Hour Priority",
-    coreSla: "12-Hour Next-Day",
-    enterpriseSla: "4-Hour Emergency (24/7)",
+    pro: "12-Hour Response Time (Mon–Sat, excl. Sundays)",
+    coreSla: "12-Hour Response Time (Mon–Sat, excl. Sundays)",
+    enterpriseSla: "12-Hour Response Time (Mon–Sat, excl. Sundays)",
     highlight: true
   },
   {
@@ -380,8 +380,8 @@ export const COMPARISON: ComparisonGroup[] = [
   {
     group: "Developer Time & SLA",
     rows: [
-      { label: "Included Dev Hours", starter: "0 Hours", pro: "3 Hours / Qtr", coreSla: "1 Hour / Mo", enterpriseSla: "3 Hours / Mo" },
-      { label: "Support Response Window", starter: "48-Hour Email", pro: "24-Hour Priority", coreSla: "12-Hour Next-Day", enterpriseSla: "4-Hour Emergency (24/7)" },
+      { label: "Included Dev Hours", starter: false, pro: "1 Hr / Qtr ($120 value)", coreSla: "3 Hrs / Qtr ($360 value)", enterpriseSla: "5 Hrs / Qtr ($600 value)" },
+      { label: "Support Response Window", starter: "48-Hour Email", pro: "12-Hour (Mon–Sat)", coreSla: "12-Hour (Mon–Sat)", enterpriseSla: "12-Hour (Mon–Sat)" },
       { label: "Uptime Commitment", starter: "99.5%", pro: "99.9%", coreSla: "99.9% Guaranteed", enterpriseSla: "99.99% + Credits" },
       { label: "Dedicated Slack Channel", starter: false, pro: false, coreSla: false, enterpriseSla: true },
       { label: "Direct Phone / Text Line", starter: false, pro: false, coreSla: false, enterpriseSla: true }
@@ -396,7 +396,7 @@ export const PRICING_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How do the included support hours work?",
-    a: "Every plan above Starter includes hours for small requests — things like content updates, plugin or package updates, DNS changes, or performance tuning. Pro includes 3 hours per quarter; Core SLA 1 hour and Enterprise SLA 3 hours each month. Hours refresh each period and don't roll over, so use them when you need them. Need more time? You can always add extra hours at your plan's ad-hoc rate."
+    a: "Every plan above Starter includes hours for small requests — things like content updates, plugin or package updates, DNS changes, or performance tuning. Each quarter, Pro includes 1 hour, Core SLA 3 hours and Enterprise SLA 5 hours. Hours refresh each quarter and don't roll over, so use them when you need them. Need more time? You can always add extra hours at your plan's ad-hoc rate."
   },
   {
     q: "What happens if I go over my bandwidth or storage?",

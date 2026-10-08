@@ -658,15 +658,15 @@ export default function StyleGuidePage() {
             </div>
             <div className="sg-stat-card">
               <span className="sg-stat-val">Pro · $75</span>
-              <span className="sg-stat-lbl">4GB / 3 Dev Hrs Qtr</span>
+              <span className="sg-stat-lbl">4GB / 1 Dev Hr Qtr</span>
             </div>
             <div className="sg-stat-card">
               <span className="sg-stat-val">Core · $149</span>
-              <span className="sg-stat-lbl">8GB / 12h Next-Day SLA</span>
+              <span className="sg-stat-lbl">8GB / 3 Dev Hrs Qtr</span>
             </div>
             <div className="sg-stat-card">
               <span className="sg-stat-val">Enterprise · $349</span>
-              <span className="sg-stat-lbl">16GB / 4h 24/7 SLA</span>
+              <span className="sg-stat-lbl">16GB / 5 Dev Hrs Qtr</span>
             </div>
           </div>
         </header>
@@ -1261,8 +1261,12 @@ export default function StyleGuidePage() {
                     • {tier.compute.storage}
                     <div style={{ marginTop: "0.5rem", paddingTop: "0.4rem", borderTop: "1px solid #dde1e1" }}>
                       <strong>Support:</strong> {tier.supportSla}
-                      <br />
-                      <strong>Dev Time:</strong> {tier.devHours}
+                      {tier.devHours && (
+                        <>
+                          <br />
+                          <strong>Dev Time:</strong> {tier.devHours}
+                        </>
+                      )}
                     </div>
                   </div>
 

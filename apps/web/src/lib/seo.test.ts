@@ -20,7 +20,7 @@ describe("llms.txt", () => {
   it("states every plan's real prices, from the same data the pricing page renders", () => {
     for (const plan of ALL_PLANS) {
       expect(txt).toContain(`**${plan.name}** — $${plan.monthlyPrice.toLocaleString("en-US")}/month or $${plan.annualPrice.toLocaleString("en-US")}/year`);
-      expect(txt).toContain(plan.devHours);
+      if (plan.devHours) expect(txt).toContain(plan.devHours);
     }
   });
 
