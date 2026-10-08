@@ -8,10 +8,27 @@ import BrandLogo from "@/components/BrandLogo";
 import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
 import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
 
+function safeCallbackUrl(raw: string | null | undefined): string {
+  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/dashboard";
+}
+
+function registerHref(callbackUrl: string): string {
+  return callbackUrl === "/dashboard" ? "/auth/register" : `/auth/register?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+}
+
+function RegisterLink({ className, children }: { className?: string; children: React.ReactNode }) {
+  const searchParams = useSearchParams();
+  return (
+    <Link href={registerHref(safeCallbackUrl(searchParams?.get("callbackUrl")))} className={className}>
+      {children}
+    </Link>
+  );
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams?.get("callbackUrl") || "/dashboard";
+  const callbackUrl = safeCallbackUrl(searchParams?.get("callbackUrl"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -100,7 +117,7 @@ function LoginForm() {
         <Link href="/auth/forgot-password" className="auth-inline-link">Forgot password?</Link>
       </p>
       <p className="auth-link-row">
-        Need an account? <Link href="/auth/register">Create one</Link>
+        Need an account? <Link href={registerHref(callbackUrl)}>Create one</Link>
       </p>
     </form>
   );
@@ -122,7 +139,10 @@ export default function LoginPage() {
           </Link>
           <h1 className="auth-title">Sign in to your account</h1>
           <p className="auth-subtitle">
-            Or <Link href="/auth/register" className="auth-inline-link">create a new account</Link>
+            Or{" "}
+            <Suspense fallback={<Link href="/auth/register" className="auth-inline-link">create a new account</Link>}>
+              <RegisterLink className="auth-inline-link">create a new account</RegisterLink>
+            </Suspense>
           </p>
         </div>
         <Suspense fallback={null}>

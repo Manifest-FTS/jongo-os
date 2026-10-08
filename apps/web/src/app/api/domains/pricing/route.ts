@@ -33,6 +33,13 @@ export async function GET() {
 
   try {
     const prices = await getPricesForTlds(SUGGESTED_TLDS);
+    // Every lookup failed: report it and don't let the edge cache a row of dashes for an hour.
+    if (prices.every((entry) => entry.registrationCents === null && entry.transferCents === null)) {
+      return NextResponse.json(
+        { ok: false, reason: "upstream_error", message: "Domain pricing is unavailable right now." },
+        { status: 503, headers: { "cache-control": "no-store" } }
+      );
+    }
     return NextResponse.json(
       {
         ok: true,
@@ -52,7 +59,7 @@ export async function GET() {
     console.error("domain pricing: lookup failed", error);
     return NextResponse.json(
       { ok: false, reason: "upstream_error", message: "Domain pricing is unavailable right now." },
-      { status: 502 }
+      { status: 503, headers: { "cache-control": "no-store" } }
     );
   }
 }

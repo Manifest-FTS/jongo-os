@@ -36,6 +36,12 @@ async function startCheckoutForSelectedPlan(): Promise<string | null> {
   }
 }
 
+/** Where to land after signup, e.g. back on the domain order the visitor started. */
+function postSignupPath(): string {
+  const raw = new URLSearchParams(window.location.search).get("callbackUrl");
+  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/dashboard";
+}
+
 export default function RegisterPage() {
   const router = useRouter();
 
@@ -84,7 +90,7 @@ export default function RegisterPage() {
 
       if (result?.error) {
         if (result.error === "CredentialsSignin") {
-          router.push("/auth/login");
+          router.push(`/auth/login?callbackUrl=${encodeURIComponent(postSignupPath())}`);
           return;
         }
 
@@ -100,7 +106,7 @@ export default function RegisterPage() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push(postSignupPath());
     } catch {
       setLoading(false);
       setError("Could not create account.");

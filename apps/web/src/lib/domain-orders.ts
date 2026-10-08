@@ -109,7 +109,7 @@ export async function quoteOrder(rawDomain: string, operation: DomainOperation, 
   if (!Number.isInteger(years) || years < 1 || years > 10) return { ok: false, status: 400, message: "Choose 1 to 10 years." };
 
   const book = await getPriceBook(domain.tld).catch(() => null);
-  if (!book) return { ok: false, status: 502, message: `We could not get a price for .${domain.tld} right now. Try again shortly.` };
+  if (!book) return { ok: false, status: 503, message: `We could not get a price for .${domain.tld} right now. Try again shortly.` };
   const quote = quoteDomain(book, operation, years, readMarkupPercent());
   if (!quote) {
     return { ok: false, status: 400, message: `.${domain.tld} cannot be ${operation === "transfer" ? "transferred" : `${operation}ed for ${years} year${years === 1 ? "" : "s"}`} here.` };
@@ -171,7 +171,7 @@ export async function startDomainCheckout(input: CheckoutInput): Promise<Checkou
     }
 
     const check = await checkDomain(domain.domain, { fresh: true, patient: true }).catch(() => null);
-    if (!check) return { ok: false, status: 502, message: "We could not check that domain with the registry just now. Try again shortly." };
+    if (!check) return { ok: false, status: 503, message: "We could not check that domain with the registry just now. Try again shortly." };
 
     if (input.operation === "register") {
       if (!check.available) return { ok: false, status: 409, message: `${domain.domain} is already registered. If it is yours, transfer it instead.` };
@@ -260,7 +260,7 @@ export async function startDomainCheckout(input: CheckoutInput): Promise<Checkou
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not start checkout.";
     await db.domainCharge.update({ where: { id: charge.id }, data: { status: "failed", error: message, registrantContact: null, eppCode: null } });
-    return { ok: false, status: 502, message: `Payment could not be started: ${message}` };
+    return { ok: false, status: 503, message: `Payment could not be started: ${message}` };
   }
 }
 

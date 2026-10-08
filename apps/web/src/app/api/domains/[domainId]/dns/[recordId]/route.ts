@@ -22,7 +22,7 @@ async function managedZone(params: Params["params"]) {
 }
 
 function failure(error: unknown) {
-  const status = error instanceof CloudflareError && error.status >= 400 && error.status < 500 ? 400 : 502;
+  const status = error instanceof CloudflareError && error.status >= 400 && error.status < 500 ? 400 : 503;
   return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Cloudflare refused the change." }, { status });
 }
 

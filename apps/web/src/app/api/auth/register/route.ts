@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
+import { randomBytes } from "node:crypto";
+
+function workspaceSlug(base: string): string {
+  const stem = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "workspace";
+  return `${stem}-${randomBytes(3).toString("hex")}`;
+}
 
 function isSelfRegistrationEnabled(): boolean {
   const raw = (process.env.ENABLE_SELF_REGISTRATION || "").trim().toLowerCase();
@@ -45,16 +51,29 @@ export async function POST(req: Request) {
     }
 
     const passwordHash = await hash(password, 12);
+    const displayName = fullName || email.split("@")[0];
 
-    const user = await db.user.create({
-      data: {
-        email,
-        fullName: fullName || email.split("@")[0],
-        passwordHash,
-        emailVerified: false,
-        authProvider: "local"
-      },
-      select: { id: true, email: true, fullName: true }
+    // Without an organization a new account can't order domains, start transfers or add sites.
+    const user = await db.$transaction(async (tx: any) => {
+      const created = await tx.user.create({
+        data: {
+          email,
+          fullName: displayName,
+          passwordHash,
+          emailVerified: false,
+          authProvider: "local"
+        },
+        select: { id: true, email: true, fullName: true }
+      });
+      await tx.organization.create({
+        data: {
+          slug: workspaceSlug(displayName),
+          name: displayName,
+          ownerId: created.id,
+          collaborators: { create: { userId: created.id, role: "admin" } }
+        }
+      });
+      return created;
     });
 
     return NextResponse.json({ ok: true, user }, { status: 201 });

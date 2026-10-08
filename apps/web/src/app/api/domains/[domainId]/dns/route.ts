@@ -17,7 +17,7 @@ export async function GET(_request: Request, { params }: Params) {
   try {
     return NextResponse.json({ ok: true, zoneReady: true, records: await listDnsRecords(found.domain.cloudflareZoneId) });
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not read DNS." }, { status: 502 });
+    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not read DNS." }, { status: 503 });
   }
 }
 
@@ -35,7 +35,7 @@ export async function POST(request: Request, { params }: Params) {
     const record = await createDnsRecord(found.domain.cloudflareZoneId, found.domain.name, validated.record);
     return NextResponse.json({ ok: true, record });
   } catch (error) {
-    const status = error instanceof CloudflareError && error.status >= 400 && error.status < 500 ? 400 : 502;
+    const status = error instanceof CloudflareError && error.status >= 400 && error.status < 500 ? 400 : 503;
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Cloudflare refused the record." }, { status });
   }
 }

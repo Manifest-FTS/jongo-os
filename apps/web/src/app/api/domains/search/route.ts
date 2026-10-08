@@ -111,7 +111,8 @@ export async function POST(request: Request) {
         retryAfterSeconds
       },
       {
-        status: result.reason === "rate_limited" ? 429 : 502,
+        // 503, not 502: Cloudflare replaces an origin 502 body with its own page, hiding this message.
+        status: result.reason === "rate_limited" ? 429 : 503,
         ...(retryAfterSeconds ? { headers: { "Retry-After": String(retryAfterSeconds) } } : {})
       }
     );
