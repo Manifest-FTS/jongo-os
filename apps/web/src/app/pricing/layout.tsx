@@ -11,8 +11,8 @@ const planList = ALL_PLANS.map((plan) => `${plan.name} $${plan.monthlyPrice}/mo`
 
 export const metadata: Metadata = pageMetadata({
   path: "/pricing",
-  title: `Pricing: hosting and SLA plans from $${cheapest}/month`,
-  description: `Four transparent plans: ${planList}. Two months free on annual billing, unlimited projects and staging, no per-seat fees, published overage rates.`
+  title: `Pricing: hosting and managed plans from $${cheapest}/month`,
+  description: `Four plans: ${planList}. Two months free when you pay yearly, unlimited sites and staging, no per-seat fees, and published rates for extra usage.`
 });
 
 export default function PricingLayout({ children }: { children: React.ReactNode }) {

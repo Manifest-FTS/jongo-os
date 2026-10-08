@@ -125,7 +125,7 @@ function PlanCard({ plan, isAnnual }: { plan: TierPlan; isAnnual: boolean }) {
 
         {/* Compute Specs Box */}
         <div className="bg-[#f8f9f9] border border-solid border-[#dde1e1] rounded-lg p-3 my-4 text-[0.82rem] leading-relaxed">
-          <div className="font-semibold text-[#1e332a] mb-1">Compute & Storage:</div>
+          <div className="font-semibold text-[#1e332a] mb-1">Server resources:</div>
           <div className="text-[#4b5556]">
             • {plan.compute.ram} · {plan.compute.vcpu}
             <br />
@@ -138,13 +138,13 @@ function PlanCard({ plan, isAnnual }: { plan: TierPlan; isAnnual: boolean }) {
             {plan.devHours ? (
               <>
                 <br />
-                <strong>Dev Time:</strong> {plan.devHours}
+                <strong>Developer time:</strong> {plan.devHours}
               </>
             ) : null}
-            {plan.uptimeNote ? (
+            {plan.uptimeGuarantee ?? plan.uptimeNote ? (
               <>
                 <br />
-                <strong>Uptime:</strong> {plan.uptimeNote}
+                <strong>Uptime:</strong> {plan.uptimeGuarantee ?? plan.uptimeNote}
               </>
             ) : null}
           </div>
@@ -163,7 +163,7 @@ function PlanCard({ plan, isAnnual }: { plan: TierPlan; isAnnual: boolean }) {
       </div>
 
       <div className="mt-4 text-[0.75rem] text-muted">
-        Overages: {plan.overageRates.bandwidth} bandwidth · {plan.overageRates.storage} SSD · {plan.overageRates.adHocDev} ad-hoc dev
+        Extra usage: {plan.overageRates.bandwidth} bandwidth · {plan.overageRates.storage} storage · {plan.overageRates.adHocDev} developer time
       </div>
     </article>
   );
@@ -203,11 +203,11 @@ export default function PricingPage() {
 
       <section className="pricing-head">
         <h1 className="hosting-h1 text-[clamp(1.9rem,1.3rem+2vw,2.75rem)]">
-          Transparent Pricing Matrix
+          Simple pricing for hosting and care
         </h1>
         <p className="hosting-lede max-w-[680px] mx-auto">
-          Two transparent cloud hosting tiers and two high-assurance managed SLA tiers. All plans include
-          unlimited projects, automated staging, wildcard SSL, daily offsite backups, and zero per-seat fees.
+          Host it yourself, or let us look after it for you. Every plan includes unlimited sites and staging
+          copies, free SSL, nightly offsite backups, and unlimited team members at no extra cost.
         </p>
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -218,7 +218,7 @@ export default function PricingPage() {
               aria-pressed={!isAnnual}
               className={cx("sg-billing-btn", !isAnnual && "active")}
             >
-              Monthly Billing
+              Pay monthly
             </button>
             <button
               type="button"
@@ -226,11 +226,11 @@ export default function PricingPage() {
               aria-pressed={isAnnual}
               className={cx("sg-billing-btn", isAnnual && "active")}
             >
-              Yearly Billing
+              Pay yearly
             </button>
           </div>
           {isAnnual ? (
-            <span className="sg-discount-tag">🎉 Save 2 Months (~17% off annual plans)</span>
+            <span className="sg-discount-tag">2 months free when you pay yearly</span>
           ) : null}
         </div>
       </section>
@@ -239,11 +239,11 @@ export default function PricingPage() {
       <section className="hosting-section pt-0 pb-10">
         <div className="mb-6 text-center">
           <div className="inline-block text-[0.8rem] font-bold uppercase tracking-wider text-[#4f8a2f] bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-            Two Cloud Hosting Tiers
+            Hosting plans
           </div>
-          <h2 className="hosting-h2 mt-2 mb-1">Standard Cloud Workloads</h2>
+          <h2 className="hosting-h2 mt-2 mb-1">We run the servers, you run your sites</h2>
           <p className="hosting-body max-w-[620px] mx-auto text-[#4b5556]">
-            Engineered for static sites, WordPress, Next.js/React applications, and full-stack projects.
+            Fast, reliable hosting for business websites, WordPress, and web apps built with Next.js or React.
           </p>
         </div>
 
@@ -258,11 +258,11 @@ export default function PricingPage() {
       <section className="hosting-section pt-0 pb-14">
         <div className="mb-6 text-center">
           <div className="inline-block text-[0.8rem] font-bold uppercase tracking-wider text-[#d4af37] bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-            SLA Tiers · Managed Agency & Enterprise
+            Managed plans
           </div>
-          <h2 className="hosting-h2 mt-2 mb-1">Managed Agency & Mission-Critical SLA</h2>
+          <h2 className="hosting-h2 mt-2 mb-1">We host it and look after it</h2>
           <p className="hosting-body max-w-[620px] mx-auto text-[#4b5556]">
-            For multi-site portfolios, agencies, and high-traffic platforms requiring developer hours, priority response windows, and uptime guarantees.
+            For agencies and businesses that want guaranteed uptime, faster replies, and developer hours every quarter for updates and fixes.
           </p>
         </div>
 
@@ -276,9 +276,9 @@ export default function PricingPage() {
       {/* SECTION 3: TRANSPARENT ESCALATION & USAGE MATRIX */}
       <section className="hosting-pricing">
         <div className="hosting-section py-14">
-          <h2 className="hosting-h2">Jongo Usage & Escalation Matrix</h2>
+          <h2 className="hosting-h2">Compare plans</h2>
           <p className="hosting-sub max-w-[720px] mx-auto">
-            Comprehensive side-by-side comparison of compute allocations, support response SLAs, included developer time, and predictable overage rates across all tiers.
+            Everything side by side: resources, support, included developer time, and what extra usage costs.
           </p>
 
           {/* DYNAMIC VERCEL-STYLE COMPARISON ON MOBILE (< md screens) */}
@@ -286,7 +286,7 @@ export default function PricingPage() {
             <div className="bg-white border border-solid border-[#dde1e1] rounded-2xl p-4 shadow-sm mb-4">
               {/* Mobile View Toggle */}
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-solid border-[#eef1f1]">
-                <span className="text-[0.78rem] font-bold uppercase tracking-wider text-muted">Mobile Display:</span>
+                <span className="text-[0.78rem] font-bold uppercase tracking-wider text-muted">View:</span>
                 <div className="inline-flex rounded-lg border border-solid border-[#dde1e1] p-0.5 bg-[#f8f9f9]">
                   <button
                     onClick={() => setMobileViewMode("dynamic")}
@@ -295,7 +295,7 @@ export default function PricingPage() {
                       mobileViewMode === "dynamic" ? "bg-[#1e332a] text-white shadow-sm" : "text-[#6c7778]"
                     )}
                   >
-                    Tier Selector (Vercel Style)
+                    One plan
                   </button>
                   <button
                     onClick={() => setMobileViewMode("table")}
@@ -304,7 +304,7 @@ export default function PricingPage() {
                       mobileViewMode === "table" ? "bg-[#1e332a] text-white shadow-sm" : "text-[#6c7778]"
                     )}
                   >
-                    Full Grid Table
+                    All plans
                   </button>
                 </div>
               </div>
@@ -315,7 +315,7 @@ export default function PricingPage() {
                   <div className="mb-3">
                     <input
                       type="text"
-                      placeholder="Search feature or metric (e.g., RAM, SLA, Dev Time)..."
+                      placeholder="Search, e.g. storage, support, backups"
                       value={mobileSearchQuery}
                       onChange={(e) => setMobileSearchQuery(e.target.value)}
                       className="w-full px-3 py-2 text-[0.88rem] rounded-lg border border-solid border-[#dde1e1] bg-[#f8f9f9] text-[#14231c]"
@@ -325,7 +325,7 @@ export default function PricingPage() {
                   {/* Plan dropdown selector */}
                   <div className="mb-4">
                     <label className="block text-[0.75rem] font-bold text-[#6c7778] uppercase mb-1">
-                      Active Comparison Tier:
+                      Plan:
                     </label>
                     <select
                       value={mobileSelectedTier}
@@ -334,7 +334,7 @@ export default function PricingPage() {
                     >
                       <option value="starter">Starter Cloud — $45/mo ($450/yr)</option>
                       <option value="pro">Pro Cloud — $75/mo ($750/yr)</option>
-                      <option value="core-sla">Core SLA (Agency) — $149/mo ($1,490/yr)</option>
+                      <option value="core-sla">Core SLA — $149/mo ($1,490/yr)</option>
                       <option value="enterprise-sla">Enterprise SLA — $349/mo ($3,490/yr)</option>
                     </select>
                   </div>
@@ -384,7 +384,7 @@ export default function PricingPage() {
                   <table className="pricing-table w-full text-left text-[0.78rem]">
                     <thead>
                       <tr>
-                        <th scope="col" className="w-28">Metric</th>
+                        <th scope="col" className="w-28">Feature</th>
                         <th scope="col">Starter</th>
                         <th scope="col" className="is-featured">Pro</th>
                         <th scope="col">Core SLA</th>
@@ -416,7 +416,7 @@ export default function PricingPage() {
               <thead>
                 <tr>
                   <th scope="col" className="w-1/3">
-                    <span className="font-bold text-[1rem]">Metric / Service</span>
+                    <span className="font-bold text-[1rem]">Feature</span>
                   </th>
                   <th scope="col">
                     <span className="pricing-table__plan">Starter Cloud</span>
@@ -461,7 +461,7 @@ export default function PricingPage() {
 
       {/* FAQ */}
       <section className="hosting-section pt-16">
-        <h2 className="hosting-h2">Frequently Asked Questions</h2>
+        <h2 className="hosting-h2">Common questions</h2>
         <div className="pricing-faq mt-8">
           {PRICING_FAQ.map((item) => (
             <div key={item.q} className={cx(card, "px-[22px] py-5")}>
@@ -476,14 +476,14 @@ export default function PricingPage() {
         <div className="hosting-closing">
           <div>
             <h2 className="hosting-h2 text-[27px] mb-[9px]">
-              Custom Infrastructure or Dedicated Clusters?
+              Need something bigger?
             </h2>
             <p className="hosting-body text-[15.5px]">
-              Need a multi-node cluster, custom VPC peering, or dedicated compliance isolation? We tailor enterprise hosting architectures for your specific SLA requirements.
+              Running a busy store, need more than one server, or have compliance requirements? Tell us what you need and we'll put together a plan that fits.
             </p>
           </div>
           <Link href="/contact" className={cx(btnPrimary, "px-6 py-[13px] text-[15.5px] shrink-0")}>
-            Speak with technical lead →
+            Talk to us →
           </Link>
         </div>
       </section>
