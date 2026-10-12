@@ -10,7 +10,9 @@ import PromoteToProductionCard from "@/components/PromoteToProductionCard";
 import StagingActionsPanel from "@/components/StagingActionsPanel";
 import StagingSiteFacts from "@/components/StagingSiteFacts";
 import PageAutoRefresh from "@/components/PageAutoRefresh";
-import StagingDomainForm from "@/components/StagingDomainForm";
+import StagingDomainsPanel from "@/components/StagingDomainsPanel";
+import { primaryStagingUrl } from "@/lib/staging-domains";
+import { pickFallbackHost, platformSuffixesFromEnv } from "@/lib/staging-domain-rules";
 import StagingAuditHistory from "@/components/StagingAuditHistory";
 import CopyTextButton from "@/components/CopyTextButton";
 import Link from "next/link";
@@ -107,15 +109,6 @@ function formatAuditAgo(iso: string): string {
 function getAuditActionType(entry: StagingAuditEntry): string | undefined {
   const details = entry.details as Record<string, unknown> | null | undefined;
   return typeof details?.actionType === "string" ? details.actionType : undefined;
-}
-
-function getLatestDomainSyncEntry(entries: StagingAuditEntry[]): StagingAuditEntry | null {
-  const match = entries.find((entry) => {
-    const actionType = getAuditActionType(entry);
-    return actionType === "staging_domains_updated" || actionType === "staging_domains_update_failed";
-  });
-
-  return match ?? null;
 }
 
 function getPromoteActionType(entry: StagingAuditEntry): StagingPromoteOutcome["actionType"] | undefined {
@@ -354,10 +347,6 @@ export default async function StagingPage({ params, searchParams }: Params) {
   const preferredDomainConverged = preferredDomainValue
     ? reportedStagingDomains.some((domain) => domain.toLowerCase() === preferredDomainValue.toLowerCase())
     : true;
-  const stagingDomainsInput = (reportedStagingDomains.length > 0
-    ? reportedStagingDomains
-    : (preferredDomainValue ? [preferredDomainValue] : [])
-  ).join(", ");
   const stagingAuditLogs: (StagingAuditEntry & { actor?: { id: string; fullName?: string | null; email?: string | null; avatarUrl?: string | null } | null })[] = workspace.organizationId
     ? await db.auditLog.findMany({
         where: {
@@ -384,7 +373,9 @@ export default async function StagingPage({ params, searchParams }: Params) {
   // entry; before it did, there was no source for the fact at all, so an older
   // site can legitimately have synced with nothing logged — hence "Not recorded
   // yet" rather than "Never".
-  const stagingFactsUrl = reportedStagingDomains[0] ?? preferredDomainValue ?? null;
+  const fallbackStagingHost = pickFallbackHost(reportedStagingDomains, platformSuffixesFromEnv()) || preferredDomainValue || "";
+  const primaryStagingLink = fallbackStagingHost ? await primaryStagingUrl(workspace.id, `https://${fallbackStagingHost}`) : undefined;
+  const stagingFactsUrl = primaryStagingLink?.replace(/^https?:\/\//, "").replace(/\/.*$/, "") || reportedStagingDomains[0] || preferredDomainValue || null;
 
   const lastSyncedFromProduction = stagingAuditLogs.find((entry) => {
     const details = entry.details as Record<string, unknown> | null | undefined;
@@ -421,7 +412,6 @@ export default async function StagingPage({ params, searchParams }: Params) {
       actor: entry.actor ?? undefined
     };
   });
-  const latestDomainSyncEntry = getLatestDomainSyncEntry(stagingAuditLogs);
   const latestPromoteOutcome = getLatestPromoteOutcome(stagingAuditLogs);
 
   const dryRunPlan =
@@ -763,26 +753,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
                     Staging environment exists but no application is deployed yet. Contact your platform administrator.
                   </p>
                 )}
-                {canManageDomains ? (
-                  <>
-                    <StagingDomainForm
-                      siteId={siteId}
-                      initialDomains={stagingDomainsInput}
-                    />
-                    {latestDomainSyncEntry ? (
-                      <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                        <span className={`status-chip ${getAuditActionType(latestDomainSyncEntry) === "staging_domains_updated" ? "healthy" : "error"}`}>
-                          {getAuditActionType(latestDomainSyncEntry) === "staging_domains_updated" ? "Last domain sync: success" : "Last domain sync: failed"}
-                        </span>{" "}
-                        {formatAuditAgo(latestDomainSyncEntry.createdAt.toISOString())}
-                      </p>
-                    ) : (
-                      <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                        Last domain sync: no attempts recorded yet.
-                      </p>
-                    )}
-                  </>
-                ) : null}
+                <StagingDomainsPanel siteId={workspace.id} />
                 <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
                   Checked {formatAgo(stagingCapability.checkedAt)}
                 </p>

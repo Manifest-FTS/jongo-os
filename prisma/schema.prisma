@@ -258,6 +258,7 @@ model Site {
 
   // Relations
   organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stagingDomains StagingDomain[]
   environments             Environment[]
   collaborators            SiteCollaborator[]
   invitations              Invitation[]
@@ -964,5 +965,38 @@ model DomainCharge {
   domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
 
   @@index([domainId])
+  @@index([status])
+}
+
+// A client's own hostname for a site's staging copy (staging.clientsite.com),
+// next to the always-working .mfts.link fallback. See
+// docs/architecture/custom-staging-domains.md. Live hostnames are unique across
+// the platform through a partial unique index (migration SQL), which Prisma
+// cannot express.
+model StagingDomain {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId          String    @db.Uuid
+  hostname        String
+  // pending_dns | verified | active | dns_lost | failed | removed
+  status          String    @default("pending_dns")
+  // none | pending | issued | failed
+  sslStatus       String    @default("none")
+  cnameTarget     String
+  lastError       String?
+  lastErrorReason String?
+  lastCheckedAt   DateTime?
+  verifiedAt      DateTime?
+  attachedAt      DateTime?
+  sslIssuedAt     DateTime?
+  sslExpiresAt    DateTime?
+  removedAt       DateTime?
+  createdById     String?   @db.Uuid
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+  @@index([hostname])
   @@index([status])
 }

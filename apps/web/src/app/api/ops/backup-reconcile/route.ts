@@ -4,6 +4,7 @@ import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoo
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
 import { reconcileStagingTargets, type StagingTargetReconcileResult } from "@/lib/staging-target-reconcile";
 import { reconcileDomains, type DomainReconcileResult } from "@/lib/domain-orders";
+import { reconcileStagingDomains, type StagingDomainReconcileResult } from "@/lib/staging-domains";
 import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -256,6 +257,15 @@ export async function POST(request: Request) {
       domains = await reconcileDomains();
     } catch (error) {
       console.error("[jongo] backup-reconcile: domain reconcile failed:", error);
+    }
+
+    // Custom staging domains: retry attaches, re-check DNS and certificates,
+    // and fall back to .mfts.link when a client's DNS stops pointing at us.
+    let stagingDomains: StagingDomainReconcileResult | null = null;
+    try {
+      stagingDomains = await reconcileStagingDomains();
+    } catch (error) {
+      console.error("[jongo] backup-reconcile: staging domain reconcile failed:", error);
     }
 
     for (const site of sites) {
@@ -822,7 +832,8 @@ export async function POST(request: Request) {
         stagingResourcesFlagged,
         resourcesMissing,
         stagingTargets,
-        domains
+        domains,
+        stagingDomains
       },
       results
     });
