@@ -551,6 +551,9 @@ export default async function StagingPage({ params, searchParams }: Params) {
                 </p>
               </div>
             </div>
+            {/* Custom staging domain. In the always-visible card: it used to sit in
+                the debug-only "Staging Capability" card, so nobody saw it. */}
+            <StagingDomainsPanel siteId={workspace.id} />
           </div>
         ) : null}
 
@@ -753,7 +756,6 @@ export default async function StagingPage({ params, searchParams }: Params) {
                     Staging environment exists but no application is deployed yet. Contact your platform administrator.
                   </p>
                 )}
-                <StagingDomainsPanel siteId={workspace.id} />
                 <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
                   Checked {formatAgo(stagingCapability.checkedAt)}
                 </p>
