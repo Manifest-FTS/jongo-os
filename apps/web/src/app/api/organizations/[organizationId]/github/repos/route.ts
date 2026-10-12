@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireOrgAdmin } from "@/lib/github-route-access";
+import { requireOrgMember } from "@/lib/github-route-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ type Params = { params: Promise<{ organizationId: string }> };
 /** GET ?q=: repos shared with this client's install (names only, no tokens). */
 export async function GET(request: Request, { params }: Params) {
   const { organizationId } = await params;
-  const access = await requireOrgAdmin(organizationId);
+  const access = await requireOrgMember(organizationId);
   if ("response" in access) return access.response;
   const { reposForOrg } = await import("@/lib/github-deploys");
   const result = await reposForOrg(organizationId).catch(() => ({ ok: false as const, status: 502, message: "Couldn't reach GitHub just now. Try again." }));

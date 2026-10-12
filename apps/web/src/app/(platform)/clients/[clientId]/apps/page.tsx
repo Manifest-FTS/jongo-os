@@ -55,7 +55,7 @@ export default async function ClientAppsPage({ params }: Params) {
           <h2 style={{ margin: 0 }}>Apps</h2>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>All apps mapped to this client workspace.</p>
         </div>
-        {client.dbId ? <CreateSiteForm organizationId={client.dbId} availableApps={availableApps} /> : null}
+        {client.dbId ? <CreateSiteForm organizationId={client.dbId} availableApps={availableApps} githubOnly={!canManageClient} /> : null}
       </div>
 
       {apps.length === 0 ? (

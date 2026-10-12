@@ -29,6 +29,9 @@ describe("getPermissions", () => {
     // demands a backup preflight and the typed PROMOTE confirmation.
     expect(collaborator.canPromoteStaging).toBe(true);
     expect(collaborator.canEnablePrivacyMode).toBe(true);
+    // Creating an app from a repo the admin already shared, and changing its
+    // branch, only adds or redeploys; connecting GitHub itself stays admin-only.
+    expect(collaborator.canDeployFromGithub).toBe(true);
   });
 
   it("does NOT let a collaborator destroy anything or hand out credentials", () => {

@@ -15,13 +15,13 @@ async function access(siteId: string, manage: boolean) {
   const workspace = await getSiteWorkspace(siteId, viewer);
   if (!workspace || !/^[0-9a-f-]{36}$/i.test(workspace.id)) return { response: NextResponse.json({ ok: false, message: "Not found." }, { status: 404 }) };
   const permissions = await resolveSitePermissionSnapshot({ siteId, workspace, viewer });
-  if (manage && !permissions.isAdmin && !permissions.isPlatformAdmin) {
-    return { response: NextResponse.json({ ok: false, message: "Only the client's admins can change where this app deploys from." }, { status: 403 }) };
+  if (manage && !permissions.canDeployFromGithub) {
+    return { response: NextResponse.json({ ok: false, message: "You can't change where this app deploys from." }, { status: 403 }) };
   }
   return { siteDbId: workspace.id, userId: session.user.id, canDeploy: permissions.canPromoteStaging };
 }
 
-/** PATCH { repo?, branch?, stagingBranch?, autoDeploy? } (client admins). */
+/** PATCH { repo?, branch?, stagingBranch?, autoDeploy? } (admins and collaborators: canDeployFromGithub). */
 export async function PATCH(request: Request, { params }: Params) {
   const { siteId } = await params;
   const ctx = await access(siteId, true);

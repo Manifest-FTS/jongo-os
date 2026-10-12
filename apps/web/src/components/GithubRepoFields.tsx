@@ -22,9 +22,12 @@ type Repo = { id: number; fullName: string; private: boolean; defaultBranch: str
 export default function GithubRepoFields({
   organizationId,
   value,
-  onChange
+  onChange,
+  canConnect = true
 }: {
   organizationId: string;
+  /** Admins get links to client settings; collaborators are told to ask one. */
+  canConnect?: boolean;
   value: GithubRepoValue;
   onChange: (next: GithubRepoValue) => void;
 }) {
@@ -68,9 +71,13 @@ export default function GithubRepoFields({
       <div className="diagnostic-banner">
         {repoError.text}{" "}
         {repoError.connect ? (
-          <a className="action-link font-semibold" href={`/clients/${organizationId}/settings`}>
-            Connect GitHub
-          </a>
+          canConnect ? (
+            <a className="action-link font-semibold" href={`/clients/${organizationId}/settings`}>
+              Connect GitHub
+            </a>
+          ) : (
+            <span>Ask one of the client&apos;s admins to connect GitHub.</span>
+          )
         ) : null}
       </div>
     );
@@ -79,8 +86,15 @@ export default function GithubRepoFields({
   if (repos.length === 0) {
     return (
       <div className="diagnostic-banner">
-        No repos are shared with Jongo yet. Choose repos on GitHub from{" "}
-        <a className="action-link font-semibold" href={`/clients/${organizationId}/settings`}>client settings</a>.
+        No repos are shared with Jongo yet.{" "}
+        {canConnect ? (
+          <>
+            Choose repos on GitHub from{" "}
+            <a className="action-link font-semibold" href={`/clients/${organizationId}/settings`}>client settings</a>.
+          </>
+        ) : (
+          "Ask one of the client's admins to share repos on GitHub."
+        )}
       </div>
     );
   }

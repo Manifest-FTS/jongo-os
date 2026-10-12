@@ -146,7 +146,7 @@ export default async function SiteSettingsPage({ params }: Params) {
         <SiteSourceCard
           siteId={siteId}
           source={githubSource}
-          canManage={Boolean(permissionSnapshot.isAdmin || permissionSnapshot.isPlatformAdmin)}
+          canManage={permissionSnapshot.canDeployFromGithub}
           canDeploy={permissionSnapshot.canPromoteStaging}
         />
       ) : null}

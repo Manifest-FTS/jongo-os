@@ -34,6 +34,8 @@ its owners; the connection completes once one approves.
 
 ## 3. Create an app from a repo
 
+Client admins and collaborators can do this (and change an app's Source); only admins connect or disconnect GitHub.
+
 **Apps → Add App → Deploy from GitHub**: pick the repo, branch, build (Auto-detect or
 Dockerfile), port, optional base directory and environment variables. Jongo creates the
 app, applies its address and starts the first deploy.
