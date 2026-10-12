@@ -4,11 +4,17 @@ import { getClientWorkspace, isClientAdmin } from "@/lib/repositories";
 import { getCoolifyOverview } from "@/lib/coolify";
 import CoolifyProjectMappingForm from "@/components/CoolifyProjectMappingForm";
 import DeleteClientButton from "@/components/DeleteClientButton";
+import GithubConnectionCard from "@/components/GithubConnectionCard";
 
-type Params = { params: Promise<{ clientId: string }> };
+type Params = {
+  params: Promise<{ clientId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default async function ClientSettingsPage({ params }: Params) {
+export default async function ClientSettingsPage({ params, searchParams }: Params) {
   const { clientId } = await params;
+  const query = (await searchParams) ?? {};
+  const githubReturn = Array.isArray(query.github) ? query.github[0] : query.github;
   const session = await auth();
 
   const client = await getClientWorkspace(clientId, {
@@ -32,6 +38,7 @@ export default async function ClientSettingsPage({ params }: Params) {
 
   return (
     <div className="page-stack">
+      {client.dbId ? <GithubConnectionCard organizationId={client.dbId} returnStatus={githubReturn ?? null} /> : null}
       <article className="card">
         <h3 className="card-title">Project Mapping</h3>
         <p className="card-muted" style={{ marginBottom: "1rem" }}>

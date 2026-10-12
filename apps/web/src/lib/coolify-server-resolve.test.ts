@@ -89,4 +89,23 @@ describe("resolveStagingServerUuid", () => {
     );
     expect(resolveStagingServerUuid({ service: undefined, servers: [] }).uuid).toBe("");
   });
+
+  it("uses the server the admin chose when several exist", () => {
+    const r = resolveStagingServerUuid({ service: LIVE_SERVICE, servers: [{ uuid: "a", name: "one" }, { uuid: "b", name: "two" }], chosenServerUuid: "b" });
+    expect(r.uuid).toBe("b");
+    expect(r.source).toBe("chosen");
+  });
+
+  it("ignores a chosen server that is not in the list", () => {
+    const r = resolveStagingServerUuid({ service: LIVE_SERVICE, servers: [{ uuid: "a" }, { uuid: "b" }], chosenServerUuid: "zzz" });
+    expect(r.uuid).toBe("");
+    expect(r.choices).toEqual([{ uuid: "a", name: "a" }, { uuid: "b", name: "b" }]);
+  });
+
+  it("offers the candidates, in plain words, when it cannot decide", () => {
+    const r = resolveStagingServerUuid({ service: LIVE_SERVICE, servers: [{ uuid: "a", name: "one" }, { uuid: "b", name: "two" }] });
+    expect(r.choices).toEqual([{ uuid: "a", name: "one" }, { uuid: "b", name: "two" }]);
+    expect(r.reason).not.toMatch(/in Coolify/);
+    expect(r.reason).toMatch(/choose/i);
+  });
 });

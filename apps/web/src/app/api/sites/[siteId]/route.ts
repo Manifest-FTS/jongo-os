@@ -410,9 +410,10 @@ export async function DELETE(req: Request, { params }: Params) {
           coolifyDestroyed: false,
           coolifyDeletionMessage,
           error:
-            `Coolify did not delete the resource${coolifyDeletionMessage ? `: ${coolifyDeletionMessage}` : "."} ` +
-            "The app was left in place so the two systems do not diverge. Retry, or send force to archive it here anyway.",
-          actionHint: "Retry the deletion, or delete the resource in Coolify and try again."
+            `The running site could not be deleted${coolifyDeletionMessage ? ` (${coolifyDeletionMessage})` : ""}. ` +
+            "The app was kept so nothing is left running unseen. Use Retry delete.",
+          actionHint: "Use Retry delete. Nothing has been removed yet.",
+          remedy: { action: "retry_site_delete", label: "Retry delete" }
         }, { status: 502 });
       }
     }

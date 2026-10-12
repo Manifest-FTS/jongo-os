@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { remedy } from "@/lib/remedies";
 import { auth } from "@/lib/auth.config";
 import {
   applyCoolifyApplicationDomain,
@@ -977,18 +978,18 @@ export async function GET(_req: Request, { params }: Params) {
     blockers.push("Staging is disabled in Jongo for this app.");
   }
   if (!appUuid) {
-    blockers.push("Coolify service UUID is not linked.");
+    blockers.push("This app isn't linked to a running site yet.");
   }
   if (site.stagingEnabled && appUuid && coolifyTelemetryUnavailable) {
-    blockers.push("Coolify API telemetry unavailable (likely auth/scope or network restriction). Staging detection may be incomplete.");
+    blockers.push("Couldn't reach the server to check staging just now. Staging detection may be incomplete.");
   } else if (!stagingCapability?.detected) {
-    blockers.push("No staging environment/application is currently detected in Coolify.");
+    blockers.push("No staging copy is detected yet.");
   }
   if (site.stagingEnabled && stagingCapability?.detected && !stagingCapability?.applicationUuid) {
     blockers.push(`Staging environment exists but no staging ${stagingTargetLabel(stagingCapability?.resourceKind)} target is attached yet.`);
   }
   if (site.stagingEnabled && stagingCapability?.detected && stagingCapability?.applicationUuid && stagingCapability.status !== "healthy") {
-    blockers.push("Staging target is attached but not running/deployed in Coolify.");
+    blockers.push("The staging copy is attached but not running.");
   }
   if (backupReadiness.locked) {
     blockers.push(backupReadiness.reason ?? "Backup readiness is not satisfied.");
@@ -999,28 +1000,28 @@ export async function GET(_req: Request, { params }: Params) {
 
   const suggestedActions: string[] = [];
   if (!site.stagingEnabled) {
-    suggestedActions.push("Enable staging in app settings. Jongo will attempt staging provisioning in Coolify automatically.");
+    suggestedActions.push("Turn staging on. Jongo creates the staging copy automatically.");
   }
   if (site.stagingEnabled && appUuid && coolifyTelemetryUnavailable) {
-    suggestedActions.push("Verify COOLIFY_API_TOKEN scope, COOLIFY_API_BASE_URL reachability, and any Coolify allowlist/edge restrictions; then re-run staging preflight.");
+    suggestedActions.push("Refresh in a minute; the server didn't answer the staging check.");
   } else if (site.stagingEnabled && appUuid && !stagingCapability?.detected) {
-    suggestedActions.push("Staging is enabled but not detected yet. Verify Coolify staging support for this app and create/provision staging manually if auto-provision is unsupported.");
+    suggestedActions.push("Staging is on but not detected yet. Use Try again to set it up again.");
   }
   if (site.stagingEnabled && stagingCapability?.detected && !stagingCapability?.applicationUuid) {
     const targetLabel = stagingTargetLabel(stagingCapability?.resourceKind);
-    suggestedActions.push(`Provision or attach a staging ${targetLabel} in Coolify so sync and promote checks can target a concrete staging ${targetLabel}.`);
+    suggestedActions.push(`Use Try again so Jongo attaches a staging ${targetLabel}; sync and promote need one.`);
   }
   if (site.stagingEnabled && stagingCapability?.detected && stagingCapability?.applicationUuid && stagingCapability.status !== "healthy") {
-    suggestedActions.push("Start/deploy the staging target in Coolify, then re-run staging preflight in Jongo.");
+    suggestedActions.push("Use Restart staging, then refresh this page.");
   }
   if (!appUuid) {
-    suggestedActions.push("Link a Coolify Service UUID in app settings so staging detection and provisioning can run.");
+    suggestedActions.push("Link this app to its running site in app settings so staging can be set up.");
   }
   if (backupReadiness.locked) {
     suggestedActions.push(backupReadiness.nextStep ?? "Fix backup readiness blockers before sync testing.");
   }
   if (readyForSyncTesting) {
-    suggestedActions.push("Run dry-run preflight checks and validate staging content before any manual promote/sync action in Coolify.");
+    suggestedActions.push("Check staging content, then promote or sync from this page.");
   }
 
   return NextResponse.json({
@@ -1085,7 +1086,7 @@ export async function POST(req: Request, { params }: Params) {
     }
   }
 
-  let body: { enabled?: boolean; burnExisting?: boolean };
+  let body: { enabled?: boolean; burnExisting?: boolean; stagingServerUuid?: string };
   try {
     body = await req.json();
   } catch {
@@ -1236,8 +1237,9 @@ export async function POST(req: Request, { params }: Params) {
       if (residualCapability?.applicationUuid) {
         const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
         return NextResponse.json({
-          error: "Staging re-enable is locked until existing staging resources are fully removed.",
-          actionHint: `Existing staging ${targetLabel} resources are still detected. Finish unprovision/deletion in Coolify, then re-enable staging.`
+          error: "An old staging copy of this app still exists, so a new one can't be created yet.",
+          actionHint: `Remove the old staging ${targetLabel === "service" ? "copy" : "app"}, then turn staging on.`,
+          remedy: remedy("retry_staging_cleanup")
         }, { status: 409 });
       }
     }
@@ -1449,7 +1451,9 @@ export async function POST(req: Request, { params }: Params) {
       // See the note on the other call site: the production suffix must not
       // leak into staging URLs.
     });
-    const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId);
+    const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId, {
+      serverUuid: typeof body.stagingServerUuid === "string" ? body.stagingServerUuid.trim() : null
+    });
 
     let capabilityAfterProvision: Awaited<ReturnType<typeof getCoolifyAppStagingCapability>>;
     if (provisionResult.resourceUuid) {
@@ -1659,9 +1663,13 @@ export async function POST(req: Request, { params }: Params) {
       manualProvisionRequired
       ? (provisionResult.ok
         ? (environmentOnlyProvisioned
-          ? "Coolify created a staging environment, but no staging target was attached yet. This resource type may require manual clone/attach in Coolify."
-          : "Check the Staging tab in Coolify and refresh in a few minutes.")
-          : "Check the Staging tab in Coolify and refresh in a few minutes.")
+          ? "The staging environment exists, but the staging copy isn't attached yet. Refresh in a few minutes, or use Try again."
+          : "Staging is still being set up. Refresh in a few minutes.")
+          : provisionResult.reason === "auto_provision_unsupported"
+            ? "Staging isn't available for this kind of app yet."
+            : provisionResult.reason === "server_choice_needed"
+              ? provisionResult.message
+              : "Staging setup didn't finish. Use Try again.")
       : requiresContentSync
         ? (autoContentSync.ok
           ? "Staging content sync completed automatically. Refresh in a moment."
@@ -1676,9 +1684,11 @@ export async function POST(req: Request, { params }: Params) {
     const enableMessage = manualProvisionRequired
       ? (provisionResult.ok
         ? (environmentOnlyProvisioned
-          ? "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes."
-          : "Staging is being provisioned in Coolify. Check the Staging tab in a few minutes.")
-          : "Staging is enabled in Jongo, but automatic provisioning is unavailable for this app. Check the Staging tab in Coolify.")
+          ? "Staging is being set up. It appears here in a few minutes."
+          : "Staging is being set up. It appears here in a few minutes.")
+          : provisionResult.reason === "auto_provision_unsupported"
+            ? "Staging is turned on, but it isn't available for this kind of app yet."
+            : "Staging is turned on, but setting up the staging copy didn't finish.")
       : (requiresContentSync && autoContentSync.ok)
         ? "Staging content sync completed automatically."
       : !stagingRunning
@@ -1708,6 +1718,10 @@ export async function POST(req: Request, { params }: Params) {
       stagingContentProbe: stagingProbeResult.probe,
       autoContentSync,
       message: enableMessage,
+      serverChoices: provisionResult.serverChoices ?? null,
+      remedy: manualProvisionRequired && (environmentOnlyProvisioned || (!provisionResult.ok && provisionResult.reason !== "auto_provision_unsupported" && provisionResult.reason !== "server_choice_needed"))
+        ? remedy("retry_staging_provision")
+        : null,
       provisioningAttempts: provisionResult.attempts ?? [],
       capability: capabilityAfterProvision
     });
@@ -1765,10 +1779,10 @@ export async function POST(req: Request, { params }: Params) {
           destroyResult = {
             ok: true,
             message: destroyedTargetCount > 1
-              ? `Removed ${destroyedTargetCount} staging targets in Coolify.`
+              ? `Removed ${destroyedTargetCount} staging copies.`
               : destroyedTargetCount === 1
-                ? "Staging target removed in Coolify."
-                : "Staging target is no longer attached in Coolify."
+                ? "Staging copy removed."
+                : "The staging copy is already gone."
           };
         } else {
           destroyResult = {
@@ -1780,7 +1794,7 @@ export async function POST(req: Request, { params }: Params) {
       } catch {
         destroyResult = {
           ok: false,
-          message: "Staging target cleanup could not be verified automatically."
+          message: "Couldn't confirm the staging copy was removed."
         };
       }
     }
@@ -1794,8 +1808,8 @@ export async function POST(req: Request, { params }: Params) {
       destroyResult = {
         ok: false,
         message: capability?.detected
-          ? "Staging was disabled, but Coolify did not report a resource id for the staging target, so nothing could be removed."
-          : "Staging was disabled, but no staging resource could be found in Coolify to remove. If one exists, delete it manually."
+          ? "Staging was turned off, but the staging copy couldn't be identified exactly, so nothing was removed."
+          : "Staging was turned off. No staging copy could be found to remove."
       };
     }
 
@@ -1840,8 +1854,9 @@ export async function POST(req: Request, { params }: Params) {
     stagedDetected: Boolean(capability?.detected),
     destroyed,
     actionHint: !destroyed && Boolean(body.burnExisting)
-      ? "Jongo disabled staging, but automatic cleanup failed. Remove staging resources manually in the infrastructure panel before re-enabling destructive cleanup."
+      ? "Staging is off, but the old staging copy is still there. Use Remove old staging copy to try again; it also retries on its own every hour."
       : null,
+    remedy: !destroyed && Boolean(body.burnExisting) ? remedy("retry_staging_cleanup") : null,
     message: destroyResult?.message ?? "Staging disabled in Jongo."
   });
   } catch (error) {

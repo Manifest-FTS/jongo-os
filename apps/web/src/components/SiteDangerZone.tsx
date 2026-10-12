@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { ToastStack, useToasts } from "@/components/Toasts";
+import RemedyButton from "@/components/RemedyButton";
+import type { Remedy } from "@/lib/remedies";
 
 type Props = {
   siteId: string;
@@ -44,10 +46,12 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
   const [busy, setBusy] = useState(false);
   const [alsoDeleteCoolify, setAlsoDeleteCoolify] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorRemedy, setErrorRemedy] = useState<Remedy | null>(null);
 
   async function deleteApp() {
     setBusy(true);
     setError(null);
+    setErrorRemedy(null);
     try {
       const response = await fetch(`/api/sites/${siteId}`, {
         method: "DELETE",
@@ -58,12 +62,13 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
 
       if (!response.ok) {
         setError(payload?.error ?? "The app could not be deleted.");
+        setErrorRemedy(payload?.remedy ?? null);
         setOpen(false);
         return;
       }
 
       // Report what actually happened rather than a fixed string: asking for the
-      // Coolify resource to go and having that part fail is exactly the thing
+      // running site to go and having that part fail is exactly the thing
       // someone needs to know before they walk away.
       const coolifyFailed = alsoDeleteCoolify && payload?.coolifyDestroyed === false;
       push({
@@ -71,8 +76,8 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
         title: `${siteName} removed from Jongo.`,
         text: alsoDeleteCoolify
           ? coolifyFailed
-            ? `Its Coolify resource could NOT be removed${payload?.coolifyDeletionMessage ? `: ${payload.coolifyDeletionMessage}` : ""}. Delete it manually.`
-            : "Its Coolify resource was destroyed."
+            ? `Its running site could NOT be removed${payload?.coolifyDeletionMessage ? `: ${payload.coolifyDeletionMessage}` : ""}.`
+            : "Its running site was destroyed."
           : undefined,
         ttl: coolifyFailed ? 0 : undefined
       });
@@ -107,7 +112,7 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
           <div style={{ maxWidth: "38rem" }}>
             <h4 style={{ margin: 0, fontSize: "0.95rem" }}>Delete this app</h4>
             <p className="card-muted" style={{ margin: "0.25rem 0 0" }}>
-              Remove <strong>{siteName}</strong> from Jongo. The live site remains online unless you also destroy its Coolify resource.
+              Remove <strong>{siteName}</strong> from Jongo. The live site remains online unless you also destroy its running site.
             </p>
 
             {hasCoolifyResource ? (
@@ -122,12 +127,25 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
                   style={{ marginTop: "0.2rem" }}
                 />
                 <span className="card-muted" style={{ margin: 0 }}>
-                  Also destroy the Coolify resource, including its containers and volumes.
+                  Also destroy the running site, including its containers and volumes.
                 </span>
               </label>
             ) : null}
 
             {error ? <p className="form-error" style={{ margin: "0.6rem 0 0" }}>{error}</p> : null}
+            {error && errorRemedy ? (
+              <RemedyButton
+                className="mt-2"
+                remedy={errorRemedy}
+                endpoint={`/api/sites/${siteId}/remedies`}
+                onDone={(ok) => {
+                  if (ok) {
+                    router.push("/apps");
+                    router.refresh();
+                  }
+                }}
+              />
+            ) : null}
           </div>
 
           <button
@@ -147,8 +165,8 @@ export default function SiteDangerZone({ siteId, siteSlug, siteName, canDelete, 
         title={`Delete ${siteName}?`}
         body={
           alsoDeleteCoolify
-            ? `This removes the app from Jongo AND destroys its Coolify resource. The site goes offline immediately and its containers and volumes are deleted.`
-            : `This removes the app from Jongo. The running site in Coolify is left untouched and keeps serving traffic.`
+            ? `This removes the app from Jongo AND destroys its running site. The site goes offline immediately and its containers and volumes are deleted.`
+            : `This removes the app from Jongo. The running site is left untouched and keeps serving traffic.`
         }
         warning={
           alsoDeleteCoolify

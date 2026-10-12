@@ -4,6 +4,8 @@ import SiteInfoForm from "@/components/SiteInfoForm";
 import SiteStagingToggle from "@/components/SiteStagingToggle";
 import WordPressAdvancedControls from "@/components/WordPressAdvancedControls";
 import SiteDangerZone from "@/components/SiteDangerZone";
+import SiteSourceCard from "@/components/SiteSourceCard";
+import { loadSiteSource } from "@/lib/site-source";
 import PageAutoRefresh from "@/components/PageAutoRefresh";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
@@ -55,6 +57,7 @@ export default async function SiteSettingsPage({ params }: Params) {
     viewer
   });
   const canViewInternalMetadata = permissionSnapshot.canViewInternalMetadata;
+  const githubSource = await loadSiteSource(workspace.id);
   const isWordPress = workspace.siteType === "wordpress" || workspace.resourceType === "WordPress";
   const stagingCapability = workspace?.coolifyServiceUuid
     ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
@@ -137,6 +140,15 @@ export default async function SiteSettingsPage({ params }: Params) {
             </article>
           </div>
         </div>
+      ) : null}
+
+      {githubSource ? (
+        <SiteSourceCard
+          siteId={siteId}
+          source={githubSource}
+          canManage={Boolean(permissionSnapshot.isAdmin || permissionSnapshot.isPlatformAdmin)}
+          canDeploy={permissionSnapshot.canPromoteStaging}
+        />
       ) : null}
 
       {/* Site Record (non-WordPress DB-backed sites) */}

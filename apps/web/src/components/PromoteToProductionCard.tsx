@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import CopyTextButton from "@/components/CopyTextButton";
+import RemedyButton from "@/components/RemedyButton";
+import type { Remedy } from "@/lib/remedies";
 
 type Props = {
   siteId: string;
@@ -72,6 +74,8 @@ type PromoteResponse = {
   actionHint?: string;
   /** Content was promoted, but the final production restart was not confirmed. */
   deployWarning?: string | null;
+  /** In-app fix for a partial promote (the restart that did not go through). */
+  remedy?: Remedy | null;
   backupId?: string;
   backupStarted?: boolean;
   blockingDeployment?: {
@@ -154,6 +158,7 @@ export default function PromoteToProductionCard({
   const [confirmationPhrase, setConfirmationPhrase] = useState("");
   const [status, setStatus] = useState<PromoteStatus>("idle");
   const [message, setMessage] = useState("");
+  const [messageRemedy, setMessageRemedy] = useState<Remedy | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pollError, setPollError] = useState("");
   const [lastPolledAt, setLastPolledAt] = useState<string | null>(null);
@@ -386,6 +391,7 @@ export default function PromoteToProductionCard({
       // The attempt id is shown once, in the box below, not appended here too.
       const replaySuffix = payload?.replayed ? " (replayed request)" : "";
       setMessage(`${payload?.message ?? defaultMessage}${replaySuffix}`.trim());
+      setMessageRemedy(payload?.remedy ?? null);
       if (payload?.promoteAttemptId) {
         setLatestPromoteAttemptId(payload.promoteAttemptId);
         await fetchAttemptStatus(payload.promoteAttemptId);
@@ -524,6 +530,7 @@ export default function PromoteToProductionCard({
           {message}
         </p>
       ) : null}
+      {messageRemedy && status === "success" ? <RemedyButton key={message} remedy={messageRemedy} endpoint={`/api/sites/${siteId}/remedies`} /> : null}
 
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.6rem", display: "grid", gap: "0.35rem" }}>
         {focusedAttempt ? (

@@ -26,9 +26,11 @@ export type ServerCandidate = { uuid?: unknown; id?: unknown; name?: unknown };
 export type ServerResolution = {
   uuid: string;
   /** How it was determined, for the provisioning log. */
-  source: "service_server_uuid" | "service_server_object" | "matched_by_id" | "only_server" | "unresolved";
+  source: "service_server_uuid" | "service_server_object" | "matched_by_id" | "only_server" | "chosen" | "unresolved";
   /** Set when unresolved, explaining what a human should do. */
   reason?: string;
+  /** Set when several servers exist and none is known: the admin picks one in Jongo. */
+  choices?: Array<{ uuid: string; name: string }>;
 };
 
 function str(value: unknown): string {
@@ -42,6 +44,8 @@ export function resolveStagingServerUuid(input: {
   service: Record<string, unknown> | null | undefined;
   /** Everything GET /api/v1/servers returned. */
   servers: ServerCandidate[];
+  /** Picked by an admin in the staging toggle; used only if it is a real server. */
+  chosenServerUuid?: string | null;
 }): ServerResolution {
   const service = input.service ?? {};
 
@@ -80,13 +84,20 @@ export function resolveStagingServerUuid(input: {
       uuid: "",
       source: "unresolved",
       reason:
-        "Coolify returned no servers, so there is nowhere to create the staging copy. Check the API token's permissions and that at least one server is reachable."
+        "The hosting platform returned no servers, so there is nowhere to create the staging copy. A platform admin needs to check Jongo's hosting connection."
     };
+  }
+
+  const chosen = str(input.chosenServerUuid);
+  if (chosen && withUuid.some((s) => str(s.uuid) === chosen)) {
+    return { uuid: chosen, source: "chosen" };
   }
 
   return {
     uuid: "",
     source: "unresolved",
-    reason: `Coolify did not say which of its ${withUuid.length} servers this app runs on, so staging was not created rather than guessing. Create the staging resource in Coolify, or set the server explicitly.`
+    reason: `The hosting platform did not say which of its ${withUuid.length} servers this app runs on, so staging was not created rather than guessing. Choose the server, then try again.`,
+    choices: withUuid.map((s) => ({ uuid: str(s.uuid), name: str(s.name) || str(s.uuid) }))
   };
+
 }

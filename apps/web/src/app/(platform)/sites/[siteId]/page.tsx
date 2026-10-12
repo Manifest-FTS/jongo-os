@@ -15,6 +15,8 @@ import SitePrivacyModeControl from "@/components/SitePrivacyModeControl";
 import SftpAccessCard from "@/components/SftpAccessCard";
 import { buildTemporaryProductionDomain } from "@/lib/temporary-domains";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
+import { loadSiteSource } from "@/lib/site-source";
+import { GIT_STATUS_WARNINGS } from "@/lib/site-source-copy";
 
 export const dynamic = "force-dynamic";
 
@@ -448,8 +450,26 @@ export default async function SiteOverviewPage({ params }: Params) {
     readinessSummary = summarizeReadiness(readinessChecks);
   }
 
+  const githubSource = await loadSiteSource(workspace.id);
+  const githubWarning = githubSource?.gitStatus && githubSource.gitStatus !== "linked" ? GIT_STATUS_WARNINGS[githubSource.gitStatus] : null;
+
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
+      {githubSource ? (
+        <div className={`px-3.5 py-2.5 rounded-lg border border-solid text-[13px] flex items-center gap-3 flex-wrap ${githubWarning ? "bg-warn-bg border-warn-border text-warn-text" : "bg-white border-border"}`}>
+          <span>
+            {githubWarning ?? (
+              <>
+                Deploys from <span className="font-semibold">{githubSource.repo}@{githubSource.branch}</span>
+                {githubSource.pendingCommitSha ? ` · new commit ${githubSource.pendingCommitSha.slice(0, 7)} waiting to deploy` : githubSource.autoDeploy ? " on every push" : ""}
+              </>
+            )}
+          </span>
+          <Link className="action-link font-semibold" href={`/sites/${siteId}/settings`}>
+            {githubWarning ? "Fix" : githubSource.pendingCommitSha ? "Deploy" : "Source settings"}
+          </Link>
+        </div>
+      ) : null}
       <section style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
         <div style={{ flex: "3 1 680px", minWidth: "320px" }}>
           <section className="metric-strip" style={{ marginBottom: "1rem" }}>

@@ -14,9 +14,9 @@ export function getBackupUnavailableMessage(note?: string): string {
     case "no_databases_in_environment":
       return "No databases were detected in this application's Coolify environment. If databases exist, check that the app UUID is correctly mapped.";
     case "fetch_error":
-      return "Could not retrieve backup data from Coolify. The API may be temporarily unreachable.";
+      return "Could not retrieve backup data from the server. It may be temporarily unreachable.";
     default:
-      return "Could not retrieve backup information from Coolify. The API may be unreachable or this resource type may not support backup inspection.";
+      return "Could not retrieve backup information from the server. It may be unreachable, or this kind of app may not support backup inspection.";
   }
 }
 
@@ -28,7 +28,7 @@ export function getStagingDetectionMessage(note?: string): string {
     case "no_staging_environment_in_project":
       return "No environment named 'staging' or 'preview' was found in the Coolify project.";
     case "application_not_found":
-      return "Application UUID not found in Coolify — check the UUID in Settings.";
+      return "This app's link to its running site is out of date. Fix it in the app's Settings.";
     case "no_project_resolved":
       return "No Coolify project is mapped to this app. Set a Coolify Project ID in Settings.";
     case "missing_credentials":
@@ -129,7 +129,7 @@ export function getActivityFeedEmptyMessage(
   hasApiError: boolean
 ): string {
   if (!siteFound) {
-    return "App not found in Coolify inventory — check the UUID in Settings.";
+    return "This app's running site was not found. Check its link in the app's Settings.";
   }
   if (hasApiError) {
     return "Coolify API unavailable — could not load activity. Data will appear once connectivity is restored.";

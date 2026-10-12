@@ -12,9 +12,9 @@ export function toClientFacingStagingMessage(value?: string | null): string | nu
     normalized.includes("fully removed") ||
     normalized.includes("unprovision")
   ) {
-    // Not "being removed": nothing removes a copy on its own, so that promise
-    // left people refreshing for days. Say what is true and who can fix it.
-    return "An old staging copy still exists and has to be removed first. If this doesn't clear in a few minutes, contact support.";
+    // Not "being removed": say what is true and what fixes it (the Remove old
+    // staging copy button shown next to this message).
+    return "An old staging copy still exists and has to be removed first. Use Remove old staging copy.";
   }
 
   if (
@@ -22,7 +22,7 @@ export function toClientFacingStagingMessage(value?: string | null): string | nu
     normalized.includes("could not be removed") ||
     normalized.includes("unable to destroy")
   ) {
-    return "Staging could not be fully removed. Try again later or contact support.";
+    return "Staging could not be fully removed. Use Remove old staging copy to try again.";
   }
 
   if (

@@ -51,7 +51,7 @@ export async function collectPluginInventory(resourceUuid: string): Promise<Coll
   const empty = { wpVersion: null, updateDataCheckedAt: null, plugins: [] as ProbedPlugin[] };
 
   if (!resourceUuid.trim()) {
-    return { status: "no_containers", error: "This app is not linked to a Coolify resource.", ...empty };
+    return { status: "no_containers", error: "This app isn't linked to a running site yet.", ...empty };
   }
   if (!isSshHostConfigured()) {
     return { status: "ssh_unavailable", error: "SSH host is not configured, so plugin inventory cannot be read.", ...empty };

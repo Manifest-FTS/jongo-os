@@ -83,7 +83,7 @@ export async function runUrlRewrite(input: {
     return { ...base, ok: false, error: "SSH host is not configured, so URLs cannot be rewritten." };
   }
   if (!input.resourceUuid.trim()) {
-    return { ...base, ok: false, error: "This app is not linked to a Coolify resource." };
+    return { ...base, ok: false, error: "This app isn't linked to a running site yet." };
   }
 
   const payloadJson = JSON.stringify({ pairs, dryRun: input.apply !== true });

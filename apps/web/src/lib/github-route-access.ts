@@ -1,0 +1,43 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth.config";
+
+/**
+ * Who may act on an organization's GitHub connection: its client admins (and
+ * platform admins). Collaborators can see the linked repo on a site but can't
+ * connect, disconnect or link.
+ */
+export async function requireOrgAdmin(
+  orgId: string
+): Promise<{ userId: string; email: string | null } | { response: NextResponse }> {
+  const session = await auth();
+  if (!session?.user?.id) return { response: NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 }) };
+  if (!/^[0-9a-f-]{36}$/i.test(orgId)) return { response: NextResponse.json({ ok: false, message: "Not found." }, { status: 404 }) };
+  const { isClientAdmin } = await import("@/lib/repositories");
+  const { isPlatformAdminEmail } = await import("@/lib/permissions");
+  const allowed = (await isClientAdmin(orgId, session.user.id)) || (await isPlatformAdminEmail(session.user.email));
+  if (!allowed) return { response: NextResponse.json({ ok: false, message: "Only the client's admins can manage GitHub." }, { status: 403 }) };
+  return { userId: session.user.id, email: session.user.email ?? null };
+}
+
+export async function requirePlatformAdmin(): Promise<{ userId: string } | { response: NextResponse }> {
+  const session = await auth();
+  if (!session?.user?.id) return { response: NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 }) };
+  const { isPlatformAdminEmail } = await import("@/lib/permissions");
+  if (!(await isPlatformAdminEmail(session.user.email))) {
+    return { response: NextResponse.json({ ok: false, message: "Only platform admins can do this." }, { status: 403 }) };
+  }
+  return { userId: session.user.id };
+}
+
+export function installStateSecret(): string {
+  return process.env.NEXTAUTH_SECRET?.trim() || process.env.AUTH_SECRET?.trim() || "";
+}
+
+/** The public origin, behind Cloudflare/Traefik (never the container's own host). */
+export function publicOrigin(request: Request): string {
+  const configured = process.env.PUBLIC_SITE_URL?.trim() || process.env.NEXTAUTH_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const proto = request.headers.get("x-forwarded-proto") ?? "https";
+  return forwardedHost ? `${proto}://${forwardedHost}` : new URL(request.url).origin;
+}

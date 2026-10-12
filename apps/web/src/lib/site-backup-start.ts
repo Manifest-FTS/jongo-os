@@ -113,7 +113,7 @@ export async function startSiteBackup(input: {
 }): Promise<StartSiteBackupResult> {
   const resourceUuid = input.site.coolifyServiceUuid?.trim();
   if (!resourceUuid) {
-    return { ok: false, reason: "not_linked", message: "This app is not linked to a Coolify resource." };
+    return { ok: false, reason: "not_linked", message: "This app isn't linked to a running site yet." };
   }
 
   // The backup captures whatever persistent state a resource has (files volumes

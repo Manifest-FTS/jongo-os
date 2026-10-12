@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon } from "@/components/JongoIcons";
+import RemedyButton from "@/components/RemedyButton";
+import GithubRepoFields, { EMPTY_GITHUB_REPO_VALUE, type GithubRepoValue } from "@/components/GithubRepoFields";
+import { remedy as buildRemedy, type Remedy } from "@/lib/remedies";
 import type { CoolifyAppPickerOption } from "@/lib/coolify-app-picker";
 import {
   DEFAULT_TEMPORARY_DOMAIN_SUFFIX,
@@ -27,6 +30,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
   const [selectedAppId, setSelectedAppId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeFix, setNoticeFix] = useState<{ siteId: string; remedy: Remedy } | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   // Two genuinely different intents shared one form: ADOPT a Coolify resource
@@ -37,7 +41,8 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
   // and with link as the default that path produced a Jongo row and nothing in
   // Coolify — the exact phantom-record failure this form was reworked to end.
   // Adopting is a migration activity; it costs one click to select.
-  const [mode, setMode] = useState<"link" | "create">("create");
+  const [mode, setMode] = useState<"link" | "create" | "github">("create");
+  const [github, setGithub] = useState<GithubRepoValue>(EMPTY_GITHUB_REPO_VALUE);
 
   const selectedApp = useMemo(
     () => availableApps.find((app) => app.id === selectedAppId),
@@ -74,10 +79,11 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
     setTemporaryDomainSlug("");
     setTemporaryDomainSuffix(DEFAULT_TEMPORARY_DOMAIN_SUFFIX);
     setSelectedAppId("");
+    setGithub(EMPTY_GITHUB_REPO_VALUE);
     setError(null);
   }
 
-  function handlePickMode(value: "link" | "create") {
+  function handlePickMode(value: "link" | "create" | "github") {
     setMode(value);
     setError(null);
     setNotice(null);
@@ -97,6 +103,35 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
     setLoading(true);
 
     try {
+      if (mode === "github") {
+        const res = await fetch(`/api/organizations/${organizationId}/sites/github`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            repo: github.repo,
+            branch: github.branch,
+            buildPack: github.buildPack,
+            port: github.port,
+            baseDirectory: github.baseDirectory,
+            envVars: github.envVars.filter((row) => row.key.trim()),
+            temporaryDomainSlug: normalizeTemporaryDomainSlug(temporaryDomainSlug) || undefined,
+            temporaryDomainSuffix
+          })
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          setError(data?.message ?? "Failed to create app");
+          return;
+        }
+        setNotice(data.message ?? "App created.");
+        setNoticeFix(null);
+        resetForm();
+        setOpen(false);
+        router.refresh();
+        return;
+      }
+
       const res = await fetch(`/api/organizations/${organizationId}/sites`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -123,14 +158,16 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
       // out on the domain. The site is real, so this is not an error — but it
       // must not be swallowed, or the domain looks set when it is not.
       if (data?.provision && data.provision.domainApplied === false) {
-        setNotice(data.provision.message ?? "App created, but its domain could not be applied. Set it in Coolify.");
+        setNotice(data.provision.message ?? "App created, but its address could not be applied yet.");
+        setNoticeFix(data?.id ? { siteId: data.id, remedy: buildRemedy("apply_site_domain") } : null);
       } else if (data?.provision && data.provision.restarted === false) {
-        // The domain is stored but nothing has re-read it: Coolify only
-        // regenerates routing and the container's FQDN on deploy, so the app is
-        // still answering on the host it was deployed with.
-        setNotice(
-          "App created and its domain saved, but Coolify did not accept the restart that makes the domain take effect. Restart the service in Coolify if the site does not answer on its address."
-        );
+        // The domain is stored but nothing has re-read it: the server only
+        // regenerates routing and the container's FQDN on restart, so the app
+        // is still answering on the host it was deployed with.
+        setNotice("App created and its address saved, but the restart that makes the address live didn't go through.");
+        setNoticeFix(data?.id ? { siteId: data.id, remedy: buildRemedy("restart_site", { target: "production" }) } : null);
+      } else {
+        setNoticeFix(null);
       }
 
       resetForm();
@@ -153,10 +190,13 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
         {notice ? (
           <p className="form-help" role="status" style={{ margin: 0 }}>
             {notice}{" "}
-            <button type="button" className="btn btn-secondary" onClick={() => setNotice(null)}>
+            <button type="button" className="btn btn-secondary" onClick={() => { setNotice(null); setNoticeFix(null); }}>
               Dismiss
             </button>
           </p>
+        ) : null}
+        {notice && noticeFix ? (
+          <RemedyButton remedy={noticeFix.remedy} endpoint={`/api/sites/${noticeFix.siteId}/remedies`} onDone={(ok) => ok && router.refresh()} />
         ) : null}
       </div>
     );
@@ -176,8 +216,9 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
       )}
       <div role="radiogroup" aria-label="How to add this app" style={{ display: "flex", gap: "0.5rem", marginBottom: "0.9rem", flexWrap: "wrap" }}>
         {([
-          ["link", "Link existing app", "Adopt a resource that already exists in Coolify."],
-          ["create", "Create WordPress site", "Provision a new WordPress + MariaDB service in Coolify."]
+          ["link", "Link existing app", "Adopt an app that is already running on Jongo's servers."],
+          ["create", "Create WordPress site", "Create a new WordPress + MariaDB site."],
+          ["github", "Deploy from GitHub", "Build and deploy an app from one of your GitHub repos."]
         ] as const).map(([value, label, help]) => (
           <button
             key={value}
@@ -194,8 +235,10 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
       </div>
       <p className="card-muted" style={{ marginBottom: "0.9rem" }}>
         {mode === "create"
-          ? "A new WordPress + MariaDB service is created in Coolify and deployed. It is added here once Coolify confirms it."
-          : "Adopts an app that already exists in Coolify. Nothing new is created."}
+          ? "A new WordPress + MariaDB site is created and deployed. It is added here once the server confirms it."
+          : mode === "github"
+            ? "Builds the repo and deploys it. Every push to the branch deploys again."
+            : "Adopts an app that is already running. Nothing new is created."}
       </p>
       <form onSubmit={handleSubmit} className="form-stack">
         {mode === "link" && availableApps.length > 0 ? (
@@ -242,6 +285,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
             className="form-input"
           />
         </div>
+        {mode === "github" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} /> : null}
         {mode === "link" ? (
         <>
         <div>
@@ -291,9 +335,9 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
           </select>
           <p className="form-help">
             {temporaryDomainPreview
-              ? mode === "create"
-                ? `Temporary production URL: https://${temporaryDomainPreview} — applied to the new Coolify service.`
-                : `Temporary production URL: https://${temporaryDomainPreview} — recorded in Jongo only; the adopted app keeps the domain it already has in Coolify.`
+              ? mode !== "link"
+                ? `Temporary production URL: https://${temporaryDomainPreview} — applied to the new app.`
+                : `Temporary production URL: https://${temporaryDomainPreview} — recorded in Jongo only; the adopted app keeps the address it already has.`
               : "Temporary production URL preview unavailable"}
           </p>
         </div>
