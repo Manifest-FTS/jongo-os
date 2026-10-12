@@ -237,6 +237,18 @@ function formatActionLabel(actionType?: string): string {
       return "Staging domains updated";
     case "staging_domains_update_failed":
       return "Staging domains update failed";
+    case "staging_domain_added":
+      return "Custom staging domain added";
+    case "staging_domain_verified":
+      return "Custom staging domain verified";
+    case "staging_domain_attached":
+      return "Custom staging domain connected";
+    case "staging_domain_removed":
+      return "Custom staging domain removed";
+    case "staging_domain_dns_lost":
+      return "Custom staging domain DNS changed";
+    case "staging_domain_primary_changed":
+      return "Staging link changed";
     case "staging_promote_blocked":
       return "Promotion blocked by preflight";
     case "staging_promote_triggered":
@@ -253,7 +265,7 @@ function formatActionLabel(actionType?: string): string {
 }
 
 function isDomainSyncAction(actionType?: string): boolean {
-  return actionType === "staging_domains_updated" || actionType === "staging_domains_update_failed";
+  return actionType === "staging_domains_updated" || actionType === "staging_domains_update_failed" || Boolean(actionType?.startsWith("staging_domain_"));
 }
 
 function isPromoteAction(actionType?: string): boolean {

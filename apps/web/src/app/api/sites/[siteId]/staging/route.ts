@@ -2,16 +2,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import {
   applyCoolifyApplicationDomain,
-  applyCoolifyApplicationDomains,
-  applyCoolifyServiceDomains,
   buildStagingSyncDryRunPlan,
   deriveCoolifyStagingDomainFromProduction,
   getCoolifyAppBackupInventory,
   destroyCoolifyApplication,
   getCoolifyAppStagingCapability,
-  isGeneratedCoolifyHost,
-  readCoolifyServiceDomains,
-  restartCoolifyService,
   triggerCoolifyDeploy,
   provisionCoolifyStagingFromProduction
 } from "@/lib/coolify";
@@ -134,14 +129,6 @@ async function notifyStagingCreated(params: {
   }
 }
 
-function normalizeHostForCompare(value: string): string {
-  try {
-    const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
-    return url.hostname.toLowerCase().replace(/\.$/, "");
-  } catch {
-    return "";
-  }
-}
 
 function tailLines(value: string, count = 12): string {
   return value
@@ -368,106 +355,6 @@ async function resolveCoolifyServiceApplicationNames(serviceUuid: string): Promi
   }
 }
 
-async function retryCoolifyDomainSyncWithDiagnostics(params: {
-  resourceKind?: string;
-  resourceUuid: string;
-  domains: string[];
-}): Promise<CoolifyDomainSyncResult> {
-  const normalizedDomains = params.domains
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .map((value) => (/^https?:\/\//i.test(value) ? value : `https://${value}`));
-
-  if (normalizedDomains.length === 0) {
-    return {
-      ok: false,
-      message: "No valid domains were provided for sync."
-    };
-  }
-
-  const domainCsv = normalizedDomains.join(",");
-  const serviceApplicationNames = params.resourceKind === "service"
-    ? await resolveCoolifyServiceApplicationNames(params.resourceUuid)
-    : [];
-  const namedServiceUrls = serviceApplicationNames.length > 0
-    ? [{
-        name: serviceApplicationNames[0],
-        url: normalizedDomains.join(",")
-      }]
-    : [];
-  const attempts: CoolifyDomainSyncAttempt[] = params.resourceKind === "service"
-    ? [
-        ...(namedServiceUrls.length > 0
-          ? [{
-              method: "PATCH" as const,
-              path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
-              body: {
-                urls: namedServiceUrls,
-                force_domain_override: true
-              }
-            }]
-          : []),
-        ...(namedServiceUrls.length > 0
-          ? [{
-              method: "POST" as const,
-              path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
-              body: {
-                urls: namedServiceUrls,
-                force_domain_override: true
-              }
-            }]
-          : []),
-        {
-          method: "PATCH",
-          path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
-          body: {
-            urls: normalizedDomains.map((url, index) => ({
-              name: index === 0 ? "default" : `domain-${index + 1}`,
-              url
-            })),
-            force_domain_override: true
-          }
-        },
-        {
-          method: "POST",
-          path: `/api/v1/services/${encodeURIComponent(params.resourceUuid)}`,
-          body: {
-            urls: normalizedDomains.map((url, index) => ({
-              name: index === 0 ? "default" : `domain-${index + 1}`,
-              url
-            })),
-            force_domain_override: true
-          }
-        }
-      ]
-    : [
-        {
-          method: "PATCH",
-          path: `/api/v1/applications/${encodeURIComponent(params.resourceUuid)}`,
-          body: { domains: domainCsv }
-        },
-        {
-          method: "POST",
-          path: `/api/v1/applications/${encodeURIComponent(params.resourceUuid)}`,
-          body: { domains: domainCsv }
-        }
-      ];
-
-  let lastFailure: CoolifyDomainSyncResult = {
-    ok: false,
-    message: "Coolify rejected staging domain updates."
-  };
-
-  for (const attempt of attempts) {
-    const result = await runCoolifyDomainSyncAttempt(attempt);
-    if (result.ok) {
-      return result;
-    }
-    lastFailure = result;
-  }
-
-  return lastFailure;
-}
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -1917,6 +1804,12 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const destroyed = Boolean(destroyResult?.ok);
+  // The staging copy is gone, so its custom domains are released with it (the
+  // hostnames become claimable again; nothing is left to detach in Coolify).
+  if (destroyed) {
+    const { releaseStagingDomainsForSite } = await import("@/lib/staging-domains");
+    await releaseStagingDomainsForSite(site.id).catch((error) => console.error("[staging] releasing custom domains failed", error));
+  }
   const destroyActionType = destroyed ? "staging_disable_destroy" : "staging_disable_requested";
   // Forget the copy only once it is gone. If it survived (cleanup skipped or
   // failed), keeping the record lets the next enable re-attach it instead of
@@ -1957,211 +1850,8 @@ export async function POST(req: Request, { params }: Params) {
   }
 }
 
-export async function PATCH(req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session);
-
-  const { siteId } = await params;
-
-  // This edits domains, so it takes the domain permission — the same bar the
-  // production domain editor uses. It previously took none.
-  {
-    const { getSiteWorkspace } = await import("@/lib/repositories");
-    const { resolveSitePermissionSnapshot } = await import("@/lib/permissions");
-    const workspace = await getSiteWorkspace(siteId, {
-      userId: session.user.id,
-      email: session.user.email
-    });
-    if (!workspace) {
-      return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
-    }
-    const permissions = await resolveSitePermissionSnapshot({
-      siteId,
-      workspace,
-      viewer: { userId: session.user.id, email: session.user.email }
-    });
-    if (!permissions.canEditDomains) {
-      return NextResponse.json(
-        { error: "Only organisation admins can change staging domains." },
-        { status: 403 }
-      );
-    }
-  }
-
-  let body: { domains?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  if (typeof body.domains !== "string" || body.domains.trim().length === 0) {
-    return NextResponse.json({ error: "'domains' must be a non-empty comma-separated string" }, { status: 400 });
-  }
-
-  const { db } = await import("@/lib/db");
-  const site = await db.site.findFirst({
-    where: bootstrapGlobalAccess
-      ? {
-          ...buildSiteIdentityWhere(siteId)
-        }
-      : {
-          ...buildSiteIdentityWhere(siteId),
-          OR: [
-            {
-              organization: {
-                deletedAt: null,
-                OR: [
-                  { ownerId: session.user.id },
-                  { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-                ]
-              }
-            },
-            { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-          ]
-        },
-    include: {
-      organization: {
-        select: {
-          id: true,
-          ownerId: true,
-          collaborators: { where: { userId: session.user.id }, select: { role: true } }
-        }
-      }
-    }
-  });
-
-  if (!site) {
-    return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
-  }
-
-  const appUuid = site.coolifyServiceUuid?.trim() || "";
-  const projectId = site.coolifyProjectId?.trim() || undefined;
-  if (!appUuid) {
-    return NextResponse.json({ error: "Coolify service UUID is not linked." }, { status: 409 });
-  }
-
-  const capability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
-  if (!capability.detected || !capability.applicationUuid) {
-    return NextResponse.json({
-      error: "Staging application is not detected yet. Enable staging and verify the staging resource exists first."
-    }, { status: 409 });
-  }
-
-  const requestedDomains = body.domains
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  if (requestedDomains.length === 0) {
-    return NextResponse.json({ error: "No valid domains provided." }, { status: 400 });
-  }
-
-  const generatedRequests = requestedDomains.filter((domain) =>
-    isGeneratedCoolifyHost(domain, capability.applicationUuid)
-  );
-  if (generatedRequests.length > 0) {
-    return NextResponse.json({
-      error: "Refusing to set a Coolify-generated host as a preferred domain. "
-        + "It would be written into WordPress siteurl/home on the next content sync and pin the site to it.",
-      domains: generatedRequests
-    }, { status: 400 });
-  }
-
-  const isService = capability.resourceKind === "service";
-  const serviceResult = isService
-    ? await applyCoolifyServiceDomains(capability.applicationUuid, requestedDomains)
-    : null;
-
-  // Non-service resources still use the legacy boolean path.
-  const applicationUpdated = !isService
-    ? await applyCoolifyApplicationDomains(capability.applicationUuid, requestedDomains)
-    : false;
-
-  const updated = isService ? Boolean(serviceResult?.ok) : applicationUpdated;
-
-  const compatibilityRetry = !updated
-    ? await retryCoolifyDomainSyncWithDiagnostics({
-        resourceKind: capability.resourceKind,
-        resourceUuid: capability.applicationUuid,
-        domains: requestedDomains
-      })
-    : { ok: true, message: "Staging domains updated." };
-  const domainUpdateSucceeded = updated || compatibilityRetry.ok;
-  const domainUpdateMessage = domainUpdateSucceeded
-    ? (updated ? "Staging domains updated." : "Staging domains updated using compatibility mode.")
-    : (serviceResult && !serviceResult.ok ? serviceResult.message : compatibilityRetry.message);
-
-  // A domain change is inert at the edge until Coolify regenerates Traefik
-  // labels, which only happens on deploy – restarting the WordPress container
-  // directly does not do it.
-  //
-  // The restart is queued by Coolify, so the read-back below confirms only that
-  // Coolify stored the preferred fqdn, not that Traefik is already serving it.
-  // That is enough to gate content sync, which is what pins the wrong host.
-  let restarted = false;
-  let convergedDomains: string[] = [];
-  let preferredDomainConverged = false;
-
-  if (domainUpdateSucceeded && isService) {
-    const restartResponse = await restartCoolifyService(capability.applicationUuid);
-    restarted = restartResponse.ok;
-
-    convergedDomains = await readCoolifyServiceDomains(capability.applicationUuid);
-    const convergedHosts = new Set(
-      convergedDomains.map((domain) => normalizeHostForCompare(domain)).filter(Boolean)
-    );
-    preferredDomainConverged = requestedDomains.every((domain) =>
-      convergedHosts.has(normalizeHostForCompare(domain))
-    );
-  }
-
-  await recordStagingAuditLog({
-    organizationId: site.organizationId,
-    actorId: session.user.id,
-    actionType: domainUpdateSucceeded ? "staging_domains_updated" : "staging_domains_update_failed",
-    resourceId: site.id,
-    details: {
-      domains: requestedDomains,
-      stagingApplicationUuid: capability.applicationUuid,
-      updated: domainUpdateSucceeded,
-      compatibilityModeUsed: !updated && compatibilityRetry.ok,
-      coolifyStatus: serviceResult?.status ?? compatibilityRetry.status ?? null,
-      coolifyConflicts: serviceResult?.conflicts ?? null,
-      restarted,
-      reportedStagingHosts: convergedDomains,
-      preferredStagingDomainConverged: preferredDomainConverged,
-      message: domainUpdateMessage
-    },
-    req
-  });
-
-  if (!domainUpdateSucceeded) {
-    return NextResponse.json({
-      ok: false,
-      stagingApplicationUuid: capability.applicationUuid,
-      requestedDomains,
-      coolifyStatus: serviceResult?.status ?? compatibilityRetry.status ?? null,
-      conflicts: serviceResult?.conflicts ?? null,
-      message: domainUpdateMessage
-    }, { status: 502 });
-  }
-
-  return NextResponse.json({
-    ok: true,
-    stagingApplicationUuid: capability.applicationUuid,
-    requestedDomains,
-    restarted,
-    reportedStagingHosts: convergedDomains,
-    preferredStagingDomainConverged: preferredDomainConverged,
-    message: preferredDomainConverged
-      ? domainUpdateMessage
-      : `${domainUpdateMessage} Coolify has not reported the preferred host yet; `
-        + "do not run a content sync until it converges or the generated host will be written into WordPress.",
-    warning: preferredDomainConverged ? undefined : "preferred_domain_not_converged"
-  });
-}
+/*
+ * PATCH (free-text staging domains) was removed: it sent whatever was typed
+ * straight to Coolify with no DNS check or SSL status. Custom staging domains
+ * now go through /api/sites/[siteId]/staging/domains (lib/staging-domains.ts).
+ */

@@ -4,6 +4,8 @@ import { getCoolifyAppStagingCapability, isGeneratedCoolifyHost } from "@/lib/co
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { retryOnceAfterRateLimitError } from "@/lib/rate-limit-retry";
+import { primaryStagingUrl } from "@/lib/staging-domains";
+import { pickFallbackHost, platformSuffixesFromEnv } from "@/lib/staging-domain-rules";
 
 export const runtime = "nodejs";
 
@@ -67,7 +69,11 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const stagingServiceUuid = capability.applicationUuid?.trim();
-  const stagingUrl = (capability.stagingUrl ?? capability.fqdn?.split(",")[0] ?? "").trim();
+  // Production content is rewritten to THE staging link: a connected custom
+  // domain when there is one, else the .mfts.link fallback.
+  const fallbackHost = pickFallbackHost(String(capability.fqdn ?? capability.stagingUrl ?? "").split(","), platformSuffixesFromEnv());
+  const fallbackStagingUrl = fallbackHost ? `https://${fallbackHost}` : (capability.stagingUrl ?? capability.fqdn?.split(",")[0] ?? "").trim();
+  const stagingUrl = ((await primaryStagingUrl(workspace.id, fallbackStagingUrl)) ?? fallbackStagingUrl).trim();
   if (!stagingServiceUuid || !stagingUrl) {
     return NextResponse.json(
       { ok: false, message: "The staging target or its public URL is not available yet. Retry shortly." },

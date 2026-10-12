@@ -11,6 +11,8 @@ import { rateLimitCooldownRemaining } from "@/lib/coolify-rate-limit";
 import { listSiteDeployments } from "@/lib/repositories";
 import { startSiteBackup } from "@/lib/site-backup-start";
 import { runUrlRewrite } from "@/lib/wp-url-rewrite-run";
+import { primaryStagingUrl, stagingUrlsForRewrite } from "@/lib/staging-domains";
+import { pickFallbackHost, platformSuffixesFromEnv } from "@/lib/staging-domain-rules";
 import { summarizeRewriteReport } from "@/lib/wp-url-rewrite";
 
 // Promote spawns the first-run backup as a detached child process.
@@ -592,7 +594,16 @@ export async function POST(req: Request, { params }: Params) {
 
   const backupReadiness = getBackupReadiness(backupInventory, appUuid, jongoBackupState);
   const preflight = getPathPreflight("staging-to-production", backupReadiness, stagingConfigured);
-  const stagingUrl = normalizePublicUrl(stagingCapability.stagingUrl ?? stagingCapability.fqdn);
+  // The staging link is a connected custom domain when there is one, else the
+  // .mfts.link fallback (lib/staging-domains.ts). Content may reference either,
+  // so the rewrite below replaces every staging address, not just the link.
+  const stagingHosts = String(stagingCapability.fqdn ?? stagingCapability.stagingUrl ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  const fallbackStagingHost = pickFallbackHost(stagingHosts, platformSuffixesFromEnv());
+  const fallbackStagingUrl = fallbackStagingHost
+    ? `https://${fallbackStagingHost}`
+    : normalizePublicUrl(stagingCapability.stagingUrl ?? stagingCapability.fqdn);
+  const stagingUrl = normalizePublicUrl(await primaryStagingUrl(site.id, fallbackStagingUrl)) ?? fallbackStagingUrl;
+  const stagingRewriteUrls = await stagingUrlsForRewrite(site.id, fallbackStagingUrl);
   const productionUrl = normalizePublicUrl(site.name) ?? normalizePublicUrl(site.slug);
 
   // Never backed up, but otherwise ready to promote: take the backup instead of
@@ -774,15 +785,25 @@ export async function POST(req: Request, { params }: Params) {
     // site that comes up is already self-consistent.
     let urlRewrite: Awaited<ReturnType<typeof runUrlRewrite>> | null = null;
     try {
-      urlRewrite = await runUrlRewrite({
-        resourceUuid: appUuid,
-        fromUrl: stagingUrl,
-        toUrl: productionUrl,
-        apply: true
-      });
-      if (!urlRewrite.ok) {
+      // One pass per staging address (custom domain, .mfts.link fallback),
+      // merged into one report.
+      const passes: Array<Awaited<ReturnType<typeof runUrlRewrite>>> = [];
+      for (const fromUrl of stagingRewriteUrls.length ? stagingRewriteUrls : [stagingUrl]) {
+        passes.push(await runUrlRewrite({ resourceUuid: appUuid, fromUrl, toUrl: productionUrl, apply: true }));
+      }
+      const merged = passes.reduce((total, pass) => ({
+        ...total,
+        ok: total.ok && pass.ok,
+        error: total.error ?? pass.error,
+        tables: [...total.tables, ...pass.tables],
+        pairs: [...total.pairs, ...pass.pairs],
+        rowsChanged: total.rowsChanged + pass.rowsChanged,
+        skippedUnserializable: total.skippedUnserializable + pass.skippedUnserializable
+      }));
+      urlRewrite = merged;
+      if (!merged.ok) {
         console.error(
-          `[jongo] promote ${promoteAttemptId}: URL rewrite failed for ${appUuid}: ${urlRewrite.error}`
+          `[jongo] promote ${promoteAttemptId}: URL rewrite failed for ${appUuid}: ${merged.error}`
         );
       }
     } catch (error) {
