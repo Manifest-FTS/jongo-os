@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireOrgAdmin } from "@/lib/github-route-access";
+import { requireOrgMember } from "@/lib/github-route-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ type Params = { params: Promise<{ organizationId: string }> };
  */
 export async function POST(request: Request, { params }: Params) {
   const { organizationId } = await params;
-  const access = await requireOrgAdmin(organizationId);
+  const access = await requireOrgMember(organizationId);
   if ("response" in access) return access.response;
   const body: any = await request.json().catch(() => null);
   if (!body || typeof body.name !== "string" || !body.name.trim()) return NextResponse.json({ ok: false, message: "Give the app a name." }, { status: 400 });

@@ -19,6 +19,35 @@ export async function requireOrgAdmin(
   return { userId: session.user.id, email: session.user.email ?? null };
 }
 
+/**
+ * Anyone on the client's team (owner, admin or collaborator) with the
+ * canDeployFromGithub permission: lists shared repos and creates apps from them.
+ */
+export async function requireOrgMember(
+  orgId: string
+): Promise<{ userId: string; email: string | null } | { response: NextResponse }> {
+  const session = await auth();
+  if (!session?.user?.id) return { response: NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 }) };
+  if (!/^[0-9a-f-]{36}$/i.test(orgId)) return { response: NextResponse.json({ ok: false, message: "Not found." }, { status: 404 }) };
+  const { getDb } = await import("@/lib/db");
+  const { getPermissions, isPlatformAdminEmail } = await import("@/lib/permissions");
+  const db: any = await getDb();
+  const org = db
+    ? await db.organization.findFirst({
+        where: { id: orgId, deletedAt: null },
+        select: { ownerId: true, collaborators: { where: { userId: session.user.id, deletedAt: null }, select: { role: true }, take: 1 } }
+      })
+    : null;
+  const platformAdmin = await isPlatformAdminEmail(session.user.email);
+  const member = Boolean(org && (org.ownerId === session.user.id || org.collaborators.length > 0));
+  if (!member && !platformAdmin) return { response: NextResponse.json({ ok: false, message: "Not found." }, { status: 404 }) };
+  const role = org?.ownerId === session.user.id ? "admin" : org?.collaborators[0]?.role;
+  if (!getPermissions(role, platformAdmin).canDeployFromGithub) {
+    return { response: NextResponse.json({ ok: false, message: "You can't deploy from GitHub for this client." }, { status: 403 }) };
+  }
+  return { userId: session.user.id, email: session.user.email ?? null };
+}
+
 export async function requirePlatformAdmin(): Promise<{ userId: string } | { response: NextResponse }> {
   const session = await auth();
   if (!session?.user?.id) return { response: NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 }) };

@@ -58,6 +58,13 @@ export interface UserPermissions {
   /** Creating or destroying the staging environment itself. */
   canManageStagingEnvironment: boolean;
 
+  /**
+   * Create an app from a GitHub repo the client already shared with Jongo, or
+   * change a GitHub app's branch / auto-deploy. Adds or redeploys only; who can
+   * read the client's GitHub (connect / disconnect) stays admin-only.
+   */
+  canDeployFromGithub: boolean;
+
   /** Non-destructive: caches regenerate on the next request. */
   canFlushCache: boolean;
   canEditDomains: boolean;
@@ -226,6 +233,8 @@ export function getPermissions(callerRole: unknown, isPlatformAdmin = false): Us
     // Both roles, per TSK-00829: making a site private protects it, and the
     // person who notices it is public should not have to go find an admin.
     canEnablePrivacyMode: true,
+    // Adds an app from an already-shared repo, or redeploys from another branch.
+    canDeployFromGithub: true,
 
     // Destroys data, takes the site down, or hands out credentials — admin only.
     canRestoreBackup: isAdmin,

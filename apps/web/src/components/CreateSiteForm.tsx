@@ -17,9 +17,11 @@ import {
 type Props = {
   organizationId: string;
   availableApps?: CoolifyAppPickerOption[];
+  /** Collaborators: only "Deploy from GitHub" (adopting or creating WordPress is admin-only). */
+  githubOnly?: boolean;
 };
 
-export default function CreateSiteForm({ organizationId, availableApps = [] }: Props) {
+export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -41,7 +43,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
   // and with link as the default that path produced a Jongo row and nothing in
   // Coolify — the exact phantom-record failure this form was reworked to end.
   // Adopting is a migration activity; it costs one click to select.
-  const [mode, setMode] = useState<"link" | "create" | "github">("create");
+  const [mode, setMode] = useState<"link" | "create" | "github">(githubOnly ? "github" : "create");
   const [github, setGithub] = useState<GithubRepoValue>(EMPTY_GITHUB_REPO_VALUE);
 
   const selectedApp = useMemo(
@@ -205,7 +207,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
   return (
     <div className="card" style={{ marginBottom: "1rem" }}>
       <h3 className="card-title" style={{ marginBottom: "0.5rem" }}>Add App</h3>
-      {availableApps.length > 0 ? (
+      {githubOnly ? null : availableApps.length > 0 ? (
         <p className="card-muted" style={{ marginBottom: "0.9rem" }}>
           Pick an available Coolify app or enter details manually.
         </p>
@@ -219,7 +221,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
           ["link", "Link existing app", "Adopt an app that is already running on Jongo's servers."],
           ["create", "Create WordPress site", "Create a new WordPress + MariaDB site."],
           ["github", "Deploy from GitHub", "Build and deploy an app from one of your GitHub repos."]
-        ] as const).map(([value, label, help]) => (
+        ] as const).filter(([value]) => !githubOnly || value === "github").map(([value, label, help]) => (
           <button
             key={value}
             type="button"
@@ -285,7 +287,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [] }: P
             className="form-input"
           />
         </div>
-        {mode === "github" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} /> : null}
+        {mode === "github" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} canConnect={!githubOnly} /> : null}
         {mode === "link" ? (
         <>
         <div>
