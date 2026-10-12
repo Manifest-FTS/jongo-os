@@ -172,7 +172,7 @@ function getCoolifyBackupReadiness(inventory: AppBackupInventory | null, appUuid
       code: "backups_not_configured",
       locked: true,
       reason: "Backups not configured.",
-      nextStep: "Configure at least one automated backup schedule in Coolify.",
+      nextStep: "Turn on a backup schedule in the Backups tab.",
       lastSuccessfulBackupAt: null,
       hoursSinceSuccess: null,
       warnAfterHours: BACKUP_WARN_AFTER_HOURS,

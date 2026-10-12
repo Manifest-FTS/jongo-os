@@ -545,7 +545,7 @@ export async function coolifyFetch(path: string): Promise<unknown> {
         statusCode,
         success: false,
         durationMs: Date.now() - startedAt,
-        error: `Coolify request failed (${response.status})`
+        error: `Hosting request failed (${response.status})`
       });
       callLogged = true;
       if (response.status === 429) {
@@ -1163,7 +1163,10 @@ export type CoolifyActionResult = {
     | "resource_deleted"
     | "resource_already_absent"
     | "forbidden"
-    | "environment_create_failed";
+    | "environment_create_failed"
+    | "server_choice_needed";
+  /** Servers an admin can pick from when the right one is not known. */
+  serverChoices?: Array<{ uuid: string; name: string }>;
   /** HTTP status from Coolify, when the failure came from a rejected request. */
   status?: number;
   /** UUID returned by Coolify when this action creates a resource. */
@@ -1727,7 +1730,7 @@ export async function provisionCoolifyWordPressService(
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
   if (!baseUrl || !token) {
-    return { ok: false, message: "Coolify credentials are missing, so the app cannot be created.", reason: "credentials_missing" };
+    return { ok: false, message: "Hosting credentials are missing, so the app cannot be created.", reason: "credentials_missing" };
   }
 
   let serverUuid = (input.serverUuid ?? "").trim();
@@ -1746,7 +1749,7 @@ export async function provisionCoolifyWordPressService(
         return {
           ok: false,
           reason: "server_unresolved",
-          message: resolution.reason ?? "Could not determine which Coolify server to create the app on."
+          message: resolution.reason ?? "Could not determine which server to create the app on."
         };
       }
     } catch (error) {
@@ -1760,11 +1763,11 @@ export async function provisionCoolifyWordPressService(
         return {
           ok: false,
           reason: "coolify_api_forbidden",
-          message: `Coolify refused the API request (HTTP ${status}). Check the API token, and that Coolify's API allowed-IPs list includes the address Jongo calls from.`
+          message: `The hosting server refused the request (HTTP ${status}). A platform admin needs to check Jongo's hosting connection.`
         };
       }
       if (isRateLimitError(error)) {
-        return { ok: false, reason: "rate_limited", message: "Coolify's API rate limit is in effect. Try again shortly." };
+        return { ok: false, reason: "rate_limited", message: "The hosting server is busy. Try again shortly." };
       }
       // Distinguish "Coolify answered with an error" from "we could not reach
       // Coolify". A 500 here was reported as unreachable, which sent debugging at
@@ -1774,10 +1777,10 @@ export async function provisionCoolifyWordPressService(
         return {
           ok: false,
           reason: "coolify_server_list_failed",
-          message: `Coolify returned HTTP ${status} for /api/v1/servers, so the target server could not be resolved. Check Coolify itself — this is not a Jongo-side failure.`
+          message: `The hosting server returned HTTP ${status} when listing servers, so the target server could not be chosen. Try again shortly.`
         };
       }
-      return { ok: false, reason: "server_unresolved", message: "Could not reach Coolify to determine which server to use." };
+      return { ok: false, reason: "server_unresolved", message: "Could not reach the hosting server to choose where to create the app." };
     }
   }
 
@@ -1791,7 +1794,7 @@ export async function provisionCoolifyWordPressService(
     return {
       ok: false,
       reason: "create_failed",
-      message: `Coolify refused to create the app (HTTP ${response.status ?? "unknown"}).`
+      message: `The hosting server refused to create the app (HTTP ${response.status ?? "unknown"}).`
     };
   }
 
@@ -1803,13 +1806,13 @@ export async function provisionCoolifyWordPressService(
     return {
       ok: false,
       reason: "created_without_uuid",
-      message: "Coolify created the app but did not return its id. Check Coolify before retrying, or a duplicate will be made."
+      message: "The app was created but its id was not returned. It appears here within the hour; don't retry, or a duplicate will be made."
     };
   }
 
   const domain = (input.domain ?? "").trim();
   if (!domain) {
-    return { ok: true, uuid, message: "App created in Coolify." };
+    return { ok: true, uuid, message: "App created." };
   }
 
   // Applied AFTER creation, not as part of it: Coolify needs the compose file
@@ -1863,7 +1866,7 @@ export async function provisionCoolifyWordPressService(
     ? ""
     : restarted
       ? " Restarted so the domain takes effect."
-      : " The domain was saved but Coolify did not accept the restart, so it may need one before the site answers on it.";
+      : " The address was saved but the restart did not go through, so the site may need a restart before it answers there.";
 
   return {
     ok: true,
@@ -1876,8 +1879,8 @@ export async function provisionCoolifyWordPressService(
     // "created" while it sits on a generated host is the kind of half-truth
     // that has someone hunting for a domain that was never set.
     message: domainApplied
-      ? `App created in Coolify at ${domain}.${restartNote}`
-      : `App created in Coolify, but the domain ${domain} could not be applied${domainMessage ? `: ${domainMessage}` : ""}. Set it in Coolify.`
+      ? `App created at ${domain}.${restartNote}`
+      : `App created, but the address ${domain} could not be applied${domainMessage ? ` (${domainMessage})` : ""}. Use Apply address to try again.`
   };
 }
 
@@ -2166,7 +2169,7 @@ export async function applyCoolifyServiceDomains(
   if (!applicationName) {
     return {
       ok: false,
-      message: "Could not resolve the service container name from Coolify. The service may not be parsed yet.",
+      message: "Could not find the service container yet. The service may still be starting.",
       reason: "no_application"
     };
   }
@@ -2185,7 +2188,7 @@ export async function applyCoolifyServiceDomains(
   }
 
   if (response.error === "credentials_missing") {
-    return { ok: false, message: "Coolify credentials missing.", reason: "credentials_missing" };
+    return { ok: false, message: "Hosting credentials missing.", reason: "credentials_missing" };
   }
 
   if (response.status === 409) {
@@ -2193,7 +2196,7 @@ export async function applyCoolifyServiceDomains(
     return {
       ok: false,
       status: 409,
-      message: "Domain is already claimed by another Coolify resource.",
+      message: "This address is already used by another site.",
       conflicts,
       reason: "conflict"
     };
@@ -2211,7 +2214,7 @@ export async function applyCoolifyServiceDomains(
   return {
     ok: false,
     status: response.status,
-    message: `Coolify rejected the domain update${detail ? `: ${detail}` : "."}`,
+    message: `The address update was rejected${detail ? `: ${detail}` : "."}`,
     reason: response.status ? "rejected" : "transport"
   };
 }
@@ -2257,7 +2260,7 @@ export async function ensureCoolifyStagingEnvironment(projectId: string): Promis
     return {
       mode: "mock",
       ok: false,
-      message: "Coolify credentials missing. Staging environment cannot be created from this environment.",
+      message: "Hosting credentials missing. Staging can't be created right now.",
       reason: "credentials_missing"
     };
   }
@@ -2279,7 +2282,7 @@ export async function ensureCoolifyStagingEnvironment(projectId: string): Promis
       return {
         mode: "live",
         ok: true,
-        message: "Staging environment already exists in Coolify.",
+        message: "Staging environment already exists.",
         reason: "environment_ready"
       };
     }
@@ -2294,7 +2297,7 @@ export async function ensureCoolifyStagingEnvironment(projectId: string): Promis
       return {
         mode: "live",
         ok: true,
-        message: "Staging environment created in Coolify.",
+        message: "Staging environment created.",
         reason: "environment_created"
       };
     }
@@ -2313,7 +2316,7 @@ export async function ensureCoolifyStagingEnvironment(projectId: string): Promis
     return {
       mode: "live",
       ok: false,
-      message: `Coolify rejected staging environment creation (HTTP ${created.status ?? "n/a"})${detail ? `: ${detail}` : "."}`,
+      message: `Creating the staging environment was rejected (HTTP ${created.status ?? "n/a"})${detail ? `: ${detail}` : "."}`,
       reason: created.status === 403 ? "forbidden" : "environment_create_failed",
       status: created.status
     };
@@ -2335,7 +2338,7 @@ export async function deleteCoolifyStagingEnvironment(projectId: string): Promis
     return {
       mode: "mock",
       ok: false,
-      message: "Coolify credentials missing. Staging environment cannot be deleted from this environment.",
+      message: "Hosting credentials missing. Staging can't be removed right now.",
       reason: "credentials_missing"
     };
   }
@@ -2357,7 +2360,7 @@ export async function deleteCoolifyStagingEnvironment(projectId: string): Promis
       return {
         mode: "live",
         ok: true,
-        message: "No staging environment exists in Coolify to delete.",
+        message: "There is no staging environment to delete.",
         reason: "environment_ready"
       };
     }
@@ -2368,7 +2371,7 @@ export async function deleteCoolifyStagingEnvironment(projectId: string): Promis
       return {
         mode: "live",
         ok: false,
-        message: "Staging environment identifier was not found; delete must be completed manually.",
+        message: "The staging environment could not be identified exactly, so it was not deleted.",
         reason: "auto_provision_unsupported"
       };
     }
@@ -2393,7 +2396,7 @@ export async function deleteCoolifyStagingEnvironment(projectId: string): Promis
       return {
         mode: "live",
         ok: true,
-        message: "Staging environment deleted in Coolify.",
+        message: "Staging environment deleted.",
         reason: "environment_deleted"
       };
     }
@@ -2404,7 +2407,7 @@ export async function deleteCoolifyStagingEnvironment(projectId: string): Promis
   return {
     mode: "live",
     ok: false,
-    message: "Unable to delete staging environment automatically. Remove it manually in Coolify.",
+    message: "The staging environment could not be deleted just now. Try again in a minute.",
     reason: "auto_provision_unsupported"
   };
 }
@@ -2412,7 +2415,8 @@ export async function deleteCoolifyStagingEnvironment(projectId: string): Promis
 export async function provisionCoolifyStagingFromProduction(
   appUuid: string,
   preferredStagingDomain?: string,
-  projectId?: string
+  projectId?: string,
+  options: { serverUuid?: string | null } = {}
 ): Promise<CoolifyActionResult> {
   const baseUrl = process.env.COOLIFY_API_BASE_URL;
   const token = process.env.COOLIFY_API_TOKEN;
@@ -2421,12 +2425,14 @@ export async function provisionCoolifyStagingFromProduction(
     return {
       mode: "mock",
       ok: false,
-      message: "Coolify credentials missing. Staging cannot be provisioned from this environment.",
+      message: "Hosting credentials missing. Staging can't be set up right now.",
       reason: "credentials_missing"
     };
   }
 
   const normalizedPreferredDomain = preferredStagingDomain ? toHttpsUrl(preferredStagingDomain) : undefined;
+  // Filled when several servers exist and none is known, so the admin can pick one in Jongo.
+  let serverChoices: Array<{ uuid: string; name: string }> | undefined;
   const provisioningAttempts: Array<{
     path: string;
     method: "POST" | "PATCH" | "PUT" | "DELETE";
@@ -2477,7 +2483,7 @@ export async function provisionCoolifyStagingFromProduction(
     return {
       mode: "live",
       ok: true,
-      message: "Staging target already exists in Coolify.",
+      message: "Staging copy already exists.",
       reason: "environment_ready"
     };
   }
@@ -2601,7 +2607,8 @@ export async function provisionCoolifyStagingFromProduction(
       } catch {
         servers = [];
       }
-      serverResolution = resolveStagingServerUuid({ service: sourceService, servers });
+      serverResolution = resolveStagingServerUuid({ service: sourceService, servers, chosenServerUuid: options.serverUuid });
+      serverChoices = serverResolution.choices;
       return serverResolution.uuid;
     };
 
@@ -2667,8 +2674,8 @@ export async function provisionCoolifyStagingFromProduction(
         method: "POST",
         ok: false,
         error: !serverUuid
-          ? serverResolution.reason ?? "Could not determine which Coolify server to create the staging copy on."
-          : "Could not determine which Coolify project the staging copy belongs to."
+          ? serverResolution.reason ?? "Could not determine which server to create the staging copy on."
+          : "Could not determine which project the staging copy belongs to."
       });
       return { created: false };
     }
@@ -2715,7 +2722,7 @@ export async function provisionCoolifyStagingFromProduction(
         method: "POST",
         ok: false,
         error:
-          "Coolify did not report a service type or compose file for this app, so there was nothing to copy for staging."
+          "This app has no service type or compose file to copy, so staging can't be created for it yet."
       });
       return { created: false };
     }
@@ -2821,8 +2828,8 @@ export async function provisionCoolifyStagingFromProduction(
         mode: "live",
         ok: true,
         message: verified
-          ? "Staging provisioning request sent to Coolify."
-          : "Staging provisioning request was accepted by Coolify and is still settling.",
+          ? "Staging setup started."
+          : "Staging setup was accepted and is still finishing.",
         reason: "request_sent",
         resourceUuid: extractCreatedResourceUuid(result.body),
         attempts: provisioningAttempts
@@ -2837,7 +2844,7 @@ export async function provisionCoolifyStagingFromProduction(
       return {
         mode: "live",
         ok: true,
-        message: "Staging environment created in Coolify.",
+        message: "Staging environment created.",
         reason: "environment_created",
         attempts: provisioningAttempts
       };
@@ -2850,7 +2857,7 @@ export async function provisionCoolifyStagingFromProduction(
       return {
         mode: "live",
         ok: true,
-        message: "Staging target created in Coolify.",
+        message: "Staging copy created.",
         reason: "service_created",
         resourceUuid: createdFromSource.resourceUuid,
         attempts: provisioningAttempts
@@ -2865,10 +2872,21 @@ export async function provisionCoolifyStagingFromProduction(
     }
   }
 
+  if (serverChoices?.length) {
+    return {
+      mode: "live",
+      ok: false,
+      message: "Choose which server the staging copy should run on, then try again.",
+      reason: "server_choice_needed",
+      serverChoices,
+      attempts: provisioningAttempts
+    };
+  }
+
   return {
     mode: "live",
     ok: false,
-    message: "Automatic staging provisioning is unavailable for this app via current Coolify API routes. Provision staging manually in Coolify.",
+    message: "Staging isn't available for this kind of app yet.",
     reason: "auto_provision_unsupported",
     attempts: provisioningAttempts
   };
@@ -2885,7 +2903,7 @@ export async function destroyCoolifyApplication(
     return {
       mode: "mock",
       ok: false,
-      message: "Coolify credentials missing. Staging cannot be destroyed from this environment."
+      message: "Hosting credentials missing. Staging can't be removed right now."
     };
   }
 
@@ -2924,7 +2942,7 @@ export async function destroyCoolifyApplication(
       return {
         mode: "live",
         ok: true,
-        message: "Staging target removed in Coolify.",
+        message: "Staging copy removed.",
         reason: "resource_deleted"
       };
     }
@@ -2944,7 +2962,7 @@ export async function destroyCoolifyApplication(
       return {
         mode: "live",
         ok: true,
-        message: "Staging target removed in Coolify.",
+        message: "Staging copy removed.",
         reason: "resource_deleted"
       };
     }
@@ -2971,7 +2989,7 @@ export async function destroyCoolifyApplication(
         return {
           mode: "live",
           ok: true,
-          message: "Staging target was already removed in Coolify.",
+          message: "The staging copy was already removed.",
           reason: "resource_already_absent"
         };
       }
@@ -2983,7 +3001,7 @@ export async function destroyCoolifyApplication(
   return {
     mode: "live",
     ok: false,
-    message: "Unable to destroy staging target automatically. Remove it manually in Coolify.",
+    message: "The staging copy could not be removed just now. Use Remove old staging copy to try again.",
     reason: "auto_provision_unsupported"
   };
 }
@@ -3078,7 +3096,7 @@ export async function triggerCoolifyDeploy(
         statusCode: response.status,
         success: false,
         durationMs: Date.now() - startedAt,
-        error: `Coolify deploy candidate failed (${response.status})`
+        error: `Deploy request failed (${response.status})`
       });
 
       if (isRetryableDeployStatus(response.status) && attempt === 0) {
@@ -4246,7 +4264,7 @@ export async function buildStagingSyncDryRunPlan(
       ],
       warnings: [
         hasEnvironmentOnlyStaging
-          ? "Provision or attach a staging application in Coolify before running sync or promote paths."
+          ? "Turn staging on again (Try again) so a staging app is attached before sync or promote."
           : "Enable staging first in Settings."
       ]
     };

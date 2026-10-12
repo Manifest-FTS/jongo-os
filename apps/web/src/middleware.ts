@@ -17,6 +17,9 @@ const PUBLIC_PATHS = [
   "/hosting",
   "/contact",
   "/api/contact",
+  // GitHub's webhook deliveries carry no session; the route checks the
+  // signature before doing anything.
+  "/api/github/webhook",
   "/pricing",
   // Domain registration and transfer. The search endpoints have to answer an
   // anonymous visitor on the homepage, so they cannot sit behind auth.

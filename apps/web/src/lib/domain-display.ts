@@ -61,3 +61,23 @@ export function chargeMargin(charge: { clientCents: number; wholesaleCents: numb
 export function isRevenue(status: string): boolean {
   return status === "fulfilled" || status === "paid" || status === "fulfilling";
 }
+
+/**
+ * What an admin can do about a charge from the Domains page, instead of
+ * fixing it by hand at the registrar or in Stripe. A refund is offered only
+ * while none is recorded, so it can never be issued twice; an order is
+ * retried only after it has been stuck for 30 minutes (the reconcile window).
+ */
+export function chargeRemedies(
+  charge: { status: string; stripePaymentIntentId: string | null; stripeRefundId: string | null; updatedAt: Date | string },
+  now: number = Date.now()
+): Array<"retry_domain_order" | "refund_domain_order"> {
+  const canRefund = Boolean(charge.stripePaymentIntentId) && !charge.stripeRefundId;
+  if (charge.status === "failed") return canRefund ? ["refund_domain_order"] : [];
+  if (charge.status === "fulfilling" || charge.status === "paid") {
+    const stuck = now - new Date(charge.updatedAt).getTime() >= 30 * 60_000;
+    if (!stuck) return [];
+    return canRefund ? ["retry_domain_order", "refund_domain_order"] : ["retry_domain_order"];
+  }
+  return [];
+}

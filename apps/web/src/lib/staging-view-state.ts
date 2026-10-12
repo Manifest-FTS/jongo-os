@@ -89,7 +89,7 @@ export function resolveStagingViewState(input: {
     unknown: false,
     title: "Staging Not Configured",
     detail:
-      "Staging is enabled but no staging environment was found for this app. Jongo will attempt to provision one; if it does not appear, provision it in your infrastructure panel.",
+      "Staging is on but no staging copy was found for this app yet. Jongo is setting one up; if it doesn't appear in a few minutes, use Try again.",
     hideControls: true
   };
 }

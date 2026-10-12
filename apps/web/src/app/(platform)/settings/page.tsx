@@ -234,6 +234,11 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           <>
             <div className="grid" style={{ marginBottom: "2rem" }}>
               <PlatformAdminsPanel />
+              <article className="card">
+                <h3 className="card-title">GitHub deploys</h3>
+                <p className="card-muted mt-1 mb-2">Let clients connect their own GitHub and deploy private repos.</p>
+                <Link className="action-link font-semibold" href="/admin/github">Manage the Jongo GitHub App</Link>
+              </article>
               <OwnershipSyncPanel />
 
               <article className="card tone-card">

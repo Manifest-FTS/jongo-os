@@ -268,6 +268,26 @@ export async function POST(request: Request) {
       console.error("[jongo] backup-reconcile: staging domain reconcile failed:", error);
     }
 
+    // A staging copy whose removal failed is retried here, so it clears without
+    // anyone opening the hosting panel. Copies kept on purpose are skipped.
+    let stagingCleanup: import("@/lib/staging-cleanup-retry").StagingCleanupRetryResult | null = null;
+    try {
+      const { retryFailedStagingCleanups } = await import("@/lib/staging-cleanup-retry");
+      stagingCleanup = await retryFailedStagingCleanups(new URL(request.url).origin);
+    } catch (error) {
+      console.error("[jongo] backup-reconcile: staging cleanup retry failed:", error);
+    }
+
+    // Customer GitHub installs: catch uninstalls, suspensions and repos removed
+    // while a webhook was missed, and finish any install whose setup stalled.
+    let github: import("@/lib/github-installations").GithubReconcileResult | null = null;
+    try {
+      const { reconcileGithubInstallations } = await import("@/lib/github-installations");
+      github = await reconcileGithubInstallations();
+    } catch (error) {
+      console.error("[jongo] backup-reconcile: GitHub reconcile failed:", error);
+    }
+
     for (const site of sites) {
       let appUuid = site.coolifyServiceUuid?.trim();
       if (!appUuid) {
@@ -833,7 +853,9 @@ export async function POST(request: Request) {
         resourcesMissing,
         stagingTargets,
         domains,
-        stagingDomains
+        stagingDomains,
+        stagingCleanup,
+        github
       },
       results
     });

@@ -333,7 +333,7 @@ async function refund(db: any, charge: any, reason: string): Promise<void> {
     data: {
       status: refundId ? "refunded" : "failed",
       stripeRefundId: refundId,
-      error: refundId ? `${reason} The payment was refunded.` : `${reason} Refund NOT issued (${refundError}); refund it by hand in Stripe.`,
+      error: refundId ? `${reason} The payment was refunded.` : `${reason} Refund NOT issued (${refundError}). Use Refund to try again.`,
       registrantContact: null,
       eppCode: null
     }
@@ -535,7 +535,7 @@ export async function reconcileDomains(): Promise<DomainReconcileResult> {
       await db.domainCharge.update({ where: { id: charge.id }, data: { status: "paid" } });
     } else {
       // Renewals and transfers cannot be told apart from Namecheap's state alone.
-      await db.domainCharge.update({ where: { id: charge.id }, data: { error: "Stuck mid-order: check this one by hand in Namecheap before retrying." } });
+      await db.domainCharge.update({ where: { id: charge.id }, data: { error: "The registrar hasn't confirmed this order. Check the domain's expiry date, then use Retry order or Refund." } });
     }
   }
 
@@ -593,4 +593,49 @@ export async function reconcileDomains(): Promise<DomainReconcileResult> {
 export function describeCharge(charge: { operation: string; years: number; clientCents: number }): string {
   const op = OPERATION_LABEL[charge.operation as DomainOperation] ?? charge.operation;
   return `${op} · ${charge.operation === "transfer" ? "1 year" : `${charge.years} yr`} · ${formatCents(charge.clientCents)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Admin remedies (Domains page): retry or refund without leaving Jongo
+// ---------------------------------------------------------------------------
+
+export type ChargeRemedyOutcome = { ok: boolean; status: number; message: string };
+
+/** Retries an order stuck mid-way: back to paid, then the normal fulfilment. */
+export async function retryDomainCharge(chargeId: string): Promise<ChargeRemedyOutcome> {
+  const db: any = await getDb();
+  if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
+  const charge = await db.domainCharge.findUnique({ where: { id: chargeId } });
+  if (!charge) return { ok: false, status: 404, message: "Not found." };
+  const { chargeRemedies } = await import("@/lib/domain-display");
+  if (!chargeRemedies(charge).includes("retry_domain_order")) {
+    return { ok: false, status: 409, message: "This order can't be retried now." };
+  }
+  const reset = await db.domainCharge.updateMany({
+    where: { id: chargeId, status: { in: ["fulfilling", "paid"] } },
+    data: { status: "paid", error: null }
+  });
+  if (reset.count !== 1) return { ok: false, status: 409, message: "This order changed in the meantime. Refresh the page." };
+  await fulfilDomainCharge(chargeId);
+  const after = await db.domainCharge.findUnique({ where: { id: chargeId } });
+  return after?.status === "fulfilled"
+    ? { ok: true, status: 200, message: "Order completed." }
+    : { ok: false, status: 502, message: after?.error ?? "The registrar did not confirm the order yet." };
+}
+
+/** Refunds a charge whose order failed or never completed. Never refunds twice. */
+export async function retryDomainRefund(chargeId: string): Promise<ChargeRemedyOutcome> {
+  const db: any = await getDb();
+  if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
+  const charge = await db.domainCharge.findUnique({ where: { id: chargeId }, include: { domain: true } });
+  if (!charge) return { ok: false, status: 404, message: "Not found." };
+  const { chargeRemedies } = await import("@/lib/domain-display");
+  if (!chargeRemedies(charge).includes("refund_domain_order")) {
+    return { ok: false, status: 409, message: charge.stripeRefundId ? "This charge was already refunded." : "This charge can't be refunded from here." };
+  }
+  await refund(db, charge, "Refunded by a platform admin.");
+  const after = await db.domainCharge.findUnique({ where: { id: chargeId } });
+  return after?.stripeRefundId
+    ? { ok: true, status: 200, message: "Refunded." }
+    : { ok: false, status: 502, message: after?.error ?? "The refund did not go through." };
 }

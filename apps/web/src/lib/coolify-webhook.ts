@@ -331,7 +331,7 @@ export async function applyCoolifyDeletion(input: {
               eventType,
               resourceUuids,
               authMethod,
-              message: `Coolify reported this resource deleted; the Jongo app was archived to match.`
+              message: `The running site was deleted, so the Jongo app was archived to match.`
             },
             ipAddress,
             userAgent

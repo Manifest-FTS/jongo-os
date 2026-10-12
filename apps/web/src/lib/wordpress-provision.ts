@@ -53,7 +53,7 @@ export function buildWordPressServiceRequest(input: WordPressProvisionInput): Wo
     return {
       ok: false,
       reason: "project_required",
-      message: "No Coolify project is linked to this client, so there is nowhere to create the app."
+      message: "No hosting project is linked to this client yet, so there is nowhere to create the app. Link one in Settings."
     };
   }
 
@@ -62,7 +62,7 @@ export function buildWordPressServiceRequest(input: WordPressProvisionInput): Wo
     return {
       ok: false,
       reason: "server_required",
-      message: "Could not determine which Coolify server to create the app on."
+      message: "Could not determine which server to create the app on."
     };
   }
 

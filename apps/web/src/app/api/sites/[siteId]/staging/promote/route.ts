@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { remedy } from "@/lib/remedies";
 import { auth } from "@/lib/auth.config";
 import { buildSiteIdentityWhere } from "@/lib/site-identity";
 import {
@@ -822,7 +823,7 @@ export async function POST(req: Request, { params }: Params) {
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Coolify did not accept the restart.";
       console.error(`[jongo] promote ${promoteAttemptId}: production restart failed after content sync: ${reason}`);
-      deployWarning = `Staging's content is live on production, but the final restart did not go through (${reason}). The site keeps running; restart it from Coolify if a change does not show.`;
+      deployWarning = `Staging's content is live on production, but the final restart did not go through (${reason}). The site keeps running; use Restart site if a change does not show.`;
       result = { mode: "live", deploymentId: "", message: "Content promoted; restart not confirmed." };
     }
 
@@ -889,6 +890,7 @@ export async function POST(req: Request, { params }: Params) {
       mode: result.mode,
       message: promoteMessage,
       deployWarning,
+      remedy: deployWarning ? remedy("restart_site", { target: "production" }) : null,
       preflight,
       // Surfaced, not swallowed: a promote whose URL rewrite failed leaves
       // production serving staging asset URLs, and that must not read as a clean

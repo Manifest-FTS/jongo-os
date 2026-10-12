@@ -95,7 +95,7 @@ async function loadContext(siteId: string): Promise<StagingContext | { error: st
     select: { id: true, organizationId: true, coolifyServiceUuid: true, coolifyProjectId: true }
   });
   const appUuid = site?.coolifyServiceUuid?.trim();
-  if (!site || !appUuid) return { error: "This site is not linked to a Coolify resource.", status: 409 };
+  if (!site || !appUuid) return { error: "This app isn't linked to a running site yet.", status: 409 };
 
   const capability = await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined, { relaxedTargetMatch: true });
   if (!capability.applicationUuid) return { error: "Staging is not set up for this site yet. Turn staging on first.", status: 409 };
@@ -181,11 +181,11 @@ async function applyAttachedHosts(db: any, ctx: StagingContext): Promise<{ ok: b
     if (!result.ok) return { ok: false, message: result.message };
     // Traefik only picks up new routers (and asks Let's Encrypt) on a restart.
     const restart = await restartCoolifyService(ctx.stagingUuid);
-    return restart.ok ? { ok: true, message: "Attached." } : { ok: false, message: "Saved in Coolify, but the restart was refused. It will retry." };
+    return restart.ok ? { ok: true, message: "Attached." } : { ok: false, message: "Saved, but the restart that makes it live didn't go through. Use Check again, or wait: it retries every hour." };
   }
 
   const updated = await applyCoolifyApplicationDomains(ctx.stagingUuid, hosts);
-  if (!updated) return { ok: false, message: "Coolify did not accept the domain change." };
+  if (!updated) return { ok: false, message: "The server didn't accept the address change. Use Check again to retry." };
   try {
     await triggerCoolifyDeploy(ctx.stagingUuid, "staging");
     return { ok: true, message: "Attached." };
@@ -409,7 +409,7 @@ export async function removeStagingDomain(input: { siteId: string; domainId: str
   if (!("error" in ctx)) {
     if (wasAttached) {
       const detached = await applyAttachedHosts(db, ctx);
-      message = detached.ok ? "Removed from staging." : `Removed here, but Coolify did not accept the change: ${detached.message}`;
+      message = detached.ok ? "Removed from staging." : `Removed here, but the staging site didn't accept the change yet (${detached.message}). It retries every hour.`;
     }
     await followPrimaryChange(db, ctx, before, input.actorId);
     await audit(db, { organizationId: ctx.site.organizationId, actorId: input.actorId, siteId: ctx.site.id, actionType: "staging_domain_removed", details: { hostname: row.hostname } });

@@ -3,7 +3,9 @@ import { getDb } from "@/lib/db";
 import { formatCents } from "@/lib/domain-search";
 import { getDomainViewer } from "@/lib/domain-access";
 import { getManageableOrganizations, getVisibleOrganizationIds, OPERATION_LABEL } from "@/lib/domain-orders";
-import { CHARGE_STATUS, DNS_STATUS, DOMAIN_STATUS, chargeMargin, daysUntil, formatDate, isRevenue, statusOf } from "@/lib/domain-display";
+import { CHARGE_STATUS, DNS_STATUS, DOMAIN_STATUS, chargeMargin, chargeRemedies, daysUntil, formatDate, isRevenue, statusOf } from "@/lib/domain-display";
+import RemedyButton from "@/components/RemedyButton";
+import { remedy } from "@/lib/remedies";
 import { getBalance, namecheapMode } from "@/lib/namecheap";
 import { isCloudflareConfigured } from "@/lib/cloudflare";
 import { readMarkupPercent, type DomainOperation } from "@/lib/domain-pricing";
@@ -203,6 +205,22 @@ export default async function DomainsPage() {
                         <td className="py-2 pr-3">
                           <Chip {...status} />
                           {charge.error ? <span className="block mt-1 text-[0.74rem] text-muted max-w-[260px]">{charge.error}</span> : null}
+                          {chargeRemedies(charge).length > 0 ? (
+                            <span className="mt-1.5 flex gap-1.5 flex-wrap">
+                              {chargeRemedies(charge).map((action) => (
+                                <RemedyButton
+                                  key={action}
+                                  remedy={remedy(action)}
+                                  endpoint={`/api/domains/charges/${charge.id}/remedies`}
+                                  confirmText={
+                                    action === "refund_domain_order"
+                                      ? `Refund ${formatCents(charge.clientCents)} for ${charge.domain.name}?`
+                                      : `Retry the ${charge.domain.name} order? If the registrar already completed it, this can charge the account twice; check the domain's expiry first.`
+                                  }
+                                />
+                              ))}
+                            </span>
+                          ) : null}
                         </td>
                       </tr>
                     );

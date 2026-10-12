@@ -142,6 +142,7 @@ model Organization {
   auditLogs           AuditLog[]
   notifications       Notification[]
   domains             Domain[]
+  githubInstallations GithubInstallation[]
 
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
@@ -194,6 +195,21 @@ model Site {
   stagingTargetUuid     String?
   temporaryDomainSlug   String?
   temporaryDomainSuffix String?
+
+  // Deploy from the customer's own GitHub (lib/github-deploys.ts). gitRepoId
+  // survives renames; gitStatus: linked | repo_access_lost | install_removed |
+  // install_suspended. pendingCommit* is set when autoDeploy is off.
+  githubInstallationId String?             @db.Uuid
+  githubInstallation   GithubInstallation? @relation(fields: [githubInstallationId], references: [id], onDelete: SetNull)
+  gitRepoFullName      String?
+  gitRepoId            String? // GitHub repo id as text (ids outgrow int32; BigInt breaks JSON)
+  gitBranch            String?
+  gitStagingBranch     String?
+  autoDeploy           Boolean             @default(true)
+  gitStatus            String?
+  pendingCommitSha     String?
+  pendingCommitMessage String?
+  lastDeployedSha      String?
 
   // Maintained by the hourly reconciler (see lib/platform-reconcile.ts).
   // isStagingResource: this Site's Coolify resource lives in a staging
@@ -273,6 +289,7 @@ model Site {
   deletedAt DateTime?
 
   @@unique([organizationId, slug])
+  @@index([githubInstallationId, gitRepoId])
   @@index([organizationId])
   @@index([coolifyServiceId])
   @@index([coolifyProjectId])
@@ -999,4 +1016,57 @@ model StagingDomain {
   @@index([siteId])
   @@index([hostname])
   @@index([status])
+}
+
+/// The one Jongo GitHub App, created from /admin/github (manifest flow).
+/// Secrets are encrypted with lib/secret-box.ts and never leave the server.
+model GithubAppConfig {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  appId                 Int
+  slug                  String
+  name                  String
+  htmlUrl               String
+  clientId              String
+  clientSecretEnc       String
+  webhookSecretEnc      String
+  privateKeyEnc         String
+  coolifyPrivateKeyUuid String?
+  createdById           String?  @db.Uuid
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+/// A customer's install of the Jongo GitHub App. One install belongs to one
+/// organization; each has its own private Coolify source.
+model GithubInstallation {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String    @db.Uuid
+  installationId      BigInt    @unique
+  accountLogin        String
+  accountType         String
+  accountId           BigInt?
+  repositorySelection String?
+  coolifySourceUuid   String?
+  coolifySourceId     Int?
+  // active | suspended | removed
+  status              String    @default("active")
+  lastError           String?
+  createdById         String?   @db.Uuid
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  removedAt           DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sites        Site[]
+
+  @@index([organizationId])
+}
+
+/// Seen webhook deliveries, so a GitHub redelivery never deploys twice.
+model GithubWebhookDelivery {
+  deliveryId String   @id
+  event      String
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
 }

@@ -12,7 +12,7 @@ describe("toClientFacingStagingMessage", () => {
     // It used to promise "still being removed", which nothing was doing.
     expect(toClientFacingStagingMessage(
       "Re-enable is blocked while staging resources still exist. Finish unprovisioning in Coolify first."
-    )).toBe("An old staging copy still exists and has to be removed first. If this doesn't clear in a few minutes, contact support.");
+    )).toBe("An old staging copy still exists and has to be removed first. Use Remove old staging copy.");
   });
 
   it("preserves already client-safe messages", () => {

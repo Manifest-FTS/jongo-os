@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toClientFacingStagingMessage } from "@/lib/staging-client-copy";
+import RemedyButton from "@/components/RemedyButton";
+import { remedy as buildRemedy, type Remedy } from "@/lib/remedies";
 
 type Props = {
   siteId: string;
@@ -23,6 +25,10 @@ type StagingToggleResponse = {
   manualProvisionRequired?: boolean;
   destroyed?: boolean;
   enableLocked?: boolean;
+  /** In-app fix (retry cleanup / retry setup) when the toggle could not finish. */
+  remedy?: Remedy | null;
+  /** Several servers and none known: the admin picks where staging runs. */
+  serverChoices?: Array<{ uuid: string; name: string }> | null;
 };
 
 type StagingStatusResponse = {
@@ -64,6 +70,33 @@ export default function SiteStagingToggle({
   const [modalMode, setModalMode] = useState<ModalMode>("confirm");
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeAttempt, setFinalizeAttempt] = useState(0);
+  const [resultRemedy, setResultRemedy] = useState<Remedy | null>(null);
+  const [serverChoices, setServerChoices] = useState<Array<{ uuid: string; name: string }>>([]);
+  const [chosenServer, setChosenServer] = useState("");
+  const [choosingServer, setChoosingServer] = useState(false);
+
+  async function enableOnServer() {
+    if (!chosenServer) return;
+    setChoosingServer(true);
+    try {
+      const response = await fetch(`/api/sites/${siteId}/staging`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true, stagingServerUuid: chosenServer })
+      });
+      const payload = ((await response.json().catch(() => ({}))) ?? {}) as StagingToggleResponse;
+      setMessage(visibleMessage(payload?.message ?? payload?.error) ?? "Staging setup started.");
+      setActionHint(visibleMessage(payload?.actionHint));
+      setServerChoices(payload?.serverChoices ?? []);
+      setResultRemedy(payload?.remedy ?? null);
+      setManualProvisionRequired(Boolean(payload?.manualProvisionRequired));
+      router.refresh();
+    } catch {
+      setError("Network error while updating staging.");
+    } finally {
+      setChoosingServer(false);
+    }
+  }
   const visibleMessage = (value?: string | null) =>
     showInfrastructureDetails ? value ?? null : toClientFacingStagingMessage(value);
 
@@ -169,6 +202,8 @@ export default function SiteStagingToggle({
         }
       }
 
+      setResultRemedy(payload?.remedy ?? null);
+      setServerChoices(payload?.serverChoices ?? []);
       if (!response.ok) {
         setError(visibleMessage(payload?.error) ?? "Unable to update staging state.");
         setActionHint(visibleMessage(payload?.actionHint));
@@ -188,11 +223,8 @@ export default function SiteStagingToggle({
 
       const disableCleanupFailed = !nextEnabled && burnExisting && payload?.destroyed === false;
       if (disableCleanupFailed) {
-        setActionHint((previous) => previous ?? (
-          showInfrastructureDetails
-            ? "Staging was disabled in Jongo, but resource cleanup failed in the infrastructure panel. Resolve cleanup manually before running another destructive toggle."
-            : "Staging could not be fully removed. Try again later or contact support."
-        ));
+        setActionHint((previous) => previous ?? "Staging is off, but the old staging copy is still there. Use Remove old staging copy to try again.");
+        setResultRemedy((previous) => previous ?? buildRemedy("retry_staging_cleanup"));
       }
 
       const shouldFinalize = nextEnabled && !Boolean(payload?.manualProvisionRequired);
@@ -340,11 +372,22 @@ export default function SiteStagingToggle({
       ) : null}
 
       {enableBlockedByResidualStaging ? (
-        <p style={{ margin: 0, fontSize: "0.78rem", color: "#a15c00", maxWidth: "320px", textAlign: "right" }}>
-          {showInfrastructureDetails
-            ? "Re-enable is blocked while staging resources still exist. Finish unprovisioning in Coolify first."
-            : "An old staging copy still exists and has to be removed first. If this doesn't clear in a few minutes, contact support."}
-        </p>
+        <div className="flex flex-col items-end gap-1.5 max-w-[320px] text-right">
+          <p style={{ margin: 0, fontSize: "0.78rem", color: "#a15c00" }}>
+            An old staging copy still exists and has to be removed before staging can be turned on.
+          </p>
+          <RemedyButton
+            remedy={buildRemedy("retry_staging_cleanup")}
+            endpoint={`/api/sites/${siteId}/remedies`}
+            confirmText="Remove the old staging copy of this app? Production is not touched."
+            onDone={(ok) => {
+              if (ok) {
+                void refreshStagingTargetStatus();
+                router.refresh();
+              }
+            }}
+          />
+        </div>
       ) : null}
 
       {modalOpen ? (
@@ -383,7 +426,7 @@ export default function SiteStagingToggle({
               <>
                 <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
                   {isEnableAction
-                    ? "Jongo will provision staging when possible. Check the Staging tab in a few minutes."
+                    ? "Jongo creates the staging copy now. It appears on this page in a few minutes."
                     : "Disable staging in Jongo. By default, existing staging resources are removed."}
                 </p>
 
@@ -437,9 +480,7 @@ export default function SiteStagingToggle({
                 ) : null}
                 {manualProvisionRequired ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
-                    {actionHint ?? (showInfrastructureDetails
-                      ? "Manual provisioning in the infrastructure panel is required before staging will be detected."
-                      : "Staging setup needs attention. Please contact your administrator.")}
+                    {actionHint ?? "Staging setup didn't finish. Use Try again."}
                   </p>
                 ) : null}
                 {error && actionHint && !manualProvisionRequired ? (
@@ -449,10 +490,41 @@ export default function SiteStagingToggle({
                 ) : null}
                 {showPendingStagingHint ? (
                   <p style={{ margin: "0.45rem 0 0", fontSize: "0.84rem", color: "#a15c00" }}>
-                    {showInfrastructureDetails
-                      ? "Staging is enabled in Jongo, but no staging target is detected yet. Check the Staging tab in Coolify and refresh in a few minutes."
-                      : "Staging setup is still finishing. Wait a few minutes and refresh."}
+                    Staging setup is still finishing. Wait a few minutes and refresh.
                   </p>
+                ) : null}
+                {serverChoices.length > 0 ? (
+                  <div className="mt-2.5 flex gap-2 flex-wrap items-center">
+                    <select
+                      className="form-input min-w-[200px]"
+                      value={chosenServer}
+                      onChange={(event) => setChosenServer(event.target.value)}
+                      aria-label="Server for staging"
+                    >
+                      <option value="">Choose a server…</option>
+                      {serverChoices.map((server) => (
+                        <option key={server.uuid} value={server.uuid}>{server.name}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="btn btn-secondary px-3 py-1.5 text-[12.5px]" disabled={!chosenServer || choosingServer} onClick={() => void enableOnServer()}>
+                      {choosingServer ? "Setting up…" : "Create staging here"}
+                    </button>
+                  </div>
+                ) : null}
+                {resultRemedy ? (
+                  <div style={{ margin: "0.6rem 0 0" }}>
+                    <RemedyButton
+                      key={resultRemedy.action}
+                      remedy={resultRemedy}
+                      endpoint={`/api/sites/${siteId}/remedies`}
+                      onDone={(ok) => {
+                        if (ok) {
+                          void refreshStagingTargetStatus();
+                          router.refresh();
+                        }
+                      }}
+                    />
+                  </div>
                 ) : null}
                 {finalizing ? (
                   <div style={{ margin: "0.55rem 0 0", display: "grid", gap: "0.3rem" }}>
