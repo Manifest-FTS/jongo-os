@@ -182,3 +182,15 @@ describe("pickStagingTarget — the copy Jongo recorded", () => {
     expect(picked.selected).toBeUndefined();
   });
 });
+
+describe("enabling staging never adopts another app's copy (Bonsai / manifestfts, 2026-10-07)", () => {
+  const candidates = [{ uuid: "f335s5ynntymvtumz4qrsr7e", name: "manifestfts staging" }];
+  it("strict matching (used when enabling) leaves the lone, unrelated copy alone", () => {
+    const picked = pickStagingTarget("Bonsai Visual Feedback API", candidates, { relaxed: false, allowLoneCandidateFallback: false, excludeUuid: "aboehjcqgrtkjccsnta6ndev" });
+    expect(picked.selected).toBeUndefined();
+  });
+  it("the lone-candidate fallback is what adopted it", () => {
+    const picked = pickStagingTarget("Bonsai Visual Feedback API", candidates, { relaxed: true, allowLoneCandidateFallback: true, excludeUuid: "aboehjcqgrtkjccsnta6ndev" });
+    expect(picked.adoptedWithoutNameMatch).toBe(true);
+  });
+});

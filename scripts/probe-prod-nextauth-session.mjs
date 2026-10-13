@@ -32,7 +32,7 @@ for (const secret of secrets) {
     for (const payload of payloads) {
       const token = await encode({ secret, salt, token: payload, maxAge: 3600 });
       const cookieName = salt.includes("jwt") ? "next-auth.session-token" : salt;
-      const res = await fetch("https://jongo.manifest-fts.com/api/auth/session", {
+      const res = await fetch("https://jongo.app/api/auth/session", {
         headers: {
           cookie: `${cookieName}=${token}`
         }

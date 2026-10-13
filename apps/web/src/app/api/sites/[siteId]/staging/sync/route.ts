@@ -53,7 +53,9 @@ export async function POST(request: Request, { params }: Params) {
       getCoolifyAppStagingCapability(
         productionServiceUuid,
         workspace.coolifyProjectId ?? undefined,
-        { relaxedTargetMatch: true }
+        // Strict: sync overwrites the staging copy it finds. Recorded copies
+        // are found first; a lone unrelated copy must never be adopted.
+        { relaxedTargetMatch: false }
       )
     );
   } catch (error) {
@@ -69,6 +71,46 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const stagingServiceUuid = capability.applicationUuid?.trim();
+
+  // Apps (Next.js, Sanity, …): staging has its own database, and syncing means
+  // replacing it with a fresh copy of production's. The WordPress content sync
+  // below only knows wordpress-<uuid> containers.
+  if (stagingServiceUuid && capability.resourceKind === "application") {
+    const { writeStagingTargetPin } = await import("@/lib/staging-target-pin");
+    await writeStagingTargetPin(workspace.id, stagingServiceUuid);
+    const { ensureStagingDatabases } = await import("@/lib/staging-databases");
+    const result = await ensureStagingDatabases(workspace.id);
+    try {
+      const { db } = await import("@/lib/db");
+      await db.auditLog.create({
+        data: {
+          organizationId: workspace.organizationId,
+          actorId: session.user.id,
+          action: "site_updated",
+          resourceType: "site_staging",
+          resourceId: workspace.id,
+          details: {
+            actionType: result.ok ? "staging_synced_from_production" : "staging_sync_failed",
+            productionServiceUuid,
+            stagingServiceUuid,
+            direction: "production-to-staging",
+            databases: result.databases,
+            message: result.message
+          },
+          ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "unknown",
+          userAgent: request.headers.get("user-agent") ?? undefined
+        }
+      });
+    } catch (error) {
+      console.error("staging sync: audit log write failed", error);
+    }
+    return NextResponse.json(
+      result.ok
+        ? { ok: true, message: result.message }
+        : { ok: false, message: result.message, remedy: { action: "retry_staging_database", label: "Try again" } },
+      { status: result.ok ? 200 : 409 }
+    );
+  }
   // Production content is rewritten to THE staging link: a connected custom
   // domain when there is one, else the .mfts.link fallback.
   const fallbackHost = pickFallbackHost(String(capability.fqdn ?? capability.stagingUrl ?? "").split(","), platformSuffixesFromEnv());

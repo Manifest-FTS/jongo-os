@@ -97,7 +97,10 @@ async function loadContext(siteId: string): Promise<StagingContext | { error: st
   const appUuid = site?.coolifyServiceUuid?.trim();
   if (!site || !appUuid) return { error: "This app isn't linked to a running site yet.", status: 409 };
 
-  const capability = await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined, { relaxedTargetMatch: true });
+  // Strict: attaching a hostname is an identity action. The relaxed rule adopts
+  // "the only copy in the staging environment" even when it is another app's,
+  // which put Bonsai's staging addresses on manifestfts' copy (2026-10-07).
+  const capability = await getCoolifyAppStagingCapability(appUuid, site.coolifyProjectId ?? undefined, { relaxedTargetMatch: false });
   if (!capability.applicationUuid) return { error: "Staging is not set up for this site yet. Turn staging on first.", status: 409 };
 
   const customHosts: Array<{ hostname: string }> = await db.stagingDomain.findMany({
