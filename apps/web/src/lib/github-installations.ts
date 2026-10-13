@@ -7,8 +7,10 @@ import { getDb } from "@/lib/db";
 import { encryptSecret } from "@/lib/secret-box";
 import { coolifyMutateWithResponse } from "@/lib/coolify";
 import {
+  appForOrganization,
   clearGithubAppCache,
   getGithubApp,
+  type GithubAppSecrets,
   getInstallation,
   listInstallationRepos,
   type ManifestConversion
@@ -24,6 +26,7 @@ export type InstallationRow = {
   repositorySelection: string | null;
   coolifySourceUuid: string | null;
   coolifySourceId: number | null;
+  githubAppConfigId?: string | null;
   status: string;
   lastError: string | null;
   createdAt: Date;
@@ -51,12 +54,21 @@ export async function audit(organizationId: string, actorId: string | null, acti
 // The app itself (platform admin, once)
 // ---------------------------------------------------------------------------
 
-export async function saveGithubApp(conversion: ManifestConversion, actorId: string): Promise<{ ok: boolean; message: string }> {
+/**
+ * Stores a GitHub App GitHub just created (manifest flow). organizationId set:
+ * the client's own app; null: the optional shared app.
+ */
+export async function saveGithubApp(conversion: ManifestConversion, actorId: string, organizationId: string | null): Promise<{ ok: boolean; message: string; app: GithubAppSecrets | null }> {
   const db: any = await getDb();
-  if (!db) return { ok: false, message: "The database is unavailable." };
-  if (await db.githubAppConfig.findFirst()) return { ok: false, message: "The Jongo GitHub App already exists." };
-  await db.githubAppConfig.create({
+  if (!db) return { ok: false, message: "The database is unavailable.", app: null };
+  const existing = await db.githubAppConfig.findFirst({ where: { organizationId } });
+  if (existing) {
+    const app = await getGithubApp({ id: existing.id });
+    return { ok: true, message: "GitHub is already set up for this client.", app };
+  }
+  const row = await db.githubAppConfig.create({
     data: {
+      organizationId,
       appId: Number(conversion.id),
       slug: conversion.slug,
       name: conversion.name,
@@ -69,20 +81,19 @@ export async function saveGithubApp(conversion: ManifestConversion, actorId: str
     }
   });
   clearGithubAppCache();
-  const key = await ensureHostingKey();
-  return key.ok
-    ? { ok: true, message: `${conversion.name} is ready. Clients can now connect GitHub.` }
-    : { ok: true, message: `${conversion.name} is saved, but its key isn't on the hosting server yet (${key.message}). Use Re-sync key.` };
+  const app = await getGithubApp({ id: row.id });
+  if (app) await ensureHostingKey(app);
+  if (organizationId) await audit(organizationId, actorId, "github_app_created", { appId: conversion.id, slug: conversion.slug });
+  return { ok: true, message: `${conversion.name} was created on GitHub.`, app };
 }
 
-/** Uploads the app's private key to the hosting server once; sources reference it. */
-export async function ensureHostingKey(): Promise<{ ok: boolean; message: string }> {
-  const app = await getGithubApp();
-  if (!app) return { ok: false, message: "The Jongo GitHub App isn't set up yet." };
-  if (app.coolifyPrivateKeyUuid) return { ok: true, message: "Key in place." };
+/** Uploads an app's private key to the hosting server once; sources reference it. */
+export async function ensureHostingKey(app: GithubAppSecrets | null): Promise<{ ok: boolean; message: string; uuid?: string }> {
+  if (!app) return { ok: false, message: "GitHub isn't set up yet." };
+  if (app.coolifyPrivateKeyUuid) return { ok: true, message: "Key in place.", uuid: app.coolifyPrivateKeyUuid };
   const response = await coolifyMutateWithResponse("/api/v1/security/keys", "POST", {
     name: `jongo-github-app-${app.slug}`,
-    description: "Private key of the Jongo GitHub App (managed by Jongo).",
+    description: "Private key of a Jongo GitHub App (managed by Jongo).",
     private_key: app.privateKey
   });
   const uuid = (response.body as any)?.uuid;
@@ -92,7 +103,12 @@ export async function ensureHostingKey(): Promise<{ ok: boolean; message: string
   const db: any = await getDb();
   await db.githubAppConfig.update({ where: { id: app.id }, data: { coolifyPrivateKeyUuid: uuid } });
   clearGithubAppCache();
-  return { ok: true, message: "Key uploaded." };
+  return { ok: true, message: "Key uploaded.", uuid };
+}
+
+async function appForInstallRow(install: Pick<InstallationRow, "githubAppConfigId" | "organizationId">): Promise<GithubAppSecrets | null> {
+  if (install.githubAppConfigId) return getGithubApp({ id: install.githubAppConfigId });
+  return appForOrganization(install.organizationId);
 }
 
 // ---------------------------------------------------------------------------
@@ -112,9 +128,9 @@ export async function getOrgInstallation(orgId: string): Promise<InstallationRow
 export async function ensureHostingSource(install: InstallationRow): Promise<{ ok: boolean; message: string }> {
   if (install.coolifySourceUuid) return { ok: true, message: "Ready." };
   const db: any = await getDb();
-  const key = await ensureHostingKey();
-  const app = await getGithubApp();
-  if (!key.ok || !app?.coolifyPrivateKeyUuid) {
+  const app = await appForInstallRow(install);
+  const key = await ensureHostingKey(app);
+  if (!key.ok || !app || !key.uuid) {
     await db.githubInstallation.update({ where: { id: install.id }, data: { lastError: key.message } });
     return { ok: false, message: "GitHub is connected, but setup isn't finished yet. It retries automatically, or use Finish setup." };
   }
@@ -130,7 +146,7 @@ export async function ensureHostingSource(install: InstallationRow): Promise<{ o
     client_id: app.clientId,
     client_secret: app.clientSecret,
     webhook_secret: app.webhookSecret,
-    private_key_uuid: app.coolifyPrivateKeyUuid,
+    private_key_uuid: key.uuid,
     is_system_wide: false
   });
   const body = response.body as any;
@@ -153,8 +169,18 @@ export async function connectInstallation(input: {
 }): Promise<{ ok: boolean; status: number; message: string }> {
   const db: any = await getDb();
   if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
-  const info = await getInstallation(input.installationId);
-  if (!info) return { ok: false, status: 404, message: "GitHub doesn't know that installation. Try connecting again." };
+  // The client's own app first, then the shared one: whichever owns this install.
+  const candidates = [await getGithubApp({ organizationId: input.orgId }), await getGithubApp()].filter((app): app is GithubAppSecrets => Boolean(app));
+  let info = null as Awaited<ReturnType<typeof getInstallation>>;
+  let app: GithubAppSecrets | null = null;
+  for (const candidate of candidates) {
+    info = await getInstallation(input.installationId, candidate).catch(() => null);
+    if (info) {
+      app = candidate;
+      break;
+    }
+  }
+  if (!info || !app) return { ok: false, status: 404, message: "GitHub doesn't know that installation. Try connecting again." };
 
   const existing = await db.githubInstallation.findUnique({ where: { installationId: BigInt(input.installationId) } });
   if (existing && existing.organizationId !== input.orgId && existing.status !== "removed") {
@@ -168,6 +194,7 @@ export async function connectInstallation(input: {
     accountId: BigInt(info.account.id || 0),
     repositorySelection: info.repositorySelection,
     status: info.suspended ? "suspended" : "active",
+    githubAppConfigId: app.id,
     removedAt: null,
     createdById: input.userId
   };
@@ -267,7 +294,7 @@ export type GithubReconcileResult = { checked: number; removed: number; suspende
 export async function reconcileGithubInstallations(limit = 20): Promise<GithubReconcileResult> {
   const result: GithubReconcileResult = { checked: 0, removed: 0, suspended: 0, accessLost: 0, sourcesCreated: 0, deliveriesPruned: 0 };
   const db: any = await getDb();
-  if (!db || !(await getGithubApp())) return result;
+  if (!db) return result;
 
   const pruned = await db.githubWebhookDelivery.deleteMany({ where: { receivedAt: { lt: new Date(Date.now() - 14 * 24 * 3600_000) } } });
   result.deliveriesPruned = pruned.count ?? 0;

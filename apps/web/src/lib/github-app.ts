@@ -12,6 +12,8 @@ const API = "https://api.github.com";
 
 export type GithubAppSecrets = {
   id: string;
+  /** The client that created it; null for an optional shared app. */
+  organizationId: string | null;
   appId: number;
   slug: string;
   name: string;
@@ -23,34 +25,63 @@ export type GithubAppSecrets = {
   coolifyPrivateKeyUuid: string | null;
 };
 
-let configCache: { at: number; value: GithubAppSecrets | null } | null = null;
+const configCache = new Map<string, { at: number; value: GithubAppSecrets | null }>();
 
 export function clearGithubAppCache(): void {
-  configCache = null;
+  configCache.clear();
   tokenCache.clear();
 }
 
-/** The app's credentials, decrypted. Null until a platform admin creates the app. */
-export async function getGithubApp(): Promise<GithubAppSecrets | null> {
-  if (configCache && Date.now() - configCache.at < 60_000) return configCache.value;
+function decryptRow(row: any): GithubAppSecrets {
+  return {
+    id: row.id,
+    organizationId: row.organizationId ?? null,
+    appId: row.appId,
+    slug: row.slug,
+    name: row.name,
+    htmlUrl: row.htmlUrl,
+    clientId: row.clientId,
+    clientSecret: decryptSecret(row.clientSecretEnc),
+    webhookSecret: decryptSecret(row.webhookSecretEnc),
+    privateKey: decryptSecret(row.privateKeyEnc),
+    coolifyPrivateKeyUuid: row.coolifyPrivateKeyUuid ?? null
+  };
+}
+
+/**
+ * A Jongo GitHub App, decrypted: by row id, by GitHub app id (webhooks), or a
+ * client's own app. With no selector: the optional shared app (no client).
+ */
+export async function getGithubApp(selector: { id?: string | null; appId?: number | null; organizationId?: string | null } = {}): Promise<GithubAppSecrets | null> {
+  const where = selector.id
+    ? { id: selector.id }
+    : typeof selector.appId === "number" && Number.isFinite(selector.appId)
+      ? { appId: selector.appId }
+      : selector.organizationId
+        ? { organizationId: selector.organizationId }
+        : { organizationId: null };
+  const key = JSON.stringify(where);
+  const cached = configCache.get(key);
+  if (cached && Date.now() - cached.at < 60_000) return cached.value;
   const db: any = await getDb();
-  const row = db ? await db.githubAppConfig.findFirst({ orderBy: { createdAt: "asc" } }) : null;
-  const value: GithubAppSecrets | null = row
-    ? {
-        id: row.id,
-        appId: row.appId,
-        slug: row.slug,
-        name: row.name,
-        htmlUrl: row.htmlUrl,
-        clientId: row.clientId,
-        clientSecret: decryptSecret(row.clientSecretEnc),
-        webhookSecret: decryptSecret(row.webhookSecretEnc),
-        privateKey: decryptSecret(row.privateKeyEnc),
-        coolifyPrivateKeyUuid: row.coolifyPrivateKeyUuid ?? null
-      }
-    : null;
-  configCache = { at: Date.now(), value };
+  const row = db ? await db.githubAppConfig.findFirst({ where, orderBy: { createdAt: "asc" } }) : null;
+  const value = row ? decryptRow(row) : null;
+  configCache.set(key, { at: Date.now(), value });
   return value;
+}
+
+/** The app a client connects with: its own, else the shared one when there is one. */
+export async function appForOrganization(organizationId: string): Promise<GithubAppSecrets | null> {
+  return (await getGithubApp({ organizationId })) ?? (await getGithubApp());
+}
+
+/** The app an installation belongs to (recorded when it was connected). */
+async function appForInstallation(installationId: number): Promise<GithubAppSecrets | null> {
+  const db: any = await getDb();
+  const row = db ? await db.githubInstallation.findUnique({ where: { installationId: BigInt(installationId) }, select: { githubAppConfigId: true, organizationId: true } }) : null;
+  if (row?.githubAppConfigId) return getGithubApp({ id: row.githubAppConfigId });
+  if (row?.organizationId) return appForOrganization(row.organizationId);
+  return getGithubApp();
 }
 
 /** RS256 JWT identifying the app itself (9-minute expiry; GitHub allows 10). */
@@ -93,11 +124,11 @@ async function github<T>(path: string, init: { token?: string; bearer?: string; 
 const tokenCache = new Map<number, { token: string; expiresAt: number }>();
 
 /** A token scoped to one customer's install (and only the repos they picked). */
-export async function installationToken(installationId: number): Promise<string> {
+export async function installationToken(installationId: number, appOverride?: GithubAppSecrets | null): Promise<string> {
   const cached = tokenCache.get(installationId);
   if (cached && cached.expiresAt - Date.now() > 5 * 60_000) return cached.token;
-  const app = await getGithubApp();
-  if (!app) throw new GithubApiError("The Jongo GitHub App isn't set up yet.", 503);
+  const app = appOverride ?? (await appForInstallation(installationId));
+  if (!app) throw new GithubApiError("GitHub isn't connected for this client.", 503);
   const result = await github<{ token: string; expires_at: string }>(`/app/installations/${installationId}/access_tokens`, {
     bearer: appJwt(app),
     method: "POST"
@@ -114,9 +145,9 @@ export type GithubInstallationInfo = {
 };
 
 /** The installation as GitHub reports it; null when it no longer exists. */
-export async function getInstallation(installationId: number): Promise<GithubInstallationInfo | null> {
-  const app = await getGithubApp();
-  if (!app) throw new GithubApiError("The Jongo GitHub App isn't set up yet.", 503);
+export async function getInstallation(installationId: number, appOverride?: GithubAppSecrets | null): Promise<GithubInstallationInfo | null> {
+  const app = appOverride ?? (await appForInstallation(installationId));
+  if (!app) throw new GithubApiError("GitHub isn't connected for this client.", 503);
   try {
     const raw: any = await github(`/app/installations/${installationId}`, { bearer: appJwt(app) });
     return {

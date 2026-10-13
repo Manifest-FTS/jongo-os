@@ -19,9 +19,11 @@ type Props = {
   availableApps?: CoolifyAppPickerOption[];
   /** Collaborators: only "Deploy from GitHub" (adopting or creating WordPress is admin-only). */
   githubOnly?: boolean;
+  /** False until the platform's GitHub App exists: the GitHub option is hidden. */
+  githubAvailable?: boolean;
 };
 
-export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false }: Props) {
+export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false, githubAvailable = true }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -221,7 +223,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
           ["link", "Link existing app", "Adopt an app that is already running on Jongo's servers."],
           ["create", "Create WordPress site", "Create a new WordPress + MariaDB site."],
           ["github", "Deploy from GitHub", "Build and deploy an app from one of your GitHub repos."]
-        ] as const).filter(([value]) => !githubOnly || value === "github").map(([value, label, help]) => (
+        ] as const).filter(([value]) => (!githubOnly || value === "github") && (githubAvailable || value !== "github")).map(([value, label, help]) => (
           <button
             key={value}
             type="button"
@@ -287,7 +289,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
             className="form-input"
           />
         </div>
-        {mode === "github" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} canConnect={!githubOnly} /> : null}
+        {mode === "github" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} /> : null}
         {mode === "link" ? (
         <>
         <div>

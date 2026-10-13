@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAppManifest } from "./github-app-manifest";
+import { buildAppManifest, clientAppName } from "./github-app-manifest";
 import { buildGithubApplicationRequest } from "./github-app-request";
 
 describe("buildAppManifest", () => {
@@ -13,6 +13,20 @@ describe("buildAppManifest", () => {
     expect(manifest.redirect_url).toBe("https://jongo.app/api/github/app/manifest-callback");
     expect(manifest.setup_url).toBe("https://jongo.app/api/github/install-callback");
     expect(manifest.public).toBe(true);
+  });
+});
+
+describe("per-client apps", () => {
+  it("are private to the client's own GitHub account (only they can install it)", () => {
+    const manifest = buildAppManifest({ baseUrl: "https://jongo.app", name: "Jongo acme 0d658c", public: false });
+    expect(manifest.public).toBe(false);
+    expect(manifest.default_permissions).toEqual({ contents: "read", metadata: "read" });
+  });
+  it("get a unique name GitHub accepts (34 characters max)", () => {
+    expect(clientAppName("acme", "0d658c91-b1f3-43a8-958f-18c0285f8f76")).toBe("Jongo acme 0d658c");
+    const long = clientAppName("a-very-long-client-slug-that-keeps-going", "0d658c91-b1f3-43a8-958f-18c0285f8f76");
+    expect(long.length).toBeLessThanOrEqual(34);
+    expect(long.endsWith(" 0d658c")).toBe(true);
   });
 });
 

@@ -143,6 +143,7 @@ model Organization {
   notifications       Notification[]
   domains             Domain[]
   githubInstallations GithubInstallation[]
+  githubApp           GithubAppConfig?
 
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
@@ -1022,11 +1023,16 @@ model StagingDomain {
   @@index([status])
 }
 
-/// The one Jongo GitHub App, created from /admin/github (manifest flow).
-/// Secrets are encrypted with lib/secret-box.ts and never leave the server.
+/// A Jongo GitHub App. Normally one per client, created on the client's own
+/// GitHub account from Connect GitHub (organizationId set); a row without
+/// organizationId is an optional shared app. Secrets are encrypted with
+/// lib/secret-box.ts and never leave the server.
 model GithubAppConfig {
   id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  appId                 Int
+  organizationId        String?  @unique @db.Uuid
+  organization          Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  installations         GithubInstallation[]
+  appId                 Int      @unique
   slug                  String
   name                  String
   htmlUrl               String
@@ -1052,6 +1058,8 @@ model GithubInstallation {
   repositorySelection String?
   coolifySourceUuid   String?
   coolifySourceId     Int?
+  githubAppConfigId   String?   @db.Uuid
+  githubApp           GithubAppConfig? @relation(fields: [githubAppConfigId], references: [id], onDelete: SetNull)
   // active | suspended | removed
   status              String    @default("active")
   lastError           String?
