@@ -17,7 +17,7 @@ const pairs = [
 
 for (const [cookieName, salt] of pairs) {
   const token = await encode({ secret, salt, token: baseToken, maxAge: 3600 });
-  const res = await fetch("https://jongo.manifest-fts.com/api/auth/session", {
+  const res = await fetch("https://jongo.app/api/auth/session", {
     headers: { cookie: `${cookieName}=${token}` }
   });
   const body = await res.text();

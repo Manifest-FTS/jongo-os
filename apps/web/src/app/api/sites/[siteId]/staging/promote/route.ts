@@ -514,14 +514,14 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const backupInventoryPromise = getCoolifyAppBackupInventory(appUuid);
-  let stagingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, /* Relaxed: the staging route CREATES under this rule and the pages DISPLAY under it. Strict here made promote disagree with a UI that said 'Target Attached', blocking on 'Staging is not configured'. */ { relaxedTargetMatch: true });
+  let stagingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, /* Strict: promote copies this copy over PRODUCTION. Recorded copies are found first; the relaxed lone-candidate rule could pick another app's copy. */ { relaxedTargetMatch: false });
 
   // Coolify reads can intermittently fail even when staging exists.
   // Retry unresolved capability briefly before treating preflight as blocked.
   if (site.stagingEnabled && !stagingCapability.applicationUuid) {
     for (const retryDelayMs of [250, 500]) {
       await sleep(retryDelayMs);
-      const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, /* Relaxed: the staging route CREATES under this rule and the pages DISPLAY under it. Strict here made promote disagree with a UI that said 'Target Attached', blocking on 'Staging is not configured'. */ { relaxedTargetMatch: true });
+      const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, /* Strict: promote copies this copy over PRODUCTION. Recorded copies are found first; the relaxed lone-candidate rule could pick another app's copy. */ { relaxedTargetMatch: false });
       stagingCapability = retriedCapability;
       if (retriedCapability.applicationUuid) {
         break;
@@ -534,7 +534,7 @@ export async function POST(req: Request, { params }: Params) {
     const cooldownMs = rateLimitCooldownRemaining();
     if (!stagingCapability.applicationUuid && stagingCapability.note === "fetch_error" && cooldownMs > 0 && cooldownMs <= 30_000) {
       await sleep(cooldownMs + 500);
-      stagingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, { relaxedTargetMatch: true });
+      stagingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, { relaxedTargetMatch: false });
     }
   }
 
@@ -768,8 +768,14 @@ export async function POST(req: Request, { params }: Params) {
     }, { status: 409 });
   }
 
+  // Apps (Next.js, Sanity, …) promote CODE only: production redeploys and its
+  // database is never touched. Staging has its own database (lib/staging-
+  // databases.ts); the WordPress content sync below would copy it over
+  // production's, and only knows wordpress-<uuid> containers anyway.
+  const codeOnly = stagingCapability.resourceKind === "application";
+
   try {
-    await runPromoteContentSync({
+    if (!codeOnly) await runPromoteContentSync({
       req,
       siteId,
       productionServiceUuid: appUuid,
@@ -785,7 +791,7 @@ export async function POST(req: Request, { params }: Params) {
     // stage.* asset URLs from production. Rewrite them before the deploy, so the
     // site that comes up is already self-consistent.
     let urlRewrite: Awaited<ReturnType<typeof runUrlRewrite>> | null = null;
-    try {
+    if (!codeOnly) try {
       // One pass per staging address (custom domain, .mfts.link fallback),
       // merged into one report.
       const passes: Array<Awaited<ReturnType<typeof runUrlRewrite>>> = [];
@@ -837,9 +843,11 @@ export async function POST(req: Request, { params }: Params) {
       : "";
     const promoteMessage =
       (deployWarning ??
-        (restarted
-          ? "Promoted. Staging's content is live on production and the site was restarted."
-          : "Promoted. Staging's content is live on production and a production deployment has started.")) + rewriteNote;
+        (codeOnly
+          ? "Promoted. Production is redeploying from its branch; its database was not changed."
+          : restarted
+            ? "Promoted. Staging's content is live on production and the site was restarted."
+            : "Promoted. Staging's content is live on production and a production deployment has started.")) + rewriteNote;
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,

@@ -105,6 +105,12 @@ export async function runSiteRemedy(input: {
       );
     }
 
+    case "retry_staging_database": {
+      const { ensureStagingDatabases } = await import("@/lib/staging-databases");
+      const result = await ensureStagingDatabases(site.id);
+      return { ok: result.ok, status: result.ok ? 200 : 409, message: result.message, remedy: result.ok ? null : remedy("retry_staging_database") };
+    }
+
     case "retry_site_delete": {
       const { DELETE } = await import("@/app/api/sites/[siteId]/route");
       const response = await DELETE(

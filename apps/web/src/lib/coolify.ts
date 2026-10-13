@@ -1171,6 +1171,8 @@ export type CoolifyActionResult = {
   status?: number;
   /** UUID returned by Coolify when this action creates a resource. */
   resourceUuid?: string;
+  /** What that resource is, so deploy/remove use the right endpoints. */
+  resourceKind?: "application" | "service";
   /** Provisioning attempt diagnostics for staged create/delete flows. */
   attempts?: Array<{
     path: string;
@@ -2476,8 +2478,11 @@ export async function provisionCoolifyStagingFromProduction(
 
   const provisioningResource = await resolveProvisioningResource();
 
+  // Strict throughout provisioning: the relaxed rule's lone-candidate fallback
+  // adopted another app's staging copy as this one's (see staging-target-match
+  // tests). Provisioning creates or recognises only this app's own copy.
   const existingCapability = await getCoolifyAppStagingCapability(appUuid, projectId, {
-    relaxedTargetMatch: true
+    relaxedTargetMatch: false
   });
   if (existingCapability.detected && existingCapability.applicationUuid) {
     return {
@@ -2490,7 +2495,7 @@ export async function provisionCoolifyStagingFromProduction(
 
   const verifyStagingTarget = async (): Promise<boolean> => {
     const capability = await getCoolifyAppStagingCapability(appUuid, projectId, {
-      relaxedTargetMatch: true
+      relaxedTargetMatch: false
     });
     if (capability.detected && capability.applicationUuid) {
       return true;
@@ -2499,7 +2504,7 @@ export async function provisionCoolifyStagingFromProduction(
     for (const retryDelayMs of [500, 1000, 2000, 4000]) {
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       const retriedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, {
-        relaxedTargetMatch: true
+        relaxedTargetMatch: false
       });
       if (retriedCapability.detected && retriedCapability.applicationUuid) {
         return true;
@@ -2748,6 +2753,114 @@ export async function provisionCoolifyStagingFromProduction(
 
     return { created: false };
   };
+
+  /**
+   * Apps (Next.js, Sanity, Dockerfile, …): Coolify has no clone endpoint for
+   * applications, so staging is a new application in the staging environment
+   * built from the same repo, source and build settings, with production's
+   * environment variables (lib/staging-app-copy.ts decides the request).
+   */
+  const createApplicationFromSource = async (stagingEnvironment: StagingEnvironmentResolution): Promise<{ created: boolean; resourceUuid?: string }> => {
+    if (!stagingEnvironment.stagingEnvironmentId && !stagingEnvironment.stagingEnvironmentName) return { created: false };
+    let source: Record<string, unknown> | null = null;
+    try {
+      const payload = await coolifyFetch(`/api/v1/applications/${encodeURIComponent(provisioningResource.uuid || appUuid)}`);
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) source = payload as Record<string, unknown>;
+    } catch {
+      source = null;
+    }
+    if (!source) return { created: false };
+
+    const { buildStagingAppCopyRequest, stagingEnvVarsToCopy } = await import("./staging-app-copy");
+    const destination = typeof source.destination === "object" && source.destination !== null ? (source.destination as Record<string, unknown>) : {};
+    const destinationServer = typeof destination.server === "object" && destination.server !== null ? (destination.server as Record<string, unknown>) : {};
+    let servers: Array<Record<string, unknown>> = [];
+    try {
+      servers = ensureArray(await coolifyFetch("/api/v1/servers"));
+    } catch {
+      servers = [];
+    }
+    const serverResolution = resolveStagingServerUuid({
+      service: {
+        server_uuid: stringValue(destinationServer, ["uuid"], ""),
+        server_id: stringValue(destination, ["server_id"], "")
+      },
+      servers,
+      chosenServerUuid: options.serverUuid
+    });
+    serverChoices = serverResolution.choices;
+
+    const githubApps = stringValue(source, ["source_type"], "").endsWith("GithubApp") ? ensureArray(await coolifyFetch("/api/v1/github-apps").catch(() => [])) : [];
+    const privateKeys = source.private_key_id ? ensureArray(await coolifyFetch("/api/v1/security/keys").catch(() => [])) : [];
+    const seed = normalizedPreferredDomain
+      ? (() => {
+          try {
+            return new URL(normalizedPreferredDomain).hostname.split(".")[0] || "";
+          } catch {
+            return "";
+          }
+        })()
+      : "";
+    const request = buildStagingAppCopyRequest({
+      source,
+      githubApps,
+      privateKeys,
+      placement: {
+        projectUuid: projectId || "",
+        serverUuid: serverResolution.uuid,
+        environmentName: stagingEnvironment.stagingEnvironmentName ?? "",
+        environmentUuid: stagingEnvironment.stagingEnvironmentId ?? "",
+        destinationUuid: stringValue(destination, ["uuid"], "")
+      },
+      name: buildStagingResourceName(seed || stringValue(source, ["name"], "app")),
+      domain: normalizedPreferredDomain ?? null
+    });
+    if (!request.ok) {
+      provisioningAttempts.push({
+        path: "/api/v1/applications",
+        method: "POST",
+        ok: false,
+        error: request.reason === "no_placement" ? serverResolution.reason ?? "Could not determine where to create the staging app." : `Can't copy this app for staging (${request.reason}).`
+      });
+      return { created: false };
+    }
+
+    const created = await coolifyMutateWithResponse(request.path, "POST", request.body);
+    provisioningAttempts.push({ path: request.path, method: "POST", ok: created.ok, status: created.status, error: created.error });
+    const createdUuid = created.ok ? extractCreatedResourceUuid(created.body) : undefined;
+    if (!createdUuid) return { created: false };
+
+    // Production's variables, so the staging build behaves like production.
+    try {
+      const envs = ensureArray(await coolifyFetch(`/api/v1/applications/${encodeURIComponent(provisioningResource.uuid || appUuid)}/envs`));
+      const data = stagingEnvVarsToCopy(envs);
+      if (data.length) {
+        const copied = await coolifyMutateWithResponse(`/api/v1/applications/${encodeURIComponent(createdUuid)}/envs/bulk`, "PATCH", { data });
+        provisioningAttempts.push({ path: `/api/v1/applications/${createdUuid}/envs/bulk`, method: "PATCH", ok: copied.ok, status: copied.status, error: copied.error });
+      }
+    } catch {
+      provisioningAttempts.push({ path: `/api/v1/applications/${createdUuid}/envs/bulk`, method: "PATCH", ok: false, error: "Could not copy environment variables." });
+    }
+    return { created: true, resourceUuid: createdUuid };
+  };
+
+  if (provisioningResource.kind === "application") {
+    const stagingEnvironment = await resolveStagingEnvironment();
+    if (stagingEnvironment) {
+      const copied = await createApplicationFromSource(stagingEnvironment);
+      if (copied.created) {
+        return {
+          mode: "live",
+          ok: true,
+          message: "Staging copy created. Its first build starts now.",
+          reason: "service_created",
+          resourceUuid: copied.resourceUuid,
+          resourceKind: "application",
+          attempts: provisioningAttempts
+        };
+      }
+    }
+  }
 
   const resourceUuid = encodeURIComponent(provisioningResource.uuid || appUuid);
   const serviceCandidateRequests: Array<{ path: string; body?: Record<string, unknown> }> = [

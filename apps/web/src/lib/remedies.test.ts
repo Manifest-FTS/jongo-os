@@ -42,6 +42,15 @@ describe("remedy", () => {
   });
 });
 
+describe("retry_staging_database", () => {
+  it("is open to whoever can sync staging (it only rewrites staging's own data)", () => {
+    expect(canRunRemedy("retry_staging_database", collaborator)).toEqual({ ok: true });
+    expect(canRunRemedy("retry_staging_database", { canSyncStaging: false }).ok).toBe(false);
+    expect(remedy("retry_staging_database").label).toBe("Try again");
+    expect(remedyCooldownMs("retry_staging_database")).toBe(60_000);
+  });
+});
+
 describe("cooldowns", () => {
   it("uses 30 s for restarts and retries, 60 s for provisioning", () => {
     expect(remedyCooldownMs("restart_site")).toBe(30_000);

@@ -1281,6 +1281,15 @@ export async function POST(req: Request, { params }: Params) {
       if (currentCapability.applicationUuid) {
         await writeStagingTargetPin(site.id, currentCapability.applicationUuid);
       }
+      // A copy made before staging databases existed still uses production's
+      // database: give it its own (once; later syncs re-copy).
+      if (currentCapability.applicationUuid && currentCapability.resourceKind === "application") {
+        const hasOwn = await (db as any).stagingDatabase.count({ where: { siteId: site.id, status: { not: "removed" } } }).catch(() => 1);
+        if (hasOwn === 0) {
+          const { ensureStagingDatabases } = await import("@/lib/staging-databases");
+          await ensureStagingDatabases(site.id).catch((error) => console.error("[staging] staging databases failed", error));
+        }
+      }
       let capabilityAfterExistingCheck = currentCapability;
       let currentStagingRunning = capabilityAfterExistingCheck.status === "healthy";
       let stagingDeployTriggered = false;
@@ -1319,7 +1328,7 @@ export async function POST(req: Request, { params }: Params) {
         try {
           await triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid, "staging");
           stagingDeployTriggered = true;
-          const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
+          const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
           capabilityAfterExistingCheck = refreshedCapability;
           currentStagingRunning = refreshedCapability.status === "healthy";
         } catch { }
@@ -1455,11 +1464,28 @@ export async function POST(req: Request, { params }: Params) {
       serverUuid: typeof body.stagingServerUuid === "string" ? body.stagingServerUuid.trim() : null
     });
 
+    // Record the new copy before looking anything up, so the lookups below find
+    // it by uuid instead of by name.
+    if (provisionResult.resourceUuid) {
+      await writeStagingTargetPin(site.id, provisionResult.resourceUuid);
+    }
+
+    // Apps get their own staging database (copy of production's) before the
+    // first deploy, so the staging build never points at production's data.
+    let stagingDatabases: Awaited<ReturnType<typeof import("@/lib/staging-databases").ensureStagingDatabases>> | null = null;
+    if (provisionResult.resourceUuid && provisionResult.resourceKind === "application") {
+      const { ensureStagingDatabases } = await import("@/lib/staging-databases");
+      stagingDatabases = await ensureStagingDatabases(site.id).catch((error) => {
+        console.error("[staging] staging databases failed", error);
+        return { ok: false, message: "Staging's own database couldn't be set up yet. Use Try again.", databases: 0, copying: 0, shared: [] };
+      });
+    }
+
     let capabilityAfterProvision: Awaited<ReturnType<typeof getCoolifyAppStagingCapability>>;
     if (provisionResult.resourceUuid) {
       capabilityAfterProvision = {
         detected: true,
-        resourceKind: "service",
+        resourceKind: provisionResult.resourceKind ?? "service",
         applicationUuid: provisionResult.resourceUuid,
         status: "unknown",
         note: "provision_response",
@@ -1467,7 +1493,7 @@ export async function POST(req: Request, { params }: Params) {
       };
       try {
         const refreshedCapability = await retryOnceAfterRateLimitError(() =>
-          getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
+          getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH)
         );
         capabilityAfterProvision = preserveResolvedStagingCapability(
           capabilityAfterProvision,
@@ -1480,14 +1506,14 @@ export async function POST(req: Request, { params }: Params) {
       }
     } else {
       capabilityAfterProvision = await retryOnceAfterRateLimitError(() =>
-        getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
+        getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH)
       );
     }
     if (!capabilityAfterProvision.applicationUuid) {
       for (const retryDelayMs of [250, 500]) {
         await sleep(retryDelayMs);
         const retriedCapability = await retryOnceAfterRateLimitError(() =>
-          getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH)
+          getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH)
         );
         capabilityAfterProvision = retriedCapability;
         if (retriedCapability.applicationUuid) {
@@ -1498,6 +1524,10 @@ export async function POST(req: Request, { params }: Params) {
 
     const stagingTargetResolved = Boolean(capabilityAfterProvision.detected && capabilityAfterProvision.applicationUuid);
 
+    // Strict lookups above, never the relaxed rule: relaxed matching adopts "the
+    // only copy in the staging environment" even when it belongs to another
+    // app, and this path then applies our staging address to it and records it
+    // (Bonsai was attached to manifestfts' copy that way on 2026-10-07).
     // Record the copy by the uuid Coolify returned when creating it: the one
     // answer here that is not a name guess. Without it the next disable cannot
     // find this copy, and the next enable builds another.
@@ -1541,7 +1571,7 @@ export async function POST(req: Request, { params }: Params) {
         await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
         stagingDeployTriggered = true;
         stagingDeployError = null;
-        const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_MATCH);
+        const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
         capabilityAfterProvision = preserveResolvedStagingCapability(capabilityAfterProvision, refreshedCapability);
       } catch (error) {
         stagingDeployError = error instanceof Error ? error.message : "Coolify rejected the staging deploy.";
@@ -1717,9 +1747,12 @@ export async function POST(req: Request, { params }: Params) {
       stagingRunning,
       stagingContentProbe: stagingProbeResult.probe,
       autoContentSync,
-      message: enableMessage,
+      message: stagingDatabases?.message ? `${enableMessage} ${stagingDatabases.message}` : enableMessage,
+      stagingDatabases,
       serverChoices: provisionResult.serverChoices ?? null,
-      remedy: manualProvisionRequired && (environmentOnlyProvisioned || (!provisionResult.ok && provisionResult.reason !== "auto_provision_unsupported" && provisionResult.reason !== "server_choice_needed"))
+      remedy: stagingDatabases && !stagingDatabases.ok
+        ? remedy("retry_staging_database")
+        : manualProvisionRequired && (environmentOnlyProvisioned || (!provisionResult.ok && provisionResult.reason !== "auto_provision_unsupported" && provisionResult.reason !== "server_choice_needed"))
         ? remedy("retry_staging_provision")
         : null,
       provisioningAttempts: provisionResult.attempts ?? [],
@@ -1743,13 +1776,11 @@ export async function POST(req: Request, { params }: Params) {
         getCoolifyAppStagingCapability(
           appUuid,
           projectId,
-          // Same matching rule provisioning used to CREATE this resource. Without
-          // it, a staging copy that only relaxed matching could identify is
-          // invisible here — so jongo creates resources it then refuses to
-          // remove, and disabling staging silently leaves them running in
-          // Coolify. Whatever we were willing to provision, we must be willing
-          // to clean up.
-          STAGING_MATCH
+          // Strict: this picks what gets DELETED. Provisioning is strict too now,
+          // and the copy it creates is recorded by uuid (found first under any
+          // rule). The relaxed rule's lone-candidate fallback could select
+          // another app's copy and destroy it.
+          STAGING_IDENTITY_MATCH
         )
       );
     } catch {
@@ -1821,6 +1852,9 @@ export async function POST(req: Request, { params }: Params) {
   // The staging copy is gone, so its custom domains are released with it (the
   // hostnames become claimable again; nothing is left to detach in Coolify).
   if (destroyed) {
+    // The staging app's own databases go with it (only the ones Jongo recorded).
+    const { removeStagingDatabases } = await import("@/lib/staging-databases");
+    await removeStagingDatabases(site.id).catch((error) => console.error("[staging] removing staging databases failed", error));
     const { releaseStagingDomainsForSite } = await import("@/lib/staging-domains");
     await releaseStagingDomainsForSite(site.id).catch((error) => console.error("[staging] releasing custom domains failed", error));
   }

@@ -11,6 +11,8 @@ import StagingActionsPanel from "@/components/StagingActionsPanel";
 import StagingSiteFacts from "@/components/StagingSiteFacts";
 import PageAutoRefresh from "@/components/PageAutoRefresh";
 import StagingDomainsPanel from "@/components/StagingDomainsPanel";
+import StagingDatabasesSummary from "@/components/StagingDatabasesSummary";
+import { stagingDatabaseView } from "@/lib/staging-databases";
 import { primaryStagingUrl } from "@/lib/staging-domains";
 import { pickFallbackHost, platformSuffixesFromEnv } from "@/lib/staging-domain-rules";
 import StagingAuditHistory from "@/components/StagingAuditHistory";
@@ -277,6 +279,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
   // Was derived from the staging permission, which is open to collaborators —
   // so domain controls were offered to people the domain API refuses.
   const canManageDomains = Boolean(session?.user?.id && permissionSnapshot.canEditDomains);
+  const stagingDbView = await stagingDatabaseView(workspace.id);
 
   const stagingEnabled = Boolean(workspace?.stagingEnabled);
   const appUuid = workspace?.coolifyServiceUuid;
@@ -551,6 +554,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
                 </p>
               </div>
             </div>
+            <StagingDatabasesSummary siteId={workspace.id} view={stagingDbView} canRetry={permissionSnapshot.canSyncStaging} />
             {/* Custom staging domain. In the always-visible card: it used to sit in
                 the debug-only "Staging Capability" card, so nobody saw it. */}
             <StagingDomainsPanel siteId={workspace.id} />

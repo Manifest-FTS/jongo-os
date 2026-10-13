@@ -11,6 +11,7 @@ export type RemedyAction =
   | "apply_site_domain"
   | "retry_staging_cleanup"
   | "retry_staging_provision"
+  | "retry_staging_database"
   | "retry_site_delete"
   | "retry_domain_order"
   | "refund_domain_order";
@@ -29,6 +30,7 @@ export const SITE_REMEDY_ACTIONS = [
   "apply_site_domain",
   "retry_staging_cleanup",
   "retry_staging_provision",
+  "retry_staging_database",
   "retry_site_delete"
 ] as const satisfies readonly RemedyAction[];
 
@@ -53,6 +55,12 @@ const RULES: Record<RemedyAction, { allowed: (p: Partial<UserPermissions>) => bo
   retry_staging_provision: {
     allowed: (p) => Boolean(p.canManageStagingEnvironment),
     denied: "Only the client's admins can set up staging.",
+    cooldownMs: 60_000
+  },
+  retry_staging_database: {
+    // Rewrites staging's own database only, like a sync.
+    allowed: (p) => Boolean(p.canSyncStaging),
+    denied: "You can't refresh staging's database.",
     cooldownMs: 60_000
   },
   retry_site_delete: {
@@ -99,6 +107,7 @@ function labelFor(action: RemedyAction, target?: RemedyTarget): string {
     case "retry_staging_cleanup":
       return "Remove old staging copy";
     case "retry_staging_provision":
+    case "retry_staging_database":
       return "Try again";
     case "retry_site_delete":
       return "Retry delete";

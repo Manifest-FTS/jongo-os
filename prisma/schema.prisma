@@ -193,6 +193,9 @@ model Site {
   // staging off left the copy running and turning it on built a second one.
   // Set on enable, cleared when disable removes the copy.
   stagingTargetUuid     String?
+  // External data services (Sanity, Neon, …) the staging copy shares with
+  // production, comma-separated; shown as a warning on the staging page.
+  stagingSharedServices String?
   temporaryDomainSlug   String?
   temporaryDomainSuffix String?
 
@@ -275,6 +278,7 @@ model Site {
   // Relations
   organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   stagingDomains StagingDomain[]
+  stagingDatabases StagingDatabase[]
   environments             Environment[]
   collaborators            SiteCollaborator[]
   invitations              Invitation[]
@@ -1069,4 +1073,26 @@ model GithubWebhookDelivery {
   receivedAt DateTime @default(now())
 
   @@index([receivedAt])
+}
+
+/// A staging app's own database: a copy of one production platform database.
+/// status: creating | copying | ready | failed | removed
+model StagingDatabase {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId           String    @db.Uuid
+  productionDbUuid String
+  productionDbName String
+  stagingDbUuid    String?
+  engine           String
+  status           String    @default("creating")
+  lastCopiedAt     DateTime?
+  lastError        String?
+  tableCount       Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  removedAt        DateTime?
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
 }

@@ -150,6 +150,7 @@ export async function middleware(req: NextRequest) {
     hasOpsToken &&
     (pathname === "/api/ops/site-backup-record" ||
       pathname === "/api/ops/site-restore-record" ||
+      pathname === "/api/ops/staging-db-record" ||
       pathname === "/api/ops/backup-restore-verification")
   ) {
     return NextResponse.next();
