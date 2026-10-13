@@ -26,6 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
+import { postToApp } from "./report-to-app.mjs";
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -253,14 +254,10 @@ try {
   // Record a restore-test outcome so the "Restore verified" chip reflects reality.
   // Only after an actual restore test; read-only verify runs do not assert recoverability.
   if (restoreTest) {
-    const appBaseUrl = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
     const opsToken = firstEnvValue(["BACKUP_RECONCILE_TOKEN", "OWNERSHIP_SYNC_TOKEN"]);
-    if (appBaseUrl && opsToken) {
+    if (opsToken) {
       try {
-        const res = await fetch(`${appBaseUrl}/api/ops/backup-restore-verification`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${opsToken}` },
-          body: JSON.stringify({
+        const res = await postToApp("/api/ops/backup-restore-verification", {
             resourceUuid: jongoContainer,
             result: ok ? "pass" : "fail",
             verifiedAt: summary.checkedAt,
@@ -269,14 +266,13 @@ try {
             offsitePresent: summary.offsitePresent,
             rowsMatch: summary.restore?.rowsMatch ?? null,
             rows: summary.restore?.rows ?? null
-          })
-        });
-        console.log(`recorded verification -> ${res.status}`);
+          });
+        console.log(`recorded verification -> ${res.status} via ${res.base ?? "none"}${res.error ? ` (${res.error})` : ""}`);
       } catch (error) {
         console.error(`WARN: failed to record verification: ${error instanceof Error ? error.message : "unknown"}`);
       }
     } else {
-      console.log("skip recording: APP_BASE_URL / ops token not set");
+      console.log("skip recording: ops token not set");
     }
   }
 

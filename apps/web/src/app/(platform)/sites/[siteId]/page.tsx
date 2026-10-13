@@ -71,6 +71,12 @@ function getLastSuccessfulBackupTime(inventory: AppBackupInventory | null): stri
   return successful?.finishedAt ?? null;
 }
 
+function newestIso(...values: Array<string | null>): string | null {
+  const times = values.filter((value): value is string => Boolean(value) && Number.isFinite(new Date(value as string).getTime()));
+  if (times.length === 0) return null;
+  return times.reduce((newest, value) => (new Date(value).getTime() > new Date(newest).getTime() ? value : newest));
+}
+
 function isRecentBackup(iso: string, maxAgeDays = 7): boolean {
   const ageMs = Date.now() - new Date(iso).getTime();
   return ageMs <= maxAgeDays * 24 * 60 * 60 * 1000;
@@ -256,7 +262,29 @@ export default async function SiteOverviewPage({ params }: Params) {
     ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
     : "Dry-run mode: execution remains disabled in this interface.";
 
-  const lastSuccessfulBackup = getLastSuccessfulBackupTime(backupInventory);
+  // Two sources, newest wins: the hosting server's database-backup runs, and
+  // Jongo's own full-site backups (SiteBackup), which is all an app whose
+  // database lives inside its service has. Reading only the first showed "—"
+  // here while the Backups tab listed recent snapshots.
+  const latestSiteBackupAt: string | null = workspace.id
+    ? await (async () => {
+        const { getDb } = await import("@/lib/db");
+        const prisma = await getDb();
+        if (!prisma || !("siteBackup" in prisma)) return null;
+        try {
+          const row = await (prisma as any).siteBackup.findFirst({
+            where: { siteId: workspace.id, status: "success" },
+            orderBy: { startedAt: "desc" },
+            select: { completedAt: true, startedAt: true }
+          });
+          const at = row?.completedAt ?? row?.startedAt ?? null;
+          return at ? new Date(at).toISOString() : null;
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+  const lastSuccessfulBackup = newestIso(getLastSuccessfulBackupTime(backupInventory), latestSiteBackupAt);
   const recentBackupHealthy = lastSuccessfulBackup ? isRecentBackup(lastSuccessfulBackup, 7) : false;
 
   const backupLocalStatus = backupInventory?.source !== "live"
