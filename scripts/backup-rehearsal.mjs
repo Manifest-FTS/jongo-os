@@ -27,6 +27,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
+import { postToApp } from "./report-to-app.mjs";
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -292,14 +293,10 @@ try {
   console.log(`BACKUP_REHEARSAL_RESULT=${JSON.stringify(summary)}`);
   if (!outcome.pass) console.error(`REHEARSAL FAILED (${outcome.reason}): ${outcome.message}`);
 
-  const appBaseUrl = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
   const opsToken = firstEnvValue(["BACKUP_RECONCILE_TOKEN", "OWNERSHIP_SYNC_TOKEN"]);
-  if (appBaseUrl && opsToken) {
+  if (opsToken) {
     try {
-      const res = await fetch(`${appBaseUrl}/api/ops/backup-restore-verification`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${opsToken}` },
-        body: JSON.stringify({
+      const res = await postToApp("/api/ops/backup-restore-verification", {
           resourceUuid,
           result: outcome.pass ? "pass" : "fail",
           verifiedAt: summary.checkedAt,
@@ -316,14 +313,13 @@ try {
             tables: summary.tablesAfter
           },
           detail: outcome.message || `Rehearsed snapshot ${snapshotId}: ${summary.tablesAfter} tables restored.`
-        })
-      });
-      console.log(`recorded rehearsal -> ${res.status}`);
+        });
+      console.log(`recorded rehearsal -> ${res.status} via ${res.base ?? "none"}${res.error ? ` (${res.error})` : ""}`);
     } catch (e) {
       console.error(`WARN: failed to record rehearsal: ${e instanceof Error ? e.message : "unknown"}`);
     }
   } else {
-    console.log("skip recording: APP_BASE_URL / ops token not set");
+    console.log("skip recording: ops token not set");
   }
 
   console.log(outcome.pass ? "\nRESULT: PASS" : "\nRESULT: FAIL");

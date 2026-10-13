@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
+import { postToApp } from "./report-to-app.mjs";
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -622,16 +623,11 @@ try {
   const deferred = String(k.RESULT || "").startsWith("deferred_");
   if (deferred) {
     console.log(`[site-backup] deferred: ${k.RESULT}`);
-    const appBase = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
     const token = firstEnvValue(["BACKUP_RECONCILE_TOKEN", "OWNERSHIP_SYNC_TOKEN"]);
-    if (appBase && token) {
+    if (token) {
       try {
-        const res = await fetch(`${appBase}/api/ops/site-backup-record`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ backupId, status: "deferred", error: k.RESULT })
-        });
-        console.log(`recorded deferral -> ${res.status}`);
+        const res = await postToApp("/api/ops/site-backup-record", { backupId, status: "deferred", error: k.RESULT });
+        console.log(`recorded deferral -> ${res.status} via ${res.base ?? "none"}${res.error ? ` (${res.error})` : ""}`);
       } catch (e) {
         console.error(`WARN: failed to record deferral: ${e instanceof Error ? e.message : "unknown"}`);
       }
@@ -683,16 +679,11 @@ try {
   };
   console.log(`SITE_BACKUP_RESULT=${JSON.stringify(payload)}`);
 
-  const appBaseUrl = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
   const opsToken = firstEnvValue(["BACKUP_RECONCILE_TOKEN", "OWNERSHIP_SYNC_TOKEN"]);
-  if (appBaseUrl && opsToken) {
+  if (opsToken) {
     try {
-      const res = await fetch(`${appBaseUrl}/api/ops/site-backup-record`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${opsToken}` },
-        body: JSON.stringify(payload)
-      });
-      console.log(`recorded backup -> ${res.status}`);
+      const res = await postToApp("/api/ops/site-backup-record", payload);
+      console.log(`recorded backup -> ${res.status} via ${res.base ?? "none"}${res.error ? ` (${res.error})` : ""}`);
     } catch (e) {
       console.error(`WARN: failed to record backup: ${e instanceof Error ? e.message : "unknown"}`);
     }

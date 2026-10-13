@@ -15,9 +15,11 @@ export async function GET(_request: Request, { params }: Params) {
   const { getOrgInstallation, installationSettingsUrl } = await import("@/lib/github-installations");
   const app = await getGithubApp().catch(() => null);
   const install = await getOrgInstallation(organizationId);
+  const { isPlatformAdminEmail } = await import("@/lib/permissions");
   return NextResponse.json({
     ok: true,
     appReady: Boolean(app),
+    canSetUpApp: await isPlatformAdminEmail(access.email),
     installation: install
       ? {
           account: install.accountLogin,

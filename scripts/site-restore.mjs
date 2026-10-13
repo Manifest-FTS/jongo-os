@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
+import { postToApp } from "./report-to-app.mjs";
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -372,14 +373,10 @@ try {
   }
 
   // Report completion so the UI can stop showing "restoring…" and tell the user.
-  const appBaseUrl = (process.env.APP_BASE_URL || "").replace(/\/+$/, "");
   const opsToken = firstEnvValue(["BACKUP_RECONCILE_TOKEN", "OWNERSHIP_SYNC_TOKEN"]);
-  if (backupId && appBaseUrl && opsToken) {
+  if (backupId && opsToken) {
     try {
-      const res = await fetch(`${appBaseUrl}/api/ops/site-restore-record`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${opsToken}` },
-        body: JSON.stringify({
+      const res = await postToApp("/api/ops/site-restore-record", {
           backupId,
           status: ok ? "success" : "failed",
           // The rule's own message, not the raw RESULT code: "databases_empty"
@@ -387,9 +384,8 @@ try {
           // they do next (roll back from the safety snapshot) actually matters.
           error: ok ? null : (outcome.message || k.RESULT || "unknown failure"),
           safetySnapshot: summary.safetySnapshot
-        })
-      });
-      console.log(`recorded restore -> ${res.status}`);
+        });
+      console.log(`recorded restore -> ${res.status} via ${res.base ?? "none"}${res.error ? ` (${res.error})` : ""}`);
     } catch (e) {
       console.error(`WARN: failed to record restore: ${e instanceof Error ? e.message : "unknown"}`);
     }
