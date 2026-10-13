@@ -8,10 +8,26 @@ import { getCoolifyOverview } from "@/lib/coolify";
 import { buildAvailableCoolifyAppOptions } from "@/lib/coolify-app-picker";
 import SiteDirectoryView from "@/components/SiteDirectoryView";
 
-type Params = { params: Promise<{ clientId: string }> };
+type Params = { params: Promise<{ clientId: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> };
 
-export default async function ClientAppsPage({ params }: Params) {
+/** What happened when the person came back from GitHub's connect pages. */
+const GITHUB_RETURN: Record<string, { ok: boolean; text: string }> = {
+  connected: { ok: true, text: "GitHub is connected. Use Add App → Deploy from GitHub to pick a repo." },
+  requested: { ok: true, text: "GitHub sent an approval request to your GitHub organization's owners. It connects here as soon as one approves it." },
+  in_use: { ok: false, text: "That GitHub account is already connected to another client in Jongo." },
+  link_expired: { ok: false, text: "That connect link expired. Try Connect GitHub again." },
+  wrong_user: { ok: false, text: "Finish connecting while signed in as the person who started it." },
+  not_allowed: { ok: false, text: "Your role on this client can't connect GitHub." },
+  bad_owner: { ok: false, text: "That GitHub organization name isn't valid." },
+  missing_install: { ok: false, text: "GitHub didn't say which installation to connect. Try again." },
+  failed: { ok: false, text: "Couldn't finish connecting GitHub. Try again." }
+};
+
+export default async function ClientAppsPage({ params, searchParams }: Params) {
   const { clientId } = await params;
+  const query = (await searchParams) ?? {};
+  const githubKey = Array.isArray(query.github) ? query.github[0] : query.github;
+  const githubReturn = githubKey ? GITHUB_RETURN[githubKey] ?? null : null;
   const session = await auth();
 
   const client = await getClientWorkspace(clientId, {
@@ -47,6 +63,10 @@ export default async function ClientAppsPage({ params }: Params) {
       )
     : [];
   const canManageClient = Boolean(session?.user?.id && client.dbId && await isClientAdmin(client.dbId, session.user.id));
+  // Connecting GitHub creates the client's own GitHub App when needed, so it is
+  // always available to the client's team.
+  const githubAvailable = true;
+  const showCreate = true;
 
   return (
     <div className="page-stack">
@@ -55,8 +75,14 @@ export default async function ClientAppsPage({ params }: Params) {
           <h2 style={{ margin: 0 }}>Apps</h2>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>All apps mapped to this client workspace.</p>
         </div>
-        {client.dbId ? <CreateSiteForm organizationId={client.dbId} availableApps={availableApps} githubOnly={!canManageClient} /> : null}
+        {client.dbId && showCreate ? <CreateSiteForm organizationId={client.dbId} availableApps={availableApps} githubOnly={!canManageClient} githubAvailable={githubAvailable} /> : null}
       </div>
+
+      {githubReturn ? (
+        <p className={`m-0 px-3.5 py-2.5 rounded-lg text-[13px] border border-solid ${githubReturn.ok ? "bg-healthy-bg border-healthy-border text-healthy-text" : "bg-warn-bg border-warn-border text-warn-text"}`}>
+          {githubReturn.text}
+        </p>
+      ) : null}
 
       {apps.length === 0 ? (
         <article className="card">

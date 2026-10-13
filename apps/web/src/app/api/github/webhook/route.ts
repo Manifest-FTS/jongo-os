@@ -11,8 +11,10 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request) {
   const raw = await request.text();
+  // Each client has its own Jongo GitHub App; GitHub says which one sent this.
   const { getGithubApp } = await import("@/lib/github-app");
-  const app = await getGithubApp().catch(() => null);
+  const appId = Number(request.headers.get("x-github-hook-installation-target-id"));
+  const app = await getGithubApp(Number.isFinite(appId) && appId > 0 ? { appId } : {}).catch(() => null);
   if (!app || !verifyGithubSignature(raw, request.headers.get("x-hub-signature-256"), app.webhookSecret)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }

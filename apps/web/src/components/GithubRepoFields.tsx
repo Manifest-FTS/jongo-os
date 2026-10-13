@@ -22,19 +22,18 @@ type Repo = { id: number; fullName: string; private: boolean; defaultBranch: str
 export default function GithubRepoFields({
   organizationId,
   value,
-  onChange,
-  canConnect = true
+  onChange
 }: {
   organizationId: string;
-  /** Admins get links to client settings; collaborators are told to ask one. */
-  canConnect?: boolean;
   value: GithubRepoValue;
   onChange: (next: GithubRepoValue) => void;
 }) {
   const [repos, setRepos] = useState<Repo[] | null>(null);
+  const [state, setState] = useState<string>("ready");
   const [repoError, setRepoError] = useState<{ text: string; connect: boolean } | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
+  const [owner, setOwner] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +41,10 @@ export default function GithubRepoFields({
       const response = await fetch(`/api/organizations/${organizationId}/github/repos`).catch(() => null);
       const payload = response ? await response.json().catch(() => null) : null;
       if (cancelled) return;
-      if (payload?.ok) setRepos(payload.repos);
+      if (payload?.ok) {
+        setRepos(payload.repos);
+        setState(payload.state ?? "ready");
+      }
       else setRepoError({ text: payload?.message ?? "Couldn't load your repos.", connect: response?.status === 404 || response?.status === 409 });
     })();
     return () => {
@@ -71,30 +73,49 @@ export default function GithubRepoFields({
       <div className="diagnostic-banner">
         {repoError.text}{" "}
         {repoError.connect ? (
-          canConnect ? (
-            <a className="action-link font-semibold" href={`/clients/${organizationId}/settings`}>
-              Connect GitHub
-            </a>
-          ) : (
-            <span>Ask one of the client&apos;s admins to connect GitHub.</span>
-          )
+          <a className="action-link font-semibold" href={`/api/organizations/${organizationId}/github/connect`}>
+            Connect GitHub
+          </a>
         ) : null}
       </div>
     );
   }
   if (!repos) return <p className="form-help">Loading your repos…</p>;
+  if (state !== "ready") {
+    const text: Record<string, string> = {
+      not_connected: "Connect GitHub to deploy from your repos. Jongo only reads code, and only from the repos you choose.",
+      suspended: "This client's GitHub connection is suspended on GitHub. Unsuspend it there to continue.",
+      finishing_setup: "GitHub is connected and still finishing setup. Try again in a minute."
+    };
+    return (
+      <div className="diagnostic-banner">
+        {text[state] ?? "GitHub isn't ready for this client yet."}{" "}
+        {state === "not_connected" ? (
+          <span className="mt-2 flex gap-2 flex-wrap items-center">
+            <input
+              className="form-input max-w-[260px]"
+              value={owner}
+              onChange={(event) => setOwner(event.target.value)}
+              placeholder="GitHub organization (optional)"
+              aria-label="GitHub organization"
+              autoCapitalize="none"
+              spellCheck={false}
+            />
+            <a className="btn" href={`/api/organizations/${organizationId}/github/connect${owner.trim() ? `?owner=${encodeURIComponent(owner.trim())}` : ""}`}>
+              Connect GitHub
+            </a>
+          </span>
+        ) : null}
+      </div>
+    );
+  }
   if (repos.length === 0) {
     return (
       <div className="diagnostic-banner">
         No repos are shared with Jongo yet.{" "}
-        {canConnect ? (
-          <>
-            Choose repos on GitHub from{" "}
-            <a className="action-link font-semibold" href={`/clients/${organizationId}/settings`}>client settings</a>.
-          </>
-        ) : (
-          "Ask one of the client's admins to share repos on GitHub."
-        )}
+        <a className="action-link font-semibold" href={`/api/organizations/${organizationId}/github/connect`}>
+          Choose repos on GitHub
+        </a>
       </div>
     );
   }

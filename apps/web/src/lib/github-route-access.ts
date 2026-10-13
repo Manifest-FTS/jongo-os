@@ -19,9 +19,29 @@ export async function requireOrgAdmin(
   return { userId: session.user.id, email: session.user.email ?? null };
 }
 
+/** Owner, admin or collaborator of the client (or a platform admin), with canDeployFromGithub. */
+export async function canUseGithubForOrg(orgId: string, userId: string, email?: string | null): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(orgId)) return false;
+  const { getDb } = await import("@/lib/db");
+  const { getPermissions, isPlatformAdminEmail } = await import("@/lib/permissions");
+  const db: any = await getDb();
+  const org = db
+    ? await db.organization.findFirst({
+        where: { id: orgId, deletedAt: null },
+        select: { ownerId: true, collaborators: { where: { userId, deletedAt: null }, select: { role: true }, take: 1 } }
+      })
+    : null;
+  const platformAdmin = await isPlatformAdminEmail(email);
+  const member = Boolean(org && (org.ownerId === userId || org.collaborators.length > 0));
+  if (!member && !platformAdmin) return false;
+  const role = org?.ownerId === userId ? "admin" : org?.collaborators[0]?.role;
+  return getPermissions(role, platformAdmin).canDeployFromGithub;
+}
+
 /**
  * Anyone on the client's team (owner, admin or collaborator) with the
- * canDeployFromGithub permission: lists shared repos and creates apps from them.
+ * canDeployFromGithub permission: connects GitHub, lists shared repos and
+ * creates apps from them.
  */
 export async function requireOrgMember(
   orgId: string

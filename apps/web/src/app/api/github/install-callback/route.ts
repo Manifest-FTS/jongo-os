@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { installStateSecret, publicOrigin } from "@/lib/github-route-access";
+import { canUseGithubForOrg, installStateSecret, publicOrigin } from "@/lib/github-route-access";
 import { verifyInstallState } from "@/lib/github-install-state";
 
 export const runtime = "nodejs";
@@ -22,14 +22,13 @@ export async function GET(request: Request) {
     // An update started on GitHub (no state): the webhook keeps Jongo in sync.
     return NextResponse.redirect(`${origin}/dashboard?github=${setupAction === "update" ? "updated" : "link_expired"}`);
   }
-  const back = `${origin}/clients/${state.payload.orgId}/settings`;
+  // The Apps page: every member of the client team can see it (settings is admin-only).
+  const back = `${origin}/clients/${state.payload.orgId}/apps`;
   const session = await auth();
   if (!session?.user?.id || session.user.id !== state.payload.userId) return NextResponse.redirect(`${back}?github=wrong_user`);
 
-  const { isClientAdmin } = await import("@/lib/repositories");
-  const { isPlatformAdminEmail } = await import("@/lib/permissions");
-  if (!(await isClientAdmin(state.payload.orgId, session.user.id)) && !(await isPlatformAdminEmail(session.user.email))) {
-    return NextResponse.redirect(`${back}?github=not_admin`);
+  if (!(await canUseGithubForOrg(state.payload.orgId, session.user.id, session.user.email))) {
+    return NextResponse.redirect(`${back}?github=not_allowed`);
   }
   if (setupAction === "request") return NextResponse.redirect(`${back}?github=requested`);
   if (!Number.isFinite(installationId) || installationId <= 0) return NextResponse.redirect(`${back}?github=missing_install`);

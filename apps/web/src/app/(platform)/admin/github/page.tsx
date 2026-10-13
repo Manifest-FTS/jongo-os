@@ -22,7 +22,20 @@ const RESULTS: Record<string, { tone: "ok" | "warn"; text: string }> = {
 /** Platform admins: create the one Jongo GitHub App (GitHub's manifest flow). */
 export default async function GithubAdminPage({ searchParams }: Props) {
   const session = await auth();
-  if (!(await isPlatformAdminEmail(session?.user?.email)) || !session?.user?.id) notFound();
+  if (!session?.user?.id) notFound();
+  if (!(await isPlatformAdminEmail(session.user.email))) {
+    return (
+      <div className="page-stack">
+        <article className="card">
+          <h2 className="card-title">GitHub deploys</h2>
+          <p className="card-muted mt-1 mb-0">
+            Only platform admins can set up the Jongo GitHub App. You&apos;re signed in as {session.user.email}. A platform admin
+            can set it up, or grant you platform admin under Settings → Platform → Platform admins.
+          </p>
+        </article>
+      </div>
+    );
+  }
 
   const params = (await searchParams) ?? {};
   const resultKey = Array.isArray(params.result) ? params.result[0] : params.result;

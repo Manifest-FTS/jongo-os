@@ -11,15 +11,12 @@ export async function GET(_request: Request, { params }: Params) {
   const { organizationId } = await params;
   const access = await requireOrgAdmin(organizationId);
   if ("response" in access) return access.response;
-  const { getGithubApp } = await import("@/lib/github-app");
   const { getOrgInstallation, installationSettingsUrl } = await import("@/lib/github-installations");
-  const app = await getGithubApp().catch(() => null);
   const install = await getOrgInstallation(organizationId);
-  const { isPlatformAdminEmail } = await import("@/lib/permissions");
   return NextResponse.json({
     ok: true,
-    appReady: Boolean(app),
-    canSetUpApp: await isPlatformAdminEmail(access.email),
+    // Connecting creates the client's own GitHub App when needed: always available.
+    appReady: true,
     installation: install
       ? {
           account: install.accountLogin,

@@ -5,7 +5,6 @@ import { cx } from "@/lib/public-ui";
 
 type Status = {
   appReady: boolean;
-  canSetUpApp?: boolean;
   installation: {
     account: string;
     accountType: string;
@@ -24,7 +23,7 @@ const RETURN_NOTICES: Record<string, { tone: "ok" | "warn"; text: string }> = {
   link_expired: { tone: "warn", text: "That connect link expired. Try again." },
   wrong_user: { tone: "warn", text: "Finish connecting while signed in as the person who started it." },
   not_admin: { tone: "warn", text: "Only the client's admins can connect GitHub." },
-  not_ready: { tone: "warn", text: "GitHub deploys aren't set up on this platform yet. A platform admin sets them up once under Settings → Platform → GitHub deploys." },
+  not_allowed: { tone: "warn", text: "Your role on this client can't connect GitHub." },
   missing_install: { tone: "warn", text: "GitHub didn't say which installation to connect. Try again." },
   failed: { tone: "warn", text: "Couldn't confirm the installation with GitHub. Try again." }
 };
@@ -33,6 +32,7 @@ const RETURN_NOTICES: Record<string, { tone: "ok" | "warn"; text: string }> = {
 export default function GithubConnectionCard({ organizationId, returnStatus }: { organizationId: string; returnStatus?: string | null }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
+  const [owner, setOwner] = useState("");
   const [notice, setNotice] = useState<{ tone: "ok" | "warn"; text: string } | null>(returnStatus ? RETURN_NOTICES[returnStatus] ?? null : null);
 
   const load = useCallback(async () => {
@@ -60,6 +60,7 @@ export default function GithubConnectionCard({ organizationId, returnStatus }: {
   }
 
   const install = status?.installation;
+
   return (
     <article className="card">
       <h3 className="card-title">GitHub</h3>
@@ -69,15 +70,6 @@ export default function GithubConnectionCard({ organizationId, returnStatus }: {
 
       {!status ? (
         <p className="card-muted mt-3 mb-0">Loading…</p>
-      ) : !status.appReady ? (
-        status.canSetUpApp ? (
-          <div className="mt-3 flex flex-col gap-2 items-start">
-            <p className="card-muted m-0">GitHub deploys need a one-time setup: create the Jongo GitHub App first (about a minute).</p>
-            <a className="btn" href="/admin/github">Set up GitHub deploys</a>
-          </div>
-        ) : (
-          <p className="card-muted mt-3 mb-0">GitHub deploys aren&apos;t set up on this platform yet. Ask a platform admin to set them up (Settings → Platform → GitHub deploys).</p>
-        )
       ) : install ? (
         <div className="mt-3 flex flex-col gap-2.5">
           <div className="flex items-center gap-2 flex-wrap">
@@ -107,8 +99,17 @@ export default function GithubConnectionCard({ organizationId, returnStatus }: {
           </div>
         </div>
       ) : (
-        <div className="mt-3">
-          <a className="btn" href={`/api/organizations/${organizationId}/github/connect`}>
+        <div className="mt-3 flex gap-2 flex-wrap items-center">
+          <input
+            className="form-input max-w-[260px]"
+            value={owner}
+            onChange={(event) => setOwner(event.target.value)}
+            placeholder="GitHub organization (optional)"
+            aria-label="GitHub organization"
+            autoCapitalize="none"
+            spellCheck={false}
+          />
+          <a className="btn" href={`/api/organizations/${organizationId}/github/connect${owner.trim() ? `?owner=${encodeURIComponent(owner.trim())}` : ""}`}>
             Connect GitHub
           </a>
         </div>
