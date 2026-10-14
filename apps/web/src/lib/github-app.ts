@@ -58,14 +58,15 @@ export async function getGithubApp(selector: { id?: string | null; appId?: numbe
     : typeof selector.appId === "number" && Number.isFinite(selector.appId)
       ? { appId: selector.appId }
       : selector.organizationId
-        ? { organizationId: selector.organizationId }
-        : { organizationId: null };
+        ? { organizationId: selector.organizationId, appId: { not: null } }
+        : { organizationId: null, appId: { not: null } };
   const key = JSON.stringify(where);
   const cached = configCache.get(key);
   if (cached && Date.now() - cached.at < 60_000) return cached.value;
   const db: any = await getDb();
   const row = db ? await db.githubAppConfig.findFirst({ where, orderBy: { createdAt: "asc" } }) : null;
-  const value = row ? decryptRow(row) : null;
+  // A draft source (added, not yet registered on GitHub) can't talk to GitHub.
+  const value = row && row.appId && row.privateKeyEnc && row.webhookSecretEnc ? decryptRow(row) : null;
   configCache.set(key, { at: Date.now(), value });
   return value;
 }
@@ -203,4 +204,10 @@ export type ManifestConversion = {
 
 export async function convertManifestCode(code: string): Promise<ManifestConversion> {
   return github<ManifestConversion>(`/app-manifests/${encodeURIComponent(code)}/conversions`, { method: "POST" });
+}
+
+/** What GitHub says about an app, from its own credentials (validates a manual source). */
+export async function getAppInfo(app: Pick<GithubAppSecrets, "appId" | "privateKey">): Promise<{ slug: string; name: string; htmlUrl: string; owner: string }> {
+  const raw: any = await github("/app", { bearer: appJwt(app) });
+  return { slug: String(raw.slug ?? ""), name: String(raw.name ?? ""), htmlUrl: String(raw.html_url ?? ""), owner: String(raw.owner?.login ?? "") };
 }

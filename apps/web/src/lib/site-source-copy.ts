@@ -10,6 +10,8 @@ export type SiteSource = {
   pendingCommitMessage: string | null;
   lastDeployedSha: string | null;
   manageUrl: string | null;
+  /** The Git source (GitHub App) the app deploys through. */
+  sourceId: string | null;
 };
 
 export const GIT_STATUS_WARNINGS: Record<string, string> = {

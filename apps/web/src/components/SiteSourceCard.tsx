@@ -20,7 +20,7 @@ export default function SiteSourceCard({ siteId, source, canManage, canDeploy }:
     if (!canManage || broken) return;
     let cancelled = false;
     (async () => {
-      const response = await fetch(`/api/organizations/${source.organizationId}/github/branches?repo=${encodeURIComponent(source.repo)}`).catch(() => null);
+      const response = await fetch(`/api/organizations/${source.organizationId}/github/branches?repo=${encodeURIComponent(source.repo)}${source.sourceId ? `&source=${encodeURIComponent(source.sourceId)}` : ""}`).catch(() => null);
       const payload = response ? await response.json().catch(() => null) : null;
       if (!cancelled && payload?.ok) setBranches(payload.branches);
     })();

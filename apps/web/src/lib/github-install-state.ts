@@ -7,14 +7,16 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 export const INSTALL_STATE_TTL_MS = 10 * 60_000;
 
-export type InstallStatePayload = { orgId: string; userId: string };
+export type InstallStatePayload = { orgId: string; userId: string; sourceId?: string };
 
 function mac(data: string, secret: string): string {
   return createHmac("sha256", secret).update(data).digest("base64url");
 }
 
 export function signInstallState(payload: InstallStatePayload, secret: string, now: number = Date.now()): string {
-  const data = Buffer.from(JSON.stringify({ o: payload.orgId, u: payload.userId, e: now + INSTALL_STATE_TTL_MS })).toString("base64url");
+  const data = Buffer.from(
+    JSON.stringify({ o: payload.orgId, u: payload.userId, ...(payload.sourceId ? { s: payload.sourceId } : {}), e: now + INSTALL_STATE_TTL_MS })
+  ).toString("base64url");
   return `${data}.${mac(data, secret)}`;
 }
 
@@ -29,7 +31,7 @@ export function verifyInstallState(
   const expected = Buffer.from(mac(data, secret));
   const provided = Buffer.from(signature);
   if (!secret || expected.length !== provided.length || !timingSafeEqual(expected, provided)) return { ok: false, reason: "bad_signature" };
-  let parsed: { o?: unknown; u?: unknown; e?: unknown };
+  let parsed: { o?: unknown; u?: unknown; s?: unknown; e?: unknown };
   try {
     parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf8"));
   } catch {
@@ -37,5 +39,5 @@ export function verifyInstallState(
   }
   if (typeof parsed.o !== "string" || typeof parsed.u !== "string" || typeof parsed.e !== "number") return { ok: false, reason: "malformed" };
   if (now > parsed.e) return { ok: false, reason: "expired" };
-  return { ok: true, payload: { orgId: parsed.o, userId: parsed.u } };
+  return { ok: true, payload: { orgId: parsed.o, userId: parsed.u, ...(typeof parsed.s === "string" ? { sourceId: parsed.s } : {}) } };
 }

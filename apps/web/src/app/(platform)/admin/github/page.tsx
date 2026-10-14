@@ -52,8 +52,8 @@ export default async function GithubAdminPage({ searchParams }: Props) {
               {clients.map((client) => (
                 <div key={client.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg border border-solid border-border">
                   <span className="font-semibold">{client.name}</span>
-                  <a className="btn btn-secondary px-3 py-1.5 text-[12.5px]" href={`/api/organizations/${client.id}/github/connect`}>
-                    Connect GitHub
+                  <a className="btn btn-secondary px-3 py-1.5 text-[12.5px]" href={`/clients/${client.id}/sources`}>
+                    Git sources
                   </a>
                 </div>
               ))}

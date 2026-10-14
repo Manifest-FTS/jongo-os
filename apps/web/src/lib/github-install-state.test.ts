@@ -25,4 +25,8 @@ describe("install state", () => {
     expect(verifyInstallState("nonsense", secret, now)).toEqual({ ok: false, reason: "malformed" });
     expect(verifyInstallState("", secret, now)).toEqual({ ok: false, reason: "malformed" });
   });
+  it("carries which Git source the flow is for", () => {
+    const token = signInstallState({ orgId: "org-1", userId: "user-1", sourceId: "src-1" }, secret, now);
+    expect(verifyInstallState(token, secret, now)).toEqual({ ok: true, payload: { orgId: "org-1", userId: "user-1", sourceId: "src-1" } });
+  });
 });

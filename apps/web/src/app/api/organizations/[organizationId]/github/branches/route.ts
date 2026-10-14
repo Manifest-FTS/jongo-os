@@ -14,7 +14,7 @@ export async function GET(request: Request, { params }: Params) {
   const repo = (new URL(request.url).searchParams.get("repo") ?? "").trim();
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) return NextResponse.json({ ok: false, message: "Choose a repository." }, { status: 400 });
   const { branchesForOrg } = await import("@/lib/github-deploys");
-  const result = await branchesForOrg(organizationId, repo).catch(() => ({ ok: false as const, status: 502, message: "Couldn't reach GitHub just now. Try again." }));
+  const result = await branchesForOrg(organizationId, repo, new URL(request.url).searchParams.get("source")).catch(() => ({ ok: false as const, status: 502, message: "Couldn't reach GitHub just now. Try again." }));
   if (!result.ok) return NextResponse.json({ ok: false, message: result.message }, { status: result.status });
   return NextResponse.json({ ok: true, branches: result.branches });
 }

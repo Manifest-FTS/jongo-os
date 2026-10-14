@@ -45,7 +45,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
   // and with link as the default that path produced a Jongo row and nothing in
   // Coolify — the exact phantom-record failure this form was reworked to end.
   // Adopting is a migration activity; it costs one click to select.
-  const [mode, setMode] = useState<"link" | "create" | "github">(githubOnly ? "github" : "create");
+  const [mode, setMode] = useState<"link" | "create" | "public" | "private">(githubOnly ? "private" : "create");
   const [github, setGithub] = useState<GithubRepoValue>(EMPTY_GITHUB_REPO_VALUE);
 
   const selectedApp = useMemo(
@@ -87,7 +87,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
     setError(null);
   }
 
-  function handlePickMode(value: "link" | "create" | "github") {
+  function handlePickMode(value: "link" | "create" | "public" | "private") {
     setMode(value);
     setError(null);
     setNotice(null);
@@ -107,14 +107,17 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
     setLoading(true);
 
     try {
-      if (mode === "github") {
+      if (mode === "public" || mode === "private") {
         const res = await fetch(`/api/organizations/${organizationId}/sites/github`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: name.trim(),
+            mode,
+            source: github.source,
+            repoUrl: github.repoUrl,
             repo: github.repo,
-            branch: github.branch,
+            branch: github.branch || (mode === "public" ? "main" : ""),
             buildPack: github.buildPack,
             port: github.port,
             baseDirectory: github.baseDirectory,
@@ -222,8 +225,9 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
         {([
           ["link", "Link existing app", "Adopt an app that is already running on Jongo's servers."],
           ["create", "Create WordPress site", "Create a new WordPress + MariaDB site."],
-          ["github", "Deploy from GitHub", "Build and deploy an app from one of your GitHub repos."]
-        ] as const).filter(([value]) => (!githubOnly || value === "github") && (githubAvailable || value !== "github")).map(([value, label, help]) => (
+          ["public", "Public repository", "Deploy a public GitHub, GitLab, Bitbucket or Codeberg repository by URL."],
+          ["private", "Private repository (GitHub App)", "Deploy a private repository through one of your Git sources; pushes deploy automatically."]
+        ] as const).filter(([value]) => (!githubOnly || value === "public" || value === "private") && (githubAvailable || (value !== "public" && value !== "private"))).map(([value, label, help]) => (
           <button
             key={value}
             type="button"
@@ -240,8 +244,10 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
       <p className="card-muted" style={{ marginBottom: "0.9rem" }}>
         {mode === "create"
           ? "A new WordPress + MariaDB site is created and deployed. It is added here once the server confirms it."
-          : mode === "github"
-            ? "Builds the repo and deploys it. Every push to the branch deploys again."
+          : mode === "private"
+            ? "Builds the repository and deploys it. Every push to the branch deploys again."
+            : mode === "public"
+              ? "Builds the public repository and deploys it. Use Deploy now to update it."
             : "Adopts an app that is already running. Nothing new is created."}
       </p>
       <form onSubmit={handleSubmit} className="form-stack">
@@ -289,7 +295,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
             className="form-input"
           />
         </div>
-        {mode === "github" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} /> : null}
+        {mode === "public" || mode === "private" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} mode={mode} /> : null}
         {mode === "link" ? (
         <>
         <div>

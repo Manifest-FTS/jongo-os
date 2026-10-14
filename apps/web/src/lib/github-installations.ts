@@ -55,36 +55,187 @@ export async function audit(organizationId: string, actorId: string | null, acti
 // ---------------------------------------------------------------------------
 
 /**
- * Stores a GitHub App GitHub just created (manifest flow). organizationId set:
- * the client's own app; null: the optional shared app.
+ * Stores a GitHub App GitHub just created (manifest flow, "Register on
+ * GitHub"). sourceId: the client's draft Git source being registered.
+ * organizationId null + no sourceId: the optional shared app.
  */
-export async function saveGithubApp(conversion: ManifestConversion, actorId: string, organizationId: string | null): Promise<{ ok: boolean; message: string; app: GithubAppSecrets | null }> {
+export async function saveGithubApp(
+  conversion: ManifestConversion,
+  actorId: string,
+  organizationId: string | null,
+  sourceId?: string | null
+): Promise<{ ok: boolean; message: string; app: GithubAppSecrets | null }> {
   const db: any = await getDb();
   if (!db) return { ok: false, message: "The database is unavailable.", app: null };
-  const existing = await db.githubAppConfig.findFirst({ where: { organizationId } });
-  if (existing) {
-    const app = await getGithubApp({ id: existing.id });
-    return { ok: true, message: "GitHub is already set up for this client.", app };
-  }
-  const row = await db.githubAppConfig.create({
-    data: {
-      organizationId,
-      appId: Number(conversion.id),
-      slug: conversion.slug,
-      name: conversion.name,
-      htmlUrl: conversion.html_url,
-      clientId: conversion.client_id,
-      clientSecretEnc: encryptSecret(conversion.client_secret),
-      webhookSecretEnc: encryptSecret(conversion.webhook_secret),
-      privateKeyEnc: encryptSecret(conversion.pem),
-      createdById: actorId
+  const data = {
+    appId: Number(conversion.id),
+    slug: conversion.slug,
+    name: conversion.name,
+    htmlUrl: conversion.html_url,
+    clientId: conversion.client_id,
+    clientSecretEnc: encryptSecret(conversion.client_secret),
+    webhookSecretEnc: encryptSecret(conversion.webhook_secret),
+    privateKeyEnc: encryptSecret(conversion.pem)
+  };
+  let row;
+  if (sourceId) {
+    const draft = await db.githubAppConfig.findUnique({ where: { id: sourceId } });
+    if (!draft || draft.organizationId !== organizationId) return { ok: false, message: "That Git source wasn't found.", app: null };
+    if (draft.appId) return { ok: true, message: "This Git source is already registered.", app: await getGithubApp({ id: draft.id }) };
+    row = await db.githubAppConfig.update({ where: { id: draft.id }, data });
+  } else {
+    if (!organizationId && (await db.githubAppConfig.findFirst({ where: { organizationId: null, appId: { not: null } } }))) {
+      return { ok: false, message: "A shared GitHub App already exists.", app: await getGithubApp() };
     }
-  });
+    row = await db.githubAppConfig.create({ data: { ...data, organizationId, createdById: actorId } });
+  }
   clearGithubAppCache();
   const app = await getGithubApp({ id: row.id });
   if (app) await ensureHostingKey(app);
-  if (organizationId) await audit(organizationId, actorId, "github_app_created", { appId: conversion.id, slug: conversion.slug });
-  return { ok: true, message: `${conversion.name} was created on GitHub.`, app };
+  if (organizationId) await audit(organizationId, actorId, "github_app_registered", { appId: conversion.id, slug: conversion.slug, sourceId: row.id });
+  return { ok: true, message: `${conversion.name} is registered on GitHub.`, app };
+}
+
+// ---------------------------------------------------------------------------
+// Git sources (Coolify's Sources page): add, list, fill in manually, delete
+// ---------------------------------------------------------------------------
+
+export type GitSourceView = {
+  id: string;
+  name: string;
+  ownerLogin: string | null;
+  manual: boolean;
+  appId: number | null;
+  slug: string | null;
+  htmlUrl: string | null;
+  createdAt: string;
+  installation: { installationId: string; account: string; accountType: string; status: string; repositorySelection: string | null; ready: boolean; manageUrl: string } | null;
+};
+
+export async function listGitSources(orgId: string): Promise<GitSourceView[]> {
+  const db: any = await getDb();
+  if (!db) return [];
+  const rows = await db.githubAppConfig.findMany({
+    where: { organizationId: orgId },
+    orderBy: { createdAt: "asc" },
+    include: { installations: { where: { status: { not: "removed" } }, orderBy: { createdAt: "desc" }, take: 1 } }
+  });
+  return rows.map((row: any) => {
+    const install = row.installations?.[0] ?? null;
+    return {
+      id: row.id,
+      name: row.name,
+      ownerLogin: row.ownerLogin ?? null,
+      manual: row.manual,
+      appId: row.appId ?? null,
+      slug: row.slug ?? null,
+      htmlUrl: row.htmlUrl ?? null,
+      createdAt: new Date(row.createdAt).toISOString(),
+      installation: install
+        ? {
+            installationId: String(install.installationId),
+            account: install.accountLogin,
+            accountType: install.accountType,
+            status: install.status,
+            repositorySelection: install.repositorySelection ?? null,
+            ready: Boolean(install.coolifySourceUuid),
+            manageUrl: installationSettingsUrl(install)
+          }
+        : null
+    };
+  });
+}
+
+/** "Add GitHub App": a draft source with a name and an optional GitHub organization. */
+export async function createGitSource(orgId: string, actorId: string, input: { name: string; ownerLogin?: string | null }): Promise<{ ok: boolean; status: number; message: string; id?: string }> {
+  const db: any = await getDb();
+  if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
+  const name = input.name.trim().slice(0, 34);
+  const owner = (input.ownerLogin ?? "").trim();
+  if (!name) return { ok: false, status: 400, message: "Give the GitHub App a name." };
+  if (owner && !/^[A-Za-z0-9-]{1,39}$/.test(owner)) return { ok: false, status: 400, message: "That GitHub organization name isn't valid." };
+  const row = await db.githubAppConfig.create({ data: { organizationId: orgId, name, ownerLogin: owner || null, createdById: actorId } });
+  await audit(orgId, actorId, "git_source_added", { sourceId: row.id, name, owner: owner || null });
+  return { ok: true, status: 201, message: "Added. Next: Register on GitHub.", id: row.id };
+}
+
+/**
+ * Coolify's "Manual installation": an existing GitHub App's credentials, checked
+ * against GitHub before anything is saved, then connected to its installation.
+ */
+export async function saveManualGitSource(
+  orgId: string,
+  sourceId: string,
+  actorId: string,
+  input: { appId: number; installationId: number; clientId: string; clientSecret: string; webhookSecret: string; privateKey: string }
+): Promise<{ ok: boolean; status: number; message: string }> {
+  const db: any = await getDb();
+  if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
+  const row = await db.githubAppConfig.findUnique({ where: { id: sourceId } });
+  if (!row || row.organizationId !== orgId) return { ok: false, status: 404, message: "That Git source wasn't found." };
+  if (row.appId && !row.manual) return { ok: false, status: 409, message: "This Git source was registered on GitHub already." };
+  const privateKey = input.privateKey.replace(/\r\n/g, "\n").trim();
+  if (!/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey)) return { ok: false, status: 400, message: "Paste the app's private key (.pem), including the BEGIN and END lines." };
+  if (!Number.isInteger(input.appId) || input.appId <= 0 || !Number.isInteger(input.installationId) || input.installationId <= 0) {
+    return { ok: false, status: 400, message: "App ID and Installation ID are numbers from the app's GitHub settings." };
+  }
+  if (!input.clientId.trim() || !input.clientSecret.trim() || !input.webhookSecret.trim()) {
+    return { ok: false, status: 400, message: "Fill in the Client ID, Client secret and Webhook secret." };
+  }
+  const { getAppInfo } = await import("@/lib/github-app");
+  let info;
+  try {
+    info = await getAppInfo({ appId: input.appId, privateKey });
+  } catch {
+    return { ok: false, status: 400, message: "GitHub didn't accept that App ID and private key together." };
+  }
+  const clash = await db.githubAppConfig.findFirst({ where: { appId: input.appId, id: { not: sourceId } } });
+  if (clash) return { ok: false, status: 409, message: "That GitHub App is already connected in Jongo." };
+  await db.githubAppConfig.update({
+    where: { id: sourceId },
+    data: {
+      appId: input.appId,
+      slug: info.slug,
+      htmlUrl: info.htmlUrl,
+      clientId: input.clientId.trim(),
+      clientSecretEnc: encryptSecret(input.clientSecret.trim()),
+      webhookSecretEnc: encryptSecret(input.webhookSecret.trim()),
+      privateKeyEnc: encryptSecret(privateKey),
+      ownerLogin: row.ownerLogin ?? info.owner,
+      manual: true
+    }
+  });
+  clearGithubAppCache();
+  const app = await getGithubApp({ id: sourceId });
+  if (app) await ensureHostingKey(app);
+  await audit(orgId, actorId, "git_source_manual", { sourceId, appId: input.appId, slug: info.slug });
+  return connectInstallation({ orgId, userId: actorId, installationId: input.installationId, sourceId });
+}
+
+/** Deletes a Git source: its installs stop deploying; the app itself is deleted on GitHub by the client. */
+export async function deleteGitSource(orgId: string, sourceId: string, actorId: string): Promise<{ ok: boolean; status: number; message: string; githubUrl: string | null }> {
+  const db: any = await getDb();
+  if (!db) return { ok: false, status: 503, message: "The database is unavailable.", githubUrl: null };
+  const row = await db.githubAppConfig.findUnique({ where: { id: sourceId } });
+  if (!row || row.organizationId !== orgId) return { ok: false, status: 404, message: "That Git source wasn't found.", githubUrl: null };
+  const installs: InstallationRow[] = await db.githubInstallation.findMany({ where: { githubAppConfigId: sourceId, status: { not: "removed" } } });
+  for (const install of installs) {
+    await db.githubInstallation.update({ where: { id: install.id }, data: { status: "removed", removedAt: new Date() } });
+    await db.site.updateMany({ where: { githubInstallationId: install.id }, data: { gitStatus: "install_removed" } });
+    await deleteHostingSource(install).catch(() => undefined);
+  }
+  if (row.coolifyPrivateKeyUuid) {
+    await coolifyMutateWithResponse(`/api/v1/security/keys/${encodeURIComponent(row.coolifyPrivateKeyUuid)}`, "DELETE").catch(() => null);
+  }
+  await db.githubAppConfig.delete({ where: { id: sourceId } });
+  clearGithubAppCache();
+  await audit(orgId, actorId, "git_source_deleted", { sourceId, appId: row.appId ?? null, name: row.name });
+  const githubUrl = row.slug
+    ? row.ownerLogin
+      ? `https://github.com/organizations/${row.ownerLogin}/settings/apps/${row.slug}/advanced`
+      : `https://github.com/settings/apps/${row.slug}/advanced`
+    : null;
+  return { ok: true, status: 200, message: githubUrl ? "Deleted from Jongo. Delete the app on GitHub too to remove it completely." : "Deleted.", githubUrl };
 }
 
 /** Uploads an app's private key to the hosting server once; sources reference it. */
@@ -115,11 +266,12 @@ async function appForInstallRow(install: Pick<InstallationRow, "githubAppConfigI
 // Installs
 // ---------------------------------------------------------------------------
 
-export async function getOrgInstallation(orgId: string): Promise<InstallationRow | null> {
+/** The client's live install: of one Git source when given, else its newest. */
+export async function getOrgInstallation(orgId: string, sourceId?: string | null): Promise<InstallationRow | null> {
   const db: any = await getDb();
   if (!db) return null;
   return db.githubInstallation.findFirst({
-    where: { organizationId: orgId, status: { not: "removed" } },
+    where: { organizationId: orgId, status: { not: "removed" }, ...(sourceId ? { githubAppConfigId: sourceId } : {}) },
     orderBy: { createdAt: "desc" }
   });
 }
@@ -166,11 +318,23 @@ export async function connectInstallation(input: {
   orgId: string;
   userId: string;
   installationId: number;
+  /** The Git source the install was started from (Install repositories). */
+  sourceId?: string | null;
 }): Promise<{ ok: boolean; status: number; message: string }> {
   const db: any = await getDb();
   if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
   // The client's own app first, then the shared one: whichever owns this install.
-  const candidates = [await getGithubApp({ organizationId: input.orgId }), await getGithubApp()].filter((app): app is GithubAppSecrets => Boolean(app));
+  const own = input.sourceId ? await getGithubApp({ id: input.sourceId }) : null;
+  if (input.sourceId && own && own.organizationId && own.organizationId !== input.orgId) {
+    return { ok: false, status: 403, message: "That Git source belongs to another client." };
+  }
+  const db0: any = await getDb();
+  const orgApps = own
+    ? [own]
+    : await Promise.all(
+        ((await db0.githubAppConfig.findMany({ where: { organizationId: input.orgId, appId: { not: null } }, select: { id: true } })) as Array<{ id: string }>).map((row) => getGithubApp({ id: row.id }))
+      );
+  const candidates = [...orgApps, own ? null : await getGithubApp()].filter((app): app is GithubAppSecrets => Boolean(app));
   let info = null as Awaited<ReturnType<typeof getInstallation>>;
   let app: GithubAppSecrets | null = null;
   for (const candidate of candidates) {

@@ -17,6 +17,8 @@ const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export type CreateFromGithubInput = {
   orgId: string;
+  /** The Git source to deploy through (several per client, like Coolify). */
+  sourceId?: string | null;
   userId: string;
   name: string;
   repoFullName: string;
@@ -33,7 +35,7 @@ export async function createSiteFromGithub(input: CreateFromGithubInput): Promis
   const db: any = await getDb();
   if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
 
-  const install = await getOrgInstallation(input.orgId);
+  const install = await getOrgInstallation(input.orgId, input.sourceId);
   const usable = assertInstallUsable(install, input.orgId, { needSource: true });
   if (!usable.ok) return { ok: false, status: usable.status, message: usable.message };
 
@@ -117,16 +119,16 @@ export async function createSiteFromGithub(input: CreateFromGithubInput): Promis
 }
 
 /** Repos and branches for the picker; tokens never leave the server. */
-export async function reposForOrg(orgId: string) {
-  const install = await getOrgInstallation(orgId);
+export async function reposForOrg(orgId: string, sourceId?: string | null) {
+  const install = await getOrgInstallation(orgId, sourceId);
   const usable = assertInstallUsable(install, orgId);
   if (!usable.ok) return { ok: false as const, status: usable.status, message: usable.message };
   const repos = await listInstallationRepos(Number(install!.installationId));
   return { ok: true as const, repos };
 }
 
-export async function branchesForOrg(orgId: string, fullName: string) {
-  const install = await getOrgInstallation(orgId);
+export async function branchesForOrg(orgId: string, fullName: string, sourceId?: string | null) {
+  const install = await getOrgInstallation(orgId, sourceId);
   const usable = assertInstallUsable(install, orgId);
   if (!usable.ok) return { ok: false as const, status: usable.status, message: usable.message };
   const repos = await listInstallationRepos(Number(install!.installationId));
@@ -334,4 +336,77 @@ export async function followRepoRename(siteId: string, fullName: string): Promis
   for (const uuid of [site?.coolifyServiceUuid, site?.gitStagingBranch ? site?.stagingTargetUuid : null]) {
     if (uuid) await coolifyMutateWithResponse(`/api/v1/applications/${uuid}`, "PATCH", { git_repository: fullName });
   }
+}
+
+/**
+ * "Public repository" (Coolify's public-git-repository): no Git source, just
+ * the URL. Jongo can't receive pushes for it, so it deploys on Deploy now.
+ */
+export async function createSiteFromPublicRepo(input: Omit<CreateFromGithubInput, "repoFullName" | "sourceId"> & { repoUrl: string }): Promise<Outcome<{ siteId: string; domain: string | null }>> {
+  const db: any = await getDb();
+  if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
+  const envVars = (input.envVars ?? []).filter((row) => row.key.trim());
+  const badKey = envVars.find((row) => !ENV_KEY.test(row.key.trim()));
+  if (badKey) return { ok: false, status: 400, message: `"${badKey.key}" isn't a valid variable name. Use letters, numbers and underscores.` };
+
+  const org = await db.organization.findUnique({ where: { id: input.orgId }, select: { coolifyProjectId: true } });
+  const { coolifyFetch, coolifyMutateWithResponse, applyCoolifyApplicationDomains, triggerCoolifyDeploy } = await import("@/lib/coolify");
+  const { resolveStagingServerUuid } = await import("@/lib/coolify-server-resolve");
+  const { buildPublicApplicationRequest } = await import("@/lib/github-app-request");
+  const { parsePublicRepoUrl } = await import("@/lib/git-sources");
+  const servers = await coolifyFetch("/api/v1/servers").catch(() => []);
+  const server = resolveStagingServerUuid({ service: null, servers: Array.isArray(servers) ? (servers as Array<Record<string, unknown>>) : [] });
+  const request = buildPublicApplicationRequest({
+    projectUuid: org?.coolifyProjectId ?? "",
+    serverUuid: server.uuid,
+    repoUrl: input.repoUrl,
+    branch: input.branch,
+    buildPack: input.buildPack,
+    port: input.port,
+    baseDirectory: input.baseDirectory,
+    name: input.name
+  });
+  if (!request.ok) return { ok: false, status: 400, message: server.uuid ? request.message : server.reason ?? request.message };
+  const parsed = parsePublicRepoUrl(input.repoUrl);
+
+  const created = await coolifyMutateWithResponse("/api/v1/applications/public", "POST", request.body);
+  const appUuid = (created.body as any)?.uuid;
+  if (!created.ok || typeof appUuid !== "string") {
+    return { ok: false, status: 502, message: `The app couldn't be created (HTTP ${created.status ?? "n/a"}). Check the repository is public and the branch exists.` };
+  }
+  if (envVars.length) {
+    await coolifyMutateWithResponse(`/api/v1/applications/${appUuid}/envs/bulk`, "PATCH", {
+      data: envVars.map((row) => ({ key: row.key.trim(), value: row.value, is_preview: false }))
+    }).catch(() => null);
+  }
+  const { buildTemporaryProductionDomain } = await import("@/lib/temporary-domains");
+  const { nextAvailableSlug, toSiteSlug } = await import("@/lib/site-slug");
+  const taken = await db.site.findMany({ where: { organizationId: input.orgId }, select: { slug: true } });
+  const slug = nextAvailableSlug(toSiteSlug(input.name), taken.map((row: { slug: string }) => row.slug));
+  const domain = buildTemporaryProductionDomain({ slug: input.temporaryDomainSlug || slug, suffix: input.temporaryDomainSuffix }) ?? null;
+  const domainApplied = domain ? await applyCoolifyApplicationDomains(appUuid, `https://${domain}`).catch(() => false) : false;
+  const site = await db.site.create({
+    data: {
+      organizationId: input.orgId,
+      slug,
+      name: input.name.trim(),
+      coolifyServiceUuid: appUuid,
+      coolifyProjectId: org?.coolifyProjectId ?? null,
+      gitRepositoryUrl: parsed.ok ? parsed.url : input.repoUrl,
+      gitBranch: input.branch,
+      temporaryDomainSlug: input.temporaryDomainSlug || slug,
+      temporaryDomainSuffix: input.temporaryDomainSuffix ?? null
+    }
+  });
+  let deployed = true;
+  try {
+    await triggerCoolifyDeploy(appUuid, "production");
+  } catch {
+    deployed = false;
+  }
+  await audit(input.orgId, input.userId, "public_repo_linked", { repo: parsed.ok ? parsed.url : input.repoUrl, branch: input.branch, appUuid }, site.id);
+  const parts = [`Created from ${parsed.ok ? parsed.fullName : "the repository"}@${input.branch}.`];
+  if (domain && !domainApplied) parts.push(`The address ${domain} couldn't be applied yet; use Apply address on the app.`);
+  parts.push(deployed ? "The first deploy has started; it takes a few minutes." : "The first deploy didn't start; use Deploy now on the app.");
+  return { ok: true, status: 201, message: parts.join(" "), value: { siteId: site.id, domain } };
 }

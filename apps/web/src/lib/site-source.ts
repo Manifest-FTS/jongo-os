@@ -17,7 +17,7 @@ export async function loadSiteSource(siteDbId: string): Promise<SiteSource | nul
       pendingCommitSha: true,
       pendingCommitMessage: true,
       lastDeployedSha: true,
-      githubInstallation: { select: { accountLogin: true, accountType: true, installationId: true } }
+      githubInstallation: { select: { accountLogin: true, accountType: true, installationId: true, githubAppConfigId: true } }
     }
   }).catch(() => null);
   if (!site?.gitRepoFullName || !site.githubInstallation) return null;
@@ -32,6 +32,7 @@ export async function loadSiteSource(siteDbId: string): Promise<SiteSource | nul
     pendingCommitSha: site.pendingCommitSha,
     pendingCommitMessage: site.pendingCommitMessage,
     lastDeployedSha: site.lastDeployedSha,
-    manageUrl: installationSettingsUrl(site.githubInstallation)
+    manageUrl: installationSettingsUrl(site.githubInstallation),
+    sourceId: site.githubInstallation.githubAppConfigId ?? null
   };
 }
