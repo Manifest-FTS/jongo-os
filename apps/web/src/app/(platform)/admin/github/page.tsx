@@ -24,14 +24,41 @@ export default async function GithubAdminPage({ searchParams }: Props) {
   const session = await auth();
   if (!session?.user?.id) notFound();
   if (!(await isPlatformAdminEmail(session.user.email))) {
+    // GitHub is connected per client (each gets its own Jongo GitHub App on
+    // their GitHub account), so this page just leads to that flow.
+    const dbForClients: any = await getDb();
+    const clients: Array<{ id: string; name: string }> = dbForClients
+      ? await dbForClients.organization.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id, deletedAt: null } } }]
+          },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" }
+        })
+      : [];
     return (
       <div className="page-stack">
         <article className="card">
-          <h2 className="card-title">GitHub deploys</h2>
+          <h2 className="card-title">Connect GitHub</h2>
           <p className="card-muted mt-1 mb-0">
-            Only platform admins can set up the Jongo GitHub App. You&apos;re signed in as {session.user.email}. A platform admin
-            can set it up, or grant you platform admin under Settings → Platform → Platform admins.
+            Pick the client whose repos you want to deploy. The first time, GitHub asks you to create that client&apos;s Jongo app on your
+            GitHub account or organization, then which repos Jongo may read.
           </p>
+          {clients.length === 0 ? (
+            <p className="card-muted mt-3 mb-0">You aren&apos;t on any client yet.</p>
+          ) : (
+            <div className="mt-4 flex flex-col gap-2">
+              {clients.map((client) => (
+                <div key={client.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg border border-solid border-border">
+                  <span className="font-semibold">{client.name}</span>
+                  <a className="btn btn-secondary px-3 py-1.5 text-[12.5px]" href={`/api/organizations/${client.id}/github/connect`}>
+                    Connect GitHub
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
         </article>
       </div>
     );
