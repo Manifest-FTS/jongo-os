@@ -17,14 +17,13 @@ export async function POST(request: Request, { params }: Params) {
   const body: any = await request.json().catch(() => null);
   if (!body || typeof body.name !== "string" || !body.name.trim()) return NextResponse.json({ ok: false, message: "Give the app a name." }, { status: 400 });
 
-  const { createSiteFromGithub } = await import("@/lib/github-deploys");
-  const result = await createSiteFromGithub({
+  const { createSiteFromGithub, createSiteFromPublicRepo } = await import("@/lib/github-deploys");
+  const common = {
     orgId: organizationId,
     userId: access.userId,
     name: body.name,
-    repoFullName: String(body.repo ?? ""),
     branch: String(body.branch ?? ""),
-    buildPack: body.buildPack === "dockerfile" ? "dockerfile" : "nixpacks",
+    buildPack: (body.buildPack === "dockerfile" ? "dockerfile" : "nixpacks") as "dockerfile" | "nixpacks",
     port: Number(body.port ?? 3000),
     baseDirectory: typeof body.baseDirectory === "string" ? body.baseDirectory : "",
     envVars: Array.isArray(body.envVars)
@@ -32,7 +31,11 @@ export async function POST(request: Request, { params }: Params) {
       : [],
     temporaryDomainSlug: typeof body.temporaryDomainSlug === "string" ? body.temporaryDomainSlug : null,
     temporaryDomainSuffix: typeof body.temporaryDomainSuffix === "string" ? body.temporaryDomainSuffix : null
-  }).catch((error): Awaited<ReturnType<typeof createSiteFromGithub>> => {
+  };
+  const result = await (body.mode === "public"
+    ? createSiteFromPublicRepo({ ...common, repoUrl: String(body.repoUrl ?? "") })
+    : createSiteFromGithub({ ...common, repoFullName: String(body.repo ?? ""), sourceId: typeof body.source === "string" ? body.source : null })
+  ).catch((error): Awaited<ReturnType<typeof createSiteFromGithub>> => {
     console.error("[github] create from repo failed", error);
     return { ok: false, status: 502, message: "Couldn't reach GitHub or the server just now. Nothing was created; try again." };
   });

@@ -14,13 +14,14 @@ export async function GET(request: Request, { params }: Params) {
   // "Not connected yet" is a normal state of the picker, not an error: answer
   // 200 with what's missing so the form can say what to do next.
   const { getOrgInstallation } = await import("@/lib/github-installations");
-  const install = await getOrgInstallation(organizationId);
+  const sourceId = new URL(request.url).searchParams.get("source");
+  const install = await getOrgInstallation(organizationId, sourceId);
   if (!install) return NextResponse.json({ ok: true, state: "not_connected", repos: [] });
   if (install.status === "suspended") return NextResponse.json({ ok: true, state: "suspended", repos: [] });
   if (!install.coolifySourceUuid) return NextResponse.json({ ok: true, state: "finishing_setup", repos: [] });
 
   const { reposForOrg } = await import("@/lib/github-deploys");
-  const result = await reposForOrg(organizationId).catch(() => ({ ok: false as const, status: 502, message: "Couldn't reach GitHub just now. Try again." }));
+  const result = await reposForOrg(organizationId, sourceId).catch(() => ({ ok: false as const, status: 502, message: "Couldn't reach GitHub just now. Try again." }));
   if (!result.ok) return NextResponse.json({ ok: false, message: result.message }, { status: result.status });
   const q = (new URL(request.url).searchParams.get("q") ?? "").trim().toLowerCase();
   const repos = result.repos.filter((repo) => !q || repo.fullName.toLowerCase().includes(q)).slice(0, 200);

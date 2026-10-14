@@ -32,6 +32,8 @@ export default async function ClientWorkspaceLayout({ children, params }: Layout
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/clients/${clientId}`, match: "exact" },
     { name: "Apps", href: `/clients/${clientId}/apps` },
+    // Git sources (GitHub Apps), like Coolify's Sources: the whole client team.
+    { name: "Sources", href: `/clients/${clientId}/sources` },
     ...(canManageClient ? [{ name: "Settings", href: `/clients/${clientId}/settings` } satisfies WorkspaceTab] : [])
   ];
 

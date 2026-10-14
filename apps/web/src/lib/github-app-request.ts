@@ -3,6 +3,8 @@
  * through their own GitHub source. Auto-deploy is off: Jongo receives the push
  * webhooks and decides what to deploy.
  */
+import { parsePublicRepoUrl } from "./git-sources";
+
 export type GithubBuildPack = "nixpacks" | "dockerfile";
 
 export type GithubApplicationInput = {
@@ -59,4 +61,17 @@ export function buildGithubApplicationRequest(
       ...(baseDirectory ? { base_directory: baseDirectory } : {})
     }
   };
+}
+
+/** "Public repository" (Coolify's public-git-repository): no app or key, just the URL. */
+export function buildPublicApplicationRequest(
+  input: Omit<GithubApplicationInput, "sourceUuid" | "repoFullName"> & { repoUrl: string }
+): { ok: true; body: Record<string, unknown> } | { ok: false; message: string } {
+  // Validated with the same rules as the private path, then the URL replaces the source.
+  const parsed = parsePublicRepoUrl(input.repoUrl);
+  if (!parsed.ok) return { ok: false, message: parsed.message };
+  const base = buildGithubApplicationRequest({ ...input, sourceUuid: "public", repoFullName: "public/repo" });
+  if (!base.ok) return base;
+  const { github_app_uuid: _source, ...body } = base.body;
+  return { ok: true, body: { ...body, git_repository: parsed.url } };
 }

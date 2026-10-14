@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/dashboard?github=${setupAction === "update" ? "updated" : "link_expired"}`);
   }
   // The Apps page: every member of the client team can see it (settings is admin-only).
-  const back = `${origin}/clients/${state.payload.orgId}/apps`;
+  const back = `${origin}/clients/${state.payload.orgId}/sources`;
   const session = await auth();
   if (!session?.user?.id || session.user.id !== state.payload.userId) return NextResponse.redirect(`${back}?github=wrong_user`);
 
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   if (!Number.isFinite(installationId) || installationId <= 0) return NextResponse.redirect(`${back}?github=missing_install`);
 
   const { connectInstallation } = await import("@/lib/github-installations");
-  const result = await connectInstallation({ orgId: state.payload.orgId, userId: session.user.id, installationId }).catch((error) => {
+  const result = await connectInstallation({ orgId: state.payload.orgId, userId: session.user.id, installationId, sourceId: state.payload.sourceId ?? null }).catch((error) => {
     console.error("[github] connect failed", error);
     return { ok: false, status: 502, message: "" };
   });

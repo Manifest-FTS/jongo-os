@@ -73,3 +73,37 @@ describe("buildGithubApplicationRequest", () => {
     expect(buildGithubApplicationRequest({ ...input, buildPack: "dockercompose" as never }).ok).toBe(false);
   });
 });
+
+describe("buildPublicApplicationRequest", () => {
+  it("creates from a public URL with no source, auto-deploy off", async () => {
+    const { buildPublicApplicationRequest } = await import("./github-app-request");
+    const result = buildPublicApplicationRequest({
+      projectUuid: "p1",
+      serverUuid: "srv",
+      repoUrl: "https://github.com/vercel/next.js",
+      branch: "canary",
+      buildPack: "nixpacks",
+      port: 3000,
+      name: "Next Demo"
+    });
+    expect(result).toEqual({
+      ok: true,
+      body: {
+        project_uuid: "p1",
+        server_uuid: "srv",
+        environment_name: "production",
+        git_repository: "https://github.com/vercel/next.js",
+        git_branch: "canary",
+        build_pack: "nixpacks",
+        ports_exposes: "3000",
+        name: "next-demo",
+        is_auto_deploy_enabled: false,
+        instant_deploy: false
+      }
+    });
+  });
+  it("refuses a URL that isn't a public https repo", async () => {
+    const { buildPublicApplicationRequest } = await import("./github-app-request");
+    expect(buildPublicApplicationRequest({ projectUuid: "p1", serverUuid: "srv", repoUrl: "git@github.com:a/b.git", branch: "main", buildPack: "nixpacks", port: 3000, name: "x" }).ok).toBe(false);
+  });
+});

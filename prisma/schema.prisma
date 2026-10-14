@@ -143,7 +143,7 @@ model Organization {
   notifications       Notification[]
   domains             Domain[]
   githubInstallations GithubInstallation[]
-  githubApp           GithubAppConfig?
+  githubApps          GithubAppConfig[]
 
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
@@ -1023,27 +1023,32 @@ model StagingDomain {
   @@index([status])
 }
 
-/// A Jongo GitHub App. Normally one per client, created on the client's own
-/// GitHub account from Connect GitHub (organizationId set); a row without
-/// organizationId is an optional shared app. Secrets are encrypted with
-/// lib/secret-box.ts and never leave the server.
+/// A Git source (GitHub App), like Coolify's Sources: a client may have several.
+/// Added as a draft (name, optional organization = ownerLogin), then registered
+/// on GitHub through the manifest flow (or filled in manually: manual = true),
+/// then installed on repos. A row without organizationId is an optional shared
+/// app. Secrets are encrypted with lib/secret-box.ts and never leave the server.
 model GithubAppConfig {
   id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId        String?  @unique @db.Uuid
+  organizationId        String?  @db.Uuid
   organization          Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   installations         GithubInstallation[]
-  appId                 Int      @unique
-  slug                  String
+  appId                 Int?     @unique
+  slug                  String?
   name                  String
-  htmlUrl               String
-  clientId              String
-  clientSecretEnc       String
-  webhookSecretEnc      String
-  privateKeyEnc         String
+  htmlUrl               String?
+  clientId              String?
+  clientSecretEnc       String?
+  webhookSecretEnc      String?
+  privateKeyEnc         String?
   coolifyPrivateKeyUuid String?
+  ownerLogin            String?
+  manual                Boolean  @default(false)
   createdById           String?  @db.Uuid
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+
+  @@index([organizationId])
 }
 
 /// A customer's install of the Jongo GitHub App. One install belongs to one

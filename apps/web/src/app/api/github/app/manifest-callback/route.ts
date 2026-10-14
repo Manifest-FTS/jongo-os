@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { canUseGithubForOrg, installStateSecret, publicOrigin, requirePlatformAdmin } from "@/lib/github-route-access";
-import { signInstallState, verifyInstallState } from "@/lib/github-install-state";
+import { verifyInstallState } from "@/lib/github-install-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/dashboard?github=link_expired`);
   }
   const shared = state.payload.orgId === "platform";
-  const back = shared ? `${origin}/admin/github` : `${origin}/clients/${state.payload.orgId}`;
+  const back = shared ? `${origin}/admin/github` : `${origin}/clients/${state.payload.orgId}/sources`;
   if (shared ? "response" in (await requirePlatformAdmin()) : !(await canUseGithubForOrg(state.payload.orgId, session.user.id, session.user.email))) {
     return NextResponse.redirect(`${back}?github=not_allowed`);
   }
@@ -32,10 +32,9 @@ export async function GET(request: Request) {
     const { convertManifestCode } = await import("@/lib/github-app");
     const { saveGithubApp } = await import("@/lib/github-installations");
     const conversion = await convertManifestCode(code);
-    const saved = await saveGithubApp(conversion, session.user.id, shared ? null : state.payload.orgId);
-    if (shared || !saved.app) return NextResponse.redirect(`${back}?github=${saved.ok ? "created" : "failed"}`);
-    const next = signInstallState({ orgId: state.payload.orgId, userId: session.user.id }, installStateSecret());
-    return NextResponse.redirect(`https://github.com/apps/${encodeURIComponent(saved.app.slug)}/installations/new?state=${encodeURIComponent(next)}`);
+    const saved = await saveGithubApp(conversion, session.user.id, shared ? null : state.payload.orgId, state.payload.sourceId ?? null);
+    // Like Coolify: back to the source page, where step 2 (Install repositories) is next.
+    return NextResponse.redirect(`${back}?github=${saved.ok ? "registered" : "failed"}${state.payload.sourceId ? `&source=${encodeURIComponent(state.payload.sourceId)}` : ""}`);
   } catch (error) {
     console.error("[github] manifest conversion failed", error);
     return NextResponse.redirect(`${back}?github=failed`);
