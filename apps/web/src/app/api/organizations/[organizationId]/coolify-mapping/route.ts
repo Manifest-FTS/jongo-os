@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { db } from "@/lib/db";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
-import { isAdminRole } from "@/lib/roles";
+import { hasOnlyFields, resolveOrganizationAccess } from "@/lib/tenant-route-access";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -27,22 +27,7 @@ function driftState(orgName: string, projectName?: string | null): "aligned" | "
 }
 
 async function getAuthorizedOrg(organizationId: string, userId: string) {
-  return db.organization.findFirst({
-    where: {
-      id: organizationId,
-      deletedAt: null,
-      OR: [
-        { ownerId: userId },
-        { collaborators: { some: { userId, deletedAt: null } } }
-      ]
-    },
-    include: {
-      collaborators: {
-        where: { userId, deletedAt: null },
-        select: { role: true }
-      }
-    }
-  });
+  return resolveOrganizationAccess(organizationId, userId);
 }
 
 async function loadActiveMappings(organizationId: string): Promise<MappingRow[]> {
@@ -120,14 +105,13 @@ export async function GET(_request: Request, { params }: Params) {
   }
 
   const { organizationId } = await params;
-  const org = await getAuthorizedOrg(organizationId, session.user.id);
-  if (!org) {
+  const access = await getAuthorizedOrg(organizationId, session.user.id);
+  if (!access) {
     return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   }
 
-  const callerIsOwner = org.ownerId === session.user.id;
-  const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
-  if (!callerIsAdmin) {
+  const org = access.organization;
+  if (!access.isAdmin) {
     return NextResponse.json({ error: "Only admins can view mapping controls" }, { status: 403 });
   }
 
@@ -149,6 +133,10 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  if (!hasOnlyFields(body, ["action", "coolifyProjectId", "coolifyProjectName", "isPrimary"])) {
+    return NextResponse.json({ error: "Unsupported mapping settings" }, { status: 400 });
+  }
+
   const action = typeof body.action === "string" ? body.action : "link";
   const coolifyProjectId = typeof body.coolifyProjectId === "string" ? body.coolifyProjectId.trim() : "";
   const coolifyProjectName = typeof body.coolifyProjectName === "string" ? body.coolifyProjectName.trim() : null;
@@ -158,15 +146,14 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "coolifyProjectId is required" }, { status: 400 });
   }
 
-  const org = await getAuthorizedOrg(organizationId, session.user.id);
-  if (!org) {
+  const access = await getAuthorizedOrg(organizationId, session.user.id);
+  if (!access) {
     return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   }
 
-  const callerIsOwner = org.ownerId === session.user.id;
-  const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
-  if (!callerIsAdmin) {
-    return NextResponse.json({ error: "Only admins can manage Coolify mapping" }, { status: 403 });
+  const org = access.organization;
+  if (!access.isPlatformAdmin) {
+    return NextResponse.json({ error: "Only platform admins can manage Coolify mapping" }, { status: 403 });
   }
 
   const existingOther = await db.$queryRaw<Array<{ organizationId: string; organizationName: string }>>`

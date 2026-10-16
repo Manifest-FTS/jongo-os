@@ -32,6 +32,7 @@ import {
   parseBalance,
   parseCheck,
   parseCreate,
+  parseDomainList,
   parseGetInfo,
   parseRenew,
   parseSetCustom,
@@ -40,6 +41,7 @@ import {
   parseTransferStatus,
   type CheckResult,
   type DomainInfo,
+  type DomainListPage,
   type RegistrarOrderResult,
   type TldPriceBook,
   type TransferStatus
@@ -114,9 +116,10 @@ async function takeSlot(patient: boolean): Promise<boolean> {
  * One API call. POST, with credentials in the body, so neither the key nor an
  * EPP code ends up in a URL that something might log.
  */
-async function call(command: string, params: Record<string, string> = {}, options: { patient?: boolean } = {}): Promise<string> {
+async function call(command: string, params: Record<string, string> = {}, options: { patient?: boolean; liveOnly?: boolean } = {}): Promise<string> {
   const config = readNamecheapConfig();
   if (!config) throw new NamecheapError("Namecheap is not configured.", "NOT_CONFIGURED", false);
+  if (options.liveOnly && config.sandbox) throw new NamecheapError("Sandbox inventory sync is disabled.", "SANDBOX_DISABLED", false);
 
   if (!(await takeSlot(Boolean(options.patient)))) {
     throw new NamecheapError("Domain search is busy. Try again in a moment.", "RATE_LIMITED", true);
@@ -140,6 +143,7 @@ async function call(command: string, params: Record<string, string> = {}, option
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body,
       signal: controller.signal,
+      redirect: "error",
       cache: "no-store"
     });
     xml = await response.text();
@@ -164,6 +168,26 @@ async function call(command: string, params: Record<string, string> = {}, option
 export function namecheapMode(): "live" | "sandbox" | "off" {
   const config = readNamecheapConfig();
   return config ? (config.sandbox ? "sandbox" : "live") : "off";
+}
+
+/** Inventory reads share the existing gate; no credentials or filters in URLs. */
+export async function getDomainListPage(page = 1, pageSize = 100): Promise<DomainListPage> {
+  if (!Number.isSafeInteger(page) || page < 1 || page > 100 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+    throw new NamecheapError("Invalid Namecheap pagination.", "INVALID_PAGINATION", false);
+  }
+  const xml = await call("namecheap.domains.getList", {
+    Page: String(page), PageSize: String(pageSize), ListType: "ALL", SortBy: "NAME"
+  }, { patient: true, liveOnly: true });
+  let result: DomainListPage;
+  try {
+    result = parseDomainList(xml);
+  } catch {
+    throw new NamecheapError("Invalid Namecheap domain list response.", "INVALID_RESPONSE", false);
+  }
+  if (result.currentPage !== page || result.pageSize !== pageSize) {
+    throw new NamecheapError("Namecheap returned inconsistent pagination.", "INVALID_RESPONSE", false);
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

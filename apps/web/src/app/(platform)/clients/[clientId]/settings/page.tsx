@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth.config";
-import { getClientWorkspace, isClientAdmin } from "@/lib/repositories";
+import { getClientWorkspace } from "@/lib/repositories";
+import { resolveOrganizationAccess } from "@/lib/tenant-route-access";
 import { getCoolifyOverview } from "@/lib/coolify";
 import CoolifyProjectMappingForm from "@/components/CoolifyProjectMappingForm";
 import DeleteClientButton from "@/components/DeleteClientButton";
@@ -26,14 +27,12 @@ export default async function ClientSettingsPage({ params, searchParams }: Param
   }
   const linkedProjects = client.linkedCoolifyProjects ?? [];
 
-  const [isAdmin, overview] = await Promise.all([
-    client.dbId && session?.user?.id ? isClientAdmin(client.dbId, session.user.id) : Promise.resolve(false),
-    getCoolifyOverview()
-  ]);
-
-  if (!isAdmin) {
+  const access = client.dbId && session?.user?.id
+    ? await resolveOrganizationAccess(client.dbId, session.user.id) : null;
+  if (!access?.isAdmin) {
     redirect(`/clients/${clientId}`);
   }
+  const overview = access.isPlatformAdmin ? await getCoolifyOverview() : null;
 
   return (
     <div className="page-stack">
@@ -54,14 +53,14 @@ export default async function ClientSettingsPage({ params, searchParams }: Param
             <strong>No linked project.</strong> Link at least one project so this client's apps map cleanly in Jongo.
           </div>
         ) : null}
-        {client.dbId ? (
+        {client.dbId && overview ? (
           <CoolifyProjectMappingForm
             organizationDbId={client.dbId}
             organizationName={client.name}
             availableProjects={overview.projects.map((project) => ({ id: project.id, name: project.name }))}
           />
         ) : (
-          <p className="card-muted">Database-backed organization record is required to update mapping.</p>
+          <p className="card-muted">A platform admin manages infrastructure project mapping.</p>
         )}
         <div style={{ marginTop: "1rem" }}>
           <DeleteClientButton organizationId={client.dbId ?? client.id} />

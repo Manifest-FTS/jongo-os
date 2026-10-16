@@ -14,6 +14,26 @@ datasource db {
 // Enums
 // ============================================================
 
+enum GlobalRole {
+  super_admin
+  admin
+  collaborator
+}
+
+enum ClientBillingMode {
+  manual_override
+  bonsai
+  native_stripe
+  exempt
+}
+
+enum ClientBillingStatus {
+  active_paid
+  past_due
+  pending_setup
+  comped
+}
+
 enum CollaboratorRole {
   admin
   collaborator
@@ -51,6 +71,7 @@ model User {
   avatarUrl       String?
   authProvider    String? // 'local', 'github', 'google', etc.
   authProviderId  String? // external provider ID
+  role            GlobalRole @default(collaborator)
 
   // Billing (Stripe). Subscription is per-account, not per-organization: a
   // user's plan caps the usage across every client/org they create, so there
@@ -131,6 +152,13 @@ model Organization {
   coolifyApiUrl      String? // optional per-org override
   coolifyProjectId   String? @unique
   coolifyProjectName String?
+
+  // Client receivables are independent of the owner's account subscription.
+  billingMode        ClientBillingMode   @default(manual_override)
+  billingStatus      ClientBillingStatus @default(pending_setup)
+  billingNotes       String?            @db.Text
+  bonsaiClientId     String?
+  externalInvoiceUrl String?
 
   // Relations
   owner               User                             @relation(fields: [ownerId], references: [id], onDelete: Restrict)
@@ -927,7 +955,7 @@ model UsageCounterState {
 // a Cloudflare zone whose nameservers Jongo sets at Namecheap.
 model Domain {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId   String    @db.Uuid
+  organizationId   String?   @db.Uuid
   name             String    @unique // lowercase, e.g. acme.org
   // pending_payment | registering | transfer_pending | active | failed | expired
   status           String    @default("pending_payment")
@@ -939,13 +967,19 @@ model Domain {
   // pending | active | error: whether the domain resolves through Cloudflare yet
   dnsStatus        String?
   expiresAt        DateTime?
+  autoRenew        Boolean   @default(false)
+  isBillable       Boolean   @default(true)
+  billingOverride  Boolean   @default(false)
+  registrarSyncedAt DateTime?
+  // Inventory/assignment does not authorize changing registrar nameservers.
+  dnsManagementEnabled Boolean @default(false)
   lastError        String?
   createdById      String?   @db.Uuid
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization?  @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   charges      DomainCharge[]
 
   @@index([organizationId])

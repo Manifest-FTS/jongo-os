@@ -69,13 +69,13 @@ const RULES: Record<RemedyAction, { allowed: (p: Partial<UserPermissions>) => bo
     cooldownMs: 30_000
   },
   retry_domain_order: {
-    allowed: (p) => Boolean(p.isPlatformAdmin),
-    denied: "Only platform admins can retry domain orders.",
+    allowed: (p) => Boolean(p.canManageBilling),
+    denied: "Only super admins can retry domain orders.",
     cooldownMs: 30_000
   },
   refund_domain_order: {
-    allowed: (p) => Boolean(p.isPlatformAdmin),
-    denied: "Only platform admins can refund domain orders.",
+    allowed: (p) => Boolean(p.canManageBilling),
+    denied: "Only super admins can refund domain orders.",
     cooldownMs: 0
   }
 };

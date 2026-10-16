@@ -10,7 +10,8 @@ import {
   hashInviteToken,
   isInviteExpired
 } from "@/lib/invitations";
-import { isAdminRole, normalizeRole } from "@/lib/roles";
+import { normalizeRole } from "@/lib/roles";
+import { hasOnlyFields, isTenantMutationRole, resolveOrganizationAccess } from "@/lib/tenant-route-access";
 import { getPlatformAdminContacts } from "@/lib/permissions";
 
 type Params = { params: Promise<{ organizationId: string }> };
@@ -136,42 +137,27 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const email = body.email?.trim().toLowerCase();
+  if (!hasOnlyFields(body, ["email", "role", "forceInvite"]) || !isTenantMutationRole(body.role)) {
+    return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
+  }
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const role = normalizeRole(body.role);
   const forceInvite = body.forceInvite === true;
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
   }
-  if (!["admin", "collaborator"].includes(role)) {
-    return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
-  }
 
   try {
     const { db } = await import("@/lib/db");
 
     // Only owner or admin may invite
-    const org = await db.organization.findFirst({
-      where: {
-        id: organizationId,
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      },
-      include: {
-        collaborators: {
-          where: { userId: session.user.id },
-          select: { role: true }
-        }
-      }
-    });
-
-    if (!org) {
+    const access = await resolveOrganizationAccess(organizationId, session.user.id);
+    if (!access) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
 
-    const callerIsOwner = org.ownerId === session.user.id;
-    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
-    if (!callerIsAdmin) {
+    if (!access.isAdmin) {
       return NextResponse.json({ error: "Only admins can invite collaborators" }, { status: 403 });
     }
 

@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-
-function normalizeEmail(value?: string | null): string {
-  return value?.trim().toLowerCase() ?? "";
-}
+import { isPlatformAdminUser } from "@/lib/rbac";
 
 // Mirrors the auth of /api/ops/backup-reconcile: a shared ops token OR a
-// bootstrap-admin session.
-function isAuthorized(session: Awaited<ReturnType<typeof auth>>, request: Request): boolean {
+// DB-authorized technical platform-admin session.
+async function isAuthorized(session: Awaited<ReturnType<typeof auth>>, request: Request): Promise<boolean> {
   const opsToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const providedToken = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   const tokenAuthorized = Boolean(opsToken && providedToken && providedToken === opsToken);
 
-  const bootstrapAdmin = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const sessionEmail = normalizeEmail(session?.user?.email);
-  const adminSession = Boolean(session?.user?.id && bootstrapAdmin && sessionEmail === bootstrapAdmin);
-
-  return tokenAuthorized || adminSession;
+  return tokenAuthorized || await isPlatformAdminUser(session?.user?.id);
 }
 
 type VerificationPayload = {
@@ -44,7 +37,7 @@ function asInt(value: unknown): number | undefined {
 // scripts/verify-jongo-backup.mjs after a --restore-test run.
 export async function POST(request: Request) {
   const session = await auth();
-  if (!isAuthorized(session, request)) {
+  if (!(await isAuthorized(session, request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -236,7 +236,21 @@ export async function auth(): Promise<AuthSession> {
   const raw = await getServerSession(authConfig as any);
   const session = raw as unknown as { user?: { id?: string; email?: string } } | null;
   if (session?.user?.id) {
-    return session as unknown as AuthSession;
+    // JWT identifies the account, not its current email, existence or authority.
+    // Refresh identity so older email-based technical guards cannot trust stale tokens.
+    try {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return null;
+      const user = await db.user.findUnique({
+        where: { id: session.user.id },
+        select: { id: true, email: true, fullName: true, deletedAt: true }
+      });
+      if (!user || user.deletedAt) return null;
+      return { user: { id: user.id, email: user.email, name: user.fullName } };
+    } catch {
+      return null;
+    }
   }
 
   const isDev = process.env.NODE_ENV !== "production";

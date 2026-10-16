@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const session = await auth();
   const providedToken = bearerTokenFromAuthHeader(request.headers.get("authorization"));
 
-  if (!canAccessRuntimeDiagnostics({ sessionEmail: session?.user?.email, bearerToken: providedToken })) {
+  if (!(await canAccessRuntimeDiagnostics({ userId: session?.user?.id, bearerToken: providedToken }))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

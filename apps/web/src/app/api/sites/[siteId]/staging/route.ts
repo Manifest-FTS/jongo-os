@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { remedy } from "@/lib/remedies";
 import { auth } from "@/lib/auth.config";
+import { isPlatformAdminUser } from "@/lib/rbac";
 import {
   applyCoolifyApplicationDomain,
   buildStagingSyncDryRunPlan,
@@ -365,14 +366,8 @@ function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
 }
 
-function hasBootstrapGlobalAccess(session: Awaited<ReturnType<typeof auth>>): boolean {
-  const configuredAdmin = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const sessionEmail = normalizeEmail(session?.user?.email);
-  if (!configuredAdmin || !sessionEmail) {
-    return false;
-  }
-
-  return configuredAdmin === sessionEmail;
+async function hasBootstrapGlobalAccess(session: Awaited<ReturnType<typeof auth>>): Promise<boolean> {
+  return isPlatformAdminUser(session?.user?.id);
 }
 
 function buildSiteIdentityWhere(siteId: string) {
@@ -791,7 +786,7 @@ async function tryRecordStagingAuditLog(params: {
 export async function GET(_req: Request, { params }: Params) {
   const authorizedByToken = hasOpsToken(_req);
   const session = await auth();
-  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session);
+  const bootstrapGlobalAccess = await hasBootstrapGlobalAccess(session);
   if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -1055,7 +1050,7 @@ export async function GET(_req: Request, { params }: Params) {
 export async function POST(req: Request, { params }: Params) {
   const authorizedByToken = hasOpsToken(req);
   const session = await auth();
-  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session);
+  const bootstrapGlobalAccess = await hasBootstrapGlobalAccess(session);
   if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isPlatformAdminUser } from "@/lib/rbac";
 import { getDb } from "@/lib/db";
 import { getSiteWorkspace } from "@/lib/repositories";
 import type { SiteWorkspaceRecord } from "@/lib/repositories";
@@ -41,12 +42,6 @@ function buildIdentityMatchers(values: string[]) {
 
 function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
-}
-
-function hasBootstrapGlobalAccess(email?: string | null): boolean {
-  const configured = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const viewer = normalizeEmail(email);
-  return Boolean(configured && viewer && configured === viewer);
 }
 
 function toSiteSlug(value: string): string {
@@ -300,7 +295,7 @@ async function resolveAuthorizedSite(siteId: string, options?: { requireManage?:
     userId: session.user.id,
     email: session.user.email
   });
-  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(session.user.email);
+  const bootstrapGlobalAccess = await isPlatformAdminUser(session.user.id);
 
   const db = await getDb();
   if (!db) {

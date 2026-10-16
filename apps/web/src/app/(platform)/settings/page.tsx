@@ -22,10 +22,6 @@ type SettingsPageProps = {
 
 type SettingsTab = "profile" | "platform" | "security";
 
-function normalizeEmail(value?: string | null) {
-  return value?.trim().toLowerCase() ?? "";
-}
-
 function resolveSettingsTab(value?: string | string[]): SettingsTab {
   const raw = Array.isArray(value) ? value[0] : value;
   if (raw === "platform" || raw === "security") {
@@ -58,10 +54,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   }
 
   const runtime = getRuntimeConfigStatus();
-  const sessionEmail = normalizeEmail(session.user.email);
-  const bootstrapAdminEmail = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const isPlatformAdmin = Boolean(bootstrapAdminEmail && sessionEmail === bootstrapAdminEmail) || (await isPlatformAdminEmail(session.user.email));
-  const canViewDiagnostics = isPlatformAdmin && canAccessRuntimeDiagnostics({ sessionEmail: session.user.email });
+  const isPlatformAdmin = await isPlatformAdminEmail(session.user.email);
+  const canViewDiagnostics = isPlatformAdmin && await canAccessRuntimeDiagnostics({ userId: session.user.id });
   const requestedTab = resolveSettingsTab((await searchParams)?.tab);
   const activeTab = requestedTab === "platform" && !isPlatformAdmin ? "profile" : requestedTab;
 

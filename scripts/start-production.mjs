@@ -20,7 +20,7 @@ function forwardSignal(signal) {
   }
 }
 
-function startBackgroundProcess(label, args, extraEnv = {}) {
+function startBackgroundProcess(label, args, extraEnv = {}, executable = npmCommand) {
   log(`${label}...`);
 
   const env = {
@@ -29,12 +29,12 @@ function startBackgroundProcess(label, args, extraEnv = {}) {
   };
 
   const child = process.platform === "win32"
-    ? spawn(`${npmCommand} ${args.join(" ")}`, {
+    ? spawn(`${executable} ${args.join(" ")}`, {
         stdio: "inherit",
         shell: true,
         env
       })
-    : spawn(npmCommand, args, {
+    : spawn(executable, args, {
         stdio: "inherit",
         env
       });
@@ -110,6 +110,11 @@ try {
   const backupSchedulerEnabled = (process.env.BACKUP_RECONCILE_SCHEDULE_ENABLED || "false").trim().toLowerCase() === "true";
   if (backupSchedulerEnabled) {
     startBackgroundProcess("Starting backup reconcile scheduler", ["run", "ops:backup-reconcile:scheduler"]);
+  }
+
+  const namecheapSyncEnabled = (process.env.NAMECHEAP_SYNC_SCHEDULE_ENABLED || "false").trim().toLowerCase() === "true";
+  if (namecheapSyncEnabled) {
+    startBackgroundProcess("Starting daily Namecheap domain sync", ["./scripts/namecheap-domain-sync-scheduler.mjs"], {}, "node");
   }
 
   // Fast deletion sync. On by default: without it, deleting an app in Coolify

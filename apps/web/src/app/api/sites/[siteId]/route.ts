@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { destroyCoolifyApplication } from "@/lib/coolify";
-import { buildSiteIdentityWhere } from "@/lib/site-identity";
-import { isAdminRole } from "@/lib/roles";
+import { destroyCoolifyApplication, getCoolifyOverview } from "@/lib/coolify";
+import { hasOnlyFields, resolveSiteAccess } from "@/lib/tenant-route-access";
 import {
   normalizeTemporaryDomainSlug,
   resolveTemporaryDomainSuffix
@@ -54,29 +53,6 @@ async function hasTemporaryDomainColumns(db: any): Promise<boolean> {
   }
 }
 
-async function getSiteForUser(siteId: string, userId: string) {
-  const { db } = await import("@/lib/db");
-
-  return db.site.findFirst({
-    where: {
-      ...buildSiteIdentityWhere(siteId),
-      OR: [
-        {
-          organization: {
-            deletedAt: null,
-            OR: [
-              { ownerId: userId },
-              { collaborators: { some: { userId, deletedAt: null } } }
-            ]
-          }
-        },
-        { collaborators: { some: { userId, deletedAt: null } } }
-      ]
-    },
-    include: { organization: { select: { id: true, ownerId: true } } }
-  });
-}
-
 /**
  * GET /api/sites/[siteId]
  */
@@ -90,23 +66,11 @@ export async function GET(_req: Request, { params }: Params) {
 
   try {
     const { db } = await import("@/lib/db");
+    const access = await resolveSiteAccess(siteId, session.user.id);
+    if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const site = await db.site.findFirst({
-      where: {
-        ...buildSiteIdentityWhere(siteId),
-        OR: [
-          {
-            organization: {
-              deletedAt: null,
-              OR: [
-                { ownerId: session.user.id },
-                { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-              ]
-            }
-          },
-          { collaborators: { some: { userId: session.user.id, deletedAt: null } } }
-        ]
-      },
+      where: { id: access.site.id, deletedAt: null },
       select: {
         id: true,
         slug: true,
@@ -190,7 +154,7 @@ export async function GET(_req: Request, { params }: Params) {
 /**
  * PUT /api/sites/[siteId]
  * Updates name/description/coolifyServiceUuid/coolifyProjectId/gitRepositoryUrl/stagingEnabled.
- * Requires owner or admin on the parent organization.
+ * Site/client admins may edit settings; infrastructure bindings are platform-only.
  */
 export async function PUT(req: Request, { params }: Params) {
   const session = await auth();
@@ -216,38 +180,28 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  if (!hasOnlyFields(body, ["name", "description", "coolifyServiceUuid", "coolifyProjectId", "gitRepositoryUrl", "stagingEnabled", "temporaryDomainSlug", "temporaryDomainSuffix"])) {
+    return NextResponse.json({ error: "Unsupported app settings" }, { status: 400 });
+  }
+
   try {
     const { db } = await import("@/lib/db");
 
-    const site = await db.site.findFirst({
-      where: {
-        ...buildSiteIdentityWhere(siteId),
-        organization: {
-          deletedAt: null,
-          OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-        }
-      },
-      select: {
-        id: true,
-        organization: {
-          select: { id: true, ownerId: true, collaborators: { where: { userId: session.user.id }, select: { role: true } } }
-        }
-      }
-    });
-
-    if (!site) {
+    const access = await resolveSiteAccess(siteId, session.user.id);
+    if (!access) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
-
-    const callerIsOwner = site.organization.ownerId === session.user.id;
-    const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
+    const { site } = access;
+    if (!access.isPlatformAdmin && ("coolifyServiceUuid" in body || "coolifyProjectId" in body)) {
+      return NextResponse.json({ error: "Only platform admins can change infrastructure bindings" }, { status: 403 });
+    }
 
     const collaboratorAllowedFields = new Set(["temporaryDomainSlug", "temporaryDomainSuffix"]);
     const requestedFields = Object.keys(body).filter((key) => Object.prototype.hasOwnProperty.call(body, key));
     const collaboratorOnlyUpdate =
       requestedFields.length > 0 && requestedFields.every((field) => collaboratorAllowedFields.has(field));
 
-    if (!callerIsAdmin && !collaboratorOnlyUpdate) {
+    if (!access.isAdmin && !collaboratorOnlyUpdate) {
       return NextResponse.json({ error: "Only admins can update apps" }, { status: 403 });
     }
 
@@ -318,7 +272,7 @@ export async function PUT(req: Request, { params }: Params) {
 
 /**
  * DELETE /api/sites/[siteId]
- * Soft-deletes the site. Requires owner or admin on the parent organization.
+ * Soft-deletes the site. Requires site/client admin or platform authority.
  */
 export async function DELETE(req: Request, { params }: Params) {
   const session = await auth();
@@ -341,30 +295,12 @@ export async function DELETE(req: Request, { params }: Params) {
   try {
     const { db } = await import("@/lib/db");
 
-    const site = await db.site.findFirst({
-      where: {
-        ...buildSiteIdentityWhere(siteId),
-        organization: {
-          deletedAt: null,
-          OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-        }
-      },
-      select: {
-        id: true,
-        coolifyServiceUuid: true,
-        organization: {
-          select: { id: true, ownerId: true, collaborators: { where: { userId: session.user.id }, select: { role: true } } }
-        }
-      }
-    });
-
-    if (!site) {
+    const access = await resolveSiteAccess(siteId, session.user.id);
+    if (!access) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
-
-    const callerIsOwner = site.organization.ownerId === session.user.id;
-    const callerIsAdmin = callerIsOwner || isAdminRole(site.organization.collaborators[0]?.role);
-    if (!callerIsAdmin) {
+    const { site } = access;
+    if (!access.isAdmin) {
       return NextResponse.json({ error: "Only admins can delete apps" }, { status: 403 });
     }
 
@@ -372,6 +308,30 @@ export async function DELETE(req: Request, { params }: Params) {
     let coolifyDeletionMessage: string | undefined;
 
     if (deleteCoolifyResource && site.coolifyServiceUuid?.trim()) {
+      // Legacy tenant-writable bindings are not sufficient authority to destroy
+      // infrastructure. Fail closed on unavailable inventory or project drift;
+      // force only handles provider failures, never an authorization failure.
+      if (!access.isPlatformAdmin) {
+        const overview = await getCoolifyOverview();
+        const resource = overview.sites.find((row) => row.deployTargetId === site.coolifyServiceUuid!.trim());
+        const projectId = site.coolifyProjectId?.trim();
+        const links = projectId ? await db.$queryRaw<Array<{ organizationId: string }>>`
+          select distinct o.id as "organizationId"
+          from "Organization" o
+          left join "OrganizationCoolifyProjectLink" l on l."organizationId" = o.id and l."deletedAt" is null
+          where o."deletedAt" is null
+            and (o."coolifyProjectId" = ${projectId} or l."coolifyProjectId" = ${projectId})
+        ` : [];
+        const conflictingSite = await db.site.findFirst({ where: {
+          deletedAt: null, coolifyServiceUuid: site.coolifyServiceUuid.trim(),
+          id: { not: site.id }
+        }, select: { id: true } });
+        if (overview.mode !== "live" || overview.fetchError || !resource || !projectId ||
+          resource.coolifyProjectId !== projectId || links.length !== 1 ||
+          links[0].organizationId !== site.organization.id || conflictingSite) {
+          return NextResponse.json({ error: "Infrastructure binding could not be verified. Contact a platform admin." }, { status: 409 });
+        }
+      }
       const deletion = await destroyCoolifyApplication(site.coolifyServiceUuid.trim());
       coolifyDestroyed = deletion.ok;
       coolifyDeletionMessage = deletion.message;
@@ -456,3 +416,5 @@ export async function DELETE(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export const PATCH = PUT;

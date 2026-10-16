@@ -3,6 +3,7 @@ import { getCoolifyOverview, type CoolifyOverview } from "./coolify";
 import { recordRepositoryCall } from "./diagnostics";
 import { buildSiteIdentityWhere, isUuid } from "./site-identity";
 import { normalizeRole } from "./roles";
+import { isPlatformAdminUser } from "./rbac";
 import {
   chooseCanonicalDirectoryCandidate,
   resolveLiveWorkspaceIdentity
@@ -15,7 +16,7 @@ export type ViewerContext = {
 
 function getScopedViewerUserId(viewer?: ViewerContext): string | undefined {
   if (!viewer?.userId) {
-    return undefined;
+    return viewer ? "00000000-0000-0000-0000-000000000000" : undefined;
   }
 
   if (isUuid(viewer.userId)) {
@@ -26,7 +27,8 @@ function getScopedViewerUserId(viewer?: ViewerContext): string | undefined {
     "[jongo] Ignoring non-UUID viewer user id while building DB filters.",
     "viewer.userId:", viewer.userId
   );
-  return undefined;
+  // A provided but invalid identity is an empty scope, never a system context.
+  return "00000000-0000-0000-0000-000000000000";
 }
 
 function isPrismaUuidMismatchError(error: unknown): boolean {
@@ -86,19 +88,12 @@ function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
 }
 
-function hasBootstrapGlobalAccess(viewer?: ViewerContext): boolean {
-  const configuredAdmin = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const viewerEmail = normalizeEmail(viewer?.email);
-
-  if (!configuredAdmin || !viewerEmail) {
-    return false;
-  }
-
-  return configuredAdmin === viewerEmail;
+async function hasBootstrapGlobalAccess(viewer?: ViewerContext): Promise<boolean> {
+  return isPlatformAdminUser(viewer?.userId);
 }
 
-function shouldApplyViewerScope(viewer?: ViewerContext): boolean {
-  return Boolean(getScopedViewerUserId(viewer) && !hasBootstrapGlobalAccess(viewer));
+async function shouldApplyViewerScope(viewer?: ViewerContext): Promise<boolean> {
+  return Boolean(viewer && !(await hasBootstrapGlobalAccess(viewer)));
 }
 
 let hasCheckedTemporaryDomainColumns = false;
@@ -421,7 +416,7 @@ function formatLegacyMemberName(member: LegacyMemberRow): string {
 
 async function readLegacyClients(prisma: any, viewer?: ViewerContext): Promise<LegacyClientRow[]> {
   const scopedUserId = getScopedViewerUserId(viewer);
-  const useScope = scopedUserId && !hasBootstrapGlobalAccess(viewer);
+  const useScope = scopedUserId && !(await hasBootstrapGlobalAccess(viewer));
 
   if (useScope) {
     return prisma.$queryRaw`
@@ -476,7 +471,7 @@ async function readLegacyClientProjects(prisma: any, clientId: string): Promise<
 
 async function readLegacySiteDirectory(prisma: any, viewer?: ViewerContext): Promise<SiteDirectoryRecord[]> {
   const scopedUserId = getScopedViewerUserId(viewer);
-  const useScope = scopedUserId && !hasBootstrapGlobalAccess(viewer);
+  const useScope = scopedUserId && !(await hasBootstrapGlobalAccess(viewer));
 
   const rows: Array<{
     id: string;
@@ -824,7 +819,7 @@ export async function getActivityFeed(limit = 6, viewer?: ViewerContext): Promis
   const visibleNames = new Set(visibleSites.map((site) => normalizedKey(site.name)));
   const visibleOrgIds = new Set(visibleSites.map((site) => site.clientDbId).filter((id): id is string => Boolean(id)));
   const clientNameBySiteName = new Map(visibleSites.map((site) => [normalizedKey(site.name), site.clientName]));
-  const scopeApplied = shouldApplyViewerScope(viewer);
+  const scopeApplied = await shouldApplyViewerScope(viewer);
 
   const deploymentItems: ActivityFeedItem[] = overview.deployments
     .filter((deployment) => !scopeApplied || visibleNames.has(normalizedKey(deployment.siteName)))
@@ -952,13 +947,13 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
   const prisma = await maybeGetDb();
 
   if (!prisma) {
-    return shouldApplyViewerScope(viewer) ? [] : fromMockClients();
+    return await shouldApplyViewerScope(viewer) ? [] : fromMockClients();
   }
 
   const scopedUserId = getScopedViewerUserId(viewer);
   const readPrismaOrganizations = async () => {
     const where: any = { deletedAt: null };
-    if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
+    if (scopedUserId && !(await hasBootstrapGlobalAccess(viewer))) {
       where.OR = [
         { ownerId: scopedUserId },
         { collaborators: { some: { userId: scopedUserId, deletedAt: null } } }
@@ -1034,7 +1029,7 @@ async function readRealClientWorkspaces(viewer?: ViewerContext): Promise<ClientW
 
 export async function listClientWorkspaces(viewer?: ViewerContext): Promise<ClientWorkspaceRecord[]> {
   const scopedUserId = getScopedViewerUserId(viewer);
-  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewer);
+  const bootstrapGlobalAccess = await hasBootstrapGlobalAccess(viewer);
   const scopeApplied = Boolean(scopedUserId && !bootstrapGlobalAccess);
 
   try {
@@ -1114,7 +1109,7 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
     const prisma = await maybeGetDb();
 
     if (!prisma) {
-      if (shouldApplyViewerScope(viewer)) {
+      if (await shouldApplyViewerScope(viewer)) {
         return undefined;
       }
 
@@ -1141,7 +1136,7 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
         ...identityFilter
       };
 
-      if (scopedUserId && !hasBootstrapGlobalAccess(viewer)) {
+      if (scopedUserId && !(await hasBootstrapGlobalAccess(viewer))) {
         where.AND = [
           {
             OR: [
@@ -1199,7 +1194,7 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
     }
 
     try {
-      const clientRows: LegacyClientRow[] = scopedUserId && !hasBootstrapGlobalAccess(viewer)
+      const clientRows: LegacyClientRow[] = scopedUserId && !(await hasBootstrapGlobalAccess(viewer))
         ? await prisma.$queryRaw`
         select
           c.id as "id",
@@ -1265,7 +1260,7 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
       "DATABASE_URL present:", !!process.env.DATABASE_URL,
       "Error:", error
     );
-    if (shouldApplyViewerScope(viewer)) {
+    if (await shouldApplyViewerScope(viewer)) {
       return undefined;
     }
 
@@ -1437,7 +1432,7 @@ export async function isClientAdmin(clientDbId: string, userId: string): Promise
 
 export async function listSiteDirectory(viewer?: ViewerContext, preloadedOverview?: CoolifyOverview): Promise<SiteDirectoryRecord[]> {
   const scopedUserId = getScopedViewerUserId(viewer);
-  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewer);
+  const bootstrapGlobalAccess = await hasBootstrapGlobalAccess(viewer);
   const scopeApplied = Boolean(scopedUserId && !bootstrapGlobalAccess);
   let overview = preloadedOverview;
 
@@ -1773,7 +1768,7 @@ export async function listSiteDirectory(viewer?: ViewerContext, preloadedOvervie
 
 export async function getInventorySnapshot(viewer?: ViewerContext): Promise<InventorySnapshot> {
   const scopedUserId = getScopedViewerUserId(viewer);
-  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewer);
+  const bootstrapGlobalAccess = await hasBootstrapGlobalAccess(viewer);
   const scopeApplied = Boolean(scopedUserId && !bootstrapGlobalAccess);
 
   const overview = await getCoolifyOverview();
@@ -1838,7 +1833,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
     const prisma = await maybeGetDb();
     const overview = await getCoolifyOverview();
     const scopedUserId = getScopedViewerUserId(viewer);
-    const scopeApplied = Boolean(scopedUserId && !hasBootstrapGlobalAccess(viewer));
+    const scopeApplied = Boolean(scopedUserId && !(await hasBootstrapGlobalAccess(viewer)));
 
     if (prisma) {
       let dbSite: any = null;
@@ -2143,7 +2138,7 @@ export async function getSiteWorkspace(siteId: string, viewer?: ViewerContext): 
       source: "coolify" as const
     };
   } catch {
-    if (shouldApplyViewerScope(viewer)) {
+    if (await shouldApplyViewerScope(viewer)) {
       return undefined;
     }
 

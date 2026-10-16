@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
-import { checkIsPlatformAdmin, isPlatformAdminEmail } from "@/lib/permissions";
+import { isPlatformAdminEmail } from "@/lib/permissions";
+import { canManagePlatformAdminGrants } from "@/lib/rbac";
 
 /**
  * GET /api/platform/admins
@@ -59,14 +60,14 @@ export async function GET() {
 
   return NextResponse.json({
     admins,
-    canManage: checkIsPlatformAdmin(session.user.email)
+    canManage: await canManagePlatformAdminGrants(session.user.id)
   });
 }
 
 /** POST /api/platform/admins  { email } — seed admin only. */
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user?.id || !checkIsPlatformAdmin(session.user.email)) {
+  if (!(await canManagePlatformAdminGrants(session?.user?.id)) || !session?.user?.id) {
     return NextResponse.json({ error: "Only the seed admin can grant platform admin access" }, { status: 403 });
   }
 

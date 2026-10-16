@@ -75,6 +75,52 @@ export function parseNamecheapDate(value: string | null | undefined): Date | nul
   return date;
 }
 
+export type RegistrarDomain = {
+  domain: string;
+  domainId: string;
+  expiresAt: Date;
+  expired: boolean;
+  autoRenew: boolean;
+};
+
+export type DomainListPage = {
+  domains: RegistrarDomain[];
+  totalItems: number;
+  currentPage: number;
+  pageSize: number;
+};
+
+/** Fail closed: missing/invalid paging must never masquerade as an empty account. */
+export function parseDomainList(xml: string): DomainListPage {
+  const invalid = () => new Error("Invalid Namecheap domain list response.");
+  const list = xml.match(/<DomainGetListResult(?:\s[^>]*)?>([\s\S]*?)<\/DomainGetListResult>/);
+  const emptyList = /<DomainGetListResult(?:\s[^>]*)?\s*\/>/.test(xml);
+  const paging = xml.match(/<Paging(?:\s[^>]*)?>([\s\S]*?)<\/Paging>/)?.[1];
+  if ((!list && !emptyList) || !paging) throw invalid();
+  function integer(name: string, min: number, max = Number.MAX_SAFE_INTEGER): number {
+    const raw = textOf(paging!, name);
+    const value = Number(raw);
+    if (!raw || !/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < min || value > max) throw invalid();
+    return value;
+  }
+  const totalItems = integer("TotalItems", 0);
+  const currentPage = integer("CurrentPage", 1);
+  const pageSize = integer("PageSize", 1, 100);
+  const domains = findTags(list?.[1] ?? "", "Domain").map((tag): RegistrarDomain => {
+    const a = attrs(tag);
+    const domain = (a.Name ?? "").trim().toLowerCase();
+    const expiresAt = parseNamecheapDate(a.Expires);
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(domain) || domain.length > 253 ||
+        !/^\d+$/.test(a.ID ?? "") || !expiresAt || !/^(true|false)$/i.test(a.IsExpired ?? "") || !/^(true|false)$/i.test(a.AutoRenew ?? "")) throw invalid();
+    return { domain, domainId: a.ID, expiresAt, expired: bool(a.IsExpired), autoRenew: bool(a.AutoRenew) };
+  });
+  const offset = (currentPage - 1) * pageSize;
+  if (!Number.isSafeInteger(offset) || (totalItems > 0 && offset >= totalItems) || (totalItems === 0 && currentPage !== 1) ||
+      domains.length !== Math.min(pageSize, Math.max(0, totalItems - offset)) ||
+      new Set(domains.map((d) => d.domain)).size !== domains.length) throw invalid();
+  return { domains, totalItems, currentPage, pageSize };
+}
+
 // ---------------------------------------------------------------------------
 // Pricing
 // ---------------------------------------------------------------------------

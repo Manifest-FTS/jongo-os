@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isPlatformAdminUser } from "@/lib/rbac";
 import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoolifyBackupCapability } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
 import { reconcileStagingTargets, type StagingTargetReconcileResult } from "@/lib/staging-target-reconcile";
@@ -18,21 +19,13 @@ import { notifyBackupEvent } from "@/lib/site-notify";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { syncCoolifyProjectsToOrganizations } from "@/lib/organization-reconcile";
 
-function normalizeEmail(value?: string | null): string {
-  return value?.trim().toLowerCase() ?? "";
-}
-
-function isAuthorized(session: Awaited<ReturnType<typeof auth>>, request: Request): boolean {
+async function isAuthorized(session: Awaited<ReturnType<typeof auth>>, request: Request): Promise<boolean> {
   const reconcileToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const authHeader = request.headers.get("authorization") ?? "";
   const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
   const tokenAuthorized = Boolean(reconcileToken && providedToken && providedToken === reconcileToken);
 
-  const bootstrapAdmin = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const sessionEmail = normalizeEmail(session?.user?.email);
-  const adminSession = Boolean(session?.user?.id && bootstrapAdmin && sessionEmail === bootstrapAdmin);
-
-  return tokenAuthorized || adminSession;
+  return tokenAuthorized || await isPlatformAdminUser(session?.user?.id);
 }
 
 function parseLimit(request: Request): number {
@@ -47,7 +40,7 @@ function parseLimit(request: Request): number {
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!isAuthorized(session, request)) {
+  if (!(await isAuthorized(session, request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

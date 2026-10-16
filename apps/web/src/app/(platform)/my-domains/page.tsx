@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { formatCents } from "@/lib/domain-search";
-import { getDomainViewer } from "@/lib/domain-access";
+import { DOMAIN_CHARGE_FINANCIAL_SELECT, DOMAIN_TECHNICAL_SELECT, getDomainViewer } from "@/lib/domain-access";
 import { getManageableOrganizations, getVisibleOrganizationIds, OPERATION_LABEL } from "@/lib/domain-orders";
 import { CHARGE_STATUS, DNS_STATUS, DOMAIN_STATUS, chargeMargin, chargeRemedies, daysUntil, formatDate, isRevenue, statusOf } from "@/lib/domain-display";
 import RemedyButton from "@/components/RemedyButton";
@@ -38,22 +38,22 @@ export default async function DomainsPage() {
   }
 
   const visible = await getVisibleOrganizationIds(viewer.userId, viewer.isPlatformAdmin);
-  const manageable = await getManageableOrganizations(viewer.userId, viewer.isPlatformAdmin);
+  const manageable = viewer.isSuperAdmin ? await getManageableOrganizations(viewer.userId, viewer.isPlatformAdmin) : [];
   const domains: any[] = await db.domain.findMany({
     where: { deletedAt: null, status: { not: "pending_payment" }, ...(visible ? { organizationId: { in: visible } } : {}) },
-    include: { organization: { select: { name: true } } },
+    select: { ...DOMAIN_TECHNICAL_SELECT, organization: { select: { name: true } } },
     orderBy: [{ expiresAt: "asc" }, { name: "asc" }]
   });
 
-  const charges: any[] = viewer.isPlatformAdmin
+  const charges: any[] = viewer.isSuperAdmin
     ? await db.domainCharge.findMany({
         where: { status: { notIn: ["pending_payment", "expired"] } },
-        include: { domain: { select: { id: true, name: true, organization: { select: { name: true } } } } },
+        select: { ...DOMAIN_CHARGE_FINANCIAL_SELECT, domain: { select: { id: true, name: true, organization: { select: { name: true } } } } },
         orderBy: { createdAt: "desc" },
         take: 200
       })
     : [];
-  const balance = viewer.isPlatformAdmin ? await getBalance().catch(() => null) : null;
+  const balance = viewer.isSuperAdmin ? await getBalance().catch(() => null) : null;
 
   const totals = charges
     .filter((charge) => isRevenue(charge.status))
@@ -132,7 +132,7 @@ export default async function DomainsPage() {
         )}
       </article>
 
-      {viewer.isPlatformAdmin ? (
+      {viewer.isSuperAdmin ? (
         <article className="card">
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
             <h3 className="card-title m-0">Domain billing audit</h3>
