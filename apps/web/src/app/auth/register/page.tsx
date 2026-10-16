@@ -8,33 +8,6 @@ import BrandLogo from "@/components/BrandLogo";
 import SelectedPlanNotice from "@/components/SelectedPlanNotice";
 import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
 import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
-import { ALL_PLANS } from "@/lib/public-plans";
-
-/**
- * Reads `?plan=` off `window.location` instead of `useSearchParams()` so this
- * function can live outside the Suspense boundary that guards the form (see
- * SelectedPlanNotice) without opting the page out of static prerendering.
- */
-async function startCheckoutForSelectedPlan(): Promise<string | null> {
-  const params = new URLSearchParams(window.location.search);
-  const planId = params.get("plan");
-  const interval = params.get("interval") === "annual" ? "annual" : "monthly";
-  if (!planId || !ALL_PLANS.some((plan) => plan.id === planId)) {
-    return null;
-  }
-
-  try {
-    const response = await fetch("/api/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planId, interval })
-    });
-    const payload = await response.json();
-    return response.ok && typeof payload?.url === "string" ? payload.url : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Where to land after signup, e.g. back on the domain order the visitor started. */
 function postSignupPath(): string {
@@ -98,14 +71,7 @@ export default function RegisterPage() {
         return;
       }
 
-      // A plan was carried in from /pricing: send the new account straight to
-      // Stripe Checkout rather than dropping it into the dashboard unpaid.
-      const checkoutUrl = await startCheckoutForSelectedPlan();
-      if (checkoutUrl) {
-        window.location.href = checkoutUrl;
-        return;
-      }
-
+      // New accounts default to collaborator. Signup must never auto-start billing.
       router.push(postSignupPath());
     } catch {
       setLoading(false);

@@ -11,12 +11,14 @@ import PlatformPrimaryNav from "@/components/navigation/PlatformPrimaryNav";
 import SignOutButton from "@/components/auth/SignOutButton";
 import UserAvatar from "@/components/UserAvatar";
 import { NOINDEX } from "@/lib/seo";
+import { isSuperAdminUser } from "@/lib/rbac";
 
 // The signed-in app: never indexed (it is behind sign-in anyway).
 export const metadata = NOINDEX;
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
+  const canViewBilling = await isSuperAdminUser(session?.user?.id);
   const sessionEmail = session?.user?.email ?? "Account";
 
   let email = sessionEmail;
@@ -45,7 +47,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
-        <PlatformPrimaryNav />
+        <PlatformPrimaryNav canViewBilling={canViewBilling} />
       </aside>
 
       <div className="app-main">

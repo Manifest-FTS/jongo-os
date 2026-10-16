@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { buildSiteIdentityWhere } from "@/lib/site-identity";
 import { isSmtpConfigured, sendInviteEmail } from "@/lib/email";
 import {
   buildInviteUrlForInvitation,
@@ -10,7 +9,8 @@ import {
   hashInviteToken,
   isInviteExpired
 } from "@/lib/invitations";
-import { isAdminRole, normalizeRole } from "@/lib/roles";
+import { normalizeRole } from "@/lib/roles";
+import { resolveSiteAccess } from "@/lib/tenant-route-access";
 
 type Params = { params: Promise<{ siteId: string; invitationId: string }> };
 
@@ -37,52 +37,11 @@ function getInvitationStatus(invite: {
 }
 
 async function getAccess(siteId: string, userId: string): Promise<Access | null> {
-  const { db } = await import("@/lib/db");
-  const site = await db.site.findFirst({
-    where: {
-      ...buildSiteIdentityWhere(siteId),
-      deletedAt: null,
-      OR: [
-        {
-          organization: {
-            deletedAt: null,
-            OR: [{ ownerId: userId }, { collaborators: { some: { userId, deletedAt: null } } }]
-          }
-        },
-        { collaborators: { some: { userId, deletedAt: null } } }
-      ]
-    },
-    select: {
-      id: true,
-      name: true,
-      organization: {
-        select: {
-          id: true,
-          ownerId: true,
-          collaborators: {
-            where: { userId },
-            select: { role: true }
-          }
-        }
-      },
-      collaborators: {
-        where: { userId },
-        select: { role: true }
-      }
-    }
-  });
-
-  if (!site) return null;
-
-  const orgAdmin = site.organization.ownerId === userId || isAdminRole(site.organization.collaborators[0]?.role);
-  const siteAdmin = isAdminRole(site.collaborators[0]?.role);
-
-  return {
-    siteId: site.id,
-    siteName: site.name,
-    orgId: site.organization.id,
-    isAdmin: orgAdmin || siteAdmin
-  };
+  const access = await resolveSiteAccess(siteId, userId);
+  return access ? {
+    siteId: access.site.id, siteName: access.site.name,
+    orgId: access.site.organization.id, isAdmin: access.isAdmin
+  } : null;
 }
 
 export async function POST(req: Request, { params }: Params) {

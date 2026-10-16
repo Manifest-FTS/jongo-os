@@ -3,6 +3,8 @@ import { formatCents } from "@/lib/domain-search";
 import { quoteOrder } from "@/lib/domain-orders";
 import { getDomainViewer } from "@/lib/domain-access";
 import type { DomainOperation } from "@/lib/domain-pricing";
+import { auth } from "@/lib/auth.config";
+import { financialAccessDenial } from "@/lib/rbac";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,10 +12,13 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/domains/quote?domain=acme.org&op=register&years=1
  *
- * The client price. Platform admins also get the wholesale cost and margin;
- * nobody else ever sees those.
+ * Authenticated purchase quotes are financial. Public retail price/search
+ * endpoints remain public and never include wholesale or private billing.
  */
 export async function GET(request: Request) {
+  const session = await auth();
+  const denial = await financialAccessDenial(session?.user?.id);
+  if (denial) return denial;
   const url = new URL(request.url);
   const op = url.searchParams.get("op");
   const operation: DomainOperation = op === "renew" || op === "transfer" ? op : "register";
@@ -31,7 +36,7 @@ export async function GET(request: Request) {
     years: quote.years,
     clientCents: quote.clientCents,
     clientDisplay: formatCents(quote.clientCents),
-    ...(viewer?.isPlatformAdmin
+    ...(viewer?.isSuperAdmin
       ? {
           admin: {
             wholesaleCents: quote.wholesaleCents,
@@ -42,5 +47,5 @@ export async function GET(request: Request) {
           }
         }
       : {})
-  });
+  }, { headers: { "Cache-Control": "no-store", Vary: "Cookie" } });
 }

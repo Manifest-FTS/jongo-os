@@ -22,11 +22,13 @@ describe("canRunRemedy", () => {
     }
   });
 
-  it("keeps domain-order remedies to platform admins", () => {
+  it("keeps domain-order remedies financial, not technical platform-admin powers", () => {
     expect(canRunRemedy("retry_domain_order", admin).ok).toBe(false);
     expect(canRunRemedy("refund_domain_order", admin).ok).toBe(false);
-    expect(canRunRemedy("retry_domain_order", platformAdmin)).toEqual({ ok: true });
-    expect(canRunRemedy("refund_domain_order", platformAdmin)).toEqual({ ok: true });
+    expect(canRunRemedy("retry_domain_order", platformAdmin).ok).toBe(false);
+    expect(canRunRemedy("refund_domain_order", platformAdmin).ok).toBe(false);
+    expect(canRunRemedy("retry_domain_order", { canManageBilling: true })).toEqual({ ok: true });
+    expect(canRunRemedy("refund_domain_order", { canManageBilling: true })).toEqual({ ok: true });
   });
 
   it("refuses an unknown action", () => {

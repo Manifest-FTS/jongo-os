@@ -19,9 +19,8 @@ import PublicSiteHeader from "@/components/PublicSiteHeader";
 
 /**
  * Signed-in visitors skip the registration form and go straight through
- * Checkout for their existing account; signed-out visitors still land on
- * /auth/register?plan=, which starts Checkout right after the account is
- * created (see auth/register/page.tsx).
+ * Checkout for their existing account (the server requires a super admin).
+ * Signed-out visitors can create an account, but signup never starts billing.
  */
 function PlanSelectButton({
   plan,
@@ -58,6 +57,11 @@ function PlanSelectButton({
               body: JSON.stringify({ planId: plan.id, interval: isAnnual ? "annual" : "monthly" })
             });
             const payload = await response.json();
+            if (response.status === 403) {
+              showErrorToast("Only a super admin can manage billing. Contact your administrator.");
+              setPending(false);
+              return;
+            }
             if (!response.ok || typeof payload?.url !== "string") {
               showErrorToast(payload?.error || "Could not start checkout. Please try again.");
               setPending(false);

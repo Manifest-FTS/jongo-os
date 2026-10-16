@@ -1,26 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { isAdminRole } from "@/lib/roles";
+import { hasOnlyFields, resolveOrganizationAccess } from "@/lib/tenant-route-access";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
 function normalize(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
-}
-
-async function getOrgForUser(organizationId: string, userId: string) {
-  const { db } = await import("@/lib/db");
-
-  return db.organization.findFirst({
-    where: {
-      id: organizationId,
-      deletedAt: null,
-      OR: [
-        { ownerId: userId },
-        { collaborators: { some: { userId } } }
-      ]
-    }
-  });
 }
 
 /**
@@ -37,16 +22,11 @@ export async function GET(_req: Request, { params }: Params) {
 
   try {
     const { db } = await import("@/lib/db");
+    const access = await resolveOrganizationAccess(organizationId, session.user.id);
+    if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const org = await db.organization.findFirst({
-      where: {
-        id: organizationId,
-        deletedAt: null,
-        OR: [
-          { ownerId: session.user.id },
-          { collaborators: { some: { userId: session.user.id } } }
-        ]
-      },
+      where: { id: access.organization.id, deletedAt: null },
       include: {
         collaborators: { where: { deletedAt: null }, include: { user: { select: { id: true, email: true, fullName: true } } } },
         _count: { select: { sites: true } }
@@ -145,31 +125,22 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  if (!hasOnlyFields(body, ["name", "description", "coolifyProjectId", "coolifyProjectName"])) {
+    return NextResponse.json({ error: "Unsupported client settings" }, { status: 400 });
+  }
+
   try {
     const { db } = await import("@/lib/db");
 
-    const org = await db.organization.findFirst({
-      where: {
-        id: organizationId,
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      },
-      include: {
-        collaborators: {
-          where: { userId: session.user.id },
-          select: { role: true }
-        }
-      }
-    });
-
-    if (!org) {
+    const access = await resolveOrganizationAccess(organizationId, session.user.id);
+    if (!access) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
-
-    const callerIsOwner = org.ownerId === session.user.id;
-    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
-    if (!callerIsAdmin) {
+    if (!access.isAdmin) {
       return NextResponse.json({ error: "Only admins can update client settings" }, { status: 403 });
+    }
+    if (!access.isPlatformAdmin && ("coolifyProjectId" in body || "coolifyProjectName" in body)) {
+      return NextResponse.json({ error: "Only platform admins can change infrastructure bindings" }, { status: 403 });
     }
 
     const name = body.name?.trim();
@@ -279,13 +250,12 @@ export async function DELETE(_req: Request, { params }: Params) {
   const { organizationId } = await params;
 
   try {
-    const org = await getOrgForUser(organizationId, session.user.id);
-
-    if (!org) {
+    const access = await resolveOrganizationAccess(organizationId, session.user.id);
+    if (!access) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (org.ownerId !== session.user.id) {
+    if (!access.isPlatformAdmin && access.organization.ownerId !== session.user.id) {
       return NextResponse.json({ error: "Only the owner can delete an organization" }, { status: 403 });
     }
 
@@ -298,3 +268,5 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export const PATCH = PUT;

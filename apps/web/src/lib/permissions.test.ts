@@ -66,6 +66,10 @@ describe("getPermissions", () => {
     for (const [name, value] of Object.entries(admin)) {
       if (name === "isCollaborator") continue;
       if (name === "isPlatformAdmin") continue;
+      if (name === "canViewBilling" || name === "canManageBilling") {
+        expect(value).toBe(false);
+        continue;
+      }
       expect(value, `admin should have ${name}`).toBe(true);
     }
   });
@@ -130,9 +134,9 @@ describe("isPlatformAdminEmail", () => {
     process.env.BOOTSTRAP_ADMIN_EMAIL = originalBootstrap;
   });
 
-  it("short-circuits true for the seed admin without needing the database", async () => {
+  it("fails closed even for the seed admin without a live DB identity", async () => {
     process.env.BOOTSTRAP_ADMIN_EMAIL = "admin@example.com";
-    await expect(isPlatformAdminEmail("admin@example.com")).resolves.toBe(true);
+    await expect(isPlatformAdminEmail("admin@example.com")).resolves.toBe(false);
   });
 
   it("is false for a non-seed email when the database is unavailable", async () => {

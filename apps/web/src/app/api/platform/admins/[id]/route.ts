@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
-import { checkIsPlatformAdmin } from "@/lib/permissions";
+import { canManagePlatformAdminGrants } from "@/lib/rbac";
 
 type Params = { params: Promise<{ id: string }> };
 
 /** DELETE /api/platform/admins/[id] — revoke a granted platform admin. Seed admin only; the seed itself has no row to delete. */
 export async function DELETE(_req: Request, { params }: Params) {
   const session = await auth();
-  if (!session?.user?.id || !checkIsPlatformAdmin(session.user.email)) {
+  if (!(await canManagePlatformAdminGrants(session?.user?.id))) {
     return NextResponse.json({ error: "Only the seed admin can revoke platform admin access" }, { status: 403 });
   }
 

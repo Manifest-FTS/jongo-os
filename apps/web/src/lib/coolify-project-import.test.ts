@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMocks = vi.hoisted(() => ({
   organizationFindFirst: vi.fn(),
@@ -149,6 +149,7 @@ const { importLinkedCoolifyProjectSites } = await vi.importActual<
 import { POST as backupReconcilePOST } from "../app/api/ops/backup-reconcile/route";
 
 describe("importLinkedCoolifyProjectSites", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
     routeMocks.auth.mockResolvedValue({ user: { id: "admin-1", email: "admin@example.com" } });
@@ -304,7 +305,8 @@ describe("importLinkedCoolifyProjectSites", () => {
   });
 
   it("runs the linked Coolify project import during the hourly reconcile pass", async () => {
-    process.env.BOOTSTRAP_ADMIN_EMAIL = "admin@example.com";
+    // The hourly scheduler uses machine auth, not a bootstrap-email session.
+    vi.stubEnv("BACKUP_RECONCILE_TOKEN", "test-reconcile-token");
     dbMocks.organizationFindMany.mockResolvedValue([{ id: "org-1" }, { id: "org-2" }]);
     routeMocks.importLinkedCoolifyProjectSites.mockResolvedValue({
       linkedProjectCount: 1,
@@ -322,7 +324,9 @@ describe("importLinkedCoolifyProjectSites", () => {
       note: "already_configured"
     });
 
-    const response = await backupReconcilePOST(new Request("http://localhost/api/ops/backup-reconcile"));
+    const response = await backupReconcilePOST(new Request("http://localhost/api/ops/backup-reconcile", {
+      headers: { authorization: "Bearer test-reconcile-token" }
+    }));
     const payload = await response.json();
 
     expect(response.status).toBe(200);

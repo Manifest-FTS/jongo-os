@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { isAdminRole, normalizeRole } from "@/lib/roles";
+import { normalizeRole } from "@/lib/roles";
+import { hasOnlyFields, isTenantMutationRole, resolveOrganizationAccess } from "@/lib/tenant-route-access";
 
 type Params = { params: Promise<{ organizationId: string; collaboratorId: string }> };
 
@@ -24,36 +25,21 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const role = normalizeRole(body.role);
-  if (!["admin", "collaborator"].includes(role)) {
+  if (!hasOnlyFields(body, ["role"]) || !isTenantMutationRole(body.role)) {
     return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
   }
+  const role = normalizeRole(body.role);
 
   try {
     const { db } = await import("@/lib/db");
 
     // Caller must be owner or admin
-    const org = await db.organization.findFirst({
-      where: {
-        id: organizationId,
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      },
-      include: {
-        collaborators: {
-          where: { userId: session.user.id },
-          select: { role: true }
-        }
-      }
-    });
-
-    if (!org) {
+    const access = await resolveOrganizationAccess(organizationId, session.user.id);
+    if (!access) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
 
-    const callerIsOwner = org.ownerId === session.user.id;
-    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
-    if (!callerIsAdmin) {
+    if (!access.isAdmin) {
       return NextResponse.json({ error: "Only admins can change roles" }, { status: 403 });
     }
 
@@ -66,7 +52,7 @@ export async function PUT(req: Request, { params }: Params) {
     }
 
     const updated = await db.collaborator.update({
-      where: { id: collaboratorId },
+      where: { id: collaboratorId, organizationId },
       data: { role }
     });
 
@@ -93,27 +79,13 @@ export async function DELETE(_req: Request, { params }: Params) {
   try {
     const { db } = await import("@/lib/db");
 
-    const org = await db.organization.findFirst({
-      where: {
-        id: organizationId,
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      },
-      include: {
-        collaborators: {
-          where: { userId: session.user.id },
-          select: { role: true }
-        }
-      }
-    });
-
-    if (!org) {
+    const access = await resolveOrganizationAccess(organizationId, session.user.id);
+    if (!access) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
 
-    const callerIsOwner = org.ownerId === session.user.id;
-    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
-    if (!callerIsAdmin) {
+    const org = access.organization;
+    if (!access.isAdmin) {
       return NextResponse.json({ error: "Only admins can remove collaborators" }, { status: 403 });
     }
 

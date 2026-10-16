@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import type { SiteWorkspaceRecord, ViewerContext } from "@/lib/repositories";
 import { isClientAdmin } from "@/lib/repositories";
 import { isAdminRole, normalizeRole } from "@/lib/roles";
+import { canManageBilling, canViewBilling, isPlatformAdminUser, resolvePrincipal } from "@/lib/rbac";
 
 export interface AppCapabilities {
   hasWordPress: boolean;
@@ -27,6 +28,9 @@ export type CanonicalRole = "admin" | "collaborator";
  * out credentials.
  */
 export interface UserPermissions {
+  /** Financial policies come from rbac.ts, never tenant role/platform grant. */
+  canViewBilling: boolean;
+  canManageBilling: boolean;
   isPlatformAdmin: boolean;
   isAdmin: boolean;
   isCollaborator: boolean;
@@ -154,26 +158,24 @@ export function checkIsPlatformAdmin(
 }
 
 /**
- * The full admin check: the env-configured seed admin, OR anyone the seed
- * admin has granted platform-admin access to via PlatformAdmin. Async
- * because the grant list lives in the database; checkIsPlatformAdmin above
- * stays synchronous and seed-only for call sites that only need that one
- * fast, DB-free check (e.g. "may this caller manage the admin list itself").
+ * Compatibility adapter for technical access. Resolve a live DB identity and
+ * its current global role/grant; email/JWT data alone never grants access.
+ * checkIsPlatformAdmin is only a seed configuration comparison, not a guard.
  */
 export async function isPlatformAdminEmail(userEmail?: string | null): Promise<boolean> {
-  if (checkIsPlatformAdmin(userEmail)) return true;
-
   const normalized = normalizeEmail(userEmail);
   if (!normalized) return false;
-
-  const db = await getDb();
-  if (!db) return false;
-
-  const grant = await db.platformAdmin.findFirst({
-    where: { user: { email: { equals: normalized, mode: "insensitive" } } },
-    select: { id: true }
-  });
-  return Boolean(grant);
+  try {
+    const db = await getDb();
+    if (!db) return false;
+    const user = await db.user.findFirst({
+      where: { email: { equals: normalized, mode: "insensitive" }, deletedAt: null },
+      select: { id: true }
+    });
+    return user ? await isPlatformAdminUser(user.id) : false;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -212,6 +214,8 @@ export function getPermissions(callerRole: unknown, isPlatformAdmin = false): Us
   const isAdmin = role === "admin" || isPlatformAdmin;
 
   return {
+    canViewBilling: false,
+    canManageBilling: false,
     isPlatformAdmin,
     isAdmin,
     isCollaborator: !isAdmin,
@@ -257,7 +261,17 @@ export async function resolveSitePermissionSnapshot(
   input: ResolveSitePermissionInput
 ): Promise<SitePermissionSnapshot> {
   const userId = input.viewer?.userId?.trim();
-  const isPlatformAdmin = await isPlatformAdminEmail(input.viewer?.email);
+  const principal = await resolvePrincipal(userId);
+  const isPlatformAdmin = principal?.isPlatformAdmin === true;
+  if (!principal) {
+    // A stale/deleted identity must not retain capabilities via membership rows.
+    const denied = getPermissions("collaborator");
+    for (const key of Object.keys(denied) as Array<keyof UserPermissions>) denied[key] = false;
+    return {
+      ...denied, isCollaborator: true, role: "collaborator",
+      canViewInternalMetadata: false, canManageTelemetry: false, canManageDomains: false
+    };
+  }
 
   const canViewInternalMetadata = Boolean(
     userId && input.workspace.organizationId && (await isClientAdmin(input.workspace.organizationId, userId))
@@ -337,6 +351,8 @@ export async function resolveSitePermissionSnapshot(
 
   return {
     ...permissions,
+    canViewBilling: canViewBilling(principal),
+    canManageBilling: canManageBilling(principal),
     role,
     canViewInternalMetadata,
     // The telemetry API has always required an admin; this said otherwise, so a

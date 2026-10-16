@@ -91,6 +91,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // This exact endpoint authenticates a dedicated machine token or a fresh
+  // super-admin identity in its own handler. Never exempt all /api/ops paths.
+  if (pathname === "/api/ops/domains-sync-namecheap") {
+    return NextResponse.next();
+  }
+
   // Allow unauthenticated access when NEXTAUTH_SECRET is not set (dev / no-auth mode)
   if (!process.env.NEXTAUTH_SECRET || process.env.NEXTAUTH_SECRET === "dev-secret-change-in-production") {
     return NextResponse.next();

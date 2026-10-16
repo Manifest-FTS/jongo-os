@@ -9,7 +9,8 @@ import {
   hashInviteToken,
   isInviteExpired
 } from "@/lib/invitations";
-import { isAdminRole, normalizeRole } from "@/lib/roles";
+import { normalizeRole } from "@/lib/roles";
+import { resolveOrganizationAccess } from "@/lib/tenant-route-access";
 
 type Params = { params: Promise<{ organizationId: string; invitationId: string }> };
 
@@ -29,32 +30,16 @@ function getInvitationStatus(invite: {
 }
 
 async function ensureAdminAccess(organizationId: string, userId: string) {
-  const { db } = await import("@/lib/db");
-  const org = await db.organization.findFirst({
-    where: {
-      id: organizationId,
-      deletedAt: null,
-      OR: [{ ownerId: userId }, { collaborators: { some: { userId } } }]
-    },
-    include: {
-      collaborators: {
-        where: { userId },
-        select: { role: true }
-      }
-    }
-  });
-
-  if (!org) {
+  const access = await resolveOrganizationAccess(organizationId, userId);
+  if (!access) {
     return { ok: false as const, status: 404, error: "Not found" };
   }
 
-  const callerIsOwner = org.ownerId === userId;
-  const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
-  if (!callerIsAdmin) {
+  if (!access.isAdmin) {
     return { ok: false as const, status: 403, error: "Only admins can manage invites" };
   }
 
-  return { ok: true as const, orgName: org.name };
+  return { ok: true as const, orgName: access.organization.name };
 }
 
 export async function POST(req: Request, { params }: Params) {

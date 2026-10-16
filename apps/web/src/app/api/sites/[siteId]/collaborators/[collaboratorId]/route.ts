@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { buildSiteIdentityWhere } from "@/lib/site-identity";
-import { isAdminRole, normalizeRole } from "@/lib/roles";
+import { normalizeRole } from "@/lib/roles";
+import { hasOnlyFields, isTenantMutationRole, resolveSiteAccess } from "@/lib/tenant-route-access";
 
 type Params = { params: Promise<{ siteId: string; collaboratorId: string }> };
 
@@ -11,47 +11,8 @@ type CallerAccess = {
 };
 
 async function getCallerAccess(siteId: string, userId: string): Promise<CallerAccess | null> {
-  const { db } = await import("@/lib/db");
-
-  const site = await db.site.findFirst({
-    where: {
-      ...buildSiteIdentityWhere(siteId),
-      deletedAt: null,
-      organization: {
-        deletedAt: null,
-        OR: [{ ownerId: userId }, { collaborators: { some: { userId } } }]
-      }
-    },
-    select: {
-      id: true,
-      organization: {
-        select: {
-          id: true,
-          ownerId: true,
-          collaborators: {
-            where: { userId },
-            select: { role: true }
-          }
-        }
-      },
-      collaborators: {
-        where: { userId },
-        select: { role: true }
-      }
-    }
-  });
-
-  if (!site) {
-    return null;
-  }
-
-  const orgAdmin = site.organization.ownerId === userId || isAdminRole(site.organization.collaborators[0]?.role);
-  const siteAdmin = isAdminRole(site.collaborators[0]?.role);
-
-  return {
-    siteId: site.id,
-    callerRole: orgAdmin || siteAdmin ? "admin" : "collaborator"
-  };
+  const access = await resolveSiteAccess(siteId, userId);
+  return access ? { siteId: access.site.id, callerRole: access.isAdmin ? "admin" : "collaborator" } : null;
 }
 
 export async function PUT(req: Request, { params }: Params) {
@@ -69,6 +30,9 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  if (!hasOnlyFields(body, ["role"]) || !isTenantMutationRole(body.role)) {
+    return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
+  }
   const requestedRole = normalizeRole(body.role);
 
   try {
@@ -91,7 +55,7 @@ export async function PUT(req: Request, { params }: Params) {
     }
 
     const updated = await db.siteCollaborator.update({
-      where: { id: collaboratorId },
+      where: { id: collaboratorId, siteId: access.siteId },
       data: { role: requestedRole }
     });
 
@@ -121,7 +85,10 @@ export async function DELETE(_req: Request, { params }: Params) {
     }
 
     const { db } = await import("@/lib/db");
-    await db.siteCollaborator.delete({ where: { id: collaboratorId } });
+    const deleted = await db.siteCollaborator.deleteMany({ where: { id: collaboratorId, siteId: access.siteId } });
+    if (!deleted.count) {
+      return NextResponse.json({ error: "Collaborator not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {

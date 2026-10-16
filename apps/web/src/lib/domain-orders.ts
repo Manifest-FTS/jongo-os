@@ -20,6 +20,7 @@
  */
 
 import { getDb } from "@/lib/db";
+import { isSuperAdminUser } from "@/lib/rbac";
 import { getStripeClient } from "@/lib/stripe";
 import { formatCents, parseDomain, type ParsedDomain } from "@/lib/domain-search";
 import { quoteDomain, readMarkupPercent, type DomainOperation, type DomainQuote } from "@/lib/domain-pricing";
@@ -139,6 +140,9 @@ export type CheckoutOutcome =
   | { ok: false; status: number; message: string; fieldErrors?: Record<string, string> };
 
 export async function startDomainCheckout(input: CheckoutInput): Promise<CheckoutOutcome> {
+  if (!(await isSuperAdminUser(input.userId))) {
+    return { ok: false, status: 403, message: "Only super admins can purchase domains." };
+  }
   const db: any = await getDb();
   if (!db) return { ok: false, status: 503, message: "The database is unavailable." };
 
@@ -195,10 +199,10 @@ export async function startDomainCheckout(input: CheckoutInput): Promise<Checkou
       ? existing
       : await db.domain.update({
           where: { id: existing.id },
-          data: { organizationId: input.organizationId, status: "pending_payment", lastError: null, deletedAt: null }
+          data: { organizationId: input.organizationId, status: "pending_payment", dnsManagementEnabled: true, lastError: null, deletedAt: null }
         })
     : await db.domain.create({
-        data: { organizationId: input.organizationId, name: domain.domain, status: "pending_payment", createdById: input.userId }
+        data: { organizationId: input.organizationId, name: domain.domain, status: "pending_payment", dnsManagementEnabled: true, createdById: input.userId }
       });
 
   const charge = await db.domainCharge.create({
@@ -451,7 +455,9 @@ export async function provisionDomainDns(domainId: string): Promise<void> {
   const db: any = await getDb();
   if (!db) return;
   const row = await db.domain.findUnique({ where: { id: domainId } });
-  if (!row || row.status !== "active") return;
+  // Inventory imports and client assignment are not consent to change DNS.
+  // Fail closed before even recording DNS errors or consulting providers.
+  if (!row || row.deletedAt || row.status !== "active" || row.dnsManagementEnabled !== true) return;
 
   if (!isCloudflareConfigured()) {
     await db.domain.update({ where: { id: domainId }, data: { dnsStatus: "pending", lastError: "DNS is waiting for Cloudflare to be connected." } });
@@ -560,9 +566,10 @@ export async function reconcileDomains(): Promise<DomainReconcileResult> {
     }
   }
 
-  // DNS not set up yet, or waiting for Cloudflare to see the new nameservers.
+  // Only enrolled domains: imported inventory must never trigger DNS setup,
+  // including after it is assigned to a client or has a zone mapped to it.
   for (const row of await db.domain.findMany({
-    where: { status: "active", deletedAt: null, OR: [{ cloudflareZoneId: null }, { dnsStatus: { in: ["pending", "error"] } }] },
+    where: { status: "active", deletedAt: null, dnsManagementEnabled: true, OR: [{ cloudflareZoneId: null }, { dnsStatus: { in: ["pending", "error"] } }] },
     take: 10
   })) {
     if (!row.cloudflareZoneId || row.dnsStatus === "error") {

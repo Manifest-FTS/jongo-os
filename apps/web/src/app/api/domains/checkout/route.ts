@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { startDomainCheckout } from "@/lib/domain-orders";
 import { getDomainViewer } from "@/lib/domain-access";
+import { financialAccessDenial } from "@/lib/rbac";
 import type { DomainOperation } from "@/lib/domain-pricing";
 
 export const runtime = "nodejs";
@@ -21,6 +22,8 @@ function origin(request: Request): string {
 export async function POST(request: Request) {
   const viewer = await getDomainViewer();
   if (!viewer) return NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 });
+  const denial = await financialAccessDenial(viewer.userId);
+  if (denial) return denial;
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const op = body.operation;

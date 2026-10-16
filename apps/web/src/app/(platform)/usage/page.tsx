@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
 import { isPlatformAdminEmail } from "@/lib/permissions";
+import { isSuperAdminUser } from "@/lib/rbac";
 import { getUsageReport, getVisibleSiteIds, type UsageRow } from "@/lib/usage-store";
 import {
   averageCores,
@@ -99,6 +100,7 @@ export default async function UsagePage({ searchParams }: Params) {
   const days = parseWindow(sp.window);
   const session = await auth();
   const isPlatformAdmin = await isPlatformAdminEmail(session?.user?.email);
+  const canViewCosts = await isSuperAdminUser(session?.user?.id);
   const visible = await getVisibleSiteIds({ userId: session?.user?.id, isPlatformAdmin });
 
   // Filter options come from the apps this viewer can see.
@@ -150,8 +152,8 @@ export default async function UsagePage({ searchParams }: Params) {
   // split by each row's share of memory in use (RAM is what fills a shared
   // Docker host first). Allocating by share of USED memory means the rows sum
   // to the whole bill; idle capacity is shown separately on the server card.
-  const monthlyCost = Number(process.env.USAGE_HOST_MONTHLY_COST_USD || "") || 0;
-  const windowCost = isPlatformAdmin && monthlyCost > 0 ? monthlyCost * (coveredHours / 730) : 0;
+  const monthlyCost = canViewCosts ? Number(process.env.USAGE_HOST_MONTHLY_COST_USD || "") || 0 : 0;
+  const windowCost = canViewCosts && monthlyCost > 0 ? monthlyCost * (coveredHours / 730) : 0;
   const memInUse = rows.reduce((a, r) => a + r.memAvgBytes, 0);
   const costFor = (memAvg: number) => (windowCost > 0 && memInUse > 0 ? windowCost * (memAvg / memInUse) : null);
 

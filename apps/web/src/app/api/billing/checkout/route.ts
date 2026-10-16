@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { financialAccessDenial } from "@/lib/rbac";
 import { ensureStripePrice, findPlan, getStripeClient, type BillingInterval } from "@/lib/stripe";
 
 function baseUrl(): string {
@@ -17,9 +18,9 @@ function baseUrl(): string {
  */
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denial = await financialAccessDenial(session?.user?.id);
+  if (denial) return denial;
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: { planId?: string; interval?: string };
   try {

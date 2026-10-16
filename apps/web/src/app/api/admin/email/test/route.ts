@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!canAccessRuntimeDiagnostics({ sessionEmail: session.user.email })) {
+  if (!(await canAccessRuntimeDiagnostics({ userId: session.user.id }))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

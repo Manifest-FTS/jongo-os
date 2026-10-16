@@ -1,33 +1,19 @@
 import { auth } from "@/lib/auth.config";
+import { isPlatformAdminUser } from "@/lib/rbac";
 import { getRuntimeDiagnosticsSnapshot } from "@/lib/diagnostics";
 import { getInventorySnapshot, listClientWorkspaces } from "@/lib/repositories";
 
-function normalizeEmail(value?: string | null): string {
-  return value?.trim().toLowerCase() ?? "";
-}
-
-export function canAccessRuntimeDiagnostics(args: {
-  sessionEmail?: string | null;
+export async function canAccessRuntimeDiagnostics(args: {
+  userId?: string | null;
   bearerToken?: string;
-}): boolean {
-  const isDev = process.env.NODE_ENV !== "production";
-  if (isDev) {
-    return true;
-  }
-
-  const bootstrapAdmin = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const requestEmail = normalizeEmail(args.sessionEmail);
-  if (bootstrapAdmin && requestEmail && bootstrapAdmin === requestEmail) {
-    return true;
-  }
-
+}): Promise<boolean> {
   const configuredToken = process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const providedToken = args.bearerToken?.trim();
   if (configuredToken && providedToken && configuredToken === providedToken) {
     return true;
   }
 
-  return false;
+  return isPlatformAdminUser(args.userId);
 }
 
 export async function runRuntimeDiagnosticsProbe() {

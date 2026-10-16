@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getDomainViewer } from "@/lib/domain-access";
 import { getManageableOrganizations } from "@/lib/domain-orders";
 import { isRegistrarConfigured } from "@/lib/registrar";
@@ -24,7 +25,8 @@ function EmptyState({ title, body }: { title: string; body: string }) {
 export default async function NewDomainPage({ searchParams }: Params) {
   const sp = (await searchParams) ?? {};
   const viewer = await getDomainViewer();
-  const organizations = viewer ? await getManageableOrganizations(viewer.userId, viewer.isPlatformAdmin) : [];
+  if (!viewer?.isSuperAdmin) notFound();
+  const organizations = await getManageableOrganizations(viewer.userId, viewer.isPlatformAdmin);
 
   return (
     <div className="flex flex-col gap-6 max-w-[1120px]">
@@ -52,8 +54,8 @@ export default async function NewDomainPage({ searchParams }: Params) {
         <EmptyState title="Domain ordering isn't connected yet" body="Ask your Jongo administrator to finish setting up domain registration." />
       ) : organizations.length === 0 ? (
         <EmptyState
-          title="Only a client's admins can buy domains"
-          body="Ask an admin on your client account to order the domain, or to make you an admin."
+          title="No client available for this order"
+          body="Create a client account before ordering a domain."
         />
       ) : (
         <DomainOrderForm
@@ -61,7 +63,7 @@ export default async function NewDomainPage({ searchParams }: Params) {
           initialDomain={first(sp.domain)}
           initialOperation={first(sp.op) === "transfer" ? "transfer" : "register"}
           defaultEmail={viewer?.email ?? ""}
-          showWholesale={Boolean(viewer?.isPlatformAdmin)}
+          showWholesale={viewer.isSuperAdmin}
         />
       )}
     </div>

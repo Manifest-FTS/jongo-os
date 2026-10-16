@@ -17,6 +17,8 @@ const navItems: NavItem[] = [
   { href: "/clients", label: "Clients", icon: BuildingOfficeIcon, match: "prefix" },
   { href: "/apps", label: "Apps", icon: ServerIcon, match: "prefix" },
   { href: "/my-domains", label: "Domains", icon: GlobeIcon, match: "prefix" },
+  { href: "/managed-domains", label: "Managed domains", icon: GlobeIcon, match: "prefix" },
+  { href: "/client-billing", label: "Client billing", icon: ChartBarIcon, match: "prefix" },
   { href: "/usage", label: "Usage", icon: ChartBarIcon, match: "prefix" },
   { href: "/settings", label: "Settings", icon: SettingsIcon, match: "prefix" },
   { href: "/notifications", label: "Notifications", icon: BellIcon, match: "prefix" }
@@ -30,13 +32,13 @@ function isItemActive(pathname: string, item: NavItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-export default function PlatformPrimaryNav() {
+export default function PlatformPrimaryNav({ canViewBilling = false }: { canViewBilling?: boolean }) {
   const pathname = usePathname() ?? "";
 
   return (
     <nav className="app-nav card" aria-label="Primary navigation">
       <div className="app-nav-items">
-        {navItems.map((item) => {
+        {navItems.filter((item) => item.href !== "/client-billing" || canViewBilling).map((item) => {
           const active = isItemActive(pathname, item);
 
           return (

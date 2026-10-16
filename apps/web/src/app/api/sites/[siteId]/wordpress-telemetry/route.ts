@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { isPlatformAdminEmail } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getWordPressTelemetrySnapshot } from "@/lib/wordpress-telemetry";
@@ -36,10 +37,8 @@ function normalizeEmail(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
 }
 
-function hasBootstrapGlobalAccess(email?: string | null): boolean {
-  const configured = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const viewer = normalizeEmail(email);
-  return Boolean(configured && viewer && configured === viewer);
+async function hasBootstrapGlobalAccess(email?: string | null): Promise<boolean> {
+  return isPlatformAdminEmail(email);
 }
 
 function toSiteSlug(value: string): string {
@@ -290,7 +289,7 @@ async function resolveAuthorizedSiteDbId(
     .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
 
   const identityMatchers = buildIdentityMatchers(identifiers);
-  const bootstrapGlobalAccess = hasBootstrapGlobalAccess(viewerEmail);
+  const bootstrapGlobalAccess = await hasBootstrapGlobalAccess(viewerEmail);
 
   const site = await db.site.findFirst({
     where: {

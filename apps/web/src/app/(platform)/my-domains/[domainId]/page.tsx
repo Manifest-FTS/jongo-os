@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { formatCents } from "@/lib/domain-search";
-import { getDomainViewer, loadDomainForViewer } from "@/lib/domain-access";
+import { DOMAIN_CHARGE_FINANCIAL_SELECT, getDomainViewer, loadDomainForViewer } from "@/lib/domain-access";
 import { OPERATION_LABEL } from "@/lib/domain-orders";
 import { CHARGE_STATUS, DNS_STATUS, DOMAIN_STATUS, chargeMargin, daysUntil, formatDate, isRevenue, statusOf } from "@/lib/domain-display";
 import type { DomainOperation } from "@/lib/domain-pricing";
@@ -27,17 +27,22 @@ export default async function DomainDetailPage({ params, searchParams }: Params)
   if (!viewer || !found) notFound();
 
   const db: any = await getDb();
+  if (!db) notFound();
   const domain = found.domain;
   const [organization, charges] = await Promise.all([
-    db.organization.findUnique({ where: { id: domain.organizationId }, select: { name: true } }),
-    db.domainCharge.findMany({ where: { domainId: domain.id, status: { not: "pending_payment" } }, orderBy: { createdAt: "desc" } })
+    domain.organizationId ? db.organization.findUnique({ where: { id: domain.organizationId }, select: { name: true } }) : null,
+    viewer.isSuperAdmin ? db.domainCharge.findMany({
+      where: { domainId: domain.id, status: { not: "pending_payment" } },
+      select: DOMAIN_CHARGE_FINANCIAL_SELECT,
+      orderBy: { createdAt: "desc" }
+    }) : []
   ]);
 
   const status = statusOf(DOMAIN_STATUS, domain.status);
   const dns = domain.dnsStatus ? statusOf(DNS_STATUS, domain.dnsStatus) : null;
   const days = daysUntil(domain.expiresAt);
   const inFlight = ["registering", "transfer_pending", "pending_payment"].includes(domain.status) || charges.some((c: any) => ["paid", "fulfilling"].includes(c.status));
-  const justPaid = (Array.isArray(sp.checkout) ? sp.checkout[0] : sp.checkout) === "success";
+  const justPaid = viewer.isSuperAdmin && (Array.isArray(sp.checkout) ? sp.checkout[0] : sp.checkout) === "success";
 
   return (
     <div className="page-stack">
@@ -102,11 +107,11 @@ export default async function DomainDetailPage({ params, searchParams }: Params)
         <p className="m-0 px-3 py-2 rounded-lg border border-solid border-warn-border bg-warn-bg text-warn-text text-[0.86rem]">{domain.lastError}</p>
       ) : null}
 
-      {found.canManage && ["active", "expired"].includes(domain.status) ? <RenewDomainPanel domain={domain.name} organizationId={domain.organizationId} /> : null}
+      {viewer.isSuperAdmin && found.canManage && domain.organizationId && ["active", "expired"].includes(domain.status) ? <RenewDomainPanel domain={domain.name} organizationId={domain.organizationId} /> : null}
 
       <DnsRecordsPanel domainId={domain.id} zoneName={domain.name} canManage={found.canManage} zoneReady={Boolean(domain.cloudflareZoneId)} />
 
-      <article className="card">
+      {viewer.isSuperAdmin ? <article className="card">
         <h3 className="card-title m-0">Billing history</h3>
         {charges.length === 0 ? (
           <p className="card-muted mt-2 mb-0">No charges yet.</p>
@@ -118,7 +123,7 @@ export default async function DomainDetailPage({ params, searchParams }: Params)
                   <th className="font-semibold py-2 pr-3">Date</th>
                   <th className="font-semibold py-2 pr-3">Order</th>
                   <th className="font-semibold py-2 pr-3 text-right">Paid</th>
-                  {viewer.isPlatformAdmin ? (
+                  {viewer.isSuperAdmin ? (
                     <>
                       <th className="font-semibold py-2 pr-3 text-right">Namecheap cost</th>
                       <th className="font-semibold py-2 pr-3 text-right">Margin</th>
@@ -138,7 +143,7 @@ export default async function DomainDetailPage({ params, searchParams }: Params)
                         {OPERATION_LABEL[charge.operation as DomainOperation] ?? charge.operation} · {charge.years} yr
                       </td>
                       <td className="py-2 pr-3 text-right">{formatCents(charge.clientCents)}</td>
-                      {viewer.isPlatformAdmin ? (
+                      {viewer.isSuperAdmin ? (
                         <>
                           <td className="py-2 pr-3 text-right">
                             {formatCents(costCents)}
@@ -158,7 +163,7 @@ export default async function DomainDetailPage({ params, searchParams }: Params)
             </table>
           </div>
         )}
-      </article>
+      </article> : null}
     </div>
   );
 }
