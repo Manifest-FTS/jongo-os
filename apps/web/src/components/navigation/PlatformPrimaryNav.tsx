@@ -19,6 +19,7 @@ const navItems: NavItem[] = [
   { href: "/my-domains", label: "Domains", icon: GlobeIcon, match: "prefix" },
   { href: "/managed-domains", label: "Managed domains", icon: GlobeIcon, match: "prefix" },
   { href: "/client-billing", label: "Client billing", icon: ChartBarIcon, match: "prefix" },
+  { href: "/super-admin/access", label: "Users & access", icon: BuildingOfficeIcon, match: "prefix" },
   { href: "/usage", label: "Usage", icon: ChartBarIcon, match: "prefix" },
   { href: "/settings", label: "Settings", icon: SettingsIcon, match: "prefix" },
   { href: "/notifications", label: "Notifications", icon: BellIcon, match: "prefix" }
@@ -38,7 +39,7 @@ export default function PlatformPrimaryNav({ canViewBilling = false }: { canView
   return (
     <nav className="app-nav card" aria-label="Primary navigation">
       <div className="app-nav-items">
-        {navItems.filter((item) => item.href !== "/client-billing" || canViewBilling).map((item) => {
+        {navItems.filter((item) => (item.href !== "/client-billing" && item.href !== "/super-admin/access") || canViewBilling).map((item) => {
           const active = isItemActive(pathname, item);
 
           return (
