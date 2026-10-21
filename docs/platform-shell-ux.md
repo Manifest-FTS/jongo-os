@@ -22,6 +22,7 @@ This records the current authenticated shell and reported local evidence, not a 
 
 ## Footer and notification prompt
 
+- The footer is intentionally Jongo-only: a compact Jongo link and workspace-settings link; no Manifest logo, seal, tagline, or co-branding.
 - [PlatformBrandFooter](../apps/web/src/components/brand/PlatformBrandFooter.tsx) and its [stylesheet](../apps/web/src/components/brand/PlatformBrandFooter.module.css) retain the original Manifest M geometry, Josefin Sans 600 wordmark, DM Sans tagline and real Manifest/Jongo/settings links. Only the seal text ring loops, once per 30 seconds; the center mark is static. A pause control toggles the loop, and reduced motion disables it.
 - The initial browser pass found that the fixed desktop-notification prompt could cover the switcher creation action/footer at narrow widths. The [prompt](../apps/web/src/components/DesktopNotificationPrompt.tsx) now has a class targeted by a shell-only [normal-flow override](../apps/web/src/styles/brand-platform.css#L336-L343): static positioning, full grid span, bounded width and automatic stacking. **The fix's rendered/computed placement was not verified in the browser because notification permission was denied and the prompt did not render.** Source inspection is not computed-style/browser proof.
 

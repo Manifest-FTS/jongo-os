@@ -1,140 +1,35 @@
+/* Jongo-only compact footer; intentionally contains no Manifest identity assets. */
 .footer {
-  --text: #ffffff;
-  --text-soft: #ffffff;
-  --platform-focus: #8096ff;
-  position: relative;
-  isolation: isolate;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   margin-top: auto;
-  padding: clamp(1.25rem, 3vw, 3rem);
-  overflow: hidden;
+  padding: 0.75rem 1rem;
   border: 1px solid #383838;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #1a1a1a;
   color: #ffffff;
   color-scheme: dark;
   font-family: var(--font-platform-body, "Inter", sans-serif);
 }
 
-.content {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+.links {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: clamp(1.5rem, 3vw, 3rem);
+  justify-content: flex-end;
+  gap: 0.5rem 1.5rem;
   width: 100%;
   max-width: 80rem;
   min-width: 0;
   margin-inline: auto;
 }
 
-.content > * { min-width: 0; }
-
-.footer.footer .lockup {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  gap: 0.4em;
-  color: #ffffff;
-  font-size: clamp(1.5rem, 3vw, 2.5rem);
-  white-space: nowrap;
-}
-
-/* The unchanged approved artwork supplies the silhouette; only its ink changes. */
-.mark {
-  display: block;
-  flex: none;
-  width: 1.118em;
-  height: 0.8em;
-  background: #d6ff38;
-  -webkit-mask: url("/assets/brand/manifest-m-original.svg") center / contain no-repeat;
-  mask: url("/assets/brand/manifest-m-original.svg") center / contain no-repeat;
-}
-
-.mark[data-tone="teal"] { background: #20bfa9; }
-.mark[data-tone="blue"] { background: #4056e8; }
-
-.footer.footer .wordmark {
-  color: #ffffff;
-  font-family: var(--font-platform-stat, "Josefin Sans", sans-serif);
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: -0.035em;
-  text-transform: none;
-}
-
-.footer.footer .tagline {
-  margin: 1.25rem 0 0;
-  color: #ffffff;
-  font-family: var(--font-platform-heading, "DM Sans", sans-serif);
-  font-size: clamp(1.125rem, 2vw, 1.5rem);
-  font-weight: 500;
-  line-height: 1.45;
-}
-
-.sealColumn {
-  display: grid;
-  justify-items: center;
-  gap: 0.5rem;
-}
-
-.seal {
-  position: relative;
-  width: 11rem;
-  max-width: 100%;
-  aspect-ratio: 1;
-}
-
-.seal > svg { display: block; width: 100%; height: 100%; overflow: visible; }
-
-.footer.footer .ring {
-  fill: #ffffff;
-  font-family: var(--font-platform-stat, "Josefin Sans", sans-serif);
-  font-size: 14px;
-  font-weight: 600;
-  transform-origin: 100px 100px;
-  animation: seal-turn 30s linear infinite;
-  animation-play-state: running;
-}
-
-.footer[data-motion-paused="true"] .ring { animation-play-state: paused; }
-
-.sealMark {
-  position: absolute;
-  inset: 50% auto auto 50%;
-  width: 42%;
-  height: 30%;
-  transform: translate(-50%, -50%);
-  background: #4056e8;
-}
-
-.footer.footer .pause {
-  max-width: 100%;
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #858585;
-  border-radius: 4px;
-  background: #242424;
-  color: #ffffff;
-  font: inherit;
-  font-size: 0.8125rem;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-
-.footer.footer .pause[aria-pressed="true"] { background: #383838; }
-
-.links { display: grid; align-content: center; gap: 0.25rem; }
-
 .footer.footer .links a {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
   min-height: 44px;
   color: #ffffff;
   font-weight: 500;
@@ -142,41 +37,9 @@
   overflow-wrap: anywhere;
 }
 
-.footer.footer .links a:hover { color: #ffffff; text-decoration: underline; }
+.footer.footer .links a:hover { text-decoration: underline; }
 .footer.footer :is(a, button):focus-visible { outline: 2px solid #8096ff; outline-offset: 4px; }
 
-.ambient {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  width: 100%;
-  height: 100%;
-  fill: none;
-  stroke: #ffffff;
-  stroke-width: 1;
-  opacity: 0.06;
-  pointer-events: none;
-}
-
-@keyframes seal-turn { to { transform: rotate(360deg); } }
-
-@media (max-width: 64rem) {
-  .content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .signature { grid-column: 1 / -1; }
-}
-
 @media (max-width: 32rem) {
-  .content { grid-template-columns: minmax(0, 1fr); }
-  .sealColumn { justify-items: start; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .footer.footer .ring { animation: none; }
-  .pause { display: none; }
-}
-
-@media (forced-colors: active) {
-  .ambient { display: none; }
-  .mark { background: CanvasText; }
-  .footer.footer .ring { fill: CanvasText; }
+  .links { justify-content: flex-start; gap: 0.25rem 1rem; }
 }
