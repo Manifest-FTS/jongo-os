@@ -1,0 +1,73 @@
+.root {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+  max-width: 24rem;
+  font-family: var(--font-platform-ui, Inter, sans-serif);
+  color: #121212;
+}
+.trigger, .option, .next, .search {
+  box-sizing: border-box;
+  min-height: 44px;
+  font: inherit;
+  border-radius: 4px;
+}
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  width: 100%;
+  padding: .65rem .75rem;
+  border: 1px solid #626262;
+  background: #242424;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.badge {
+  flex-shrink: 0;
+  padding: .2rem .4rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: .75rem;
+}
+.panel {
+  position: absolute;
+  z-index: 60;
+  inset-inline-start: 0;
+  top: calc(100% + .5rem);
+  width: min(24rem, calc(100vw - 2rem));
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: .75rem;
+  border: 1px solid #767676;
+  border-radius: 4px;
+  background: #fff;
+  color: #121212;
+  box-shadow: 0 8px 28px #0003;
+}
+.panel[hidden] { display: none; }
+.label { display: block; margin-bottom: .4rem; font-weight: 600; }
+.search { width: 100%; padding: .5rem; border: 1px solid #767676; background: #fff; color: #121212; }
+.results { max-height: min(18rem, 40dvh); overflow-y: auto; overscroll-behavior: contain; margin-top: .5rem; }
+.list { list-style: none; margin: 0; padding: 0; }
+.option { display: flex; align-items: center; gap: .5rem; padding: .6rem; color: #121212; text-decoration: none; }
+.option:hover, .option[aria-current="page"] { background: #edf1ff; }
+.option[aria-current="page"] { font-weight: 700; }
+.message { margin: .5rem 0; font-size: .875rem; overflow-wrap: anywhere; }
+.message:empty { margin: 0; }
+.next { border: 1px solid #767676; background: #fff; color: #121212; padding: .5rem .75rem; cursor: pointer; }
+.next:disabled { opacity: .6; cursor: wait; }
+.create { margin-top: .65rem; border-top: 1px solid #ddd; padding-top: .65rem; }
+.create > button { width: 100%; white-space: normal; }
+.trigger:focus-visible { outline: 2px solid #8096ff; outline-offset: 3px; }
+.panel :is(a, button, input):focus-visible { outline: 2px solid #2b55ff; outline-offset: 2px; }
+@media (max-width: 480px) {
+  .panel { padding: .5rem; }
+  .trigger { gap: .4rem; }
+}
+@media (forced-colors: active) {
+  .trigger, .panel, .search, .next { border-color: ButtonText; }
+  .option[aria-current="page"] { outline: 1px solid Highlight; }
+}

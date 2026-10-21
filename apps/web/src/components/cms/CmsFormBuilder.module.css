@@ -1,0 +1,58 @@
+.builder {
+  color-scheme: dark;
+  background: #1a1a1a;
+  color: #fff;
+  border: 1px solid #666;
+  border-top: 3px solid #d92b91;
+  padding: clamp(1rem, 3vw, 2rem);
+  font-family: var(--font-inter), Inter, sans-serif;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.builder label, .builder legend { font-weight: 600; }
+.preview { margin-top: 1.5rem; }
+.builder h3, .builder h4 { color: #fff; font-family: inherit; }
+.meta, .help { color: #ccc; font-size: 0.875rem; line-height: 1.6; }
+.fields { border: 0; padding: 0; margin: 1.5rem 0; min-width: 0; display: grid; gap: 1.5rem; }
+.fields legend { margin-bottom: 1rem; }
+.field { min-width: 0; }
+.control {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  border: 1px solid #888;
+  border-radius: 2px;
+  background: #242424;
+  color: #fff;
+  padding: 0.75rem;
+  font: inherit;
+  margin-top: 0.5rem;
+}
+textarea.control { resize: vertical; }
+.control[aria-invalid="true"] { border-color: #ff9f9f; }
+.validate {
+  min-height: 44px;
+  padding: 0.75rem 1rem;
+  border: 1px solid #c7f23a;
+  border-radius: 2px;
+  background: #c7f23a;
+  color: #1a1a1a;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  justify-self: start;
+}
+.builder :is(input, select, textarea, button, summary, a):focus-visible { outline: 3px solid #ed69b6; outline-offset: 4px; }
+.builder :disabled, .fields:disabled .control { opacity: 0.65; cursor: not-allowed; }
+.readonly, .summary { border-left: 3px solid #8494ff; padding: 0.75rem 1rem; background: #222842; }
+.errors { color: #ffb4b4; line-height: 1.6; }
+.summary a { color: #b4beff; display: inline-flex; align-items: center; min-height: 44px; }
+.status { line-height: 1.6; }
+.descriptor { border-top: 1px solid #666; margin-top: 1.5rem; }
+.descriptor summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: #b4beff; }
+.descriptor pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; max-height: 32rem; overflow: auto; }
+@media (forced-colors: active) {
+  .control, .validate, .readonly, .summary { border: 1px solid CanvasText; }
+  .builder :is(input, select, textarea, button, summary, a):focus-visible { outline-color: Highlight; }
+}

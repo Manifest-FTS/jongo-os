@@ -1,0 +1,372 @@
+/* Signed-in workspace only. This sheet may remain loaded after navigation;
+   every selector stays gated so public/auth surfaces remain unchanged. */
+[data-platform-theme="light"] {
+  color-scheme: light;
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-alt: #f5f5f5;
+  --surface-sunken: #fafafa;
+  --surface-muted: #f5f5f5;
+  --text: #1a1a1a;
+  --text-soft: #505050;
+  --muted: #505050;
+  --text-muted: #505050;
+  --muted-strong: #505050;
+  --border: #e5e5e5;
+  --border-strong: #858585;
+  --accent: #2b55ff;
+  --accent-strong: #2145d9;
+  --platform-blue: #2b55ff;
+  --platform-focus: #2b55ff;
+  --platform-highlight: #d6ff38;
+  --platform-magenta: #d92b91;
+  --platform-action-ink: #ffffff;
+  --platform-success: #027a48;
+  --platform-warning: #924600;
+  --platform-error: #b42318;
+  --radius-sm: 8px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow: none;
+  --ring: 0 0 0 3px var(--platform-blue);
+  --jongo-font-display: var(--font-platform-heading, "DM Sans", sans-serif);
+  --jongo-font-body: var(--font-platform-body, "Inter", sans-serif);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--jongo-font-body);
+  line-height: 1.5;
+  accent-color: var(--platform-blue);
+}
+
+[data-platform-theme="light"].app-shell {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+[data-platform-theme="light"] :is(h1, h2, h3, h4, h5, h6, .panel-heading, .card-title) {
+  font-family: var(--jongo-font-display);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.025em;
+}
+[data-platform-theme="light"] :is(button, input, select, textarea, summary) { font-family: inherit; }
+
+[data-platform-theme="light"] :is(.card, .page-hero, .workspace-hero, .metric-card--compact) {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+}
+[data-platform-theme="light"] :is(a .card:hover, .card--interactive:hover, button .card:hover) {
+  box-shadow: none;
+  transform: none;
+}
+
+/* Local chrome tokens: descendant cards, menus and buttons inherit dark
+   surfaces/white ink without leaking those values into .app-content. */
+[data-platform-theme="light"] :is(.app-sidebar, .app-topbar) {
+  color-scheme: dark;
+  --bg: #121212;
+  --surface: #121212;
+  --surface-alt: #242424;
+  --surface-sunken: #121212;
+  --surface-muted: #242424;
+  --platform-focus: #8096ff;
+  --text: #ffffff;
+  --text-soft: #ffffff;
+  --muted: #bdbdbd;
+  --text-muted: #bdbdbd;
+  --muted-strong: #d4d4d4;
+  --border: #383838;
+  --border-strong: #858585;
+  --platform-success: #91e5b1;
+  --platform-warning: #ffda85;
+  --platform-error: #ffb4b4;
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+}
+[data-platform-theme="light"] .app-sidebar { top: 1.5rem; }
+[data-platform-theme="light"] .app-nav {
+  padding: 0.5rem;
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+}
+[data-platform-theme="light"] .app-topbar { padding: 0.75rem 1rem; }
+
+[data-platform-theme="light"] :is(.app-nav-item, .nav-pill, .tab-link) {
+  min-height: 44px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  border-color: transparent;
+  box-shadow: none;
+}
+[data-platform-theme="light"] :is(.app-nav-item, .nav-pill, .tab-link):hover {
+  background: var(--surface-alt);
+  color: var(--text);
+  border-color: var(--border-strong);
+  transform: none;
+}
+[data-platform-theme="light"] :is(.app-nav-item, .nav-pill, .tab-link, .workspace-nav-item).is-active {
+  background: var(--platform-blue);
+  border-color: var(--platform-blue);
+  color: #ffffff;
+  box-shadow: none;
+}
+[data-platform-theme="light"] .workspace-nav-item { min-height: 44px; border-radius: 8px; }
+[data-platform-theme="light"] .workspace-nav-item:hover { background: var(--surface-alt); }
+[data-platform-theme="light"] .workspace-nav-item.is-active:hover { background: var(--accent-strong); color: #ffffff; }
+[data-platform-theme="light"] .workspace-breadcrumb { flex-wrap: wrap; }
+[data-platform-theme="light"] .tone-card { border-left-color: var(--platform-magenta); }
+
+/* Cancel decoration on the link itself: a descendant cannot remove an
+   underline propagated by its ancestor. Cover every logo link state. */
+[data-platform-theme="light"] .topbar-logo,
+[data-platform-theme="light"] .topbar-logo:hover,
+[data-platform-theme="light"] .topbar-logo:focus,
+[data-platform-theme="light"] .topbar-logo:focus-visible,
+[data-platform-theme="light"] .topbar-logo:active,
+[data-platform-theme="light"] .topbar-logo:visited,
+[data-platform-theme="light"] .topbar-logo .jongo-brand-wordmark,
+[data-platform-theme="light"] .topbar-logo:hover .jongo-brand-wordmark,
+[data-platform-theme="light"] .topbar-logo:focus .jongo-brand-wordmark,
+[data-platform-theme="light"] .topbar-logo:focus-visible .jongo-brand-wordmark,
+[data-platform-theme="light"] .topbar-logo:active .jongo-brand-wordmark,
+[data-platform-theme="light"] .topbar-logo:visited .jongo-brand-wordmark {
+  text-decoration: none;
+}
+
+[data-platform-theme="light"] .jongo-brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  white-space: nowrap;
+  text-decoration: none;
+}
+[data-platform-theme="light"] .jongo-brand-lockup img { display: block; flex: none; object-fit: contain; }
+[data-platform-theme="light"] .jongo-brand-wordmark {
+  font-family: var(--font-jongo-wordmark, "Josefin Sans", sans-serif);
+  font-size: 1.9rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: #ffffff;
+}
+
+[data-platform-theme="light"] :is(.topbar-icon-button, .user-menu-trigger) {
+  min-height: 44px;
+  border-radius: 8px;
+  background: var(--surface-alt);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+[data-platform-theme="light"] .topbar-icon-button { width: 44px; }
+[data-platform-theme="light"] .user-avatar { background: var(--platform-blue); color: #ffffff; }
+[data-platform-theme="light"] .user-menu-panel {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
+  border-radius: 12px;
+  box-shadow: none;
+  max-width: calc(100vw - 2rem);
+}
+[data-platform-theme="light"] .user-menu-email { overflow-wrap: anywhere; }
+[data-platform-theme="light"] .user-menu-link-button { min-height: 44px; display: flex; align-items: center; }
+[data-platform-theme="light"] .user-menu-link-button:hover { color: var(--text); text-decoration: underline; }
+
+/* Narrow overrides for shell-owned inline notification surfaces. */
+[data-platform-theme="light"] .topbar-actions [role="dialog"][aria-label="Notifications"],
+[data-platform-theme="light"] > [role="status"] {
+  background: var(--surface) !important;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+[data-platform-theme="light"] .topbar-actions [role="dialog"][aria-label="Notifications"] {
+  width: min(340px, calc(100vw - 3rem)) !important;
+}
+[data-platform-theme="light"] .topbar-actions [role="dialog"] [style*="background: rgb(246, 250, 244)"],
+[data-platform-theme="light"] .topbar-actions [role="dialog"] [style*="background:#f6faf4"],
+[data-platform-theme="light"] .topbar-actions [role="dialog"] [style*="background: #f6faf4"] {
+  background: var(--surface-alt) !important;
+}
+
+[data-platform-theme="light"] :is(.page-kicker, .panel-kicker, .metric-label, .metric-value--muted,
+  .health-stat-label, .health-bar-meta, .health-stat-value.unknown, .directory-filter-label) { color: var(--muted); }
+/* Latest visual exception: only stat numbers/primary stat headings use Josefin.
+   General headings remain DM Sans; the original logo is independent. */
+[data-platform-theme="light"] :is(.metric-value, .health-stat-value, .metric-card > .metric-label) {
+  font-family: var(--font-platform-stat, "Josefin Sans", sans-serif);
+  font-weight: 600;
+}
+[data-platform-theme="light"] .metric-value { color: var(--text); }
+/* Actual dashboard: four direct .metric-card children plus optional Offline.
+   Keep the fifth neutral; these pastels never become global card colors. */
+[data-platform-theme="light"] .dashboard-metric-strip.metric-strip > .metric-card:nth-child(1) { background: #effd96; }
+[data-platform-theme="light"] .dashboard-metric-strip.metric-strip > .metric-card:nth-child(2) { background: #e6ecff; }
+[data-platform-theme="light"] .dashboard-metric-strip.metric-strip > .metric-card:nth-child(3) { background: #fde8f0; }
+[data-platform-theme="light"] .dashboard-metric-strip.metric-strip > .metric-card:nth-child(4) { background: #fbf9f1; }
+[data-platform-theme="light"] :is(.action-link, .breadcrumb-link, .directory-active-clear, .directory-client-link) { color: var(--platform-blue); }
+[data-platform-theme="light"] :is(.action-link, .directory-client-link):hover { color: var(--accent-strong); text-decoration: underline; }
+
+[data-platform-theme="light"] :is(.health-stat-block, .health-reconcile-note, .directory-filter-panel,
+  .directory-filter-option, .directory-active-chip, .filter-group, .view-toggle, .tag) {
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  border-color: var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+[data-platform-theme="light"] :is(.health-stat-block, .health-reconcile-note, .directory-filter-panel) { border-radius: 12px; }
+[data-platform-theme="light"] :is(.health-bar-track, .directory-filter-count) { background: var(--surface-sunken); color: var(--text); }
+[data-platform-theme="light"] :is(.activity-item, .directory-filter-section) { border-color: var(--border); }
+[data-platform-theme="light"] :is(.filter-pill, .view-pill, .directory-filter-close) { color: var(--text-soft); min-height: 44px; }
+[data-platform-theme="light"] :is(.filter-pill, .view-pill).is-active { background: var(--platform-blue); color: #ffffff; }
+[data-platform-theme="light"] .health-stat-value.healthy { color: var(--platform-success); }
+[data-platform-theme="light"] .health-stat-value.degraded { color: var(--platform-warning); }
+[data-platform-theme="light"] .health-stat-value.error { color: var(--platform-error); }
+
+[data-platform-theme="light"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), select, textarea) {
+  background: var(--surface-sunken);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  min-height: 44px;
+  max-width: 100%;
+}
+[data-platform-theme="light"] :is(input, select, textarea)::placeholder { color: var(--muted); opacity: 1; }
+[data-platform-theme="light"] :is(input, select, textarea):disabled { background: var(--surface-alt); color: var(--muted); }
+[data-platform-theme="light"] .form-label { color: var(--text-soft); }
+[data-platform-theme="light"] .form-error { color: var(--platform-error); }
+[data-platform-theme="light"] .form-success { color: var(--platform-success); }
+
+[data-platform-theme="light"] :is(.btn, .btn--primary, .deploy-btn[data-env="production"], .bk-btn--primary) {
+  min-height: 44px;
+  background: var(--platform-blue);
+  color: var(--platform-action-ink);
+  border-color: var(--platform-blue);
+  border-radius: 8px;
+  box-shadow: none;
+}
+[data-platform-theme="light"] :is(.btn, .btn--primary, .deploy-btn[data-env="production"], .bk-btn--primary):hover:not(:disabled) {
+  background: var(--accent-strong);
+  color: var(--platform-action-ink);
+  border-color: var(--accent-strong);
+  transform: none;
+  box-shadow: none;
+}
+[data-platform-theme="light"] :is(.btn-secondary, .deploy-btn[data-env="staging"], .bk-btn, .directory-filter-trigger) {
+  min-height: 44px;
+  background: var(--surface-alt);
+  color: var(--text);
+  border-color: var(--border-strong);
+  border-radius: 8px;
+  box-shadow: none;
+}
+[data-platform-theme="light"] :is(.btn-secondary, .deploy-btn[data-env="staging"], .bk-btn, .directory-filter-trigger):hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--text);
+  border-color: var(--border-strong);
+  transform: none;
+  box-shadow: none;
+}
+/* Match the attribute-weighted :is() specificity above AND occur after .bk-btn.
+   Otherwise secondary background/border wins the primary backup action. */
+[data-platform-theme="light"] .bk-btn.bk-btn--primary { background: var(--platform-blue); color: var(--platform-action-ink); border-color: var(--platform-blue); }
+[data-platform-theme="light"] .bk-btn.bk-btn--primary:hover:not(:disabled) { background: var(--accent-strong); color: var(--platform-action-ink); border-color: var(--accent-strong); }
+[data-platform-theme="light"] :is(.btn.btn-danger, .bk-btn.bk-btn--danger) { background: #fef3f2; color: var(--platform-error); border-color: #b42318; }
+[data-platform-theme="light"] :is(.btn.btn-danger, .bk-btn.bk-btn--danger):hover:not(:disabled) { background: #fee4e2; color: var(--platform-error); border-color: #b42318; }
+
+[data-platform-theme="light"] :is(th, td) { border-color: var(--border); }
+[data-platform-theme="light"] th { background: var(--surface-alt); color: var(--text-soft); }
+/* Lime is a background highlight only, never action/link/focus ink. */
+[data-platform-theme="light"] :is(.tag-highlight, .status-chip.highlight, .callout-banner) { background: var(--platform-highlight); color: #1a1a1a; border-color: var(--border); }
+[data-platform-theme="light"] :is(.tag-mapped, .status-chip.healthy) { background: #ecfdf3; color: #027a48; border-color: #abefc6; }
+[data-platform-theme="light"] :is(.tag-warning, .status-chip.degraded) { background: #fffaeb; color: #924600; border-color: #fedf89; }
+[data-platform-theme="light"] .status-chip.error { background: #fef3f2; color: #b42318; border-color: #fecdca; }
+
+/* Compact utilities use control geometry; larger utilities and known panels
+   use surface geometry. Preserve avatars/circles/dots and rounded-full.
+   Legacy inline dashboard links retain their intended 12px corners. */
+[data-platform-theme="light"] .app-content :is(.rounded, .rounded-sm, .rounded-md):not(.rounded-full):not(.user-avatar) {
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+[data-platform-theme="light"] .app-content :is(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl,
+  .bk-schedule, .diagnostic-banner, .workspace-nav, .workspace-tab-bar,
+  .card a[style*="border-radius: 12px"], .card a[style*="border-radius:12px"]):not(.rounded-full):not(.user-avatar) {
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+[data-platform-theme="light"] .app-content :is(.shadow, .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl, .shadow-card, .shadow-card-sm) { box-shadow: none !important; }
+
+[data-platform-theme="light"] :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--platform-focus);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+/* Transform/filter feedback does not change layout or border widths. */
+[data-platform-theme="light"] :is(.btn, .btn--primary, .btn-secondary, .deploy-btn, .bk-btn, .directory-filter-trigger, .topbar-icon-button, .user-menu-trigger) {
+  transition: background-color 150ms ease-in-out, border-color 150ms ease-in-out, color 150ms ease-in-out, filter 150ms ease-in-out, transform 150ms ease-in-out;
+}
+[data-platform-theme="light"] :is(.btn, .btn--primary, .btn-secondary, .deploy-btn, .bk-btn, .directory-filter-trigger, .topbar-icon-button, .user-menu-trigger):hover:not(:disabled):not([aria-disabled="true"]) { filter: brightness(1.1); }
+[data-platform-theme="light"] :is(.btn, .btn--primary, .btn-secondary, .deploy-btn, .bk-btn, .directory-filter-trigger, .topbar-icon-button, .user-menu-trigger):active:not(:disabled):not([aria-disabled="true"]) { transform: scale(.98); }
+[data-platform-theme="light"] :is(.btn.btn-secondary, .btn-secondary, .btn-outline, .directory-filter-trigger) { border: 1px solid var(--border); }
+[data-platform-theme="light"] :is(.btn.btn-secondary, .btn-secondary, .btn-outline):hover:not(:disabled) { background: #eef2ff; color: #1a1a1a; border-color: #ccd5ff; }
+/* Hide local scrollbar chrome, not scrolling or the primary window scrollbar. */
+[data-platform-theme="light"] > .desktop-notification-prompt {
+  position: static !important;
+  grid-column: 1 / -1;
+  width: 100% !important;
+  max-width: 100%;
+  z-index: auto !important;
+}
+[data-platform-theme="light"] :is(.directory-filter-panel, .topbar-actions [role="dialog"], .user-menu-panel) { scrollbar-width: none; }
+[data-platform-theme="light"] :is(.directory-filter-panel, .topbar-actions [role="dialog"], .user-menu-panel)::-webkit-scrollbar { display: none; }
+
+@media (max-width: 900px) {
+  [data-platform-theme="light"].app-shell { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
+  [data-platform-theme="light"] .app-sidebar { position: static; }
+  [data-platform-theme="light"] .app-nav-items { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  [data-platform-theme="light"] .app-nav-item { width: auto; flex-shrink: 0; }
+}
+@media (max-width: 700px) {
+  [data-platform-theme="light"] .app-topbar { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
+  [data-platform-theme="light"] .topbar-actions { margin-left: auto; }
+  [data-platform-theme="light"] .user-label { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-platform-theme="light"] .user-menu-trigger { padding-inline: 0.5rem; }
+  [data-platform-theme="light"] .page-head { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-platform-theme="light"] :is(.btn, .btn--primary, .btn-secondary, .deploy-btn, .bk-btn, .directory-filter-trigger, .topbar-icon-button, .user-menu-trigger):active:not(:disabled) { transform: none; }
+  [data-platform-theme="light"], [data-platform-theme="light"] *,
+  [data-platform-theme="light"] *::before, [data-platform-theme="light"] *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (forced-colors: active) {
+  [data-platform-theme="light"] :is(.card, .btn, .bk-btn, .app-nav-item, .tab-link, input, select, textarea) { border-color: CanvasText; }
+  [data-platform-theme="light"] :is(.app-nav-item, .tab-link).is-active { outline: 2px solid Highlight; outline-offset: -3px; }
+  [data-platform-theme="light"] :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline-color: Highlight; }
+}

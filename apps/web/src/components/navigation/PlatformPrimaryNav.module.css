@@ -1,0 +1,119 @@
+.root.root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.root .items:global(.app-nav-items),
+.root .children {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.root .branch {
+  min-width: 0;
+}
+
+.root .row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+/* Beat shell active/hover rules regardless of stylesheet load order. */
+.root .branchLink:global(.app-nav-item) {
+  display: flex;
+  flex: 1 1 0%;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #d4d4d4;
+  box-shadow: none;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  transform: none;
+}
+
+.root .branchLink:global(.app-nav-item):hover,
+.root .toggle:hover {
+  background: rgb(255 255 255 / 10%);
+  border-color: transparent;
+  color: #fff;
+  transform: none;
+}
+
+.root .branchLink:global(.app-nav-item)[data-active="true"],
+.root .branchLink:global(.app-nav-item)[data-active="true"]:hover {
+  background: rgb(43 85 255 / 12%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: none;
+}
+
+.root .toggle {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #d4d4d4;
+  cursor: pointer;
+}
+
+.root .chevron {
+  width: 16px;
+  height: 16px;
+  transform: rotate(-90deg);
+}
+
+.root .toggle[aria-expanded="true"] .chevron {
+  transform: rotate(0deg);
+}
+
+.root .children {
+  box-sizing: border-box;
+  width: calc(100% - 22px);
+  margin: 4px 0 4px 22px;
+  padding-left: 8px;
+  border-left: 1px solid rgb(255 255 255 / 18%);
+}
+
+.root .children[hidden] {
+  display: none;
+}
+
+.root .branchLink:global(.app-nav-item):focus-visible,
+.root .toggle:focus-visible {
+  outline: 2px solid var(--platform-focus, #8096ff);
+  outline-offset: -2px;
+}
+
+@media (forced-colors: active) {
+  .root .branchLink:global(.app-nav-item)[data-active="true"] {
+    outline: 1px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  .root .children {
+    border-color: CanvasText;
+  }
+
+  .root .branchLink:global(.app-nav-item):focus-visible,
+  .root .toggle:focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
