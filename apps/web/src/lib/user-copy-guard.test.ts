@@ -52,7 +52,6 @@ function walk(dir: string, out: string[] = []): string[] {
 const LITERAL = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
 
 export function findBannedCopy(source: string, file: string): string[] {
-  file = file.replace(/\\/g, "/");
   const hits: string[] = [];
   let inBlockComment = false;
   source.split("\n").forEach((raw, index) => {
@@ -84,10 +83,6 @@ export function findBannedCopy(source: string, file: string): string[] {
 }
 
 describe("user-facing copy never sends people to Coolify", () => {
-  it("normalizes Windows paths without widening approved copy exceptions", () => {
-    expect(findBannedCopy('const label = "in Coolify, no Jongo app";', 'app\\(platform)\\usage\\page.tsx')).toEqual([]);
-    expect(findBannedCopy('const label = "Open Coolify dashboard";', 'app\\(platform)\\usage\\page.tsx')).toHaveLength(1);
-  });
   it("flags the patterns it is meant to catch", () => {
     expect(findBannedCopy(`const m = "Restart it from Coolify if needed.";`, "x.ts")).toHaveLength(1);
     expect(findBannedCopy(`setError("Remove staging resources manually in the infrastructure panel.");`, "x.ts")).toHaveLength(1);

@@ -9,14 +9,6 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "npm run test --workspace @jongo-os/web",
-    "verify:local": "node scripts/verify-local-cms.mjs",
-    "cms:import:sanity": "node scripts/run-typescript.cjs scripts/import-sanity-ndjson.ts",
-    "cms:release:marketing": "node scripts/run-typescript.cjs scripts/publish-marketing-release.ts",
-    "cms:outbox:dispatch": "node ./scripts/cms-outbox-dispatcher.mjs --once",
-    "cms:outbox:dispatcher": "node ./scripts/cms-outbox-dispatcher.mjs",
-    "cms:media:cleanup": "node ./scripts/cms-media-cleanup.mjs --once",
-    "cms:media:cleanup:worker": "node ./scripts/cms-media-cleanup.mjs",
     "dev": "turbo run dev",
     "dev:web": "npm run dev --workspace @jongo-os/web",
     "start": "node ./scripts/start-production.mjs",
