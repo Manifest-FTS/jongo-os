@@ -56,6 +56,12 @@ function parkedDomainHost(req: NextRequest): string | null {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // GET only, anchored UUID + exact namespace; handler always authenticates its
+  // dataset-scoped credential. Never add /api/content to startsWith exemptions.
+  if (req.method === "GET" && /^\/api\/content\/v1\/datasets\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/marketing$/i.test(pathname)) {
+    return NextResponse.next();
+  }
+
   const parkedHost = parkedDomainHost(req);
   if (parkedHost && pathname !== "/parked" && !pathname.startsWith("/_next") && !pathname.startsWith("/assets")) {
     const url = req.nextUrl.clone();
