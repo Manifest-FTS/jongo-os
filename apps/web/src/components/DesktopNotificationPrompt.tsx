@@ -50,7 +50,6 @@ export default function DesktopNotificationPrompt() {
   return (
     <div
       role="status"
-      className="desktop-notification-prompt"
       style={{
         position: "fixed",
         bottom: "150px",

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
-import { applySubscriptionEvent } from "@/lib/billing/subscription-events";
 
 export const runtime = "nodejs";
 
@@ -24,40 +23,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Webhook receiving is not configured." }, { status: 503 });
   }
 
-  // Bound actual streamed bytes, not the caller-controlled Content-Length.
-  const reader = req.body?.getReader();
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-  try {
-    if (reader) {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        bytes += value.byteLength;
-        if (bytes > 1024 * 1024) {
-          await reader.cancel();
-          return NextResponse.json({ error: "Webhook body too large" }, { status: 413 });
-        }
-        chunks.push(value);
-      }
-    }
-  } catch {
-    return NextResponse.json({ error: "Invalid webhook body" }, { status: 400 });
-  } finally {
-    reader?.releaseLock();
-  }
-  const rawBody = Buffer.concat(chunks);
+  const rawBody = await req.text();
   const signature = req.headers.get("stripe-signature");
 
   let event: Stripe.Event;
   try {
     const stripe = getStripeClient();
     event = stripe.webhooks.constructEvent(rawBody, signature ?? "", webhookSecret);
-  } catch {
-    // SDK errors can contain the complete unsigned payload and signature header.
-    console.warn("[billing/webhook] signature_verification_failed");
+  } catch (error) {
+    console.warn("[billing/webhook] signature verification failed:", error);
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
+
+  const { db } = await import("@/lib/db");
 
   try {
     switch (event.type) {
@@ -72,21 +50,63 @@ export async function POST(req: Request) {
           const { fulfilDomainCharge, recordDomainPayment } = await import("@/lib/domain-orders");
           const chargeId = await recordDomainPayment(session as never);
           if (chargeId) {
-            void fulfilDomainCharge(chargeId).catch(() =>
-              console.error("[billing/webhook] domain_fulfillment_failed")
+            void fulfilDomainCharge(chargeId).catch((error) =>
+              console.error(`[billing/webhook] domain order ${chargeId} failed:`, error)
             );
           }
           break;
         }
 
-        if (session.mode !== "subscription" || !session.subscription) break;
-        await applySubscriptionEvent(event);
+        const userId = session.metadata?.jongoUserId || session.client_reference_id;
+        if (!userId || typeof session.subscription !== "string") {
+          break;
+        }
+
+        const stripe = getStripeClient();
+        const subscription = await stripe.subscriptions.retrieve(session.subscription);
+
+        await db.user.update({
+          where: { id: userId },
+          data: {
+            stripeSubscriptionId: subscription.id,
+            subscriptionPlanId: subscription.metadata?.jongoPlanId ?? session.metadata?.jongoPlanId ?? null,
+            subscriptionInterval:
+              subscription.metadata?.jongoBillingInterval ?? session.metadata?.jongoBillingInterval ?? null,
+            subscriptionStatus: subscription.status,
+            subscriptionCurrentPeriodEnd: new Date(subscription.current_period_end * 1000)
+          }
+        });
         break;
       }
 
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
-        await applySubscriptionEvent(event);
+        const subscription = event.data.object as Stripe.Subscription;
+        const userId = subscription.metadata?.jongoUserId;
+
+        const user = userId
+          ? await db.user.findUnique({ where: { id: userId }, select: { id: true } })
+          : await db.user.findFirst({
+              where: { stripeCustomerId: subscription.customer as string },
+              select: { id: true }
+            });
+
+        if (!user) {
+          console.warn(`[billing/webhook] no user found for subscription ${subscription.id}`);
+          break;
+        }
+
+        await db.user.update({
+          where: { id: user.id },
+          data: {
+            subscriptionStatus: subscription.status,
+            subscriptionCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+            ...(subscription.metadata?.jongoPlanId ? { subscriptionPlanId: subscription.metadata.jongoPlanId } : {}),
+            ...(subscription.metadata?.jongoBillingInterval
+              ? { subscriptionInterval: subscription.metadata.jongoBillingInterval }
+              : {})
+          }
+        });
         break;
       }
 
@@ -102,9 +122,8 @@ export async function POST(req: Request) {
       default:
         break;
     }
-  } catch {
-    // Provider/DB errors may also carry request, response or private metadata.
-    console.error("[billing/webhook] event_processing_failed");
+  } catch (error) {
+    console.error(`[billing/webhook] failed to apply event ${event.type}:`, error);
     return NextResponse.json({ error: "Failed to process event" }, { status: 500 });
   }
 

@@ -1,9 +1,0 @@
-{
-  "description": "Synthetic shared v1 revalidation HMAC vector. Byte-identical copy: mfts-2026/tests/fixtures/revalidation-signing-vector.json. Not a real secret.",
-  "secret": "synthetic-shared-vector-secret-0123456789abcdef",
-  "timestamp": "1792500000",
-  "eventId": "20000000-0000-4000-8000-000000000001",
-  "datasetId": "20000000-0000-4000-8000-000000000002",
-  "body": "{\"version\":1,\"eventId\":\"20000000-0000-4000-8000-000000000001\",\"datasetId\":\"20000000-0000-4000-8000-000000000002\"}",
-  "signature": "v1=8cd4e5e161de1a50af2028bf835b44d3ccf3aef530628eceeaedd8e426bd46b6"
-}

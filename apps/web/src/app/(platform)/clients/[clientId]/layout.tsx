@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 import { auth } from "@/lib/auth.config";
 import { getClientWorkspace, isClientAdmin } from "@/lib/repositories";
-import { resolveClientLayoutAccess } from "@/lib/client-layout-access";
 
 type LayoutProps = {
   children: ReactNode;
@@ -14,27 +13,6 @@ type LayoutProps = {
 export default async function ClientWorkspaceLayout({ children, params }: LayoutProps) {
   const { clientId } = await params;
   const session = await auth();
-
-  const access = await resolveClientLayoutAccess(clientId, session?.user?.id);
-  if (!access) notFound();
-
-  if (access.scope === "site") {
-    // This is only a minimal shell, not organization or dataset authorization.
-    // Overview/apps/sources/settings/content-preview each enforce their own
-    // organization guard; team only redirects to the guarded overview. The
-    // dataset page/actions independently require live membership + dataset grant
-    // and bind the dataset to clientId. New children MUST enforce their own scope.
-    // Never infer the child route from headers or fetch the broad workspace here.
-    return (
-      <div className="workspace-shell">
-        <div className="workspace-hero card">
-          <h1 className="workspace-title">{access.client.name}</h1>
-          <p className="workspace-subtitle">Site-scoped content access</p>
-        </div>
-        <div className="workspace-content">{children}</div>
-      </div>
-    );
-  }
 
   const client = await getClientWorkspace(clientId, {
     userId: session?.user?.id,
