@@ -86,8 +86,9 @@ main {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
   width: min(1400px, calc(100vw - 1.6rem));
+  min-height: 100svh;
   margin: 0 auto;
   padding: 0.9rem 0.8rem 1.35rem;
 }
@@ -181,6 +182,8 @@ main {
 }
 
 .app-main {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
@@ -200,6 +203,7 @@ main {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 1.15rem;
+  margin-bottom: 1.5rem;
 }
 
 .app-footer {
