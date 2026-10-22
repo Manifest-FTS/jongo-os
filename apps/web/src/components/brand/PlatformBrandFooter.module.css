@@ -1,45 +1,86 @@
-/* Jongo-only compact footer; intentionally contains no Manifest identity assets. */
+/* Compact Jongo footer; static geometry borrows the family style without Manifest branding. */
 .footer {
+  --platform-focus: #8096ff;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   margin-top: auto;
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 1rem;
+  overflow: hidden;
   border: 1px solid #383838;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #1a1a1a;
   color: #ffffff;
   color-scheme: dark;
   font-family: var(--font-platform-body, "Inter", sans-serif);
 }
 
+.footer::before,
+.footer::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+}
+
+.footer::before {
+  inset: 0;
+  background: linear-gradient(110deg, rgba(117, 176, 61, 0.12), transparent 38%, rgba(255, 197, 72, 0.08));
+}
+
+.footer::after {
+  top: -3.5rem;
+  right: 8%;
+  width: 7rem;
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.2rem rgba(255, 255, 255, 0.025), 0 0 0 2.4rem rgba(255, 255, 255, 0.02);
+}
+
+.home {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.footer .home :global(.jongo-brand-lockup) { gap: 0.45rem; }
+.footer .home :global(.jongo-brand-lockup img) { width: 24px; height: 24px; }
+.footer .home :global(.jongo-brand-wordmark) { font-size: 1.15rem; }
+
 .links {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem 1.5rem;
-  width: 100%;
-  max-width: 80rem;
   min-width: 0;
-  margin-inline: auto;
+  gap: 0.25rem 1rem;
 }
 
-.footer.footer .links a {
+.footer .links a {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  min-height: 44px;
-  color: #ffffff;
+  min-height: 36px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.82rem;
   font-weight: 500;
   text-decoration: none;
   overflow-wrap: anywhere;
 }
 
-.footer.footer .links a:hover { text-decoration: underline; }
-.footer.footer :is(a, button):focus-visible { outline: 2px solid #8096ff; outline-offset: 4px; }
+.footer .links a:hover { color: #ffffff; text-decoration: underline; text-underline-offset: 3px; }
+.footer :is(a, button):focus-visible { outline: 2px solid var(--platform-focus); outline-offset: 3px; }
 
 @media (max-width: 32rem) {
-  .links { justify-content: flex-start; gap: 0.25rem 1rem; }
+  .footer { gap: 0.5rem 1rem; }
+  .links { width: 100%; }
 }
