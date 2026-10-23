@@ -4,10 +4,14 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Suspense, useState } from "react";
+import { DM_Sans, Inter } from "next/font/google";
 import BrandLogo from "@/components/BrandLogo";
 import SelectedPlanNotice from "@/components/SelectedPlanNotice";
 import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
 import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
+
+const authHeadings = DM_Sans({ subsets: ["latin"], weight: ["500", "700"], display: "swap", variable: "--font-auth-heading" });
+const authBody = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap", variable: "--font-auth-body" });
 
 /** Where to land after signup, e.g. back on the domain order the visitor started. */
 function postSignupPath(): string {
@@ -18,8 +22,10 @@ function postSignupPath(): string {
 export default function RegisterPage() {
   const router = useRouter();
 
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -42,7 +48,13 @@ export default function RegisterPage() {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, fullName, password })
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          username: username.trim().toLowerCase(),
+          email: email.trim().toLowerCase(),
+          password
+        })
       });
 
       const payload = await response.json();
@@ -54,7 +66,7 @@ export default function RegisterPage() {
       }
 
       const result = await signIn("credentials", {
-        email,
+        email: email.trim().toLowerCase(),
         password,
         redirect: false
       });
@@ -80,8 +92,8 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card auth-panel">
+    <div className={`auth-page auth-register-page ${authHeadings.variable} ${authBody.variable}`}>
+      <div className="auth-card auth-panel auth-register-card">
         <div className="auth-brand-block">
           <Link href="/" className="auth-logo-link" aria-label="Go to home">
             <BrandLogo
@@ -103,20 +115,54 @@ export default function RegisterPage() {
           </Suspense>
         </div>
 
-        <form onSubmit={handleSubmit} className="auth-form">
-          <div className="auth-field">
-            <label htmlFor="fullName">Full name</label>
-            <input
-              id="fullName"
-              type="text"
-              autoComplete="name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-            />
+        <form onSubmit={handleSubmit} className="auth-form auth-register-form">
+          <div className="auth-name-grid">
+            <div className="auth-field">
+              <label htmlFor="firstName">First name</label>
+              <input
+                id="firstName"
+                type="text"
+                autoComplete="given-name"
+                maxLength={80}
+                required
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+              />
+            </div>
+            <div className="auth-field">
+              <label htmlFor="lastName">Last name</label>
+              <input
+                id="lastName"
+                type="text"
+                autoComplete="family-name"
+                maxLength={80}
+                required
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+              />
+            </div>
           </div>
 
           <div className="auth-field">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="username">Username</label>
+            <input
+              id="username"
+              type="text"
+              autoComplete="username"
+              minLength={3}
+              maxLength={32}
+              pattern="[A-Za-z0-9._-]{3,32}"
+              title="Use 3–32 letters, numbers, dots, underscores, or dashes."
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              aria-describedby="username-hint"
+            />
+            <span id="username-hint" className="auth-field-hint">3–32 characters: letters, numbers, dots, underscores, or dashes.</span>
+          </div>
+
+          <div className="auth-field">
+            <label htmlFor="email">Email address</label>
             <input
               id="email"
               type="email"
@@ -207,7 +253,7 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {error && <p className="auth-error">{error}</p>}
+          {error && <p className="auth-error" role="alert">{error}</p>}
 
           <button type="submit" className="auth-submit" disabled={loading}>
             {loading ? "Creating account…" : "Create account"}
