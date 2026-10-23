@@ -1449,6 +1449,181 @@ main {
   text-underline-offset: 4px;
 }
 
+/* Registration: Jongo's forest/mint palette with the Manifest v2 type and form language. */
+.auth-register-page {
+  --register-forest: #1e332a;
+  --register-forest-hover: #2b4a3c;
+  --register-mint: #9ec877;
+  --register-lime: #d5ef53;
+  --register-paper: #fcfbf6;
+  --register-ink: #202438;
+  --register-muted: #50566d;
+  --register-line: #dadbe5;
+  min-height: 100vh;
+  padding: clamp(24px, 5vh, 56px) 20px;
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse at 8% 6%, rgb(158 200 119 / 13%), transparent 32%),
+    var(--register-paper);
+  color: var(--register-ink);
+  font-family: var(--font-auth-body), Inter, sans-serif;
+}
+
+.auth-register-page::before,
+.auth-register-page::after {
+  display: none;
+}
+
+.auth-register-page :is(a, button, input):focus-visible {
+  outline: 3px solid var(--register-forest);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgb(158 200 119 / 24%);
+}
+
+.auth-register-card {
+  max-width: 520px;
+  padding: clamp(24px, 5vw, 44px);
+  border: 1px solid var(--register-line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 36px rgb(32 36 56 / 8%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: none;
+}
+
+.auth-register-card:hover {
+  transform: none;
+  box-shadow: 0 12px 36px rgb(32 36 56 / 8%);
+}
+
+.auth-register-page .auth-brand-block {
+  margin-bottom: 1.75rem;
+}
+
+.auth-register-page .auth-logo-link,
+.auth-register-page .auth-logo-link:hover {
+  transform: none;
+}
+
+.auth-register-page .auth-title {
+  color: var(--register-ink);
+  font-family: var(--font-auth-heading), "DM Sans", sans-serif;
+  font-size: clamp(1.8rem, 5vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+}
+
+.auth-register-page .auth-subtitle,
+.auth-register-page .auth-link-row {
+  color: var(--register-muted);
+  font-family: var(--font-auth-body), Inter, sans-serif;
+}
+
+.auth-register-page .auth-inline-link,
+.auth-register-page .auth-link-row a {
+  color: var(--register-forest);
+}
+
+.auth-register-page .auth-inline-link:hover,
+.auth-register-page .auth-link-row a:hover {
+  color: var(--register-forest-hover);
+}
+
+.auth-register-form {
+  gap: 1rem;
+}
+
+.auth-register-form .auth-name-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.auth-register-page .auth-field {
+  gap: 0.45rem;
+}
+
+.auth-register-page .auth-field label {
+  margin-left: 0;
+  color: var(--register-ink);
+  font-family: var(--font-auth-body), Inter, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.auth-register-page .auth-field input {
+  min-height: 48px;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--register-line);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: none;
+  color: var(--register-ink);
+  font-family: var(--font-auth-body), Inter, sans-serif;
+  font-size: 0.95rem;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.auth-register-page .auth-field input:focus {
+  transform: none;
+  border-color: var(--register-forest);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgb(158 200 119 / 28%);
+}
+
+.auth-field-hint {
+  color: var(--register-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.auth-register-page .auth-submit {
+  min-height: 50px;
+  margin-top: 0.25rem;
+  padding: 0.8rem 1.5rem;
+  border: 1px solid var(--register-forest);
+  border-radius: 999px;
+  background: var(--register-forest);
+  box-shadow: none;
+  color: #fff;
+  font-family: var(--font-auth-body), Inter, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.auth-register-page .auth-submit:hover:not(:disabled) {
+  transform: none;
+  border-color: var(--register-forest-hover);
+  background: var(--register-forest-hover);
+  box-shadow: none;
+  filter: none;
+}
+
+.auth-register-page .auth-submit:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.auth-register-page .auth-error {
+  margin: 0;
+}
+
+@media (max-width: 420px) {
+  .auth-register-form .auth-name-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-register-page *,
+  .auth-register-page *::before,
+  .auth-register-page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 /* ── Deploy button ──────────────────────────────────────────────── */
 .deploy-btn {
   border: none;

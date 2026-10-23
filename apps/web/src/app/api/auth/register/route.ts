@@ -31,13 +31,23 @@ export async function POST(req: Request) {
     const body = await req.json();
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
     const password = typeof body?.password === "string" ? body.password : "";
-    const fullName = typeof body?.fullName === "string" ? body.fullName.trim() : "";
+    const firstName = typeof body?.firstName === "string" ? body.firstName.trim() : "";
+    const lastName = typeof body?.lastName === "string" ? body.lastName.trim() : "";
+    const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
 
-    if (!email || !password) {
-      return NextResponse.json({ error: "email and password are required" }, { status: 400 });
+    if (!firstName || !lastName || !username || !email || !password) {
+      return NextResponse.json({ error: "First name, last name, username, email address, and password are required." }, { status: 400 });
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (firstName.length > 80 || lastName.length > 80) {
+      return NextResponse.json({ error: "Names must be 80 characters or fewer." }, { status: 400 });
+    }
+
+    if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
+      return NextResponse.json({ error: "Username must be 3–32 characters and use only letters, numbers, dots, underscores, or dashes." }, { status: 400 });
+    }
+
+    if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
     }
 
@@ -50,8 +60,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
     }
 
+    const existingUsername = await db.userProfileSettings.findUnique({ where: { username }, select: { id: true } });
+    if (existingUsername) {
+      return NextResponse.json({ error: "That username is already taken." }, { status: 409 });
+    }
+
     const passwordHash = await hash(password, 12);
-    const displayName = fullName || email.split("@")[0];
+    const displayName = `${firstName} ${lastName}`;
 
     // Without an organization a new account can't order domains, start transfers or add sites.
     const user = await db.$transaction(async (tx: any) => {
@@ -61,7 +76,8 @@ export async function POST(req: Request) {
           fullName: displayName,
           passwordHash,
           emailVerified: false,
-          authProvider: "local"
+          authProvider: "local",
+          profileSettings: { create: { username } }
         },
         select: { id: true, email: true, fullName: true }
       });
@@ -78,6 +94,16 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, user }, { status: 201 });
   } catch (error) {
+    const errorCode = typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : "";
+    if (errorCode === "P2002") {
+      const target = JSON.stringify((error as { meta?: { target?: unknown } }).meta?.target ?? "").toLowerCase();
+      return NextResponse.json(
+        { error: target.includes("username") ? "That username is already taken." : "An account with this email already exists." },
+        { status: 409 }
+      );
+    }
     console.error("[auth/register] error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
