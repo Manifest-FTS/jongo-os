@@ -1,18 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import RichNotificationMessage from "@/components/RichNotificationMessage";
 
 type NotificationRow = {
   id: string;
   type: string;
   title: string;
   message: string;
+  actionLinkLabel: string | null;
+  actionLinkUrl: string | null;
   readAt: string | null;
   createdAt: string;
 };
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function safeActionHref(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -152,8 +165,9 @@ export default function NotificationsListView() {
         ) : null}
 
         <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.9rem" }}>
-          {rows.map((row) => (
-            <div key={row.id} style={{ padding: "0.8rem 0.9rem", border: "1px solid var(--border)", borderRadius: "12px", background: row.readAt ? "transparent" : "var(--surface)" }}>
+          {rows.map((row) => {
+            const actionHref = safeActionHref(row.actionLinkUrl);
+            return <div key={row.id} style={{ padding: "0.8rem 0.9rem", border: "1px solid var(--border)", borderRadius: "12px", background: row.readAt ? "transparent" : "var(--surface)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.6rem", alignItems: "flex-start" }}>
                 <div>
                   <span className="tag" style={{ marginRight: "0.5rem" }}>{TYPE_LABELS[row.type] ?? row.type}</span>
@@ -161,14 +175,21 @@ export default function NotificationsListView() {
                 </div>
                 <span className="card-muted" style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{formatDate(row.createdAt)}</span>
               </div>
-              <p style={{ margin: "0.4rem 0 0", color: "var(--muted)" }}>{row.message}</p>
+              <div style={{ margin: "0.4rem 0 0", color: "var(--muted)" }}><RichNotificationMessage text={row.message} /></div>
+              {row.actionLinkLabel && actionHref ? (
+                <p style={{ margin: "0.65rem 0 0" }}>
+                  <a className="btn" href={actionHref} target="_blank" rel="noreferrer">
+                    {row.actionLinkLabel}
+                  </a>
+                </p>
+              ) : null}
               {!row.readAt ? (
                 <button type="button" className="btn" style={{ marginTop: "0.5rem" }} onClick={() => void markRead(row.id)}>
                   Mark as read
                 </button>
               ) : null}
-            </div>
-          ))}
+            </div>;
+          })}
         </div>
       </article>
     </div>

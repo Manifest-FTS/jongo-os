@@ -831,6 +831,8 @@ model Notification {
   type        NotificationType @default(general)
   title       String
   message     String
+  actionLinkLabel String?
+  actionLinkUrl   String?
   readAt      DateTime?
   // Hides a notification from the top-bar tray without deleting its history —
   // "Dismiss" and "Clear All" both set this rather than removing the row, so
@@ -870,6 +872,8 @@ model NotificationBroadcast {
   templateKey      String?
   subject          String
   message          String
+  actionLinkLabel  String?
+  actionLinkUrl    String?
   deliveryMode     NotificationDeliveryMode @default(in_app)
   // { scope: "all" | "clients" | "apps" | "members", clientIds?, siteIds?, userIds? }
   recipientScope   Json

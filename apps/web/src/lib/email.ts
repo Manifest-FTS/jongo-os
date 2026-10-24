@@ -45,8 +45,14 @@ function getSmtpConfig() {
   const user = process.env.SMTP_USER?.trim() ?? "";
   const pass = process.env.SMTP_PASSWORD ?? "";
   const from = process.env.SMTP_FROM?.trim() ?? "noreply@localhost";
+  const fromName = process.env.SMTP_FROM_NAME?.trim() || "Jongo by Manifest FTS";
 
-  return { host, port, secure, user, pass, from, provider: "smtp" as const };
+  return { host, port, secure, user, pass, from, fromName, provider: "smtp" as const };
+}
+
+function formatFromAddress(value: string, name: string): string {
+  const address = value.match(/<\s*([^<>\s]+@[^<>\s]+)\s*>/)?.[1] ?? value.trim();
+  return `${name.replace(/[<>\r\n]/g, "").trim()} <${address}>`;
 }
 
 export async function sendTransactionalEmail(input: {
@@ -63,6 +69,7 @@ export async function sendTransactionalEmail(input: {
   if (mode === "smtp2go_api") {
     const apiKey = process.env.SMTP2GO_API_KEY?.trim() ?? "";
     const from = process.env.SMTP_FROM?.trim() ?? "noreply@localhost";
+    const fromName = process.env.SMTP_FROM_NAME?.trim() || "Jongo by Manifest FTS";
 
     try {
       const response = await fetch("https://api.smtp2go.com/v3/email/send", {
@@ -71,7 +78,7 @@ export async function sendTransactionalEmail(input: {
         body: JSON.stringify({
           api_key: apiKey,
           to: [input.to],
-          sender: from,
+          sender: formatFromAddress(from, fromName),
           subject: input.subject,
           text_body: input.text,
           html_body: input.html ?? `<p>${escapeHtml(input.text)}</p>`
@@ -123,7 +130,7 @@ export async function sendTransactionalEmail(input: {
     });
 
     const info = await transporter.sendMail({
-      from: config.from,
+      from: { name: config.fromName, address: config.from.match(/<\s*([^<>\s]+@[^<>\s]+)\s*>/)?.[1] ?? config.from },
       to: input.to,
       subject: input.subject,
       text: input.text,

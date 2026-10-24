@@ -31,6 +31,8 @@ export type TransactionalEmailContent = {
   badge?: { tone: EmailTone; label: string };
   title: string;
   intro?: string;
+  /** Pre-escaped, allowlisted rich-text HTML from rich-message.ts only. */
+  introHtml?: string;
   /** Rendered as a bordered key/value panel. */
   rows?: EmailDetailRow[];
   /** A tinted box for the one thing the reader must not miss. */
@@ -63,6 +65,7 @@ const TONES: Record<EmailTone, { bg: string; text: string; border: string }> = {
 };
 
 const FONT = `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`;
+const JONGO_EMAIL_URL = "https://jongo.app/?utm_source=transactional_email&utm_medium=email&utm_campaign=notifications";
 
 export function escapeHtml(value: string): string {
   return String(value)
@@ -156,13 +159,16 @@ export function renderTransactionalEmail(content: TransactionalEmailContent): st
 
   <tr><td class="jg-header jg-pad" bgcolor="${BRAND.headerTint}" style="padding:18px 28px;background:${BRAND.headerTint};background-image:linear-gradient(120deg,#eef8e6 0%,#fff6f0 55%,#f3f9ff 100%);border-bottom:1px solid ${BRAND.divider};">
     <div style="font-family:${FONT};font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:${BRAND.eyebrow};font-weight:700;">Manifest FTS</div>
-    <div class="jg-heading" style="margin-top:3px;font-family:${FONT};font-size:20px;line-height:1.2;color:${BRAND.heading};font-weight:800;">Jongo</div>
+    <a href="${JONGO_EMAIL_URL}" style="display:inline-flex;align-items:center;gap:8px;margin-top:5px;color:${BRAND.heading};font-family:${FONT};font-size:20px;line-height:1.2;font-weight:800;text-decoration:none;">
+      <img src="https://jongo.app/assets/images/jongo-logomark-color.png" width="28" height="28" alt="Jongo" style="display:block;width:28px;height:28px;border:0;">
+      <span>Jongo</span>
+    </a>
   </td></tr>
 
   <tr><td class="jg-pad" style="padding:26px 28px 4px;">
     ${content.badge ? renderBadge(content.badge) : ""}
     <h1 class="jg-heading" style="margin:0 0 10px;font-family:${FONT};font-size:22px;line-height:1.3;color:${BRAND.heading};font-weight:700;">${escapeHtml(content.title)}</h1>
-    ${content.intro ? `<p class="jg-text" style="margin:0 0 18px;font-family:${FONT};font-size:14px;line-height:1.6;color:${BRAND.body};">${escapeHtml(content.intro)}</p>` : ""}
+    ${content.introHtml ?? (content.intro ? `<p class="jg-text" style="margin:0 0 18px;font-family:${FONT};font-size:14px;line-height:1.6;color:${BRAND.body};">${escapeHtml(content.intro).replace(/\r?\n/g, "<br>")}</p>` : "")}
     ${content.rows && content.rows.length > 0 ? renderRows(content.rows) : ""}
     ${content.callout ? renderCallout(content.callout) : ""}
     ${content.cta && ctaHref ? renderCta(content.cta) : ""}
@@ -175,6 +181,14 @@ export function renderTransactionalEmail(content: TransactionalEmailContent): st
     </div>
   </td></tr>` : ""}
 
+</table>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px auto 0;">
+  <tr><td align="center" style="font-family:${FONT};font-size:12px;line-height:1.5;color:${BRAND.muted};">
+    <a href="${JONGO_EMAIL_URL}" style="display:inline-flex;align-items:center;gap:6px;color:${BRAND.muted};text-decoration:none;">
+      <img src="https://jongo.app/assets/images/jongo-logomark-color.png" width="20" height="20" alt="" style="display:block;width:20px;height:20px;border:0;">
+      <span>Jongo by Manifest FTS</span>
+    </a>
+  </td></tr>
 </table>
 </td></tr>
 </table>

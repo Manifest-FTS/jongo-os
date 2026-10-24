@@ -71,6 +71,10 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   return (
     <div data-platform-theme="light" className={`app-shell ${platformHeadings.variable} ${platformBody.variable} ${platformStats.variable}`}>
       <aside className="app-sidebar">
+        <div className="sidebar-workspace-switcher">
+          <span className="sidebar-section-label">WORKSPACE</span>
+          <WorkspaceSwitcher initialOptions={workspaces.items} hasMore={workspaces.hasMore} nextCursor={workspaces.nextCursor} />
+        </div>
         <PlatformPrimaryNav canViewBilling={canViewBilling} />
       </aside>
 
@@ -80,7 +84,6 @@ export default async function PlatformLayout({ children }: { children: React.Rea
             <JongoBrandLockup />
           </Link>
 
-          <WorkspaceSwitcher initialOptions={workspaces.items} hasMore={workspaces.hasMore} nextCursor={workspaces.nextCursor} />
           <div className="topbar-actions">
             <NotificationBell />
             <details className="user-menu">
