@@ -38,6 +38,8 @@ export async function GET(request: Request) {
         type: true,
         title: true,
         message: true,
+        actionLinkLabel: true,
+        actionLinkUrl: true,
         readAt: true,
         createdAt: true,
         clientId: true,

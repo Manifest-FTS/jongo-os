@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isPlatformAdminEmail } from "@/lib/permissions";
-import { sendBroadcast, type BroadcastDeliveryMode, type BroadcastScope } from "@/lib/notifications";
+import { normalizeBroadcastActionLink, sendBroadcast, type BroadcastDeliveryMode, type BroadcastScope } from "@/lib/notifications";
 
 const SCOPES: BroadcastScope[] = ["all", "clients", "apps", "members"];
 const MODES: BroadcastDeliveryMode[] = ["in_app", "email", "in_app_and_email"];
 
 /**
  * POST /api/notifications/broadcast
- * { scope, clientIds?, siteIds?, userIds?, templateKey?, subject, message, deliveryMode, actionLink? }
+ * { scope, clientIds?, siteIds?, userIds?, templateKey?, subject, message, deliveryMode, actionLinkLabel?, actionLinkUrl? }
  */
 export async function POST(request: Request) {
   const session = await auth();
@@ -22,6 +22,7 @@ export async function POST(request: Request) {
   const deliveryMode = MODES.includes(body?.deliveryMode) ? (body.deliveryMode as BroadcastDeliveryMode) : null;
   const subject = typeof body?.subject === "string" ? body.subject.trim() : "";
   const message = typeof body?.message === "string" ? body.message.trim() : "";
+  const action = normalizeBroadcastActionLink({ label: body?.actionLinkLabel, url: body?.actionLinkUrl });
 
   if (!scope) {
     return NextResponse.json({ error: "scope must be one of all, clients, apps, members" }, { status: 400 });
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
   if (!message) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
+  if (action.error) return NextResponse.json({ error: action.error }, { status: 400 });
 
   const clientIds = Array.isArray(body?.clientIds) ? body.clientIds.filter((v: unknown) => typeof v === "string") : [];
   const siteIds = Array.isArray(body?.siteIds) ? body.siteIds.filter((v: unknown) => typeof v === "string") : [];
@@ -58,7 +60,8 @@ export async function POST(request: Request) {
       templateKey: typeof body?.templateKey === "string" ? body.templateKey : null,
       deliveryMode,
       selection: { scope, clientIds, siteIds, userIds },
-      actionLink: typeof body?.actionLink === "string" ? body.actionLink.trim() : undefined
+      actionLinkLabel: action.actionLink?.label,
+      actionLinkUrl: action.actionLink?.url
     });
 
     if (result.recipientCount === 0) {

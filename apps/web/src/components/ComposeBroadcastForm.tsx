@@ -21,12 +21,16 @@ export default function ComposeBroadcastForm() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
   const [templateKey, setTemplateKey] = useState<string>("custom_announcement");
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
-  const [actionLink, setActionLink] = useState("");
+  const [subject, setSubject] = useState("Security update completed for your PHP-powered apps");
+  const [message, setMessage] = useState(
+    "Hi {{recipient_name}},\n\nWe’ve updated PHP—the software used by PHP-powered apps hosted on Jongo—to a patched version addressing a critical security issue announced by the PHP project.\n\nThe update is complete across PHP-powered applications on Jongo, including WordPress sites. Your site content and settings were not changed, and no action is needed.\n\nA client spotted the advisory early and brought it to our attention—thank you.\n\nRead more: {{action_link}}"
+  );
+  const [actionLinkLabel, setActionLinkLabel] = useState("Read the security notice");
+  const [actionLink, setActionLink] = useState("https://wordpress.org/news/2026/10/critical-php-security-release/");
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("in_app_and_email");
 
   const [sending, setSending] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
@@ -118,7 +122,8 @@ export default function ComposeBroadcastForm() {
           subject,
           message,
           deliveryMode,
-          actionLink: actionLink || undefined
+          actionLinkLabel: actionLinkLabel || undefined,
+          actionLinkUrl: actionLink || undefined
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -134,11 +139,45 @@ export default function ComposeBroadcastForm() {
       });
       setSubject("");
       setMessage("");
+      setActionLinkLabel("");
       setActionLink("");
     } catch {
       setResult({ ok: false, text: "Network error while sending broadcast" });
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleTestSend() {
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/notifications/broadcast/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject,
+          message,
+          actionLinkLabel: actionLinkLabel || undefined,
+          actionLinkUrl: actionLink || undefined
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResult({ ok: false, text: (data as { error?: string }).error ?? "Could not send your preview" });
+        return;
+      }
+      const sent = Number((data as any).emailSentCount ?? 0) > 0;
+      setResult({
+        ok: true,
+        text: sent
+          ? "Test notification added to your Jongo account and preview email sent only to you."
+          : "Test notification added to your Jongo account, but the preview email could not be sent."
+      });
+    } catch {
+      setResult({ ok: false, text: "Network error while sending your preview" });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -233,8 +272,10 @@ export default function ComposeBroadcastForm() {
         </div>
         <p className="card-muted" style={{ marginTop: "0.5rem", fontSize: "0.82rem" }}>
           Placeholders, filled in per recipient: <code>{"{{recipient_name}}"}</code> (their first name),{" "}
-          <code>{"{{client_name}}"}</code> (their client/organization), <code>{"{{app_name}}"}</code> (only set when
-          targeting specific apps) and <code>{"{{action_link}}"}</code>.
+          <code>{"{{client_name}}"}</code> (their client/organization), <code>{"{{app_name}}"}</code> (when targeting
+          specific apps), <code>{"{{action_link}}"}</code>, and <code>{"{{action_link_label}}"}</code>. Supports paragraph breaks,
+          <code> **bold** </code>, <code>*italic*</code>, and safe links like <code>[Read more](https://example.com)</code>.
+          Raw HTML is shown as text.
         </p>
       </div>
 
@@ -261,10 +302,17 @@ export default function ComposeBroadcastForm() {
         />
       </label>
 
-      <label style={{ display: "grid", gap: "0.35rem" }}>
-        <span>Action link (optional — fills {"{{action_link}}"})</span>
-        <input type="url" className="form-input" value={actionLink} onChange={(e) => setActionLink(e.target.value)} placeholder="https://..." />
-      </label>
+      <fieldset style={{ display: "grid", gap: "0.6rem", border: "1px solid var(--border)", borderRadius: "12px", padding: "0.9rem" }}>
+        <legend style={{ padding: "0 0.35rem", fontWeight: 600 }}>Action button (optional)</legend>
+        <label style={{ display: "grid", gap: "0.35rem" }}>
+          <span>Button label</span>
+          <input className="form-input" value={actionLinkLabel} onChange={(e) => setActionLinkLabel(e.target.value)} maxLength={80} placeholder="Read the security notice" />
+        </label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>
+          <span>Destination URL</span>
+          <input type="url" className="form-input" value={actionLink} onChange={(e) => setActionLink(e.target.value)} placeholder="https://..." />
+        </label>
+      </fieldset>
 
       <div>
         <h3 className="card-title">Delivery Mode</h3>
@@ -283,9 +331,17 @@ export default function ComposeBroadcastForm() {
       ) : null}
 
       <div>
-        <button type="submit" className="btn" disabled={sending}>
-          {sending ? "Sending…" : "Send Broadcast"}
-        </button>
+        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-secondary" disabled={sending || testing || !subject.trim() || !message.trim()} onClick={() => void handleTestSend()}>
+            {testing ? "Sending your preview…" : "Send test to me"}
+          </button>
+          <button type="submit" className="btn" disabled={sending || testing}>
+            {sending ? "Sending…" : "Send Broadcast"}
+          </button>
+        </div>
+        <p className="card-muted" style={{ margin: "0.55rem 0 0", fontSize: "0.82rem" }}>
+          Test sends create an in-app preview and send email only to your signed-in super-admin account. They do not use the selected audience.
+        </p>
       </div>
     </form>
   );

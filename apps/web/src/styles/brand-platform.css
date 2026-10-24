@@ -100,6 +100,19 @@
   box-shadow: none;
 }
 [data-platform-theme="light"] .app-sidebar { top: 1.5rem; }
+[data-platform-theme="light"] .sidebar-workspace-switcher {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.35rem 0.35rem 0.7rem;
+  border-bottom: 1px solid #383838;
+}
+[data-platform-theme="light"] .sidebar-section-label {
+  padding-inline: 0.2rem;
+  color: #bdbdbd;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+}
 [data-platform-theme="light"] .app-nav {
   padding: 0.5rem;
   background: var(--surface);

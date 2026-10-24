@@ -7,6 +7,7 @@
  */
 
 import { renderTransactionalEmail } from "./email-layout";
+import { richMessageToEmailHtml, richMessageToPlainText } from "./rich-message";
 import { sendTransactionalEmail } from "./email";
 import { getDb } from "./db";
 
@@ -31,15 +32,36 @@ export type ResolvedRecipient = {
   appName: string | null;
 };
 
-/** {{recipient_name}}, {{client_name}}, {{app_name}}, {{action_link}} — the variables the composer exposes. */
+/** {{recipient_name}}, {{client_name}}, {{app_name}}, and action-link placeholders exposed by the composer. */
 export function applyTemplateVariables(
   template: string,
-  vars: { recipient_name?: string; client_name?: string; app_name?: string; action_link?: string }
+  vars: { recipient_name?: string; client_name?: string; app_name?: string; action_link?: string; action_link_label?: string }
 ): string {
-  return template.replace(/\{\{\s*(recipient_name|client_name|app_name|action_link)\s*\}\}/g, (_match, key: string) => {
+  return template.replace(/\{\{\s*(recipient_name|client_name|app_name|action_link|action_link_label)\s*\}\}/g, (_match, key: string) => {
     const value = vars[key as keyof typeof vars];
     return value && value.trim() ? value : "";
   });
+}
+
+export type BroadcastActionLink = { label: string; url: string } | null;
+
+/** Accept complete http(s) CTAs only; never render a partial or executable link. */
+export function normalizeBroadcastActionLink(input: {
+  label?: unknown;
+  url?: unknown;
+}): { actionLink: BroadcastActionLink; error: string | null } {
+  const label = typeof input.label === "string" ? input.label.trim() : "";
+  const rawUrl = typeof input.url === "string" ? input.url.trim() : "";
+  if (!label && !rawUrl) return { actionLink: null, error: null };
+  if (!label || !rawUrl) return { actionLink: null, error: "Provide both an action link label and URL, or leave both blank." };
+  if (label.length > 80) return { actionLink: null, error: "Action link label must be 80 characters or fewer." };
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("unsupported protocol");
+    return { actionLink: { label, url: parsed.toString() }, error: null };
+  } catch {
+    return { actionLink: null, error: "Action link URL must be a valid http or https address." };
+  }
 }
 
 /**
@@ -259,7 +281,8 @@ export async function sendBroadcast(input: {
   templateKey?: string | null;
   deliveryMode: BroadcastDeliveryMode;
   selection: BroadcastRecipientSelection;
-  actionLink?: string;
+  actionLinkLabel?: string;
+  actionLinkUrl?: string;
 }): Promise<{ broadcastId: string; recipientCount: number; emailSentCount: number; emailFailedCount: number }> {
   const db = await getDb();
   if (!db) {
@@ -274,6 +297,8 @@ export async function sendBroadcast(input: {
       templateKey: input.templateKey ?? null,
       subject: input.subject,
       message: input.message,
+      actionLinkLabel: input.actionLinkLabel ?? null,
+      actionLinkUrl: input.actionLinkUrl ?? null,
       deliveryMode: DELIVERY_MODE_TO_DB[input.deliveryMode],
       recipientScope: input.selection as any,
       recipientCount: recipients.length
@@ -291,7 +316,8 @@ export async function sendBroadcast(input: {
           recipient_name: deriveRecipientFirstName(r),
           client_name: r.clientName ?? undefined,
           app_name: r.appName ?? undefined,
-          action_link: input.actionLink
+          action_link: input.actionLinkUrl,
+          action_link_label: input.actionLinkLabel
         };
         return {
           userId: r.userId,
@@ -300,7 +326,9 @@ export async function sendBroadcast(input: {
           broadcastId: broadcast.id,
           type: "general" as const,
           title: applyTemplateVariables(input.subject, vars),
-          message: applyTemplateVariables(input.message, vars)
+          message: applyTemplateVariables(input.message, vars),
+          actionLinkLabel: input.actionLinkLabel ?? null,
+          actionLinkUrl: input.actionLinkUrl ?? null
         };
       })
     });
@@ -325,24 +353,32 @@ export async function sendBroadcast(input: {
         recipient_name: deriveRecipientFirstName(recipient),
         client_name: recipient.clientName ?? undefined,
         app_name: recipient.appName ?? undefined,
-        action_link: input.actionLink
+        action_link: input.actionLinkUrl,
+        action_link_label: input.actionLinkLabel
       };
       const subject = applyTemplateVariables(input.subject, vars);
       const body = applyTemplateVariables(input.message, vars);
+      const textBody = richMessageToPlainText(body);
+      const text = input.actionLinkLabel && input.actionLinkUrl
+        ? `${textBody}\n\n${input.actionLinkLabel}: ${input.actionLinkUrl}`
+        : textBody;
 
       try {
         const html = renderTransactionalEmail({
           preheader: subject,
           badge: { tone: "info", label: "Announcement" },
           title: subject,
-          intro: body,
-          footnote: "You are receiving this because you have access to a client managed on Jongo."
+          introHtml: richMessageToEmailHtml(body),
+          cta: input.actionLinkLabel && input.actionLinkUrl
+            ? { label: input.actionLinkLabel, url: input.actionLinkUrl }
+            : undefined,
+          footnote: ""
         });
 
         const result = await sendTransactionalEmail({
           to: recipient.email,
           subject,
-          text: body,
+          text,
           html
         });
         if (result.sent) emailSentCount += 1;
@@ -366,4 +402,89 @@ export async function sendBroadcast(input: {
     emailSentCount,
     emailFailedCount
   };
+}
+
+/**
+ * Preview-send a composed broadcast to its author alone. The recipient is
+ * resolved from the authenticated user id, never from client input; test sends
+ * are deliberately recorded in broadcast history and bypass email opt-out.
+ */
+export async function sendBroadcastTest(input: {
+  createdBy: string;
+  subject: string;
+  message: string;
+  actionLinkLabel?: string;
+  actionLinkUrl?: string;
+}): Promise<{ broadcastId: string; emailSentCount: number; emailFailedCount: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const recipient = await db.user.findFirst({
+    where: { id: input.createdBy, deletedAt: null },
+    select: { id: true, email: true, fullName: true }
+  });
+  if (!recipient?.email) throw new Error("Signed-in account could not be resolved");
+
+  const broadcast = await db.notificationBroadcast.create({
+    data: {
+      createdBy: recipient.id,
+      templateKey: "test_preview",
+      subject: input.subject,
+      message: input.message,
+      actionLinkLabel: input.actionLinkLabel ?? null,
+      actionLinkUrl: input.actionLinkUrl ?? null,
+      deliveryMode: "in_app_and_email",
+      recipientScope: { scope: "test", userIds: [recipient.id] },
+      recipientCount: 1
+    },
+    select: { id: true }
+  });
+
+  const vars = { recipient_name: recipient.fullName?.trim().split(/\s+/)[0] ?? recipient.email.split("@")[0] };
+  const subject = applyTemplateVariables(input.subject, vars);
+  const message = applyTemplateVariables(input.message, vars);
+  const textBody = richMessageToPlainText(message);
+  const text = input.actionLinkLabel && input.actionLinkUrl
+    ? `${textBody}\n\n${input.actionLinkLabel}: ${input.actionLinkUrl}`
+    : textBody;
+  await db.notification.create({
+    data: {
+      userId: recipient.id,
+      broadcastId: broadcast.id,
+      type: "general",
+      title: subject,
+      message,
+      actionLinkLabel: input.actionLinkLabel ?? null,
+      actionLinkUrl: input.actionLinkUrl ?? null
+    }
+  });
+
+  let emailSentCount = 0;
+  let emailFailedCount = 0;
+  try {
+    const result = await sendTransactionalEmail({
+      to: recipient.email,
+      subject,
+      text,
+      html: renderTransactionalEmail({
+        preheader: subject,
+        badge: { tone: "info", label: "Broadcast preview" },
+        title: subject,
+        introHtml: richMessageToEmailHtml(message),
+        cta: input.actionLinkLabel && input.actionLinkUrl
+          ? { label: input.actionLinkLabel, url: input.actionLinkUrl }
+          : undefined,
+        footnote: ""
+      })
+    });
+    if (result.sent) emailSentCount = 1;
+    else emailFailedCount = 1;
+  } catch {
+    emailFailedCount = 1;
+  }
+
+  await db.notificationBroadcast.update({
+    where: { id: broadcast.id },
+    data: { emailSentCount, emailFailedCount }
+  });
+  return { broadcastId: broadcast.id, emailSentCount, emailFailedCount };
 }

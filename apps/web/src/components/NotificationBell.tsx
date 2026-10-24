@@ -4,12 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BellIcon } from "@/components/JongoIcons";
 import { showDesktopNotification } from "@/lib/desktop-notifications";
+import RichNotificationMessage from "@/components/RichNotificationMessage";
+import { richMessageToPlainText } from "@/lib/rich-message";
 
 type NotificationRow = {
   id: string;
   type: string;
   title: string;
   message: string;
+  actionLinkLabel: string | null;
+  actionLinkUrl: string | null;
   readAt: string | null;
   createdAt: string;
 };
@@ -23,6 +27,16 @@ function timeAgo(iso: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function safeActionHref(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function NotificationBell() {
@@ -46,7 +60,7 @@ export default function NotificationBell() {
       if (seenIdsRef.current) {
         const unseen = notifications.filter((n) => !n.readAt && !seenIdsRef.current!.has(n.id));
         for (const n of unseen) {
-          showDesktopNotification(n.title, n.message);
+          showDesktopNotification(n.title, richMessageToPlainText(n.message));
         }
       }
       seenIdsRef.current = new Set(notifications.map((n) => n.id));
@@ -202,13 +216,21 @@ export default function NotificationBell() {
             <p className="card-muted" style={{ padding: "0.9rem", margin: 0 }}>No notifications.</p>
           ) : null}
 
-          {rows.map((row) => (
-            <div key={row.id} style={{ padding: "0.7rem 0.9rem", borderBottom: "1px solid var(--border)", background: row.readAt ? "transparent" : "#f6faf4" }}>
+          {rows.map((row) => {
+            const actionHref = safeActionHref(row.actionLinkUrl);
+            return <div key={row.id} style={{ padding: "0.7rem 0.9rem", borderBottom: "1px solid var(--border)", background: row.readAt ? "transparent" : "#f6faf4" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", alignItems: "flex-start" }}>
                 <p style={{ margin: 0, fontWeight: 600, fontSize: "0.85rem" }}>{row.title}</p>
                 <span className="card-muted" style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>{timeAgo(row.createdAt)}</span>
               </div>
-              <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>{row.message}</p>
+              <div style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}><RichNotificationMessage text={row.message} /></div>
+              {row.actionLinkLabel && actionHref ? (
+                <p style={{ margin: "0.5rem 0 0" }}>
+                  <a className="btn" href={actionHref} target="_blank" rel="noreferrer" style={{ padding: "0.2rem 0.55rem", fontSize: "0.74rem" }}>
+                    {row.actionLinkLabel}
+                  </a>
+                </p>
+              ) : null}
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.4rem" }}>
                 {!row.readAt ? (
                   <button type="button" className="btn" style={{ padding: "0.15rem 0.5rem", fontSize: "0.74rem" }} onClick={() => void markRead(row.id)}>
@@ -219,8 +241,8 @@ export default function NotificationBell() {
                   Dismiss
                 </button>
               </div>
-            </div>
-          ))}
+            </div>;
+          })}
 
           <div style={{ padding: "0.6rem 0.9rem" }}>
             <Link href="/notifications" className="btn" style={{ width: "100%", textAlign: "center" }} onClick={() => setOpen(false)}>

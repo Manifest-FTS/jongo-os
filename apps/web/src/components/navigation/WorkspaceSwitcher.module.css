@@ -2,7 +2,7 @@
   position: relative;
   min-width: 0;
   width: 100%;
-  max-width: 24rem;
+  max-width: 100%;
   font-family: var(--font-platform-ui, Inter, sans-serif);
   color: #121212;
 }
@@ -15,10 +15,11 @@
 .trigger {
   display: flex;
   align-items: center;
-  gap: .65rem;
+  gap: .45rem;
   width: 100%;
-  padding: .65rem .75rem;
-  border: 1px solid #626262;
+  padding: .45rem .55rem;
+  border: 1px solid #383838;
+  border-radius: 8px;
   background: #242424;
   color: #fff;
   text-align: left;
@@ -37,7 +38,7 @@
   z-index: 60;
   inset-inline-start: 0;
   top: calc(100% + .5rem);
-  width: min(24rem, calc(100vw - 2rem));
+  width: min(20rem, calc(100vw - 2rem));
   max-width: 100%;
   box-sizing: border-box;
   padding: .75rem;

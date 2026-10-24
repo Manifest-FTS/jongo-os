@@ -22,6 +22,8 @@ export async function GET() {
       id: true,
       templateKey: true,
       subject: true,
+      actionLinkLabel: true,
+      actionLinkUrl: true,
       deliveryMode: true,
       recipientScope: true,
       recipientCount: true,

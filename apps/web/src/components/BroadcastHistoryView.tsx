@@ -6,6 +6,8 @@ type BroadcastRow = {
   id: string;
   templateKey: string | null;
   subject: string;
+  actionLinkLabel: string | null;
+  actionLinkUrl: string | null;
   deliveryMode: string;
   recipientScope: { scope?: string } | null;
   recipientCount: number;
@@ -22,6 +24,7 @@ const DELIVERY_LABELS: Record<string, string> = {
 };
 
 const SCOPE_LABELS: Record<string, string> = {
+  test: "Test to Me",
   all: "All Clients",
   clients: "Specific Client(s)",
   apps: "Specific App(s)",
@@ -177,6 +180,7 @@ export default function BroadcastHistoryView() {
               ) : null}
               <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
                 <span className="tag">{SCOPE_LABELS[row.recipientScope?.scope ?? ""] ?? "Recipients"}</span>
+                {row.actionLinkLabel ? <span className="tag">Button: {row.actionLinkLabel}</span> : null}
                 <span className="tag">{DELIVERY_LABELS[row.deliveryMode] ?? row.deliveryMode}</span>
                 <span className="tag">{row.recipientCount} recipient{row.recipientCount === 1 ? "" : "s"}</span>
                 {row.deliveryMode !== "in_app" ? (
