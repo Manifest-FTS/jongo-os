@@ -7,7 +7,6 @@ import { getAppsEmptyStateMessage } from "@/lib/reason-messages";
 import { getInventorySnapshot, isClientAdmin } from "@/lib/repositories";
 import { auth } from "@/lib/auth.config";
 import { ArrowRightIcon } from "@/components/JongoIcons";
-import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import SiteDirectoryView from "@/components/SiteDirectoryView";
 
 export const dynamic = "force-dynamic";
@@ -15,16 +14,6 @@ export const dynamic = "force-dynamic";
 const DIRECTORY_BACKUP_FETCH_BATCH_SIZE = 4;
 const DIRECTORY_BACKUP_POSTURE_TTL_MS = 60_000;
 const DIRECTORY_STAGING_POSTURE_TTL_MS = 60_000;
-
-function formatAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 function hasRecentSuccessfulBackup(iso: string, maxAgeDays = 7): boolean {
   const ageMs = Date.now() - new Date(iso).getTime();
@@ -215,23 +204,7 @@ export default async function SitesPage() {
       <div className="page-head">
         <div>
           <h1 className="page-title">Apps ({siteDirectory.length})</h1>
-          <p className="page-subtitle">Filter by name or health and switch between list and grid as needed.</p>
-          <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
-            <span className={`status-chip ${overview.mode}`}>{overview.mode}</span>
-            {overview.mode === "live"
-              ? (
-                <>
-                  Live provider · {formatAgo(overview.generatedAt)}
-                  {overview.fetchError && siteDirectory.length === 0 && <span style={{ color: "var(--error, #c0392b)" }}>· API unavailable</span>}
-                </>
-              )
-              : "Provider not configured — demo mode"}
-            {siteDirectory.length > 0 && (
-              <span style={{ color: "var(--muted)" }}>
-                · {siteDirectory.length} app{siteDirectory.length === 1 ? "" : "s"} visible ({inventory.counts.dbMappedVisibleSites} mapped, {inventory.counts.coolifyVisibleSites} live)
-              </span>
-            )}
-          </p>
+          <p className="page-subtitle">Your workspaces and the apps they run.</p>
         </div>
       </div>
 
@@ -261,11 +234,8 @@ export default async function SitesPage() {
             </p>
           ) : null}
 
-          <div style={{ marginBottom: "0.75rem" }}>
-            <CreateOrganizationForm />
-          </div>
           <p style={{ marginTop: "0.5rem" }}>
-            <Link href="/clients" className="action-link">Manage clients <ArrowRightIcon className="btn-icon" /></Link>
+            <Link href="/clients" className="action-link">Open workspaces <ArrowRightIcon className="btn-icon" /></Link>
           </p>
         </div>
       ) : (

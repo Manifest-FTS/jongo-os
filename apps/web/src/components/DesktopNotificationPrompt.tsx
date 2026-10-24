@@ -66,7 +66,7 @@ export default function DesktopNotificationPrompt() {
     >
       <p style={{ margin: 0, fontWeight: 700 }}>Enable desktop notifications?</p>
       <p className="card-muted" style={{ margin: "0.4rem 0 0.85rem", fontSize: "0.85rem" }}>
-        Get an alert and sound the moment a new notification arrives, even in another tab.
+        Get a desktop pop-up when a new Jongo notification arrives.
       </p>
       <div style={{ display: "flex", gap: "0.5rem" }}>
         <button type="button" className="btn" onClick={() => void handleEnable()} disabled={requesting}>

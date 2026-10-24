@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BellIcon } from "@/components/JongoIcons";
-import { playAlertSound, showDesktopNotification } from "@/lib/desktop-notifications";
+import { showDesktopNotification } from "@/lib/desktop-notifications";
 
 type NotificationRow = {
   id: string;
@@ -48,7 +48,6 @@ export default function NotificationBell() {
         for (const n of unseen) {
           showDesktopNotification(n.title, n.message);
         }
-        if (unseen.length > 0) playAlertSound();
       }
       seenIdsRef.current = new Set(notifications.map((n) => n.id));
 

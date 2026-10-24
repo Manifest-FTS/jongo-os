@@ -1,21 +1,19 @@
 "use client";
 
 /**
- * Desktop (browser) notifications for new Jongo notifications, plus the
- * alert sound that accompanies them.
+ * Desktop (browser) notifications for new Jongo notifications.
  *
  * Deliberately NOT a service worker + Web Push subscription: that needs a
  * VAPID key pair, a subscription stored per device, and delivery that works
  * while the tab is closed. What is built here fires while the tab is open
- * (foreground or backgrounded), which covers the actual ask -- an OS-level
- * popup and sound when something new comes in while you're working -- without
+ * (foreground or backgrounded), which covers the ask -- an OS-level popup
+ * when something new comes in while you're working -- without
  * that infrastructure. If notifications need to reach a closed tab, that is a
  * separate, larger feature.
  */
 
-const SOUND_ENABLED_KEY = "jongo:notifications:soundEnabled";
+const NOTIFICATIONS_ENABLED_KEY = "jongo:notifications:desktopEnabled";
 const PROMPT_DISMISSED_KEY = "jongo:notifications:promptDismissedAt";
-const ALERT_SOUND_SRC = "/assets/audio/jongo-alert.mp3";
 
 export type DesktopNotificationSupport = "unsupported" | "default" | "granted" | "denied";
 
@@ -38,34 +36,19 @@ export async function requestPermission(): Promise<DesktopNotificationSupport> {
   }
 }
 
-export function isSoundEnabled(): boolean {
+export function areDesktopNotificationsEnabled(): boolean {
   if (typeof window === "undefined") return true;
-  const stored = window.localStorage.getItem(SOUND_ENABLED_KEY);
-  return stored === null ? true : stored === "true";
+  return window.localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) !== "false";
 }
 
-export function setSoundEnabled(enabled: boolean): void {
+export function setDesktopNotificationsEnabled(enabled: boolean): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(SOUND_ENABLED_KEY, String(enabled));
-}
-
-/** Best-effort: autoplay restrictions or a missing file must never throw into a caller. */
-export function playAlertSound(): void {
-  if (typeof window === "undefined" || !isSoundEnabled()) return;
-  try {
-    const audio = new Audio(ALERT_SOUND_SRC);
-    audio.volume = 0.6;
-    void audio.play().catch(() => {
-      // Autoplay blocked (no prior user gesture on this page yet) -- silent.
-    });
-  } catch {
-    // Ignore -- the desktop/in-app notification itself still got through.
-  }
+  window.localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, String(enabled));
 }
 
 /** No-op unless permission has already been granted; never prompts on its own. */
 export function showDesktopNotification(title: string, body: string): void {
-  if (getPermission() !== "granted") return;
+  if (getPermission() !== "granted" || !areDesktopNotificationsEnabled()) return;
   try {
     // eslint-disable-next-line no-new
     new Notification(title, {
