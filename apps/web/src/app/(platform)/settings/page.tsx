@@ -11,7 +11,6 @@ import { GlobeIcon, LockIcon, UserIcon } from "@/components/JongoIcons";
 import EmailTestPanel from "@/components/EmailTestPanel";
 import DesktopNotificationSettings from "@/components/DesktopNotificationSettings";
 import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
-import PendingBadge from "@/components/PendingBadge";
 import ProfileSettingsForm from "@/components/ProfileSettingsForm";
 import PlatformAdminsPanel from "@/components/PlatformAdminsPanel";
 import { isPlatformAdminEmail } from "@/lib/permissions";
@@ -202,24 +201,22 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
       {activeTab === "security" ? (
         <div className="grid">
-          <article className="card tone-card">
-            <h3 className="card-title">Security</h3>
-            <p className="card-muted">
-              Password changes, two-factor authentication, and recovery settings will live here.
+          <article className="card">
+            <h3 className="card-title">Sign-in method</h3>
+            <p className="card-muted" style={{ marginBottom: 0 }}>
+              {currentUser?.authProvider && currentUser.authProvider !== "local"
+                ? `You sign in with ${currentUser.authProvider}. Manage your password with that provider.`
+                : "You sign in with your Jongo email and password."}
             </p>
-            <ul style={{ fontSize: "0.9rem", margin: "0.75rem 0 0", paddingLeft: "1.25rem" }}>
-              <li>Authentication provider: {currentUser?.authProvider ?? "local credentials"}</li>
-              <li>Password updates and recovery options are being prepared.</li>
-              <li>Two-factor authentication will be added in a follow-up pass.</li>
-            </ul>
           </article>
 
-          <article className="card tone-card">
-            <h3 className="card-title" style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-              Access Tokens <PendingBadge reason="Personal API token management is not yet available. Tokens for scripting and integrations will be generated here." />
-            </h3>
-            <p className="card-muted">Manage personal automation access and revoke unused tokens.</p>
-          </article>
+          {!currentUser?.authProvider || currentUser.authProvider === "local" ? (
+            <article className="card">
+              <h3 className="card-title">Password</h3>
+              <p className="card-muted">Request a one-time password reset link by email. The link expires after 60 minutes.</p>
+              <Link href="/auth/forgot-password" className="btn btn-secondary">Send password reset link</Link>
+            </article>
+          ) : null}
         </div>
       ) : null}
 

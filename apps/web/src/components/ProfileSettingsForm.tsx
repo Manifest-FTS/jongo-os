@@ -95,7 +95,7 @@ export default function ProfileSettingsForm({ initial }: Props) {
           </div>
 
           <div>
-            <label className="form-label">Role</label>
+            <label className="form-label">Job title</label>
             <input
               type="text"
               value={profileRole}
@@ -105,7 +105,9 @@ export default function ProfileSettingsForm({ initial }: Props) {
               }}
               placeholder="Founder"
               className="form-input"
+              aria-describedby="profile-job-title-help"
             />
+            <p id="profile-job-title-help" className="form-help">Shown as profile information only; it does not change your access.</p>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.85rem" }}>
