@@ -99,12 +99,21 @@
   border-radius: 12px;
   box-shadow: none;
 }
-[data-platform-theme="light"] .app-sidebar { top: 1.5rem; }
+[data-platform-theme="light"] .app-sidebar {
+  top: 1.5rem;
+  align-content: start;
+  align-self: start;
+  gap: 0.75rem;
+  background: transparent;
+  border: 0;
+}
 [data-platform-theme="light"] .sidebar-workspace-switcher {
   display: grid;
   gap: 0.35rem;
-  padding: 0.35rem 0.35rem 0.7rem;
-  border-bottom: 1px solid #383838;
+  padding: 0.6rem 0.5rem 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 [data-platform-theme="light"] .sidebar-section-label {
   padding-inline: 0.2rem;
