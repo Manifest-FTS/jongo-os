@@ -4,70 +4,85 @@
   width: 100%;
   max-width: 100%;
   font-family: var(--font-platform-ui, Inter, sans-serif);
-  color: #121212;
+  color: #fff;
 }
 .trigger, .option, .next, .search {
   box-sizing: border-box;
   min-height: 44px;
   font: inherit;
-  border-radius: 4px;
+  border-radius: 8px;
 }
 .trigger {
   display: flex;
   align-items: center;
-  gap: .45rem;
+  gap: .5rem;
   width: 100%;
-  padding: .45rem .55rem;
+  padding: .5rem .65rem;
   border: 1px solid #383838;
-  border-radius: 8px;
   background: #242424;
   color: #fff;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
 }
+.trigger:hover { background: #2e2e2e; }
 .name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .badge {
   flex-shrink: 0;
-  padding: .2rem .4rem;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  font-size: .75rem;
+  padding: .1rem .4rem;
+  border: 1px solid #585858;
+  border-radius: 6px;
+  color: #bdbdbd;
+  font-size: .7rem;
+  font-weight: 600;
 }
 .panel {
   position: absolute;
   z-index: 60;
   inset-inline-start: 0;
-  top: calc(100% + .5rem);
-  width: min(20rem, calc(100vw - 2rem));
+  top: calc(100% + .4rem);
+  width: min(18rem, calc(100vw - 2rem));
   max-width: 100%;
   box-sizing: border-box;
-  padding: .75rem;
-  border: 1px solid #767676;
-  border-radius: 4px;
-  background: #fff;
-  color: #121212;
-  box-shadow: 0 8px 28px #0003;
+  padding: .5rem;
+  border: 1px solid #383838;
+  border-radius: 12px;
+  background: #181818;
+  color: #fff;
+  box-shadow: 0 16px 40px #0008;
 }
 .panel[hidden] { display: none; }
-.label { display: block; margin-bottom: .4rem; font-weight: 600; }
-.search { width: 100%; padding: .5rem; border: 1px solid #767676; background: #fff; color: #121212; }
-.results { max-height: min(18rem, 40dvh); overflow-y: auto; overscroll-behavior: contain; margin-top: .5rem; }
-.list { list-style: none; margin: 0; padding: 0; }
-.option { display: flex; align-items: center; gap: .5rem; padding: .6rem; color: #121212; text-decoration: none; }
-.option:hover, .option[aria-current="page"] { background: #edf1ff; }
-.option[aria-current="page"] { font-weight: 700; }
-.message { margin: .5rem 0; font-size: .875rem; overflow-wrap: anywhere; }
-.message:empty { margin: 0; }
-.next { border: 1px solid #767676; background: #fff; color: #121212; padding: .5rem .75rem; cursor: pointer; }
-.next:disabled { opacity: .6; cursor: wait; }
-.create { margin-top: .65rem; border-top: 1px solid #ddd; padding-top: .65rem; }
-.create > button { width: 100%; white-space: normal; }
-.trigger:focus-visible { outline: 2px solid #8096ff; outline-offset: 3px; }
-.panel :is(a, button, input):focus-visible { outline: 2px solid #2b55ff; outline-offset: 2px; }
-@media (max-width: 480px) {
-  .panel { padding: .5rem; }
-  .trigger { gap: .4rem; }
+.label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
+.search { width: 100%; padding: .5rem .7rem; border: 1px solid #383838; background: #242424; color: #fff; }
+.search::placeholder { color: #8a8a8a; }
+.results {
+  max-height: min(16rem, 40dvh);
+  margin-top: .4rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
+}
+.results::-webkit-scrollbar { display: none; }
+.list { list-style: none; margin: 0; padding: 0 0 14px; }
+.option { display: flex; align-items: center; gap: .5rem; min-height: 40px; padding: .45rem .6rem; color: #e6e6e6; font-size: .9rem; text-decoration: none; }
+.option:hover { background: rgb(255 255 255 / 10%); color: #fff; }
+.option[aria-current="page"] { background: rgb(43 85 255 / 18%); color: #fff; font-weight: 600; }
+.message { margin: .5rem .25rem; color: #bdbdbd; font-size: .85rem; overflow-wrap: anywhere; }
+.message:empty { margin: 0; }
+.next { margin-top: .25rem; padding: .5rem .75rem; border: 1px solid #383838; background: #242424; color: #fff; cursor: pointer; }
+.next:disabled { opacity: .6; cursor: wait; }
+.create { margin-top: .4rem; padding-top: .5rem; border-top: 1px solid #383838; }
+.create > button { width: 100%; white-space: normal; }
+.trigger:focus-visible { outline: 2px solid #8096ff; outline-offset: 2px; }
+.panel :is(a, button, input):focus-visible { outline: 2px solid #8096ff; outline-offset: -2px; }
 @media (forced-colors: active) {
   .trigger, .panel, .search, .next { border-color: ButtonText; }
   .option[aria-current="page"] { outline: 1px solid Highlight; }

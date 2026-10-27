@@ -124,7 +124,7 @@ export default function WorkspaceSwitcher({ initialOptions, hasMore = false, nex
       <section id={`${id}-panel`} aria-label="Switch workspace" className={styles.panel} hidden={!open}>
         <label htmlFor={`${id}-search`} className={styles.label}>Find a workspace</label>
         <input ref={searchInput} id={`${id}-search`} type="search" className={styles.search} value={search}
-          maxLength={100} autoComplete="off" onChange={(event) => {
+          maxLength={100} autoComplete="off" placeholder="Search workspaces" onChange={(event) => {
             const value = event.target.value.slice(0, 100);
             setSearch(value);
             void load(value);
