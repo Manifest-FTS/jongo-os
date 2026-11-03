@@ -1,0 +1,24 @@
+{
+  "name": "@jongo/craft",
+  "version": "0.1.0-preview.6",
+  "description": "Bounded Craft shell and fictional Golf Lab review extension; not a production backend",
+  "type": "module",
+  "license": "Apache-2.0",
+  "files": ["dist", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./golf-lab": { "types": "./dist/golf-lab/index.d.ts", "import": "./dist/golf-lab/index.js" },
+    "./logic": { "types": "./dist/golf-lab/logic.d.ts", "import": "./dist/golf-lab/logic.js" },
+    "./styles.css": "./dist/styles.css",
+    "./studio.css": "./dist/studio.css"
+  },
+  "sideEffects": ["**/*.css"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-css.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "devDependencies": { "typescript": "~5.9.3", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0", "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "engines": { "node": ">=20" }
+}
