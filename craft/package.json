@@ -1,25 +1,73 @@
 {
   "name": "@jongo/craft",
-  "version": "0.1.0-preview.7",
-  "description": "Bounded Craft shell, neutral Sanity-style content studio and fictional Golf Lab review extension; not a production backend",
+  "version": "0.1.0-preview.8",
+  "description": "Bounded Craft shell, neutral Sanity-style content studio, fictional Golf Lab review extension and a server-only Postgres persistence subpath; preview, not production-ready",
   "type": "module",
   "license": "Apache-2.0",
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "migrations",
+    "README.md"
+  ],
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./content": { "types": "./dist/content.d.ts", "import": "./dist/content.js" },
-    "./golf-lab": { "types": "./dist/golf-lab/index.d.ts", "import": "./dist/golf-lab/index.js" },
-    "./logic": { "types": "./dist/golf-lab/logic.d.ts", "import": "./dist/golf-lab/logic.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./content": {
+      "types": "./dist/content.d.ts",
+      "import": "./dist/content.js"
+    },
+    "./golf-lab": {
+      "types": "./dist/golf-lab/index.d.ts",
+      "import": "./dist/golf-lab/index.js"
+    },
+    "./logic": {
+      "types": "./dist/golf-lab/logic.d.ts",
+      "import": "./dist/golf-lab/logic.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
     "./styles.css": "./dist/styles.css",
     "./studio.css": "./dist/studio.css"
   },
-  "sideEffects": ["**/*.css"],
+  "sideEffects": [
+    "**/*.css"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-css.mjs",
     "test": "npm run build && node --test tests/*.test.mjs",
+    "test:db": "npm run build && node scripts/test-db.mjs",
     "prepack": "npm run build"
   },
-  "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" },
-  "devDependencies": { "typescript": "~5.9.3", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0", "react": "^19.0.0", "react-dom": "^19.0.0" },
-  "engines": { "node": ">=20" }
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "groq-js": "^2.0.1",
+    "pg": "^8.11.0"
+  },
+  "peerDependenciesMeta": {
+    "groq-js": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "groq-js": "^2.0.1",
+    "pg": "^8.23.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

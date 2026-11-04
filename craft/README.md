@@ -2,10 +2,65 @@
 
 Independent ESM React 19 package: generic typed Craft shell, shared UI and a fictional Golf Lab extension. **Not a production backend.** No Jongo admin/auth/billing dependencies.
 
-Exports: `@jongo/craft`, `@jongo/craft/content` (pure schema/Portable Text/validation logic, no React), `@jongo/craft/golf-lab`, `@jongo/craft/logic`, `@jongo/craft/styles.css`, `@jongo/craft/studio.css`. Import CSS explicitly. `npm ci --ignore-scripts`, `npm test`, `npm pack` build JavaScript, declarations and scoped CSS using the locked toolchain. Peer dependencies: React and React DOM 19.
+Exports: `@jongo/craft`, `@jongo/craft/content` (pure schema/Portable Text/validation logic, no React), `@jongo/craft/golf-lab`, `@jongo/craft/logic`, `@jongo/craft/server` (server-only PostgreSQL persistence, see below), `@jongo/craft/styles.css`, `@jongo/craft/studio.css`. Import CSS explicitly. `npm ci --ignore-scripts`, `npm test`, `npm pack` build JavaScript, declarations and scoped CSS using the locked toolchain. Peer dependencies: React and React DOM 19; `pg` and `groq-js` are optional peers needed only by `@jongo/craft/server`.
 
 Preview.7 turns `ContentStudio` into a neutral Sanity-style content editor: documents are `{ _id, _type, ...fields }` (the flat `{id,type,title,values}` shape and `validateContent` are gone), with string/text/number/boolean/date/datetime/url/slug/enum/object/array/reference/image/Portable Text fields, per-field validation and a bounded Portable Text editor that preserves unknown blocks, marks and annotations. Drafts live in page memory only; persistence, publishing, uploads and authentication are not connected, and this is not Sanity Studio parity.
 
 Preview.6 retains role-scoped RFC 5545 Golf calendar downloads and restores labeled native date inputs using the existing scoped form styles. Schedule day, booking/edit, inclusive recurrence end, reports, admin resume review and style-guide dates use browser-native controls; the custom picker, its export, standalone CSS and theme tokens have been removed. Booking day/week grids and normal week/Today buttons are preserved. Downloads are snapshots, not calendar sync, OAuth integration or provider invitations.
 
 Full boundary, review scenarios, limitations and vendor-artifact deployment instructions: `jongo/docs/craft-preview.md` in the source repository. Browser demo changes are fictional and in-memory. Never use the role switch as real authorization.
+
+## Server persistence (preview.8, `@jongo/craft/server`)
+
+A standalone, single-tenant PostgreSQL store for Craft documents. It is a **server-only subpath of this package**: never import it from client code or Studio components (a test checks that the client entries do not reach it). It has no Organization, User, Stripe, subscription or entitlement concepts; the host application supplies identity and authorization through callbacks. **Preview, not production-ready**: see "Not included" and "Known limits".
+
+**Install.** `npm i @jongo/craft pg groq-js`. UI-only consumers need neither (`pg` and `groq-js` are optional peer dependencies; Craft itself never imports `pg`, and loads `groq-js` lazily, only when a query runs). `groq-js` ^2 requires **Node >= 22.12**. PostgreSQL 16 and 17 on Windows are the only versions the DB tests have run against.
+
+**Connection.** `DATABASE_URL` belongs to the host app; Craft reads nothing from the environment. Pass a `pg.Pool` through the adapter:
+
+```ts
+import pg from 'pg';
+import { createContentRegistry, defineType } from '@jongo/craft';
+import { createDataset, createPgExecutor, runMigrations, saveDraft, type Authorize } from '@jongo/craft/server';
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL }); // the host's own configuration
+const executor = createPgExecutor(pool);
+const registry = createContentRegistry([/* defineType({...}) schemas, the same descriptors the Studio uses */]);
+```
+
+**Migrations at deploy start.** `await runMigrations(executor)` creates the dedicated `craft` schema and applies the SQL files in `migrations/` (path helper: `migrationsDir`). Each migration runs in its own transaction after taking a transaction-scoped advisory lock, so concurrent deploys serialize and it is idempotent. Checksums (line endings normalized) are stored in `craft.schema_migrations`; the runner refuses, with `migration_checksum_mismatch`, when an applied migration's file changed, and with `migration_missing` when the database is ahead of the installed package. Run it with a role that may create the schema (see the role snippet in `jongo/docs/craft-preview.md`). If your bundler inlines packages, mark `@jongo/craft` external for server code so `migrationsDir` resolves next to the installed package.
+
+**Authorization contract.** Every service function takes a context `{ executor, authorize, actorId }`. `authorize(actorId, action, datasetName)` is required, may be async and is **fail-closed**: only a resolved `true` allows; `false`, `undefined`, a thrown error or a rejection all deny (`CraftError` code `denied`, no database access happens first). `actorId` is an opaque string of 1-128 characters stored on revisions and audit rows. Actions: `read` (published perspective), `read-drafts` (previewDrafts/raw, and the `editor` consumer that sees private fields), `write` (saveDraft, discardDraft), `publish` (publish, unpublish), `export`, `export-private` (additionally required for `includePrivate`), `import` (dry-run and apply) and `admin` (createDataset, getDataset). Exports of non-published perspectives also need `read-drafts`.
+
+```ts
+const authorize: Authorize = async (actorId, action, dataset) => {
+  const role = await myApp.roleFor(actorId, dataset); // your own identity and policy
+  if (role === 'owner') return true;
+  if (role === 'editor') return ['read', 'read-drafts', 'write', 'publish'].includes(action);
+  return action === 'read';
+};
+const ctx = { executor, authorize, actorId: session.user.id };
+await createDataset(ctx, { name: 'production' });
+const saved = await saveDraft(ctx, { dataset: 'production', registry, input: { _type: 'page', title: 'Home' }, mutationKey: crypto.randomUUID() });
+```
+
+**Service API.** `createDataset`, `getDataset`; `saveDraft`, `publishDocument`, `unpublishDocument`, `discardDraft`, `getDocument`, `listDocuments`; `queryDataset` (GROQ); `exportNdjson`, `importNdjson`. All writes need a `mutationKey` (idempotency) and, for existing documents, `expectedNativeRev` and/or `expectedLockVersion` (compare-and-set). Every document is validated on the server with the same `validateDocument` the Studio uses; the server never trusts the Studio.
+
+**Semantics worth knowing.**
+
+- A logical id has a published row (`<id>`) and a draft row (`drafts.<id>`); revisions are append-only history, rows are never hard-deleted.
+- `saveDraft` stores `drafts.<id>` as a new revision. Drafts may omit `publishRequired` fields, never `required` ones. The head you edit is the live draft, else the live published row.
+- **Publish** copies the draft payload to the published variant as a new revision and **soft-archives the draft row**, so after publishing only the published variant is live and draft equals published. Saving again starts a new draft; `discardDraft` archives the draft and is refused unless a published version exists; `unpublishDocument` archives the published row and restores a draft from it (a live draft's edits are kept).
+- Retries on serialization failure/deadlock (SQLSTATE 40001/40P01) up to 3 attempts; a repeated `mutationKey` with the same request replays the stored receipt, with a different request it fails with `idempotency_conflict`.
+- Documents are bounded (512 KiB canonical, depth 32, 20,000 nodes); NUL, lone surrogates and `__proto__`/`constructor`/`prototype` keys are rejected at any depth. Errors are typed `CraftError`s with fixed messages: no SQL, driver text or document content.
+- `queryDataset` takes perspective `published` | `previewDrafts` | `raw` and consumer `public` (default: private and undeclared fields are removed before evaluation) | `editor`. `->` only resolves inside the perspective and privacy filtered set. Limits (query length, params size, result bytes, document count) fail with typed errors and never truncate.
+- `exportNdjson` writes deterministic Sanity-format `data.ndjson` bytes plus a manifest with a SHA-256 (`_rev` is part of the bytes). Property names that look like secrets (`apiKey`, `password`, `token`, `secretCode`, ...) are dropped even with `includePrivate`.
+- `importNdjson` maps `drafts.` documents to drafts and the rest to published, validates each document against your registry and reports a per-document outcome. **Apply is all-or-nothing**: if any document is `invalid` (unknown type, bad id, validation failure) or `conflict` (id exists; nothing is ever overwritten), nothing is written, no receipt is stored and the report is returned with `blocked: true`. Skips never block: asset documents (`sanity.imageAsset`/`fileAsset`, reason `asset_not_supported`), `system.*`/`sanity.*` types, `versions.*` ids, and existing ids when `onConflict: 'skip'`. Defaults: 10,000 documents / 32 MiB.
+
+**Backups.** Back up PostgreSQL itself (for example Coolify scheduled database backups). Craft has no backup or restore feature of its own. NDJSON export is a content export, not a database backup.
+
+**Not included.** HTTP routes or handlers, asset/media storage and binaries (asset documents are not stored; supply known assets through the `assets` option so image references validate), realtime/listeners, Sanity HTTP API or client SDK compatibility, public delivery caching, multi-tenant/SaaS entitlements, user/session management.
+
+**Known limits.** Each GROQ query or export loads the whole live dataset into memory (guarded by 10,000 documents and 64 MiB of payload by default, failing with `dataset_too_large`). GROQ evaluation is in-process and cannot be killed; the time budget is cooperative, so do not expose `queryDataset` to anonymous traffic without isolating it. The GROQ, privacy and NDJSON code is a copy adapted from `apps/web/src/lib/cms` and duplicated until it is deduplicated. Append-only guarantees come from triggers, which a superuser or table owner can disable; run the application with a least-privilege role. Queries and dry-run imports are not audited. `references` stores outgoing references per revision but nothing enforces referential integrity on delete (nothing is deleted).
+
+**Tests.** `npm test` (unit, no database) and `npm run test:db` (real PostgreSQL in a throwaway cluster under the OS temp directory on a random loopback port; needs the PostgreSQL 16/17 binaries, `PG_BIN` overrides the location; without them it fails unless `CRAFT_DB_TESTS_OPTIONAL=1`, which prints a SKIPPED banner and exits 0; `--fail-after-start` rehearses cleanup).
