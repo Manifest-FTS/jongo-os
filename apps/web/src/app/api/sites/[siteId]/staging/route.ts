@@ -150,7 +150,11 @@ async function runAutoContentSync(params: {
   requestBaseUrl?: string;
   direction?: "production-to-staging" | "staging-to-production";
 }): Promise<AutoContentSyncResult> {
-  const automationUrl = (process.env.STAGING_SYNC_AUTOMATION_URL || "").trim();
+  // Opt-in stays as before (the setting must exist); the call itself goes to
+  // this app locally when the setting names this app's own endpoint.
+  const automationConfigured = Boolean((process.env.STAGING_SYNC_AUTOMATION_URL || "").trim());
+  const { stagingSyncAutomationUrl } = await import("@/lib/local-app-url");
+  const automationUrl = automationConfigured ? stagingSyncAutomationUrl() : "";
   const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
 
   if (!automationUrl) {

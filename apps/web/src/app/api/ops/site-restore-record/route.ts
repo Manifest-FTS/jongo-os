@@ -44,6 +44,8 @@ export async function POST(request: Request) {
         safetySnapshotId: str(body.safetySnapshot)
       }
     });
+    const { publishSiteEvent } = await import("@/lib/live-events");
+    await publishSiteEvent(updated.siteId, "restore");
     return NextResponse.json({ ok: true, backupId: updated.id, restoreStatus: updated.restoreStatus });
   } catch (error) {
     return NextResponse.json(

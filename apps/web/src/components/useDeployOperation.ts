@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSiteEvents } from "@/components/useSiteEvents";
 
 /**
- * Start a deploy of an app and follow it to the end. Shared by the Redeploy
- * button and the older DeployButton, so both show the same progress and both
- * pick up a deploy that is already running (another tab, or before a reload).
+ * Start a deploy of an app and follow it to the end, picking up a deploy that
+ * is already running (another tab, a promote, a GitHub deploy, or before a
+ * reload). Used by the Redeploy button.
  *
  * Polls every 3s while a deploy is active and stops as soon as it finishes.
  */
@@ -18,7 +19,10 @@ export type DeployView = {
   finishedAt?: string | null;
 };
 
+// With live updates the server says when a step changes; polling is a slow
+// safety net. Without them (blocked by a proxy), the old 3s poll.
 const POLL_MS = 3000;
+const POLL_WHEN_LIVE_MS = 20_000;
 
 export function isDeployActive(view: DeployView | null): boolean {
   return view?.status === "queued" || view?.status === "running";
@@ -36,6 +40,11 @@ export function useDeployOperation(siteId: string, environment: "production" | "
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const following = useRef<string | null>(null);
+  const tickNow = useRef<(() => void) | null>(null);
+  const { connected: live } = useSiteEvents(siteId, () => tickNow.current?.(), ["operation"]);
+  const liveRef = useRef(live);
+  liveRef.current = live;
 
   const stopPolling = () => {
     if (timer.current) clearTimeout(timer.current);
@@ -44,21 +53,45 @@ export function useDeployOperation(siteId: string, environment: "production" | "
 
   const follow = useCallback((operationId: string) => {
     stopPolling();
+    following.current = operationId;
+    const schedule = () => {
+      timer.current = setTimeout(tick, liveRef.current ? POLL_WHEN_LIVE_MS : POLL_MS);
+    };
     const tick = async () => {
+      stopPolling();
       try {
         const res = await fetch(`/api/operations/${operationId}`, { cache: "no-store" });
         if (res.ok) {
           const data = (await res.json()) as { operation: DeployView };
           setView(data.operation);
-          if (!isDeployActive(data.operation)) return;
+          if (!isDeployActive(data.operation)) {
+            following.current = null;
+            tickNow.current = null;
+            return;
+          }
         }
       } catch {
         // Network blip: keep following.
       }
-      timer.current = setTimeout(tick, POLL_MS);
+      schedule();
     };
-    timer.current = setTimeout(tick, POLL_MS);
+    tickNow.current = () => void tick();
+    schedule();
   }, []);
+
+  // Any deploy of this app starting elsewhere (another tab, a promote, a
+  // GitHub deploy) shows up here too.
+  useSiteEvents(siteId, () => {
+    if (following.current) return;
+    fetch(`/api/coolify/deploy?siteId=${encodeURIComponent(siteId)}&environment=${environment}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { operation: DeployView | null } | null) => {
+        if (!data?.operation) return;
+        setView(data.operation);
+        if (isDeployActive(data.operation) && !following.current) follow(data.operation.id);
+      })
+      .catch(() => undefined);
+  }, ["operation"]);
 
   useEffect(() => {
     let cancelled = false;

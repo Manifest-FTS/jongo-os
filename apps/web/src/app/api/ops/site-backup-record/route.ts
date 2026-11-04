@@ -78,6 +78,8 @@ export async function POST(request: Request) {
           rewound = true;
         }
 
+        const { publishSiteEvent } = await import("@/lib/live-events");
+        await publishSiteEvent(row?.siteId, "backup");
         return NextResponse.json({ ok: true, backupId, status, removed: deleted?.count ?? 0, rewound });
       }
 
@@ -208,6 +210,9 @@ export async function POST(request: Request) {
       // Never let alerting failure mask a successfully recorded backup —
       // the catalogue row is the thing that must not be lost.
     }
+
+    const { publishSiteEvent } = await import("@/lib/live-events");
+    await publishSiteEvent(updated.siteId, "backup");
 
     return NextResponse.json({
       ok: true,

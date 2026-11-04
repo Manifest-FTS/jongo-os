@@ -62,6 +62,12 @@ type Db = {
 };
 
 const MAX_ERROR_LENGTH = 4000;
+
+/** Live updates for anyone watching the operation's app (best effort). */
+async function changed(db: Db, id: string) {
+  const { notifyOperationChanged } = await import("@/lib/live-events");
+  await notifyOperationChanged(db, id);
+}
 const MAX_DETAIL_LENGTH = 1000;
 
 async function loadDb(): Promise<Db> {
@@ -102,7 +108,9 @@ export async function createOperation(
   };
 
   try {
-    return { operation: await db.operation.create({ data }), created: true };
+    const operation = await db.operation.create({ data });
+    await changed(db, operation.id);
+    return { operation, created: true };
   } catch (error) {
     if (!idempotencyKey || !isUniqueViolation(error)) throw error;
     const existing = await db.operation.findUnique({ where: { idempotencyKey } });
@@ -185,7 +193,10 @@ export async function startOperation(id: string, jobId?: string | null, options:
     where: { id, status: "queued" },
     data: { status: "running", attempts: { increment: 1 }, startedAt: now, jobId: jobId ?? undefined }
   });
-  if (first.count === 1) return true;
+  if (first.count === 1) {
+    await changed(db, id);
+    return true;
+  }
   const retry = await db.operation.updateMany({
     where: { id, status: "running" },
     data: { attempts: { increment: 1 }, jobId: jobId ?? undefined }
@@ -212,6 +223,7 @@ export async function recordOperationStep(
         "updatedAt" = now() at time zone 'utc'
     where "id" = ${id}::uuid and "status" = 'running'
   `;
+  await changed(db, id);
 }
 
 /** Finish successfully. False if the operation was not running. */
@@ -228,6 +240,7 @@ export async function succeedOperation(id: string, result?: unknown, options: { 
       where "id" = ${id}::uuid
     `;
   }
+  if (done.count === 1) await changed(db, id);
   return done.count === 1;
 }
 
@@ -241,6 +254,7 @@ export async function failOperation(id: string, message: string, options: { db?:
     where: { id, status: { in: ["queued", "running"] } },
     data: { status: "failed", error: truncate(message.trim() || "The operation failed.", MAX_ERROR_LENGTH), finishedAt: new Date() }
   });
+  if (done.count === 1) await changed(db, id);
   return done.count === 1;
 }
 
@@ -251,5 +265,6 @@ export async function cancelOperation(id: string, options: { db?: Db } = {}): Pr
     where: { id, status: "queued" },
     data: { status: "cancelled", finishedAt: new Date() }
   });
+  if (done.count === 1) await changed(db, id);
   return done.count === 1;
 }

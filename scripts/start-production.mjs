@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { pinSshHostKey } from "./ssh-host-key.mjs";
 
 const npmCommand = "npm";
 let activeChild = null;
@@ -116,6 +117,16 @@ function startWorker(extraEnv = {}) {
 
 process.on("SIGINT", () => forwardSignal("SIGINT"));
 process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+
+// Pin the hosting server's SSH host key for every SSH call made from this
+// container (the app, the worker and the backup/restore jobs all inherit
+// process.env). Without it, each new container trusts whatever answers first.
+const pinned = pinSshHostKey(process.env);
+if (pinned.status === "pinned") log(`SSH host key pinned (${pinned.lines} key line(s)).`);
+else if (pinned.status === "invalid") console.error(`[startup] STAGING_SYNC_SSH_KNOWN_HOSTS ignored: ${pinned.reason}`);
+else if (pinned.status === "missing" && pinned.sshConfigured) {
+  console.warn("[startup] WARNING: STAGING_SYNC_SSH_KNOWN_HOSTS is not set, so the hosting server's SSH identity is not verified.");
+}
 
 try {
   await runStep("Generating Prisma client", ["run", "prisma:generate"]);

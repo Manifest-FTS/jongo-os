@@ -6,7 +6,7 @@ import WordPressAdvancedControls from "@/components/WordPressAdvancedControls";
 import SiteDangerZone from "@/components/SiteDangerZone";
 import SiteSourceCard from "@/components/SiteSourceCard";
 import { loadSiteSource } from "@/lib/site-source";
-import PageAutoRefresh from "@/components/PageAutoRefresh";
+import LiveRefresh from "@/components/LiveRefresh";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyAppStagingCapability, getCoolifyOverview } from "@/lib/coolify";
@@ -99,7 +99,7 @@ export default async function SiteSettingsPage({ params }: Params) {
 
   return (
     <div>
-      <PageAutoRefresh intervalMs={12000} />
+      <LiveRefresh siteId={siteId} fallbackIntervalMs={12000} />
 
       {isWordPress ? (
         <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)", alignItems: "start" }}>

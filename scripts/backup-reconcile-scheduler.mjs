@@ -22,11 +22,11 @@ function resolveReconcileUrl() {
   if (directUrl) {
     return directUrl;
   }
-
+  // Inside the container (the default), call the app directly: machine tokens
+  // are only honoured on local requests. A separate worker container uses the
+  // public address, which also needs OPS_TOKEN_ALLOW_REMOTE=true on the app.
   const nextAuthBase = normalizeBaseUrl(process.env.NEXTAUTH_URL);
-  if (nextAuthBase) {
-    return `${nextAuthBase}/api/ops/backup-reconcile`;
-  }
+  if (nextAuthBase && (process.env.JONGO_WORKER_MODE || "").trim().toLowerCase() === "external") return `${nextAuthBase}/api/ops/backup-reconcile`;
 
   const port = (process.env.PORT || "3000").trim() || "3000";
   return `http://127.0.0.1:${port}/api/ops/backup-reconcile`;
