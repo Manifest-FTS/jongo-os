@@ -1217,7 +1217,10 @@ export async function provisionCoolifyWordPressService(
     return { ok: false, reason: request.reason, message: request.message };
   }
 
+  const { reportStep } = await import("@/lib/progress");
+  reportStep("create", "Creating WordPress and its database", "active");
   const response = await coolifyMutateWithResponse("/api/v1/services", "POST", request.body);
+  reportStep("create", "Creating WordPress and its database", response.ok ? "done" : "failed");
   if (!response.ok) {
     return {
       ok: false,
@@ -1242,6 +1245,7 @@ export async function provisionCoolifyWordPressService(
   if (!domain) {
     return { ok: true, uuid, message: "App created." };
   }
+  reportStep("address", `Setting the address ${domain}`, "active");
 
   // Applied AFTER creation, not as part of it: Coolify needs the compose file
   // parsed before it knows the service key that urls[].name must reference, and
@@ -1279,7 +1283,9 @@ export async function provisionCoolifyWordPressService(
   let restarted = false;
   let domainConverged = false;
 
+  reportStep("address", `Setting the address ${domain}`, domainApplied ? "done" : "failed", domainApplied ? undefined : domainMessage || undefined);
   if (domainApplied) {
+    reportStep("start", "Starting the site on its address", "active");
     const restartResponse = await restartCoolifyService(uuid);
     restarted = restartResponse.ok;
 
@@ -1288,6 +1294,7 @@ export async function provisionCoolifyWordPressService(
     const converged = await readCoolifyServiceDomains(uuid);
     const wanted = normalizeProvisionHost(domain);
     domainConverged = converged.some((value) => normalizeProvisionHost(value) === wanted);
+    reportStep("start", "Starting the site on its address", restarted ? "done" : "failed");
   }
 
   const restartNote = !domainApplied

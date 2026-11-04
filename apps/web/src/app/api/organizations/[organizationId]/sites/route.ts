@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getPermissions } from "@/lib/permissions";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, getCoolifyOverview, provisionCoolifyWordPressService } from "@/lib/coolify";
 import { resolveOrganizationAccess } from "@/lib/tenant-route-access";
@@ -137,7 +138,14 @@ export async function GET(_req: Request, { params }: Params) {
  * Creates a new site in the organization.
  * Body: { name: string; description?: string; coolifyServiceUuid?: string; gitRepositoryUrl?: string }
  */
-export async function POST(req: Request, { params }: Params) {
+/** With Accept: application/x-ndjson, streams each step as it happens (lib/progress.ts). */
+export async function POST(req: Request, context: Params) {
+  const { progressResponse, wantsProgress } = await import("@/lib/progress");
+  if (wantsProgress(req)) return progressResponse(() => createApp(req, context));
+  return createApp(req, context);
+}
+
+async function createApp(req: Request, { params }: Params): Promise<Response> {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -179,8 +187,15 @@ export async function POST(req: Request, { params }: Params) {
     if (!access) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
-    if (!access.isAdmin) {
-      return NextResponse.json({ error: "Only admins can create apps" }, { status: 403 });
+    // Creating a new WordPress site is open to the client's collaborators, the
+    // same as creating an app from a repository (both are canDeployFromGithub).
+    // Adopting a running resource stays platform-admin only (below), and a
+    // bare record with no hosting behind it stays admin only.
+    const createsWordPress = body.provisionWordPress === true && !body.coolifyServiceUuid?.trim();
+    const canCreate =
+      access.isAdmin || (createsWordPress && getPermissions("collaborator", access.isPlatformAdmin).canDeployFromGithub);
+    if (!canCreate) {
+      return NextResponse.json({ error: "Only the client's admins can add this kind of app." }, { status: 403 });
     }
     const org = access.organization;
 

@@ -71,16 +71,22 @@ async function createAppFromRepository(params: {
   const request = params.buildRequest({ projectUuid: hosting.projectUuid, serverUuid: server.uuid });
   if (!request.ok) return { ok: false, status: 400, message: server.uuid ? request.message : server.reason ?? request.message };
 
+  const { reportStep } = await import("@/lib/progress");
+  reportStep("create", `Creating the app from ${params.label}`, "active");
   const created = await coolifyMutateWithResponse(params.endpoint, "POST", request.body);
   const appUuid = (created.body as any)?.uuid;
   if (!created.ok || typeof appUuid !== "string") {
+    reportStep("create", `Creating the app from ${params.label}`, "failed");
     return { ok: false, status: 502, message: `The app couldn't be created (HTTP ${created.status ?? "n/a"}). ${params.failHint}` };
   }
+  reportStep("create", `Creating the app from ${params.label}`, "done");
 
   if (envVars.length) {
+    reportStep("env", `Adding ${envVars.length} environment variable${envVars.length === 1 ? "" : "s"}`, "active");
     await coolifyMutateWithResponse(`/api/v1/applications/${appUuid}/envs/bulk`, "PATCH", {
       data: envVars.map((row) => ({ key: row.key.trim(), value: row.value, is_preview: false }))
     }).catch(() => null);
+    reportStep("env", `Adding ${envVars.length} environment variable${envVars.length === 1 ? "" : "s"}`, "done");
   }
 
   const { buildTemporaryProductionDomain } = await import("@/lib/temporary-domains");
@@ -88,7 +94,9 @@ async function createAppFromRepository(params: {
   const taken = await db.site.findMany({ where: { organizationId: input.orgId }, select: { slug: true } });
   const slug = nextAvailableSlug(toSiteSlug(input.name), taken.map((row: { slug: string }) => row.slug));
   const domain = buildTemporaryProductionDomain({ slug: input.temporaryDomainSlug || slug, suffix: input.temporaryDomainSuffix }) ?? null;
+  if (domain) reportStep("address", `Setting the address ${domain}`, "active");
   const domainApplied = domain ? await applyCoolifyApplicationDomains(appUuid, `https://${domain}`).catch(() => false) : false;
+  if (domain) reportStep("address", `Setting the address ${domain}`, domainApplied ? "done" : "failed");
 
   const site = await db.site.create({
     data: {
@@ -107,6 +115,7 @@ async function createAppFromRepository(params: {
   // First deploy, like Redeploy: queued, retried if hosting turns it away,
   // and followed to the end on the app's page.
   let deployQueued = true;
+  reportStep("deploy", "Starting the first deploy", "active");
   try {
     const { requestSiteDeploy } = await import("@/lib/deploy-operation");
     const { enqueueOperationRun } = await import("@/lib/job-queue");
@@ -121,6 +130,7 @@ async function createAppFromRepository(params: {
     deployQueued = false;
     console.error("[apps] first deploy could not be queued", { siteId: site.id, error });
   }
+  reportStep("deploy", "Starting the first deploy", deployQueued ? "done" : "failed");
   await audit(input.orgId, input.userId, params.audit.action, { ...params.audit.details, appUuid, created: true }, site.id);
 
   const parts = [`Created from ${params.label}.`];

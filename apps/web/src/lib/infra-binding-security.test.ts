@@ -105,10 +105,26 @@ describe("POST /api/organizations/[id]/sites — adopting a hosting resource", (
     expect(res.status).toBe(404);
   });
 
-  it("refuses non-admin members", async () => {
+  it("refuses non-admin members a bare record with no hosting behind it", async () => {
     m.orgAccess.mockResolvedValue({ organization: { id: ORG, ownerId: "someone", coolifyProjectId: null }, isAdmin: false, isPlatformAdmin: false });
     const res = await createSite(jsonRequest({ name: "x" }), params);
     expect(res.status).toBe(403);
+    expect(m.provision).not.toHaveBeenCalled();
+  });
+
+  it("lets collaborators create a new WordPress site", async () => {
+    m.orgAccess.mockResolvedValue({ organization: { id: ORG, ownerId: "someone", coolifyProjectId: "own-project" }, isAdmin: false, isPlatformAdmin: false });
+    m.provision.mockResolvedValue({ ok: true, uuid: "new-wp", message: "App created." });
+    const res = await createSite(jsonRequest({ name: "Blog", provisionWordPress: true }), params);
+    expect(res.status).not.toBe(403);
+    expect(m.provision).toHaveBeenCalledWith(expect.objectContaining({ name: "Blog", projectUuid: "project-of-33333333-3333-4333-8333-333333333333" }));
+  });
+
+  it("still refuses collaborators adopting a running resource, even alongside WordPress", async () => {
+    m.orgAccess.mockResolvedValue({ organization: { id: ORG, ownerId: "someone", coolifyProjectId: null }, isAdmin: false, isPlatformAdmin: false });
+    const res = await createSite(jsonRequest({ name: "x", provisionWordPress: true, coolifyServiceUuid: "victim-uuid" }), params);
+    expect(res.status).toBe(403);
+    expect(m.provision).not.toHaveBeenCalled();
   });
 
   it("refuses even a platform admin when another client already holds the resource", async () => {

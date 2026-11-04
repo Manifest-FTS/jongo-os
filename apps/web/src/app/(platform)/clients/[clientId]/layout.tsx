@@ -79,11 +79,11 @@ export default async function ClientWorkspaceLayout({ children, params }: Layout
             <span className="tag">{client.memberCount} team member{client.memberCount === 1 ? "" : "s"}</span>
           </div>
         </div>
+        <nav className="workspace-hero-tabs" aria-label="Sections">
+          <WorkspaceTabs tabs={tabs} />
+        </nav>
       </div>
 
-      <div className="workspace-tab-bar card">
-        <WorkspaceTabs tabs={tabs} />
-      </div>
 
       <div className="workspace-content">{children}</div>
     </div>

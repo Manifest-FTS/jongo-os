@@ -6,7 +6,8 @@ import CreateSiteForm from "@/components/CreateSiteForm";
 import { ArrowRightIcon } from "@/components/JongoIcons";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { buildAvailableCoolifyAppOptions } from "@/lib/coolify-app-picker";
-import SiteDirectoryView from "@/components/SiteDirectoryView";
+import ClientAppsView, { type ClientAppRow } from "@/components/ClientAppsView";
+import { buildTemporaryProductionDomain } from "@/lib/temporary-domains";
 import { isPlatformAdminUser } from "@/lib/rbac";
 
 type Params = { params: Promise<{ clientId: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> };
@@ -70,14 +71,27 @@ export default async function ClientAppsPage({ params, searchParams }: Params) {
   const showCreate = true;
   const canAdopt = Boolean(session?.user?.id && (await isPlatformAdminUser(session.user.id)));
 
+  const rows = await buildAppRows(apps, overview);
+
   return (
     <div className="page-stack">
-      <div className="card" style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ margin: 0 }}>Apps</h2>
-          <p className="card-muted" style={{ marginTop: "0.35rem" }}>All apps mapped to this client workspace.</p>
+          <h2 style={{ margin: 0, fontSize: "1.25rem" }}>Apps</h2>
+          <p className="card-muted" style={{ margin: "0.25rem 0 0" }}>
+            {rows.length === 0 ? "Nothing deployed for this client yet." : `${rows.length} app${rows.length === 1 ? "" : "s"} for ${client.name}.`}
+          </p>
         </div>
-        {client.dbId && showCreate ? <CreateSiteForm organizationId={client.dbId} availableApps={canAdopt ? availableApps : []} githubOnly={!canManageClient} githubAvailable={githubAvailable} canAdopt={canAdopt} /> : null}
+        {client.dbId && showCreate ? (
+          <CreateSiteForm
+            organizationId={client.dbId}
+            availableApps={canAdopt ? availableApps : []}
+            githubOnly={!canManageClient}
+            githubAvailable={githubAvailable}
+            canAdopt={canAdopt}
+            presentation="drawer"
+          />
+        ) : null}
       </div>
 
       {githubReturn ? (
@@ -86,41 +100,69 @@ export default async function ClientAppsPage({ params, searchParams }: Params) {
         </p>
       ) : null}
 
-      {apps.length === 0 ? (
-        <article className="card">
-          <p className="card-muted">No apps yet. Create the first app for this client.</p>
-          <p style={{ margin: "0.5rem 0 0", fontSize: "0.88rem" }}>
-            <Link href="/apps" className="action-link">
-              Open app directory <ArrowRightIcon className="btn-icon" />
-            </Link>
-          </p>
-        </article>
-      ) : (
-        <SiteDirectoryView
-          userId={session?.user?.id}
-          isCollaboratorView={!canManageClient}
-          sites={apps.map((app) => ({
-            id: app.id,
-            name: app.name,
-            description: app.description,
-            clientId: client.id,
-            clientName: client.name,
-            status: app.status,
-            ownershipState: app.ownershipState,
-            ownershipDiagnostic: app.ownershipDiagnostic,
-            source: app.source,
-            href: `/apps/${app.slug ?? app.id}`,
-            clientHref: `/clients/${clientId}`,
-            resourceType: app.resourceType,
-            showInternalMetadata: canManageClient,
-            isStagingResource:
-              app.coolifyEnvironmentName?.toLowerCase().includes("staging")
-              || app.name.toLowerCase().includes("staging")
-              || app.slug?.toLowerCase().includes("staging")
-              || false
-          }))}
-        />
-      )}
+      <ClientAppsView rows={rows} userId={session?.user?.id} canCreate={Boolean(client.dbId && showCreate)} />
     </div>
   );
+}
+
+type DirectoryApp = Awaited<ReturnType<typeof listSiteDirectory>>[number];
+
+/**
+ * What each row shows: the live address (what hosting serves, else the
+ * temporary one), the repository and branch, the last production deploy, and
+ * whether a deploy is running right now. One query per table, not per app.
+ */
+async function buildAppRows(apps: DirectoryApp[], overview: Awaited<ReturnType<typeof getCoolifyOverview>> | null): Promise<ClientAppRow[]> {
+  const ids = apps.map((app) => app.id).filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  const { db } = await import("@/lib/db");
+  const [sites, deployments, running] = ids.length
+    ? await Promise.all([
+        db.site.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, slug: true, temporaryDomainSlug: true, temporaryDomainSuffix: true, gitRepoFullName: true, gitRepositoryUrl: true, gitBranch: true, gitProvider: true, coolifyServiceUuid: true }
+        }),
+        db.deployment.findMany({
+          where: { environment: { siteId: { in: ids }, name: "production" } },
+          orderBy: { triggeredAt: "desc" },
+          take: 500,
+          select: { status: true, triggeredAt: true, finishedAt: true, environment: { select: { siteId: true } } }
+        }),
+        db.operation.findMany({
+          where: { kind: "site.deploy", resourceType: "site", resourceId: { in: ids }, status: { in: ["queued", "running"] } },
+          select: { resourceId: true }
+        })
+      ]).catch(() => [[], [], []] as [any[], any[], any[]])
+    : [[], [], []];
+
+  const siteById = new Map<string, any>(sites.map((site: any) => [site.id, site]));
+  const lastDeploy = new Map<string, any>();
+  for (const deployment of deployments as any[]) {
+    const siteId = deployment.environment?.siteId;
+    if (siteId && !lastDeploy.has(siteId)) lastDeploy.set(siteId, deployment);
+  }
+  const deploying = new Set((running as any[]).map((row) => row.resourceId));
+
+  return apps.map((app) => {
+    const site = siteById.get(app.id);
+    const live = overview?.sites.find((item) => item.id === (site?.coolifyServiceUuid ?? app.coolifyServiceUuid) || item.deployTargetId === app.deployTargetId);
+    const temporary = buildTemporaryProductionDomain({ slug: site?.temporaryDomainSlug ?? site?.slug ?? app.slug ?? app.name, suffix: site?.temporaryDomainSuffix });
+    const domain = (live?.primaryDomain ?? "").replace(/^https?:\/\//, "").replace(/\/.*$/, "") || temporary || null;
+    const repo = site?.gitRepoFullName || (site?.gitRepositoryUrl ? site.gitRepositoryUrl.replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "") : null);
+    const deploy = lastDeploy.get(app.id);
+    const siteType = live?.siteType ?? (app.resourceType === "WordPress" ? "wordpress" : undefined);
+    return {
+      id: app.id,
+      href: `/apps/${app.slug ?? app.id}`,
+      name: app.name,
+      kind: siteType === "wordpress" ? "wordpress" : siteType === "database" ? "database" : siteType === "service" ? "service" : "app",
+      status: app.status,
+      deploying: deploying.has(app.id),
+      domain,
+      repo,
+      provider: (site?.gitProvider as ClientAppRow["provider"]) ?? (site?.gitRepositoryUrl?.includes("github.com") ? "github" : null),
+      branch: site?.gitBranch ?? null,
+      lastDeployAt: deploy ? (deploy.finishedAt ?? deploy.triggeredAt)?.toISOString?.() ?? null : null,
+      lastDeployFailed: deploy?.status === "failed"
+    } satisfies ClientAppRow;
+  });
 }
