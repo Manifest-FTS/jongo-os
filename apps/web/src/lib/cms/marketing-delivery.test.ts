@@ -188,9 +188,10 @@ describe("exact middleware exemption", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1"); expect(mocks.jwt).not.toHaveBeenCalled();
   });
   it.each([path + "/", path + "/drafts", path + "-other", path.replace(datasetId, "not-a-uuid"), "/api/content/v1/datasets", "/api/content/v1/drafts"])("does not broadly exempt %s", async pathname => {
-    expect((await middleware(new NextRequest(`http://localhost${pathname}`))).status).toBe(307);
+    // Not exempt: a signed-out API call is refused with a readable 401.
+    expect((await middleware(new NextRequest(`http://localhost${pathname}`))).status).toBe(401);
   });
   it.each(["POST", "PUT", "DELETE", "HEAD"])("does not exempt %s", async method => {
-    expect((await middleware(new NextRequest(`http://localhost${path}`, { method }))).status).toBe(307);
+    expect((await middleware(new NextRequest(`http://localhost${path}`, { method }))).status).toBe(401);
   });
 });
