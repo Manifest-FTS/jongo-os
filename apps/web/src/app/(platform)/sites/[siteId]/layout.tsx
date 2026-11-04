@@ -150,11 +150,11 @@ export default async function SiteWorkspaceLayout({
           </div>
         </div>
 
+        <nav className="workspace-hero-tabs" aria-label="Sections">
+          <WorkspaceTabs tabs={tabs} />
+        </nav>
       </div>
 
-      <div className="workspace-tab-bar card">
-        <WorkspaceTabs tabs={tabs} />
-      </div>
 
       <div className="workspace-content">{children}</div>
     </div>

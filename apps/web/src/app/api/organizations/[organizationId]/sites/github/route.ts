@@ -15,7 +15,14 @@ type Params = { params: Promise<{ organizationId: string }> };
  *   public:    { repoUrl }            a public GitHub, GitLab, Bitbucket or Codeberg repo
  *   deploykey: { sshUrl, deployKeyId } a private repo on any Git host
  */
-export async function POST(request: Request, { params }: Params) {
+/** With Accept: application/x-ndjson, streams each step as it happens (lib/progress.ts). */
+export async function POST(request: Request, context: Params) {
+  const { progressResponse, wantsProgress } = await import("@/lib/progress");
+  if (wantsProgress(request)) return progressResponse(() => createApp(request, context));
+  return createApp(request, context);
+}
+
+async function createApp(request: Request, { params }: Params): Promise<Response> {
   const { organizationId } = await params;
   const access = await requireOrgMember(organizationId);
   if ("response" in access) return access.response;

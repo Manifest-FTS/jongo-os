@@ -138,7 +138,14 @@ export async function GET(_req: Request, { params }: Params) {
  * Creates a new site in the organization.
  * Body: { name: string; description?: string; coolifyServiceUuid?: string; gitRepositoryUrl?: string }
  */
-export async function POST(req: Request, { params }: Params) {
+/** With Accept: application/x-ndjson, streams each step as it happens (lib/progress.ts). */
+export async function POST(req: Request, context: Params) {
+  const { progressResponse, wantsProgress } = await import("@/lib/progress");
+  if (wantsProgress(req)) return progressResponse(() => createApp(req, context));
+  return createApp(req, context);
+}
+
+async function createApp(req: Request, { params }: Params): Promise<Response> {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

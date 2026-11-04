@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import styles from "./ModalDrawer.module.css";
 
-type Props = { id?: string; title: string; open: boolean; onClose: () => void; children: ReactNode };
+type Props = { id?: string; title: string; open: boolean; onClose: () => void; children: ReactNode; size?: "default" | "wide" };
 const scrollLocks = new WeakMap<Document, { count: number; restore: () => void }>();
 
 /** Reversible, reference-counted page lock; never hide window scrollbar chrome. */
@@ -50,7 +50,7 @@ export function lockDrawerScroll(doc: Document, view: Window): () => void {
   };
 }
 
-export default function ModalDrawer({ id, title, open, onClose, children }: Props) {
+export default function ModalDrawer({ id, title, open, onClose, children, size = "default" }: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const onCloseRef = useRef(onClose);
@@ -81,7 +81,7 @@ export default function ModalDrawer({ id, title, open, onClose, children }: Prop
   }
 
   return (
-    <dialog id={id} ref={dialogRef} className={styles.drawer} aria-labelledby={titleId} aria-modal="true"
+    <dialog id={id} ref={dialogRef} className={`${styles.drawer}${size === "wide" ? ` ${styles.wide}` : ""}`} aria-labelledby={titleId} aria-modal="true"
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) {
           event.preventDefault();

@@ -97,6 +97,14 @@ export async function ensureOrganizationHostingProject(
   organizationId: string,
   injected?: Partial<Deps>
 ): Promise<HostingProjectResult> {
+  const { reportStep } = await import("@/lib/progress");
+  reportStep("hosting", "Preparing the client's hosting space", "active");
+  const result = await ensureProjectInner(organizationId, injected);
+  reportStep("hosting", "Preparing the client's hosting space", result.ok ? "done" : "failed");
+  return result;
+}
+
+async function ensureProjectInner(organizationId: string, injected?: Partial<Deps>): Promise<HostingProjectResult> {
   const deps = { ...(await defaultDeps()), ...injected } as Deps;
   if (!injected?.listProjects && (!process.env.COOLIFY_API_BASE_URL || !process.env.COOLIFY_API_TOKEN)) {
     return { ok: false, reason: "credentials_missing", message: "Hosting isn't connected yet, so apps can't be created." };
