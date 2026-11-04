@@ -206,6 +206,9 @@ export default async function SitesPage() {
           <h1 className="page-title">Apps ({siteDirectory.length})</h1>
           <p className="page-subtitle">Your workspaces and the apps they run.</p>
         </div>
+        <Link href="/apps/new" className="btn">
+          New app
+        </Link>
       </div>
 
       {siteDirectory.length === 0 ? (
