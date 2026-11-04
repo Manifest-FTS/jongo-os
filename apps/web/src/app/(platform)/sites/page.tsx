@@ -180,7 +180,30 @@ export default async function SitesPage() {
     email: session?.user?.email
   });
   const overview = inventory.overview;
-  const siteDirectory = inventory.siteDirectory;
+
+  // Hosting resources whose Jongo app was deleted but which still run on the
+  // server (lib/leftovers.ts). They have no page, so they are left out of the
+  // list below; platform admins get them in one place instead.
+  const { isPlatformAdminUser } = await import("@/lib/rbac");
+  const { findLeftovers } = await import("@/lib/leftovers");
+  const leftovers = await findLeftovers(inventory.siteDirectory.filter((site) => site.source === "coolify").map((site) => site.coolifyServiceUuid ?? site.deployTargetId ?? site.id)).catch(
+    () => new Map()
+  );
+  const leftoverSummary = leftovers.size && session?.user?.id && (await isPlatformAdminUser(session.user.id))
+    ? await (async () => {
+        const found = [...leftovers.values()];
+        const { db } = await import("@/lib/db");
+        const orgs: Array<{ id: string; slug: string; name: string }> = await db.organization.findMany({
+          where: { id: { in: [...new Set(found.map((item) => item.organizationId))] } },
+          select: { id: true, slug: true, name: true }
+        });
+        const orgById = new Map(orgs.map((org) => [org.id, org]));
+        return found.map((item) => ({ ...item, client: orgById.get(item.organizationId) ?? null }));
+      })()
+    : [];
+  const siteDirectory = inventory.siteDirectory.filter(
+    (site) => !(site.source === "coolify" && leftovers.has(site.coolifyServiceUuid ?? site.deployTargetId ?? site.id))
+  );
   const emptyReason = inventory.emptyReason;
   const [backupPostureBySiteId, stagingPostureBySiteId] = await Promise.all([
     buildDirectoryBackupPosture(siteDirectory, overview.mode),
@@ -210,6 +233,33 @@ export default async function SitesPage() {
           New app
         </Link>
       </div>
+
+      {leftoverSummary.length > 0 ? (
+        <div className="card" style={{ borderColor: "#f5d9a8", background: "#fffaf0", display: "grid", gap: "0.5rem" }}>
+          <strong style={{ fontSize: "0.92rem" }}>
+            {leftoverSummary.length === 1
+              ? "1 app was deleted in Jongo but still runs on the server"
+              : `${leftoverSummary.length} apps were deleted in Jongo but still run on the server`}
+          </strong>
+          <p className="card-muted" style={{ margin: 0, fontSize: "0.85rem" }}>
+            They use server space and nobody can open them. Restore each one, or delete it from the server.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: "1.1rem", display: "grid", gap: "0.2rem", fontSize: "0.88rem" }}>
+            {leftoverSummary.map((item) => (
+              <li key={item.siteId}>
+                {item.client ? (
+                  <Link className="action-link" href={`/clients/${item.client.slug}/apps?show=leftovers`}>
+                    {item.name}
+                  </Link>
+                ) : (
+                  item.name
+                )}
+                <span className="card-muted"> · {item.client?.name ?? "No client"} · deleted {new Date(item.deletedAt).toLocaleDateString()}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {siteDirectory.length === 0 ? (
         <div className="card">
