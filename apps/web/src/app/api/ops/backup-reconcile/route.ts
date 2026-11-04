@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isPlatformAdminUser } from "@/lib/rbac";
-import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoolifyBackupCapability } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, describeCoolifyBackupCapability } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
 import { reconcileStagingTargets, type StagingTargetReconcileResult } from "@/lib/staging-target-reconcile";
 import { reconcileDomains, type DomainReconcileResult } from "@/lib/domain-orders";
 import { reconcileStagingDomains, type StagingDomainReconcileResult } from "@/lib/staging-domains";
-import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
+import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups, resolveScheduledBackupEligibility } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -527,7 +527,7 @@ export async function POST(request: Request) {
         select: {
           id: true, slug: true, name: true, coolifyServiceUuid: true,
           backupScheduleEnabled: true, backupFrequencyHours: true, lastScheduledBackupAt: true,
-          backupEligible: true, backupEligibleAt: true
+          backupEligible: true, backupEligibleAt: true, backupCapabilityReason: true
         }
       });
       // Uncapped and ordered: ineligible sites are filtered inside the loop, so
@@ -550,17 +550,26 @@ export async function POST(request: Request) {
 
         // A stateless app has nothing to snapshot. Without this the scheduler
         // would manufacture a failed backup for it every single day, silently.
+        // A failed check ("unknown") keeps the last known answer and is never
+        // saved: see resolveScheduledBackupEligibility for why.
         const checkedAt = row.backupEligibleAt ? new Date(row.backupEligibleAt).getTime() : 0;
-        let eligible = row.backupEligible;
-        if (eligible === null || eligible === undefined || Date.now() - checkedAt > ELIGIBILITY_TTL_MS) {
+        const stale = row.backupEligible === null || row.backupEligible === undefined || Date.now() - checkedAt > ELIGIBILITY_TTL_MS;
+        let probe: { backupable: boolean; reason: string } | null = null;
+        if (stale) {
           try {
-            eligible = await hasCoolifyBackupableState(uuid);
+            probe = await describeCoolifyBackupCapability(uuid);
           } catch {
-            // Unknown, not ineligible: skip this pass rather than cache a guess.
-            scheduleSkipped.push(`${row.slug}:eligibility_unknown`);
-            continue;
+            probe = { backupable: false, reason: "unknown" };
           }
-          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${eligible}, "backupEligibleAt" = now() WHERE id = ${site.id}::uuid`;
+        }
+        const decision = resolveScheduledBackupEligibility({ cached: row.backupEligible, cachedReason: row.backupCapabilityReason, probe });
+        if (decision.persist) {
+          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${decision.persist.eligible}, "backupCapabilityReason" = ${decision.persist.reason}, "backupEligibleAt" = now() WHERE id = ${site.id}::uuid`;
+        }
+        const eligible = decision.eligible;
+        if (eligible === null) {
+          scheduleSkipped.push(`${row.slug}:eligibility_unknown`);
+          continue;
         }
         if (!eligible) {
           scheduleSkipped.push(`${row.slug}:no_state_to_back_up`);

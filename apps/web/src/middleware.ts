@@ -1,46 +1,9 @@
 import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { isPublicPath } from "@/lib/public-paths";
 
-const PUBLIC_PATHS = [
-  // Crawler and AI-assistant files (app/robots.ts, sitemap.ts, llms*.txt,
-  // opengraph-image). They redirected to the sign-in page before, so search
-  // engines and assistants saw a login form instead of the site map.
-  "/robots.txt",
-  "/sitemap.xml",
-  "/llms.txt",
-  "/llms-full.txt",
-  "/opengraph-image",
-  "/parked",
-  // The public hosting signup page: the one surface someone with no account is
-  // meant to land on, so it must never redirect to /auth/login.
-  "/hosting",
-  "/contact",
-  "/api/contact",
-  // GitHub's webhook deliveries carry no session; the route checks the
-  // signature before doing anything.
-  "/api/github/webhook",
-  "/pricing",
-  // Domain registration and transfer. The search endpoints have to answer an
-  // anonymous visitor on the homepage, so they cannot sit behind auth.
-  "/domains",
-  "/api/domains",
-  "/auth/login",
-  "/auth/register",
-  "/auth/error",
-  "/auth/invite",
-  "/auth/forgot-password",
-  "/auth/reset-password",
-  "/api/auth",
-  "/api/auth/forgot-password",
-  "/api/auth/reset-password",
-  "/api/invites",
-  "/api/health",
-  "/api/coolify/connection",
-  "/api/setup",
-  // Internal collector route is secured by bearer token in its route handler.
-  "/api/internal/wordpress-collector"
-];
+
 
 const PARKING_SUFFIX = ".mfts.link";
 
@@ -84,7 +47,7 @@ export async function middleware(req: NextRequest) {
 
   // Allow public paths and static assets through
   if (
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
+    isPublicPath(pathname) ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/assets") ||
     pathname.startsWith("/favicon") ||
@@ -183,6 +146,10 @@ export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 
   if (!token) {
+    // API callers get a 401 they can read, not a login page in place of JSON.
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 });
+    }
     const loginUrl = new URL("/auth/login", req.url);
     loginUrl.searchParams.set("callbackUrl", `${pathname}${req.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);
