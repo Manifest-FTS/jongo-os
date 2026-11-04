@@ -833,6 +833,8 @@ export type DeployTriggerResult = {
    * real, trackable deployment.
    */
   action?: "restart" | "deploy";
+  /** Coolify's deployment uuid when it returned one; null means it can't be followed. */
+  trackableDeploymentId?: string | null;
 };
 
 function extractFirstHostLikeValue(raw: string): string | undefined {
@@ -1686,6 +1688,7 @@ export async function triggerCoolifyDeploy(
   // See lib/coolify-deploy-plan.ts: POST first (Coolify 4.3 answers GET with
   // 405), restart for services, deploy for applications.
   let failure: { status: number; detail: string } | null = null;
+  let timedOut = false;
   const noteFailure = (status: number, detail: string) => {
     // "Not found" is the expected answer from the endpoint for the other kind of
     // resource. Report the most informative refusal instead.
@@ -1707,6 +1710,8 @@ export async function triggerCoolifyDeploy(
           signal: controller.signal
         });
       } catch (error) {
+        // No answer: Coolify may have accepted the deploy before the timeout.
+        if (error instanceof Error && error.name === "AbortError") timedOut = true;
         noteFailure(0, error instanceof Error ? error.message : "request failed");
         break;
       } finally {
@@ -1725,15 +1730,17 @@ export async function triggerCoolifyDeploy(
         });
         const deployments = Array.isArray(payload.deployments) ? (payload.deployments as Record<string, unknown>[]) : [];
         const first = deployments[0] ?? {};
-        const deploymentId =
-          typeof first.deployment_uuid === "string"
+        const realId =
+          typeof first.deployment_uuid === "string" && first.deployment_uuid
             ? first.deployment_uuid
-            : typeof payload.deployment_uuid === "string"
+            : typeof payload.deployment_uuid === "string" && payload.deployment_uuid
               ? payload.deployment_uuid
-              : `dep-${Date.now()}`;
+              : null;
+        const deploymentId = realId ?? `dep-${Date.now()}`;
         return {
           mode: "live",
           deploymentId,
+          trackableDeploymentId: request.path.endsWith("/restart") ? null : realId,
           action: request.path.endsWith("/restart") ? "restart" : "deploy",
           message: request.path.endsWith("/restart")
             ? `Restart triggered on ${environment}.`
@@ -1770,9 +1777,48 @@ export async function triggerCoolifyDeploy(
   }
 
   const reported = failure as { status: number; detail: string } | null;
-  throw new Error(
-    `Coolify deploy failed (${reported?.status || 500})${reported?.detail ? `: ${reported.detail}` : ""}`
+  throw new CoolifyDeployError(
+    `Coolify deploy failed (${reported?.status || 500})${reported?.detail ? `: ${reported.detail}` : ""}`,
+    reported?.status ?? 0,
+    timedOut
   );
+}
+
+/**
+ * A deploy request that did not start a deploy. `status` is Coolify's HTTP
+ * status (0 when there was no answer). `mayHaveStarted` is true when a request
+ * timed out: Coolify may have accepted it, so retrying could deploy twice.
+ */
+export class CoolifyDeployError extends Error {
+  constructor(message: string, readonly status: number, readonly mayHaveStarted: boolean) {
+    super(message);
+    this.name = "CoolifyDeployError";
+  }
+}
+
+export type CoolifyDeploymentState = "queued" | "in_progress" | "finished" | "failed" | "cancelled" | "unknown";
+
+/**
+ * Current state of one Coolify deployment (GET /api/v1/deployments/{uuid},
+ * documented in Coolify's OpenAPI). Only the status is read; the payload also
+ * carries full build logs, which are not needed here.
+ */
+export async function getCoolifyDeploymentState(deploymentUuid: string): Promise<CoolifyDeploymentState> {
+  const payload = (await coolifyFetch(`/api/v1/deployments/${encodeURIComponent(deploymentUuid)}`)) as
+    | Record<string, unknown>
+    | null;
+  const status = typeof payload?.status === "string" ? payload.status : "";
+  switch (status) {
+    case "queued":
+    case "in_progress":
+    case "finished":
+    case "failed":
+      return status;
+    case "cancelled-by-user":
+      return "cancelled";
+    default:
+      return "unknown";
+  }
 }
 
 // ─── Backup Inventory Types ───────────────────────────────────────────────────

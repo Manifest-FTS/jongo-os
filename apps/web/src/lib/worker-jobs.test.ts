@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 // @ts-expect-error plain .mjs module without types
 import { flag, intervalMinutesToCron, jobDefinitions, pgConnectionString } from "../../../../scripts/worker-jobs.mjs";
 
@@ -67,5 +67,37 @@ describe("pgConnectionString", () => {
   it("drops Prisma-only parameters and keeps the rest", () => {
     const out = pgConnectionString("postgresql://u:p@db:5432/jongo?schema=public&connection_limit=5&sslmode=require");
     expect(out).toBe("postgresql://u:p@db:5432/jongo?sslmode=require");
+  });
+});
+
+describe("operation queue", () => {
+  it("uses the same queue settings in the worker and the web app", async () => {
+    // @ts-expect-error plain .mjs module without types
+    const worker = await import("../../../../scripts/worker-jobs.mjs");
+    const web = await import("./job-queue");
+    expect(worker.OPERATION_RUN_QUEUE).toBe(web.OPERATION_RUN_QUEUE);
+    expect(worker.OPERATION_RUN_QUEUE_OPTIONS).toEqual(web.OPERATION_RUN_QUEUE_OPTIONS);
+  });
+
+  it("calls the local server when embedded and the public URL from a separate container", async () => {
+    // @ts-expect-error plain .mjs module without types
+    const { resolveOperationRunUrl } = await import("../../../../scripts/worker-jobs.mjs");
+    expect(resolveOperationRunUrl({ NEXTAUTH_URL: "https://jongo.app", PORT: "3000" })).toBe(
+      "http://127.0.0.1:3000/api/internal/operations/run"
+    );
+    expect(resolveOperationRunUrl({ NEXTAUTH_URL: "https://jongo.app/", JONGO_WORKER_MODE: "external" })).toBe(
+      "https://jongo.app/api/internal/operations/run"
+    );
+  });
+
+  it("sends the machine token and fails on anything but 200, so pg-boss retries", async () => {
+    // @ts-expect-error plain .mjs module without types
+    const { runOperationStep } = await import("../../../../scripts/worker-jobs.mjs");
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ retry: true }), { status: 503 }));
+    await expect(runOperationStep("op-1", false, { BACKUP_RECONCILE_TOKEN: "t" }, fetcher)).rejects.toThrow("HTTP 503");
+    const [, init] = fetcher.mock.calls[0] as any;
+    expect(init.headers.authorization).toBe("Bearer t");
+    expect(JSON.parse(init.body)).toEqual({ operationId: "op-1", finalAttempt: false });
+    await expect(runOperationStep("op-1", false, {}, fetcher)).rejects.toThrow("required");
   });
 });

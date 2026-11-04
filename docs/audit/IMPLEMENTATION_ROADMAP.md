@@ -24,7 +24,8 @@ Constraint: use only existing resources — nothing new to buy or host.
 **2b. Foundation**
 - `Operation` model: `id, orgId, projectId?, resourceType, resourceId, kind, status (queued|running|succeeded|failed|cancelled), steps JSON, idempotencyKey @unique, attempts, error, actorId, timestamps`.
 - *Done:* pg-boss worker (`scripts/worker.mjs`, queue in schema `pgboss`), started inside the web container by default (`JONGO_WORKER_MODE`). The 4 schedulers now run as cron jobs on it, one run at a time across restarts and containers.
-- *Done:* `Operation` model and `lib/operations.ts` (idempotent create, forward-only status). Next: run the first real task (deploy) through it.
+- *Done:* `Operation` model and `lib/operations.ts` (idempotent create, forward-only status).
+- *Done:* deploys run as operations (`lib/deploy-operation.ts`): one at a time per app and environment, start retried only when hosting refused it, build followed to the end via Coolify's `GET /deployments/{uuid}`, progress on the deploy button.
 - SSE endpoint `/api/events?scope=…` backed by Postgres `LISTEN/NOTIFY`; replace `setInterval` polling component by component.
 - Typed Prisma client (drop the `any` wrapper).
 - Env/config module (one place that reads `process.env`).

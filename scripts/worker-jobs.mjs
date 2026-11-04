@@ -115,3 +115,49 @@ export function pgConnectionString(databaseUrl) {
   }
   return url.toString();
 }
+
+// ─── Operations (deploys and other long tasks) ───────────────────────────────
+
+/** Must match apps/web/src/lib/job-queue.ts (a test checks they agree). */
+export const OPERATION_RUN_QUEUE = "operation-run";
+export const OPERATION_RUN_QUEUE_OPTIONS = {
+  name: OPERATION_RUN_QUEUE,
+  policy: "stately",
+  retryLimit: 3,
+  retryDelay: 20,
+  retryBackoff: true,
+  expireInSeconds: 5 * 60
+};
+
+/**
+ * Where to run an operation step. Inside the web container (the default
+ * "embedded" mode) that is the local server, which avoids a round trip through
+ * the public proxy. A separate worker container uses NEXTAUTH_URL.
+ */
+export function resolveOperationRunUrl(env = process.env) {
+  const direct = (env.OPERATIONS_RUN_URL || "").trim();
+  if (direct) return direct;
+  const mode = (env.JONGO_WORKER_MODE || "embedded").trim().toLowerCase();
+  const base = (env.NEXTAUTH_URL || "").trim().replace(/\/+$/, "");
+  if (mode === "external" && base) return `${base}/api/internal/operations/run`;
+  const port = (env.PORT || "3000").trim() || "3000";
+  return `http://127.0.0.1:${port}/api/internal/operations/run`;
+}
+
+/** Run one step of an operation in the web app. Throws so pg-boss retries. */
+export async function runOperationStep(operationId, finalAttempt, env = process.env, fetcher = fetch) {
+  const token = (env.BACKUP_RECONCILE_TOKEN || env.OWNERSHIP_SYNC_TOKEN || "").trim();
+  if (!token) throw new Error("BACKUP_RECONCILE_TOKEN (or OWNERSHIP_SYNC_TOKEN) is required to run operations.");
+  const response = await fetcher(resolveOperationRunUrl(env), {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ operationId, finalAttempt }),
+    redirect: "manual",
+    signal: AbortSignal.timeout(4 * 60_000)
+  });
+  const payload = await response.json().catch(() => null);
+  if (response.status !== 200) {
+    throw new Error(`operation ${operationId} step failed: HTTP ${response.status}`);
+  }
+  return payload;
+}
