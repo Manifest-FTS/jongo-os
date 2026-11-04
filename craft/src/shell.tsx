@@ -1,12 +1,10 @@
 "use client";
 import { useEffect, useId, useRef, type ReactNode, type ButtonHTMLAttributes } from 'react';
+import type { TypeDefinition } from './schema.js';
 
 export type CraftIdentity = { id: string; label: string; role: string };
-/** Content-only subset of Jongo's document descriptors. No operational entitlements. */
-export type ContentSchema = {
-  name: string; type: 'document'; title: string; schemaVersion: number;
-  fields: readonly { name: string; title?: string; type: 'string' | 'text' | 'enum'; options?: readonly string[]; required?: boolean; maxLength?: number }[];
-};
+/** Content-only document descriptors, portable with Jongo's CMS schema. No operational entitlements. */
+export type ContentSchema = TypeDefinition;
 export type CraftContext<T> = { identity: CraftIdentity; adapter: T };
 export type CraftView<T> = { id: string; title: string; href?: string; roles: readonly string[]; render: (context: CraftContext<T>) => ReactNode };
 export type CraftPlugin<T> = { id: string; title: string; schemas: readonly ContentSchema[]; views: readonly CraftView<T>[] };
