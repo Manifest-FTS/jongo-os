@@ -7,6 +7,7 @@ import { getCoolifyAppStagingCapability } from "@/lib/coolify";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { describeForViewer } from "@/lib/site-description";
+import RedeployButton from "@/components/RedeployButton";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -97,6 +98,13 @@ export default async function SiteWorkspaceLayout({
     { name: "Advanced", href: `/apps/${siteId}/settings` }
   ];
 
+  // Redeploy, like Vercel's: for anyone allowed to deploy, on an app that is
+  // connected to hosting. Databases have nothing to redeploy. WordPress and
+  // other services restart rather than rebuild, so the button says so.
+  const siteType = (site.siteType ?? "").toLowerCase();
+  const showRedeploy = Boolean(appUuid) && permissionSnapshot.canDeployFromGithub && siteType !== "database";
+  const redeployKind: "deploy" | "restart" = isWordPress || siteType === "service" ? "restart" : "deploy";
+
   const showOwnershipState = permissionSnapshot.canViewInternalMetadata && site?.ownershipState !== "unavailable";
   const isMapped = site?.ownershipState === "mapped";
 
@@ -123,19 +131,22 @@ export default async function SiteWorkspaceLayout({
             ) : null}
           </div>
 
-          <div className="workspace-hero-chips">
-            <span className={`status-chip ${site?.status ?? "unknown"}`}>
-              {site?.status ?? "unknown"}
-            </span>
-            <span className={`status-chip ${primaryEnvironmentStatus ?? "unknown"}`}>
-              {primaryEnvironmentLabel}
-            </span>
-            {showStagingReadyTag ? <span className="tag">Staging ready</span> : null}
-            {showOwnershipState ? (
-              <span className={`tag ${isMapped ? "tag-mapped" : "tag-warning"}`}>
-                {isMapped ? "mapped" : "mapping needs review"}
+          <div className="workspace-hero-actions">
+            <div className="workspace-hero-chips">
+              <span className={`status-chip ${site?.status ?? "unknown"}`}>
+                {site?.status ?? "unknown"}
               </span>
-            ) : null}
+              <span className={`status-chip ${primaryEnvironmentStatus ?? "unknown"}`}>
+                {primaryEnvironmentLabel}
+              </span>
+              {showStagingReadyTag ? <span className="tag">Staging ready</span> : null}
+              {showOwnershipState ? (
+                <span className={`tag ${isMapped ? "tag-mapped" : "tag-warning"}`}>
+                  {isMapped ? "mapped" : "mapping needs review"}
+                </span>
+              ) : null}
+            </div>
+            {showRedeploy ? <RedeployButton siteId={siteId} kind={redeployKind} /> : null}
           </div>
         </div>
 
