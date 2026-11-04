@@ -111,7 +111,7 @@ function boundedJson(value: unknown): JsonValue {
 /** Same persisted policy as dataset-access, evaluated here because its public
  * resolver owns a separate transaction. Never call that resolver as write proof.
  * Keep this bridge aligned until that module exports a tx-bound policy helper. */
-async function authorize(tx: Tx, scope: Scope, edit: boolean, minimumRank = 1): Promise<{ organizationId: string; ownerId: string; siteId: string | null }> {
+async function authorize(tx: Tx, scope: Scope, edit: boolean, minimumRank = 1): Promise<{ organizationId: string; ownerId: string; siteId: string | null; rank: number }> {
   assertScope(scope, edit);
   const { userId, datasetId } = scope;
   const actor = await tx.user.findUnique({ where: { id: userId }, select: { id: true, deletedAt: true } });
@@ -153,7 +153,7 @@ async function authorize(tx: Tx, scope: Scope, edit: boolean, minimumRank = 1): 
     enabled: process.env.JONGO_CMS_ENABLED === "true", now: new Date()
   });
   if (!permits("cms.read") || (edit && (rank < minimumRank || !permits("cms.author")))) fail("denied");
-  return { organizationId: org.id, ownerId: org.ownerId, siteId: dataset.siteId };
+  return { organizationId: org.id, ownerId: org.ownerId, siteId: dataset.siteId, rank };
 }
 
 /** Fixed SQL identifiers and parameterized values only. Order: dataset UPDATE,
@@ -222,6 +222,18 @@ async function transaction<T>(scope: Scope, write: boolean, action: (tx: Tx, org
  * locks. Never accept a callback from HTTP/client input. */
 export function withCmsWriteTransaction<T>(scope: Scope, action: (tx: Tx, organizationId: string) => Promise<T>): Promise<T> {
   return transaction(scope, true, action);
+}
+
+/** Internal read-only bridge: one RepeatableRead snapshot that reauthorizes inside the
+ * transaction. `minimumRank` is the dataset role floor (0 reader, 1 editor, 2 publisher,
+ * 3 admin). Never accept a callback from HTTP/client input. */
+export function withCmsReadTransaction<T>(scope: Scope, minimumRank: number,
+  action: (tx: Tx, policy: { organizationId: string; ownerId: string; siteId: string | null }) => Promise<T>): Promise<T> {
+  return transaction(scope, false, async (tx) => {
+    const { rank, ...policy } = await authorize(tx, scope, false);
+    if (rank < minimumRank) fail("denied");
+    return action(tx, policy);
+  });
 }
 
 /** Internal publication/credential boundary: same locks and both flags, then
