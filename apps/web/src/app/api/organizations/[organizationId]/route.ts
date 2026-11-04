@@ -191,6 +191,12 @@ export async function PUT(req: Request, { params }: Params) {
 
     const updated = await db.organization.update({ where: { id: organizationId }, data: updates });
 
+    // Keep the hosting project's name in step (only for projects Jongo created).
+    if (typeof updates.name === "string" && updates.name !== access.organization.name) {
+      const { renameOrganizationHostingProject } = await import("@/lib/organization-hosting");
+      await renameOrganizationHostingProject(organizationId, updates.name);
+    }
+
     if (updates.coolifyProjectId) {
 
       await db.$executeRaw`
@@ -260,7 +266,30 @@ export async function DELETE(_req: Request, { params }: Params) {
     }
 
     const { db } = await import("@/lib/db");
+
+    // A client's apps keep running in hosting until they are deleted, and once
+    // the client is gone nobody could see or remove them. So its apps go first.
+    const liveApps = await db.site.count({ where: { organizationId, deletedAt: null } });
+    if (liveApps > 0) {
+      return NextResponse.json(
+        {
+          error:
+            liveApps === 1
+              ? "This client still has 1 app. Delete it first, then delete the client."
+              : `This client still has ${liveApps} apps. Delete them first, then delete the client.`,
+          reason: "client_has_apps",
+          apps: liveApps
+        },
+        { status: 409 }
+      );
+    }
+
+    const org = await db.organization.findUnique({ where: { id: organizationId }, select: { coolifyProjectId: true } });
     await db.organization.update({ where: { id: organizationId }, data: { deletedAt: new Date() } });
+
+    // Tidy up the now-empty hosting project if Jongo created it.
+    const { removeOrganizationHostingProject } = await import("@/lib/organization-hosting");
+    await removeOrganizationHostingProject(organizationId, org?.coolifyProjectId ?? null);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -53,7 +53,7 @@ export function buildWordPressServiceRequest(input: WordPressProvisionInput): Wo
     return {
       ok: false,
       reason: "project_required",
-      message: "No hosting project is linked to this client yet, so there is nowhere to create the app. Link one in Settings."
+      message: "This client's hosting isn't set up yet, so the app wasn't created. Try again in a few minutes."
     };
   }
 

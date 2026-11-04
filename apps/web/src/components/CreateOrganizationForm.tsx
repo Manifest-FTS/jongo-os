@@ -37,6 +37,8 @@ export default function CreateOrganizationForm({ triggerLabel = "New Client", on
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  // Shown after the drawer closes, when hosting setup was put off until the first app.
+  const [notice, setNotice] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
 
   useEffect(() => () => {
@@ -81,6 +83,7 @@ export default function CreateOrganizationForm({ triggerLabel = "New Client", on
         return;
       }
       organization = createdOrganization(data);
+      setNotice(data?.hosting?.ready === false && typeof data.hosting.message === "string" ? data.hosting.message : null);
       if (!organization) {
         setError("The server returned an unexpected response. Refresh the client list before trying again.");
         return;
@@ -106,10 +109,11 @@ export default function CreateOrganizationForm({ triggerLabel = "New Client", on
     <>
       <button type="button" className={`btn ${styles.trigger}`} aria-haspopup="dialog"
         aria-expanded={open} aria-controls={`${id}-drawer`}
-        onClick={() => { setError(null); setOpen(true); }}>
+        onClick={() => { setError(null); setNotice(null); setOpen(true); }}>
         {triggerLabel.startsWith("+") ? null : <PlusIcon className="btn-icon" />}
         {triggerLabel}
       </button>
+      {notice ? <p className={styles.help} role="status" style={{ margin: "0.4rem 0 0" }}>{notice}</p> : null}
       <ModalDrawer id={`${id}-drawer`} title="New Client / Organization" open={open} onClose={close}>
       <form onSubmit={handleSubmit} className={styles.form} aria-busy={loading}>
         <div className={styles.field}>
@@ -149,7 +153,7 @@ export default function CreateOrganizationForm({ triggerLabel = "New Client", on
         {error && <p className={styles.error} role="alert">{error}</p>}
         <div className={styles.actions}>
           <button type="submit" className={styles.primary} disabled={loading}>
-            {loading ? "Creating…" : "Create"}
+            {loading ? "Setting up client…" : "Create"}
           </button>
           <button
             type="button"

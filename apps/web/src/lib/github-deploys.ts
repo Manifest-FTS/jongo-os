@@ -47,7 +47,11 @@ export async function createSiteFromGithub(input: CreateFromGithubInput): Promis
   const repo = repos.find((candidate) => candidate.fullName.toLowerCase() === input.repoFullName.toLowerCase());
   if (!repo) return { ok: false, status: 404, message: "That repository isn't shared with Jongo. Add it on GitHub, then try again." };
 
-  const org = await db.organization.findUnique({ where: { id: input.orgId }, select: { coolifyProjectId: true } });
+  // Makes the client's hosting project first if it has none yet.
+  const { ensureOrganizationHostingProject } = await import("@/lib/organization-hosting");
+  const hosting = await ensureOrganizationHostingProject(input.orgId);
+  if (!hosting.ok) return { ok: false, status: 503, message: hosting.message };
+  const org = { coolifyProjectId: hosting.projectUuid };
   const { coolifyFetch, coolifyMutateWithResponse, applyCoolifyApplicationDomains, triggerCoolifyDeploy } = await import("@/lib/coolify");
   const { resolveStagingServerUuid } = await import("@/lib/coolify-server-resolve");
   const servers = await coolifyFetch("/api/v1/servers").catch(() => []);
@@ -349,7 +353,11 @@ export async function createSiteFromPublicRepo(input: Omit<CreateFromGithubInput
   const badKey = envVars.find((row) => !ENV_KEY.test(row.key.trim()));
   if (badKey) return { ok: false, status: 400, message: `"${badKey.key}" isn't a valid variable name. Use letters, numbers and underscores.` };
 
-  const org = await db.organization.findUnique({ where: { id: input.orgId }, select: { coolifyProjectId: true } });
+  // Makes the client's hosting project first if it has none yet.
+  const { ensureOrganizationHostingProject } = await import("@/lib/organization-hosting");
+  const hosting = await ensureOrganizationHostingProject(input.orgId);
+  if (!hosting.ok) return { ok: false, status: 503, message: hosting.message };
+  const org = { coolifyProjectId: hosting.projectUuid };
   const { coolifyFetch, coolifyMutateWithResponse, applyCoolifyApplicationDomains, triggerCoolifyDeploy } = await import("@/lib/coolify");
   const { resolveStagingServerUuid } = await import("@/lib/coolify-server-resolve");
   const { buildPublicApplicationRequest } = await import("@/lib/github-app-request");

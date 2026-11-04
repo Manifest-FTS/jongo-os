@@ -127,6 +127,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
+  // Each client creates a hosting project, so creation is rate-limited per user.
+  const { AUTH_RATE_LIMITS, hitRateLimit, tooManyAttemptsMessage } = await import("@/lib/auth-rate-limit");
+  const limited = await hitRateLimit(AUTH_RATE_LIMITS.createClientPerUser, session.user.id);
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { error: tooManyAttemptsMessage(limited.retryAfterSeconds) },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSeconds) } }
+    );
+  }
+
   // Linking a hosting project imports every app in it into the new client, so
   // it is platform-admin only — the same rule PUT /api/organizations/[id]
   // applies. Without it any signed-up user could claim an unlinked project.
@@ -214,6 +224,18 @@ export async function POST(req: Request) {
       }
     }
 
+    // Every new client gets its own hosting project, so its first app can be
+    // created straight away. If hosting is briefly unreachable the client is
+    // still created; the project is made when its first app is created.
+    let hosting: { ready: boolean; message: string | null } = { ready: Boolean(org.coolifyProjectId), message: null };
+    if (!org.coolifyProjectId) {
+      const { ensureOrganizationHostingProject } = await import("@/lib/organization-hosting");
+      const ensured = await ensureOrganizationHostingProject(org.id);
+      hosting = ensured.ok
+        ? { ready: true, message: null }
+        : { ready: false, message: "Client created. Its hosting is set up automatically when you add its first app." };
+    }
+
     if (org.coolifyProjectId) {
       try {
         await importLinkedCoolifyProjectSites(org.id);
@@ -227,6 +249,7 @@ export async function POST(req: Request) {
         id: org.id,
         slug: org.slug,
         name: org.name,
+        hosting,
         description: org.description,
         coolifyProjectId: org.coolifyProjectId,
         coolifyProjectName: org.coolifyProjectName,

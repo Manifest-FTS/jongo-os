@@ -22,7 +22,9 @@ export const AUTH_RATE_LIMITS = {
   forgotPerIp: { scope: "forgot:ip", limit: 10, windowSeconds: 15 * 60 },
   forgotPerEmail: { scope: "forgot:email", limit: 3, windowSeconds: 60 * 60 },
   resetPerIp: { scope: "reset:ip", limit: 10, windowSeconds: 15 * 60 },
-  inviteAcceptPerIp: { scope: "invite:ip", limit: 10, windowSeconds: 15 * 60 }
+  inviteAcceptPerIp: { scope: "invite:ip", limit: 10, windowSeconds: 15 * 60 },
+  // Not sign-in, but the same shape: each new client creates a hosting project.
+  createClientPerUser: { scope: "client-create:user", limit: 20, windowSeconds: 60 * 60 }
 } satisfies Record<string, RateLimitRule>;
 
 export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };

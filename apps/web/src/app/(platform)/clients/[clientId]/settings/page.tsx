@@ -43,28 +43,32 @@ export default async function ClientSettingsPage({ params, searchParams }: Param
           <a className="action-link font-semibold" href={`/clients/${client.dbId}/sources${githubReturn ? `?github=${encodeURIComponent(githubReturn)}` : ""}`}>Open Git sources</a>
         </article>
       ) : null}
+      {access.isPlatformAdmin ? (
+        <article className="card">
+          <h3 className="card-title">Hosting project</h3>
+          <p className="card-muted" style={{ marginBottom: "1rem" }}>
+            Platform admins only. Each client gets its own hosting project automatically; link an existing project here only to bring in apps that already run on the servers.
+          </p>
+          {linkedProjects.length === 0 ? (
+            <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
+              <strong>No hosting project yet.</strong> One is created automatically with this client's first app.
+            </div>
+          ) : null}
+          {client.dbId && overview ? (
+            <CoolifyProjectMappingForm
+              organizationDbId={client.dbId}
+              organizationName={client.name}
+              availableProjects={overview.projects.map((project) => ({ id: project.id, name: project.name }))}
+            />
+          ) : null}
+        </article>
+      ) : null}
       <article className="card">
-        <h3 className="card-title">Project Mapping</h3>
-        <p className="card-muted" style={{ marginBottom: "1rem" }}>
-          Link one or more projects to this client workspace. Project links are explicit and never auto-renamed.
+        <h3 className="card-title">Delete client</h3>
+        <p className="card-muted" style={{ marginBottom: "0.75rem" }}>
+          Removes this client from Jongo. Delete its apps first; a client with apps can't be deleted.
         </p>
-        {linkedProjects.length === 0 ? (
-          <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>
-            <strong>No linked project.</strong> Link at least one project so this client's apps map cleanly in Jongo.
-          </div>
-        ) : null}
-        {client.dbId && overview ? (
-          <CoolifyProjectMappingForm
-            organizationDbId={client.dbId}
-            organizationName={client.name}
-            availableProjects={overview.projects.map((project) => ({ id: project.id, name: project.name }))}
-          />
-        ) : (
-          <p className="card-muted">A platform admin manages infrastructure project mapping.</p>
-        )}
-        <div style={{ marginTop: "1rem" }}>
-          <DeleteClientButton organizationId={client.dbId ?? client.id} />
-        </div>
+        <DeleteClientButton organizationId={client.dbId ?? client.id} />
       </article>
     </div>
   );

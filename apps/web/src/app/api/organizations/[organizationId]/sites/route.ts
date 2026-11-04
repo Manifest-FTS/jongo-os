@@ -246,6 +246,15 @@ export async function POST(req: Request, { params }: Params) {
         slug: pinnedTemporarySlug,
         suffix: pinnedTemporarySuffix
       });
+      // A client created before hosting projects were automatic, or whose
+      // project could not be made at the time, gets one now.
+      const { ensureOrganizationHostingProject } = await import("@/lib/organization-hosting");
+      const hosting = await ensureOrganizationHostingProject(org.id);
+      if (!hosting.ok) {
+        return NextResponse.json({ error: hosting.message, reason: hosting.reason }, { status: 503 });
+      }
+      org.coolifyProjectId = hosting.projectUuid;
+
       const provision = await provisionCoolifyWordPressService({
         name,
         projectUuid: org.coolifyProjectId ?? null,

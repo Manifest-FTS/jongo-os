@@ -33,7 +33,7 @@ export function normalizeBaseDirectory(value?: string | null): string | null {
 export function buildGithubApplicationRequest(
   input: GithubApplicationInput
 ): { ok: true; body: Record<string, unknown> } | { ok: false; message: string } {
-  if (!input.projectUuid?.trim()) return { ok: false, message: "No hosting project is linked to this client yet. Link one in Settings." };
+  if (!input.projectUuid?.trim()) return { ok: false, message: "This client's hosting isn't set up yet, so the app wasn't created. Try again in a few minutes." };
   if (!input.serverUuid?.trim()) return { ok: false, message: "Could not determine which server to create the app on." };
   if (!input.sourceUuid?.trim()) return { ok: false, message: "GitHub is still finishing setup for this client. Try again in a minute." };
   if (!REPO.test(input.repoFullName)) return { ok: false, message: "Choose a repository." };

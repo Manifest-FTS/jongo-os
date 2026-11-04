@@ -21,9 +21,11 @@ type Props = {
   githubOnly?: boolean;
   /** False until the platform's GitHub App exists: the GitHub option is hidden. */
   githubAvailable?: boolean;
+  /** Platform admins only: adopt an app already running on the servers. */
+  canAdopt?: boolean;
 };
 
-export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false, githubAvailable = true }: Props) {
+export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false, githubAvailable = true, canAdopt = false }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -214,11 +216,11 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
       <h3 className="card-title" style={{ marginBottom: "0.5rem" }}>Add App</h3>
       {githubOnly ? null : availableApps.length > 0 ? (
         <p className="card-muted" style={{ marginBottom: "0.9rem" }}>
-          Pick an available Coolify app or enter details manually.
+          Create a new app, or pick one that's already running on Jongo's servers.
         </p>
       ) : (
         <p className="card-muted" style={{ marginBottom: "0.9rem" }}>
-          No linked Coolify apps were found. Enter details manually or link a project in Settings first.
+          Choose what to create. Hosting is set up automatically.
         </p>
       )}
       <div role="radiogroup" aria-label="How to add this app" style={{ display: "flex", gap: "0.5rem", marginBottom: "0.9rem", flexWrap: "wrap" }}>
@@ -227,7 +229,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
           ["create", "Create WordPress site", "Create a new WordPress + MariaDB site."],
           ["public", "Public repository", "Deploy a public GitHub, GitLab, Bitbucket or Codeberg repository by URL."],
           ["private", "Private repository (GitHub App)", "Deploy a private repository through one of your Git sources; pushes deploy automatically."]
-        ] as const).filter(([value]) => (!githubOnly || value === "public" || value === "private") && (githubAvailable || (value !== "public" && value !== "private"))).map(([value, label, help]) => (
+        ] as const).filter(([value]) => (!githubOnly || value === "public" || value === "private") && (githubAvailable || (value !== "public" && value !== "private")) && (canAdopt || value !== "link")).map(([value, label, help]) => (
           <button
             key={value}
             type="button"
@@ -253,13 +255,13 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
       <form onSubmit={handleSubmit} className="form-stack">
         {mode === "link" && availableApps.length > 0 ? (
           <div>
-            <label className="form-label">Coolify App Picker</label>
+            <label className="form-label">Running app</label>
             <select
               className="form-input"
               value={selectedAppId}
               onChange={(event) => handlePickApp(event.target.value)}
             >
-              <option value="">— Select a Coolify app —</option>
+              <option value="">— Select an app —</option>
               {availableApps.map((app) => (
                 <option key={app.id} value={app.id}>
                   {app.name} {app.projectName ? `· ${app.projectName}` : ""}
@@ -267,7 +269,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
               ))}
             </select>
             <p className="form-help">
-              Choosing an app fills in the app name and Coolify service UUID for you.
+              Choosing an app fills in its name and hosting id for you.
             </p>
           </div>
         ) : null}
@@ -300,7 +302,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
         <>
         <div>
           <label className="form-label">
-            Coolify Service UUID
+            Hosting resource id
           </label>
           <input
             type="text"
