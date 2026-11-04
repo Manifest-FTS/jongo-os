@@ -90,6 +90,7 @@ model User {
   siteCollaborations   SiteCollaborator[]
   apiTokens            ApiToken[]
   auditLogs            AuditLog[]
+  operations           Operation[]
   favoriteApps         UserFavoriteApp[]
   deploymentsTriggered Deployment[]         @relation("TriggeredBy")
   collaboratorsGranted Collaborator[]       @relation("GrantedBy")
@@ -177,6 +178,7 @@ model Organization {
   invitations         Invitation[]
   apiTokens           ApiToken[]
   auditLogs           AuditLog[]
+  operations          Operation[]
   notifications       Notification[]
   domains             Domain[]
   githubInstallations GithubInstallation[]
@@ -1599,4 +1601,61 @@ model CmsContentDelivery {
   @@unique([eventId, targetId])
   @@index([datasetId, eventId])
   @@index([datasetId, targetId])
+}
+
+// ============================================================
+// Rate limiting
+// ============================================================
+
+// Fixed-window counters for sign-in, registration and password reset
+// (lib/auth-rate-limit.ts). In Postgres rather than memory so limits survive
+// restarts and hold across replicas. `key` is a sha256 of the scope and
+// identifier (email or IP), so no email or address is stored here.
+model RateLimitBucket {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+
+  @@index([windowStart])
+}
+
+enum OperationStatus {
+  queued
+  running
+  succeeded
+  failed
+  cancelled
+}
+
+// A long-running task (deploy, provision, backup, restore, migration) and its
+// progress. Rows are the record users and support see; the pg-boss job that
+// executes one is transient. `idempotencyKey` makes a retried request return
+// the existing operation instead of starting a second one.
+model Operation {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?         @db.Uuid
+  actorId        String?         @db.Uuid
+  kind           String // 'site.deploy', 'wordpress.provision', ...
+  resourceType   String?
+  resourceId     String?
+  status         OperationStatus @default(queued)
+  idempotencyKey String?         @unique
+  input          Json?
+  steps          Json? // [{ name, status, at, detail? }]
+  result         Json?
+  error          String?         @db.Text
+  attempts       Int             @default(0)
+  jobId          String?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  @@index([organizationId, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([status])
 }

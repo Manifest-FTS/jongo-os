@@ -1,4 +1,3 @@
-import { getClients, getClientById as getMockClientById, getClientForSite, type ClientRecord } from "./clients";
 import { getCoolifyOverview, type CoolifyOverview } from "./coolify";
 import { recordRepositoryCall } from "./diagnostics";
 import { buildSiteIdentityWhere, isUuid } from "./site-identity";
@@ -125,6 +124,15 @@ async function hasTemporaryDomainColumns(prisma: any): Promise<boolean> {
   }
 }
 
+type ClientRecord = {
+  id: string;
+  name: string;
+  summary: string;
+  siteIds: string[];
+  members: Array<{ name: string; role: string }>;
+  recentActivity: string[];
+};
+
 export type ClientWorkspaceRecord = ClientRecord & {
   dbId?: string; // actual DB UUID (undefined when using mock data)
   siteCount: number;
@@ -233,21 +241,14 @@ export type ActivityFeedItem = {
   appName?: string;
 };
 
+// There is no demo data: when the database or hosting is unavailable these
+// return nothing, and callers show an empty or "unavailable" state.
 function fromMockClients(): ClientWorkspaceRecord[] {
-  return getClients().map((client) => ({
-    ...client,
-    siteCount: client.siteIds.length,
-    memberCount: client.members.length,
-    dataSource: "mock" as const
-  }));
+  return [];
 }
 
-function getClientForCoolifySite(siteId: string, mode: "live" | "mock") {
-  if (mode !== "mock") {
-    return undefined;
-  }
-
-  return getClientForSite(siteId);
+function getClientForCoolifySite(_siteId: string, _mode: "live" | "mock"): ClientWorkspaceRecord | undefined {
+  return undefined;
 }
 
 function normalizedKey(value?: string | null): string {
@@ -675,19 +676,6 @@ function resolveOwnershipForCoolifySite(
   ownershipState: "mapped" | "orphaned" | "unavailable";
   ownershipDiagnostic: string;
 } {
-  if (mode === "mock") {
-    const mockClient = getClientForSite(site.id);
-    if (mockClient) {
-      return {
-        clientId: mockClient.id,
-        clientDbId: undefined,
-        clientName: mockClient.name,
-        ownershipState: "mapped",
-        ownershipDiagnostic: `Client: ${mockClient.name}`
-      };
-    }
-  }
-
   if (index) {
     if (site.coolifyProjectId && index.byProjectId.has(site.coolifyProjectId)) {
       const org = toSingleMatchOrNull(index.byProjectId.get(site.coolifyProjectId) ?? []);
@@ -1078,7 +1066,7 @@ export async function listClientWorkspaces(viewer?: ViewerContext): Promise<Clie
     }
 
     console.error(
-      "[jongo] listClientWorkspaces: DB query failed after the connection check, falling back to mock data.",
+      "[jongo] listClientWorkspaces: DB query failed after the connection check; showing nothing.",
       "DATABASE_URL present:", !!process.env.DATABASE_URL,
       "Error:", error
     );
@@ -1113,16 +1101,7 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
         return undefined;
       }
 
-      const mockClient = getMockClientById(clientId);
-
-      if (!mockClient) return undefined;
-
-      return {
-        ...mockClient,
-        siteCount: mockClient.siteIds.length,
-        memberCount: mockClient.members.length,
-        dataSource: "mock" as const
-      };
+      return undefined;
     }
 
     const scopedUserId = getScopedViewerUserId(viewer);
@@ -1256,7 +1235,7 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
     }
 
     console.error(
-      "[jongo] getClientWorkspace: DB query failed, falling back to mock data.",
+      "[jongo] getClientWorkspace: DB query failed; showing nothing.",
       "DATABASE_URL present:", !!process.env.DATABASE_URL,
       "Error:", error
     );
@@ -1264,16 +1243,7 @@ export async function getClientWorkspace(clientId: string, viewer?: ViewerContex
       return undefined;
     }
 
-    const mockClient = getMockClientById(clientId);
-
-    if (!mockClient) return undefined;
-
-    return {
-      ...mockClient,
-      siteCount: mockClient.siteIds.length,
-      memberCount: mockClient.members.length,
-      dataSource: "mock" as const
-    };
+    return undefined;
   }
 }
 

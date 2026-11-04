@@ -67,15 +67,24 @@ export async function saveGithubApp(
 ): Promise<{ ok: boolean; message: string; app: GithubAppSecrets | null }> {
   const db: any = await getDb();
   if (!db) return { ok: false, message: "The database is unavailable.", app: null };
+  let sealed: { clientSecretEnc: string; webhookSecretEnc: string; privateKeyEnc: string };
+  try {
+    sealed = {
+      clientSecretEnc: encryptSecret(conversion.client_secret),
+      webhookSecretEnc: encryptSecret(conversion.webhook_secret),
+      privateKeyEnc: encryptSecret(conversion.pem)
+    };
+  } catch (error) {
+    console.error("[github] could not encrypt GitHub App credentials", error);
+    return { ok: false, message: "The GitHub App credentials can't be saved right now. Try again later.", app: null };
+  }
   const data = {
     appId: Number(conversion.id),
     slug: conversion.slug,
     name: conversion.name,
     htmlUrl: conversion.html_url,
     clientId: conversion.client_id,
-    clientSecretEnc: encryptSecret(conversion.client_secret),
-    webhookSecretEnc: encryptSecret(conversion.webhook_secret),
-    privateKeyEnc: encryptSecret(conversion.pem)
+    ...sealed
   };
   let row;
   if (sourceId) {
@@ -191,6 +200,17 @@ export async function saveManualGitSource(
   }
   const clash = await db.githubAppConfig.findFirst({ where: { appId: input.appId, id: { not: sourceId } } });
   if (clash) return { ok: false, status: 409, message: "That GitHub App is already connected in Jongo." };
+  let sealed: { clientSecretEnc: string; webhookSecretEnc: string; privateKeyEnc: string };
+  try {
+    sealed = {
+      clientSecretEnc: encryptSecret(input.clientSecret.trim()),
+      webhookSecretEnc: encryptSecret(input.webhookSecret.trim()),
+      privateKeyEnc: encryptSecret(privateKey)
+    };
+  } catch (error) {
+    console.error("[github] could not encrypt GitHub App credentials", error);
+    return { ok: false, status: 503, message: "The GitHub App credentials can't be saved right now. Try again later." };
+  }
   await db.githubAppConfig.update({
     where: { id: sourceId },
     data: {
@@ -198,9 +218,7 @@ export async function saveManualGitSource(
       slug: info.slug,
       htmlUrl: info.htmlUrl,
       clientId: input.clientId.trim(),
-      clientSecretEnc: encryptSecret(input.clientSecret.trim()),
-      webhookSecretEnc: encryptSecret(input.webhookSecret.trim()),
-      privateKeyEnc: encryptSecret(privateKey),
+      ...sealed,
       ownerLogin: row.ownerLogin ?? info.owner,
       manual: true
     }

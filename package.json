@@ -21,6 +21,8 @@
     "dev:web": "npm run dev --workspace @jongo-os/web",
     "start": "node ./scripts/start-production.mjs",
     "start:web": "npm run start --workspace @jongo-os/web",
+    "worker": "node ./scripts/worker.mjs",
+    "worker:list": "node ./scripts/worker.mjs --list",
     "build": "npm run prisma:generate && npm run build:web",
     "build:web": "npm run build --workspace @jongo-os/web",
     "lint": "turbo run lint",
@@ -47,6 +49,8 @@
     "ops:backup-rehearsal": "node ./scripts/backup-rehearsal.mjs",
     "ops:cache-flush": "node ./scripts/site-cache-flush.mjs",
     "ops:verify-backup": "node ./scripts/verify-jongo-backup.mjs",
+    "ops:reencrypt-secrets": "node ./scripts/reencrypt-secrets.mjs",
+    "ops:reencrypt-secrets:apply": "node ./scripts/reencrypt-secrets.mjs --apply",
     "ops:verify-backup:restore-test": "node ./scripts/verify-jongo-backup.mjs --restore-test",
     "ops:backup-reconcile:scheduler": "node ./scripts/backup-reconcile-scheduler.mjs",
     "ops:coolify-deletion:watcher": "node ./scripts/coolify-deletion-watcher.mjs",
@@ -93,6 +97,7 @@
     "node": ">=18.18.0"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0"
+    "@prisma/client": "^5.22.0",
+    "pg-boss": "10.4.2"
   }
 }

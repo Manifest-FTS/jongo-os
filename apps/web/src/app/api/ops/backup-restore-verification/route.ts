@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isPlatformAdminUser } from "@/lib/rbac";
+import { safeEqual } from "@/lib/safe-equal";
 
 // Mirrors the auth of /api/ops/backup-reconcile: a shared ops token OR a
 // DB-authorized technical platform-admin session.
 async function isAuthorized(session: Awaited<ReturnType<typeof auth>>, request: Request): Promise<boolean> {
   const opsToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const providedToken = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-  const tokenAuthorized = Boolean(opsToken && providedToken && providedToken === opsToken);
+  const tokenAuthorized = Boolean(opsToken && providedToken && safeEqual(providedToken, opsToken));
 
   return tokenAuthorized || await isPlatformAdminUser(session?.user?.id);
 }

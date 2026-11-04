@@ -2,6 +2,8 @@ import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isPublicPath } from "@/lib/public-paths";
+import { isDevAuthBypassEnabled, resolveAuthSecret } from "@/lib/auth-secret";
+import { safeEqual } from "@/lib/safe-equal";
 
 
 
@@ -38,10 +40,10 @@ export async function middleware(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
   const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
   const hasOwnershipOpsToken = Boolean(
-    ownershipSyncToken && providedToken && providedToken === ownershipSyncToken
+    ownershipSyncToken && providedToken && safeEqual(providedToken, ownershipSyncToken)
   );
   const hasBackupReconcileToken = Boolean(
-    backupReconcileToken && providedToken && providedToken === backupReconcileToken
+    backupReconcileToken && providedToken && safeEqual(providedToken, backupReconcileToken)
   );
   const hasOpsToken = hasOwnershipOpsToken || hasBackupReconcileToken;
 
@@ -66,9 +68,19 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow unauthenticated access when NEXTAUTH_SECRET is not set (dev / no-auth mode)
-  if (!process.env.NEXTAUTH_SECRET || process.env.NEXTAUTH_SECRET === "dev-secret-change-in-production") {
+  // Local development only, with no real secret configured. Never true in
+  // production: a missing or placeholder secret there fails closed below.
+  if (isDevAuthBypassEnabled()) {
     return NextResponse.next();
+  }
+
+  const authSecret = resolveAuthSecret();
+  if (!authSecret) {
+    console.error("[auth] NEXTAUTH_SECRET is missing or a placeholder in production; refusing all signed-in routes.");
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ ok: false, message: "Sign-in is temporarily unavailable." }, { status: 503 });
+    }
+    return new NextResponse("Sign-in is temporarily unavailable.", { status: 503 });
   }
 
   if (pathname === "/api/coolify/ownership/sync" && hasOpsToken) {
@@ -143,7 +155,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const token = await getToken({ req, secret: authSecret });
 
   if (!token) {
     // API callers get a 401 they can read, not a login page in place of JSON.

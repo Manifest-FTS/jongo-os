@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { ensureCoolifyAppBackupSchedules, getCoolifyOverview, provisionCoolifyWordPressService } from "@/lib/coolify";
-import { isAdminRole } from "@/lib/roles";
+import { resolveOrganizationAccess } from "@/lib/tenant-route-access";
 import { DEFAULT_BACKUP_FREQUENCY_HOURS } from "@/lib/backup-schedule";
 import { nextAvailableSlug, toSiteSlug } from "@/lib/site-slug";
 import {
@@ -172,29 +172,44 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { db } = await import("@/lib/db");
 
-    // Only owner or admin can create sites
-    const org = await db.organization.findFirst({
-      where: {
-        id: organizationId,
-        deletedAt: null,
-        OR: [{ ownerId: session.user.id }, { collaborators: { some: { userId: session.user.id } } }]
-      },
-      include: {
-        collaborators: {
-          where: { userId: session.user.id },
-          select: { role: true }
-        }
-      }
-    });
-
-    if (!org) {
+    // Only owner or admin can create sites. The shared helper ignores removed
+    // collaborators; the inline query this replaces did not, so an admin who
+    // had been removed from the client could still add apps to it.
+    const access = await resolveOrganizationAccess(organizationId, session.user.id);
+    if (!access) {
       return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
     }
-
-    const callerIsOwner = org.ownerId === session.user.id;
-    const callerIsAdmin = callerIsOwner || isAdminRole(org.collaborators[0]?.role);
-    if (!callerIsAdmin) {
+    if (!access.isAdmin) {
       return NextResponse.json({ error: "Only admins can create apps" }, { status: 403 });
+    }
+    const org = access.organization;
+
+    // Adopting an EXISTING hosting resource binds infrastructure to this client,
+    // so it is platform-admin only — the same rule PUT /api/sites/[id] already
+    // applies to coolifyServiceUuid. Without it any client admin could paste
+    // another client's resource id and gain its backups, files and controls.
+    const adoptUuid = body.coolifyServiceUuid?.trim() || null;
+    if (adoptUuid) {
+      if (!access.isPlatformAdmin) {
+        return NextResponse.json(
+          { error: "Only platform admins can link an existing hosting resource." },
+          { status: 403 }
+        );
+      }
+      const holder = await db.site.findFirst({
+        where: {
+          deletedAt: null,
+          organizationId: { not: organizationId },
+          OR: [{ coolifyServiceUuid: adoptUuid }, { coolifyServiceId: adoptUuid }]
+        },
+        select: { id: true }
+      });
+      if (holder) {
+        return NextResponse.json(
+          { error: "That hosting resource already belongs to another client." },
+          { status: 409 }
+        );
+      }
     }
 
     // The unique constraint on (organizationId, slug) spans SOFT-DELETED rows, so
@@ -213,7 +228,7 @@ export async function POST(req: Request, { params }: Params) {
     // resource (paste its uuid), or CREATE one. Only the first ever worked —
     // adding an app wrote a row and left Coolify untouched, so the app existed
     // in Jongo and nowhere else.
-    let coolifyServiceUuid = body.coolifyServiceUuid?.trim() || null;
+    let coolifyServiceUuid = adoptUuid;
     let provisionMessage: string | null = null;
     let provisionDomainApplied: boolean | null = null;
     let provisionDomain: string | null = null;

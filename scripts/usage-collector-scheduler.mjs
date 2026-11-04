@@ -11,6 +11,7 @@
  * the same startup retry (the scheduler starts alongside the web server and its
  * first call usually races it).
  */
+import { pathToFileURL } from "node:url";
 
 function normalizeBaseUrl(value) {
   return (value || "").trim().replace(/\/+$/, "");
@@ -30,7 +31,7 @@ function resolveUrl() {
   return `http://127.0.0.1:${port}/api/ops/usage-collect`;
 }
 
-async function collectOnce() {
+export async function collectOnce() {
   const token = (process.env.BACKUP_RECONCILE_TOKEN || process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
   if (!token) throw new Error("BACKUP_RECONCILE_TOKEN (or OWNERSHIP_SYNC_TOKEN) is required");
 
@@ -105,14 +106,17 @@ async function runWithSchedule() {
   }, minutes * 60 * 1000);
 }
 
-if (process.argv.includes("--once")) {
-  try {
-    await collectOnce();
-    process.exit(0);
-  } catch (error) {
-    console.error(`[usage-collect] ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
+// Run only when executed directly; the worker imports collectOnce.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes("--once")) {
+    try {
+      await collectOnce();
+      process.exit(0);
+    } catch (error) {
+      console.error(`[usage-collect] ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    }
+  } else {
+    await runWithSchedule();
   }
-} else {
-  await runWithSchedule();
 }

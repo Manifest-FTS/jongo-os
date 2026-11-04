@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth.config";
 import { isPlatformAdminUser } from "@/lib/rbac";
 import { getRuntimeDiagnosticsSnapshot } from "@/lib/diagnostics";
 import { getInventorySnapshot, listClientWorkspaces } from "@/lib/repositories";
+import { safeEqual } from "@/lib/safe-equal";
 
 export async function canAccessRuntimeDiagnostics(args: {
   userId?: string | null;
@@ -9,7 +10,7 @@ export async function canAccessRuntimeDiagnostics(args: {
 }): Promise<boolean> {
   const configuredToken = process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const providedToken = args.bearerToken?.trim();
-  if (configuredToken && providedToken && configuredToken === providedToken) {
+  if (configuredToken && providedToken && safeEqual(configuredToken, providedToken)) {
     return true;
   }
 

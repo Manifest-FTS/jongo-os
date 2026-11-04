@@ -56,7 +56,7 @@ export default function StatusPoll({ intervalMs = 30_000 }: Props) {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
         <span className={`status-chip ${data.sites?.every((s) => s.status === "healthy") ? "healthy" : "degraded"}`}>
-          {data.mode === "live" ? "live" : "mock"}
+          {data.mode === "live" ? "live" : "not connected"}
         </span>
         {lastUpdated && (
           <span className="card-muted" style={{ fontSize: "0.8rem" }}>

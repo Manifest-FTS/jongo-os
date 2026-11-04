@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
+import { isPlatformAdminUser } from "@/lib/rbac";
 
 function normalize(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -124,6 +125,13 @@ export async function POST(req: Request) {
   const name = body.name?.trim();
   if (!name) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
+  }
+
+  // Linking a hosting project imports every app in it into the new client, so
+  // it is platform-admin only — the same rule PUT /api/organizations/[id]
+  // applies. Without it any signed-up user could claim an unlinked project.
+  if ((body.coolifyProjectId?.trim() || body.coolifyProjectName?.trim()) && !(await isPlatformAdminUser(session.user.id))) {
+    return NextResponse.json({ error: "Only platform admins can change infrastructure bindings" }, { status: 403 });
   }
 
   // Derive a URL-safe slug from the name

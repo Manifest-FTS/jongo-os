@@ -50,7 +50,7 @@ export function getCoolifyStatusMessage(
 ): { text: string; hasError: boolean } {
   if (mode === "mock") {
     return {
-      text: "Coolify not configured — demo mode",
+      text: "Hosting is not connected",
       hasError: false
     };
   }

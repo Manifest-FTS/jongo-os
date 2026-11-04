@@ -4,6 +4,7 @@ import { useState } from "react";
 
 type Props = {
   siteId: string;
+  /** Ignored: the server picks the hosting resource from the app. Kept so existing callers compile. */
   deployTargetId?: string;
   environment?: "production" | "staging";
   label?: string;
@@ -13,7 +14,6 @@ type Props = {
 
 export default function DeployButton({
   siteId,
-  deployTargetId,
   environment = "production",
   label,
   disabled = false,
@@ -34,7 +34,8 @@ export default function DeployButton({
       const res = await fetch("/api/coolify/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ serviceUuid: deployTargetId ?? siteId, environment })
+        // The server resolves which hosting resource to deploy from the app itself.
+        body: JSON.stringify({ siteId, environment })
       });
 
       const data = await res.json();
