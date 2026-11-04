@@ -1979,6 +1979,28 @@ main {
   color: var(--muted);
 }
 
+.workspace-hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .workspace-hero-actions {
+    width: 100%;
+    margin-left: 0;
+    align-items: flex-start;
+  }
+  .workspace-hero-actions > div:last-child {
+    align-items: flex-start !important;
+  }
+  .workspace-hero-actions [role="status"] {
+    text-align: left !important;
+  }
+}
+
 .workspace-hero-chips {
   display: flex;
   align-items: center;
