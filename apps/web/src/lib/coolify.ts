@@ -875,7 +875,7 @@ export async function getCoolifyConnectionStatus(): Promise<CoolifyConnectionSta
 }
 
 export type DeployTriggerResult = {
-  mode: "live" | "mock";
+  mode: "live";
   deploymentId: string;
   message: string;
   /**
@@ -1727,12 +1727,9 @@ export async function triggerCoolifyDeploy(
   const token = process.env.COOLIFY_API_TOKEN;
 
   if (!baseUrl || !token) {
-    // Mock mode: return a synthetic deployment ID
-    return {
-      mode: "mock",
-      deploymentId: `mock-dep-${Date.now()}`,
-      message: `Mock deploy triggered for ${serviceUuid} (${environment}). Set COOLIFY_API_BASE_URL and COOLIFY_API_TOKEN to trigger real deploys.`
-    };
+    // Never report a deploy that did not happen. This used to return a made-up
+    // deployment id, which callers recorded and showed as a real deploy.
+    throw new Error("Hosting is not configured (COOLIFY_API_BASE_URL / COOLIFY_API_TOKEN), so nothing was deployed.");
   }
 
   const timeoutMs = Number(process.env.COOLIFY_TIMEOUT_MS ?? 8000);
