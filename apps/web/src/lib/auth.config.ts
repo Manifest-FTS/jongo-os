@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
+import { isDevAuthBypassEnabled, resolveAuthSecret } from "./auth-secret";
 
 const AUTH_DB_UNAVAILABLE_CODE = "AUTH_DB_UNAVAILABLE";
 const DEV_AUTH_FALLBACK_USER_ID = "00000000-0000-4000-8000-000000000001";
@@ -219,7 +220,9 @@ export const authConfig = {
       return session;
     }
   },
-  secret: process.env.NEXTAUTH_SECRET || "dev-secret-change-in-production"
+  // Undefined in production when unconfigured: NextAuth then refuses to sign
+  // or verify anything, instead of using a secret that is public in this repo.
+  secret: resolveAuthSecret() ?? undefined
 };
 
 export type AuthSession = {
@@ -253,11 +256,7 @@ export async function auth(): Promise<AuthSession> {
     }
   }
 
-  const isDev = process.env.NODE_ENV !== "production";
-  const secret = process.env.NEXTAUTH_SECRET;
-  const devAuthBypass = !secret || secret === "dev-secret-change-in-production";
-
-  if (isDev && devAuthBypass) {
+  if (isDevAuthBypassEnabled()) {
     try {
       const { db } = await import("./db");
       const preferredEmail = process.env.DEV_AUTH_EMAIL?.trim().toLowerCase();
