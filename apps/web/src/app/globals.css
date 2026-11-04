@@ -4137,3 +4137,12 @@ button .card:hover {
 }
 .workspace-hero-tabs .tab-link:hover { color: var(--text, #1a1a1a) !important; }
 .workspace-hero-tabs .tab-link.is-active { color: var(--text, #1a1a1a) !important; border-bottom-color: var(--text, #1a1a1a) !important; font-weight: 600; }
+
+/* Leftovers: deleted in Jongo, still on the server. */
+.app-row--leftover { background: #fffaf0; }
+.app-row--leftover:hover { background: #fff6e5; }
+.app-row--leftover .app-row__name { color: var(--muted, #555); }
+.leftover-actions { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; position: relative; z-index: 1; }
+.leftover-actions__ask { font-size: 0.82rem; }
+.leftover-actions__ok { font-size: 0.82rem; color: #027a48; }
+.leftover-actions__err { font-size: 0.82rem; }

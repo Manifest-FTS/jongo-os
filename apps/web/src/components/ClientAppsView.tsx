@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { StarIcon } from "@/components/JongoIcons";
 import { ADD_APP_EVENT } from "@/components/CreateSiteForm";
 import { GitBranchMark, GithubMark, GlobeMark, WordPressMark } from "@/components/SourceIcons";
@@ -19,9 +20,11 @@ export type ClientAppRow = {
   branch: string | null;
   lastDeployAt: string | null;
   lastDeployFailed: boolean;
+  /** Its Jongo app was deleted but the resource still runs on the server. */
+  leftover?: { siteId: string; deletedAt: string } | null;
 };
 
-type Filter = "all" | "live" | "attention" | "unknown";
+type Filter = "all" | "live" | "attention" | "unknown" | "leftover";
 type View = "list" | "grid";
 
 const STATUS: Record<ClientAppRow["status"], { label: string; dot: string }> = {
@@ -50,6 +53,14 @@ function AppIcon({ row }: { row: ClientAppRow }) {
 }
 
 function StatusLine({ row }: { row: ClientAppRow }) {
+  if (row.leftover) {
+    return (
+      <span className="app-row__status" title={`Deleted in Jongo ${new Date(row.leftover.deletedAt).toLocaleDateString()}; the server still runs it.`}>
+        <span className="status-dot status-dot--degraded" aria-hidden="true" />
+        Deleted in Jongo, still on the server
+      </span>
+    );
+  }
   if (row.deploying) {
     return (
       <span className="app-row__status">
@@ -86,9 +97,73 @@ function readView(): View {
   }
 }
 
-export default function ClientAppsView({ rows, userId, canCreate }: { rows: ClientAppRow[]; userId?: string; canCreate: boolean }) {
+/** Restore the Jongo app, or delete the resource from the server. */
+function LeftoverActions({ row, canManage }: { row: ClientAppRow; canManage: boolean }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState<"restore" | "destroy" | null>(null);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  if (!row.leftover || !canManage) return null;
+
+  async function act(action: "restore" | "destroy") {
+    setBusy(action);
+    setMessage(null);
+    const res = await fetch(`/api/leftovers/${encodeURIComponent(row.leftover!.siteId)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action })
+    }).catch(() => null);
+    const data = res ? await res.json().catch(() => null) : null;
+    setBusy(null);
+    setConfirming(false);
+    setMessage({ ok: Boolean(data?.ok), text: data?.message ?? "That didn't work. Try again." });
+    if (data?.ok) router.refresh();
+  }
+
+  return (
+    <div className="leftover-actions" onClick={(event) => event.stopPropagation()}>
+      {confirming ? (
+        <>
+          <span className="leftover-actions__ask">Delete it from the server? This can&apos;t be undone.</span>
+          <button type="button" className="btn btn-danger px-2.5 py-1 text-[12.5px]" disabled={busy !== null} onClick={() => act("destroy")}>
+            {busy === "destroy" ? "Deleting…" : "Delete"}
+          </button>
+          <button type="button" className="btn btn-secondary px-2.5 py-1 text-[12.5px]" disabled={busy !== null} onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <button type="button" className="btn btn-secondary px-2.5 py-1 text-[12.5px]" disabled={busy !== null} onClick={() => act("restore")}>
+            {busy === "restore" ? "Restoring…" : "Restore"}
+          </button>
+          <button type="button" className="btn btn-secondary px-2.5 py-1 text-[12.5px]" disabled={busy !== null} onClick={() => setConfirming(true)}>
+            Delete from server
+          </button>
+        </>
+      )}
+      {message ? (
+        <span role="status" className={message.ok ? "leftover-actions__ok" : "auth-error leftover-actions__err"}>{message.text}</span>
+      ) : null}
+    </div>
+  );
+}
+
+export default function ClientAppsView({
+  rows,
+  userId,
+  canCreate,
+  canManage = false,
+  initialFilter = "all"
+}: {
+  rows: ClientAppRow[];
+  userId?: string;
+  canCreate: boolean;
+  canManage?: boolean;
+  initialFilter?: "all" | "leftover";
+}) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>(initialFilter);
   const [view, setView] = useState<View>("list");
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
@@ -141,7 +216,8 @@ export default function ClientAppsView({ rows, userId, canCreate }: { rows: Clie
       all: rows.length,
       live: rows.filter((row) => row.status === "healthy").length,
       attention: rows.filter((row) => row.status === "degraded" || row.status === "error").length,
-      unknown: rows.filter((row) => row.status === "unknown").length
+      unknown: rows.filter((row) => row.status === "unknown" && !row.leftover).length,
+      leftover: rows.filter((row) => row.leftover).length
     }),
     [rows]
   );
@@ -153,7 +229,8 @@ export default function ClientAppsView({ rows, userId, canCreate }: { rows: Clie
         filter === "all" ||
         (filter === "live" && row.status === "healthy") ||
         (filter === "attention" && (row.status === "degraded" || row.status === "error")) ||
-        (filter === "unknown" && row.status === "unknown")
+        (filter === "unknown" && row.status === "unknown" && !row.leftover) ||
+        (filter === "leftover" && Boolean(row.leftover))
       )
       .filter((row) => !needle || [row.name, row.domain, row.repo].some((value) => value?.toLowerCase().includes(needle)))
       .sort((a, b) => {
@@ -230,7 +307,8 @@ export default function ClientAppsView({ rows, userId, canCreate }: { rows: Clie
             ["all", "All"],
             ["live", "Live"],
             ["attention", "Needs attention"],
-            ["unknown", "Unknown"]
+            ["unknown", "Unknown"],
+            ["leftover", "Leftovers"]
           ] as const)
             .filter(([value]) => value === "all" || counts[value] > 0)
             .map(([value, label]) => (
@@ -251,8 +329,8 @@ export default function ClientAppsView({ rows, userId, canCreate }: { rows: Clie
       ) : view === "list" ? (
         <div className="apps-list" role="list">
           {shown.map((row) => (
-            <div key={row.id} className="app-row" role="listitem">
-              <Link href={row.href} className="app-row__link" aria-label={`Open ${row.name}`} />
+            <div key={row.id} className={`app-row${row.leftover ? " app-row--leftover" : ""}`} role="listitem">
+              {row.leftover ? null : <Link href={row.href} className="app-row__link" aria-label={`Open ${row.name}`} />}
               <AppIcon row={row} />
               <div className="app-row__main">
                 <span className="app-row__name">{row.name}</span>
@@ -274,15 +352,16 @@ export default function ClientAppsView({ rows, userId, canCreate }: { rows: Clie
                   </span>
                 ) : null}
               </div>
-              {star(row)}
+              {row.leftover ? <span /> : star(row)}
+              {row.leftover ? <LeftoverActions row={row} canManage={canManage} /> : null}
             </div>
           ))}
         </div>
       ) : (
         <div className="apps-grid" role="list">
           {shown.map((row) => (
-            <div key={row.id} className="app-card" role="listitem">
-              <Link href={row.href} className="app-row__link" aria-label={`Open ${row.name}`} />
+            <div key={row.id} className={`app-card${row.leftover ? " app-row--leftover" : ""}`} role="listitem">
+              {row.leftover ? null : <Link href={row.href} className="app-row__link" aria-label={`Open ${row.name}`} />}
               <div className="app-card__top">
                 <AppIcon row={row} />
                 <div className="app-row__main" style={{ flex: 1 }}>
@@ -291,13 +370,14 @@ export default function ClientAppsView({ rows, userId, canCreate }: { rows: Clie
                     {row.domain ? <a href={`https://${row.domain}`} target="_blank" rel="noopener noreferrer">{row.domain}</a> : "No address yet"}
                   </span>
                 </div>
-                {star(row)}
+                {row.leftover ? null : star(row)}
               </div>
               <Source row={row} />
               <div className="app-card__foot">
                 <StatusLine row={row} />
                 <span className="app-row__when">{row.lastDeployAt ? `${row.lastDeployFailed ? "Failed" : "Deployed"} ${ago(row.lastDeployAt)}` : ""}</span>
               </div>
+              {row.leftover ? <LeftoverActions row={row} canManage={canManage} /> : null}
             </div>
           ))}
         </div>

@@ -100,7 +100,7 @@ export default async function ClientAppsPage({ params, searchParams }: Params) {
         </p>
       ) : null}
 
-      <ClientAppsView rows={rows} userId={session?.user?.id} canCreate={Boolean(client.dbId && showCreate)} />
+      <ClientAppsView rows={rows} userId={session?.user?.id} canCreate={Boolean(client.dbId && showCreate)} canManage={canManageClient || canAdopt} initialFilter={query.show === "leftovers" ? "leftover" : "all"} />
     </div>
   );
 }
@@ -135,6 +135,11 @@ async function buildAppRows(apps: DirectoryApp[], overview: Awaited<ReturnType<t
     : [[], [], []];
 
   const siteById = new Map<string, any>(sites.map((site: any) => [site.id, site]));
+  // Hosting resources listed here whose Jongo app was deleted (lib/leftovers.ts).
+  const { findLeftovers } = await import("@/lib/leftovers");
+  const leftovers = await findLeftovers(
+    apps.filter((app) => !siteById.has(app.id)).map((app) => app.coolifyServiceUuid ?? app.deployTargetId ?? app.id)
+  ).catch(() => new Map());
   const lastDeploy = new Map<string, any>();
   for (const deployment of deployments as any[]) {
     const siteId = deployment.environment?.siteId;
@@ -149,6 +154,7 @@ async function buildAppRows(apps: DirectoryApp[], overview: Awaited<ReturnType<t
     const domain = (live?.primaryDomain ?? "").replace(/^https?:\/\//, "").replace(/\/.*$/, "") || temporary || null;
     const repo = site?.gitRepoFullName || (site?.gitRepositoryUrl ? site.gitRepositoryUrl.replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "") : null);
     const deploy = lastDeploy.get(app.id);
+    const leftover = siteById.has(app.id) ? undefined : leftovers.get(app.coolifyServiceUuid ?? app.deployTargetId ?? app.id);
     const siteType = live?.siteType ?? (app.resourceType === "WordPress" ? "wordpress" : undefined);
     return {
       id: app.id,
@@ -162,7 +168,8 @@ async function buildAppRows(apps: DirectoryApp[], overview: Awaited<ReturnType<t
       provider: (site?.gitProvider as ClientAppRow["provider"]) ?? (site?.gitRepositoryUrl?.includes("github.com") ? "github" : null),
       branch: site?.gitBranch ?? null,
       lastDeployAt: deploy ? (deploy.finishedAt ?? deploy.triggeredAt)?.toISOString?.() ?? null : null,
-      lastDeployFailed: deploy?.status === "failed"
+      lastDeployFailed: deploy?.status === "failed",
+      leftover: leftover ? { siteId: leftover.siteId, deletedAt: leftover.deletedAt } : null
     } satisfies ClientAppRow;
   });
 }
