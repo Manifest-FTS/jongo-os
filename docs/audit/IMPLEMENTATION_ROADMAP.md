@@ -2,15 +2,14 @@
 
 Principle: **evolve, don't rewrite.** Keep Next.js + Prisma/Postgres + NextAuth + Coolify. Add the missing foundation underneath the existing UI, then build features on it. Every phase ships behind the current app without breaking existing clients on jongo.app.
 
-## 0. Decisions needed from you before Phase 2
+## 0. Decisions (made 2026-11-04)
 
-1. **Who provisions?**
-   - (a) **Self-serve SaaS** — anyone signs up, picks a plan, and creates apps on shared servers. Needs strong per-tenant isolation (networks, resource limits, quotas, abuse controls) from day one.
-   - (b) **Agency-managed** (today's model) — you onboard clients; they self-manage. Isolation can stay app-layer plus per-client servers.
-   - (c) Both, staged: (b) now, (a) behind plan limits later. *My recommendation — it keeps the current client safe and lets the foundation mature.*
-2. **Queue technology:** pg-boss on the existing Postgres (recommended — no new infrastructure) vs. Redis + BullMQ.
-3. **CMS subsystem:** leave in place for now (recommended) or schedule extraction.
-4. **Server model:** one shared Coolify server for all customers, or dedicated server(s) per plan/customer.
+1. **Who provisions:** agency-managed now; self-serve later behind plan limits.
+2. **Queue:** pg-boss on the existing Postgres. No Redis or other paid service.
+3. **CMS:** stays in place.
+4. **Servers:** one shared Coolify server for all customers.
+
+Constraint: use only existing resources — nothing new to buy or host.
 
 ## Phase 2 — Security fixes & foundation (first)
 
@@ -24,7 +23,8 @@ Principle: **evolve, don't rewrite.** Keep Next.js + Prisma/Postgres + NextAuth 
 
 **2b. Foundation**
 - `Operation` model: `id, orgId, projectId?, resourceType, resourceId, kind, status (queued|running|succeeded|failed|cancelled), steps JSON, idempotencyKey @unique, attempts, error, actorId, timestamps`.
-- pg-boss worker as a separate process/container (`apps/worker` or `scripts/worker.mjs` → TS). Move the 4 schedulers from `start-production.mjs` into it as cron jobs (single-runner safe).
+- *Done:* pg-boss worker (`scripts/worker.mjs`, queue in schema `pgboss`), started inside the web container by default (`JONGO_WORKER_MODE`). The 4 schedulers now run as cron jobs on it, one run at a time across restarts and containers.
+- *Done:* `Operation` model and `lib/operations.ts` (idempotent create, forward-only status). Next: run the first real task (deploy) through it.
 - SSE endpoint `/api/events?scope=…` backed by Postgres `LISTEN/NOTIFY`; replace `setInterval` polling component by component.
 - Typed Prisma client (drop the `any` wrapper).
 - Env/config module (one place that reads `process.env`).

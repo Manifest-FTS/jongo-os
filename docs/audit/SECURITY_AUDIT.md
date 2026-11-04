@@ -6,15 +6,18 @@ Static review of `jongo-os` on branch `stage` @ `d8381ba`. Nothing was exploited
 
 | ID | Severity | Finding |
 |---|---|---|
-| S-01 | **Critical** | `/api/coolify/deploy` has no tenant authorization — any signed-in user can deploy/restart any Coolify resource by UUID |
-| S-02 | **Critical** | Authentication fails **open** when `NEXTAUTH_SECRET` is missing or the default string |
+| S-01 | **Critical** | `/api/coolify/deploy` has no tenant authorization — any signed-in user can deploy/restart any Coolify resource by UUID — *fixed* |
+| S-16 | **Critical** | Any client admin could adopt any hosting resource by id (`POST /api/organizations/:id/sites` with `coolifyServiceUuid`) — another client's site, its backups, files and controls — *fixed* |
+| S-17 | **High** | Any signed-up user could create an organization bound to an unlinked hosting project, which auto-imports its apps — *fixed* |
+| S-18 | Medium | Site creation's own membership check ignored removed collaborators — *fixed* |
+| S-02 | **Critical** | Authentication fails **open** when `NEXTAUTH_SECRET` is missing or the default string — *fixed* |
 | S-03 | **High** | Web container holds a **root** SSH key to the Coolify host; host-key checking `accept-new` |
-| S-04 | **High** | Encryption key for stored secrets falls back to `NEXTAUTH_SECRET`, then to a hard-coded string; no key id/rotation |
+| S-04 | **High** | Encryption key for stored secrets falls back to `NEXTAUTH_SECRET`, then to a hard-coded string; no key id/rotation — *fixed* |
 | S-05 | **High** | Single static ops token grants cross-tenant machine access (backup callbacks, every site's staging routes, diagnostics) |
-| S-06 | **High** | No rate limiting on sign-in, registration or password reset |
-| S-07 | Medium | Mock deploy results recorded as real deployments when Coolify creds are missing |
+| S-06 | **High** | No rate limiting on sign-in, registration or password reset — *fixed* |
+| S-07 | Medium | Mock deploy results recorded as real deployments when Coolify creds are missing — *fixed* |
 | S-08 | Medium | Privacy-mode passwords stored in plaintext |
-| S-09 | Medium | Ops tokens compared with `===` (not constant-time) in middleware and routes |
+| S-09 | Medium | Ops tokens compared with `===` (not constant-time) in middleware and routes — *fixed* |
 | S-10 | Medium | Shell scripts built by string interpolation and run as root over SSH |
 | S-11 | Medium | In-memory, per-process rate limiting (`rate-gate.ts`) |
 | S-12 | Medium | WordPress containers share one host with no malware scanning; evidence of a past code-injection incident |
@@ -27,6 +30,11 @@ Static review of `jongo-os` on branch `stage` @ `d8381ba`. Nothing was exploited
 ### S-01 — Missing tenant check on deploy (Critical)
 `apps/web/src/app/api/coolify/deploy/route.ts` accepts `{ serviceUuid | siteId, environment }`, checks only that a session exists, then calls `triggerCoolifyDeploy(targetUuid)`. It never resolves the site through `resolveSiteAccess`, so a user of organization A can POST organization B's Coolify UUID (or any UUID in the Coolify team, including Jongo itself or databases) and trigger a deploy/restart. UUIDs are not secrets — they appear in page data.
 **Fix:** resolve `siteId` → site via `resolveSiteAccess(siteId, userId)`, require deploy permission, use the site's stored Coolify UUID, never a client-supplied one. Add a route test to `tenant-route-security.test.ts`. Sweep every route for client-supplied Coolify ids.
+
+### S-16 / S-17 / S-18 — Infrastructure binding on create (fixed)
+`PUT /api/sites/:id` and `PUT /api/organizations/:id` already restricted Coolify bindings to platform admins, but the two **create** routes did not. Both now require a platform admin for any Coolify id; adopting a resource another client already holds returns 409 even for platform admins. Site creation now uses `resolveOrganizationAccess`, which excludes removed collaborators. Tests: `infra-binding-security.test.ts`.
+
+Endpoint sweep (2026-11-04): every `/api/sites/[siteId]/*` route resolves the site through a viewer-scoped helper; `/api/sites/staging-targets` is scoped by membership or the ops token (S-05). Ops-token routes that take Coolify ids from the body (`staging-sync-automation`, `backup-restore-verification`) are covered by S-05. Staging creation lets a client admin pick the server (`stagingServerUuid`) — low risk, revisit with the server model.
 
 ### S-02 — Fail-open auth (Critical)
 `middleware.ts`: `if (!process.env.NEXTAUTH_SECRET || process.env.NEXTAUTH_SECRET === "dev-secret-change-in-production") return NextResponse.next();` — every route becomes public. Same pattern in the deploy route.

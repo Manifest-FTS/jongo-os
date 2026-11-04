@@ -24,6 +24,7 @@ import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import { retryOnceAfterRateLimitError } from "@/lib/rate-limit-retry";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { StagingProvisioningPipeline } from "@/orchestration/staging";
+import { safeEqual } from "@/lib/safe-equal";
 
 /**
  * One matching rule for the whole staging lifecycle.
@@ -241,7 +242,7 @@ function hasOpsToken(req: Request): boolean {
   const configured = process.env.OWNERSHIP_SYNC_TOKEN?.trim() || "";
   const authHeader = req.headers.get("authorization") ?? "";
   const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
-  return Boolean(configured && provided && configured === provided);
+  return Boolean(configured && provided && safeEqual(configured, provided));
 }
 
 async function runCoolifyDomainSyncAttempt(attempt: CoolifyDomainSyncAttempt): Promise<CoolifyDomainSyncResult> {

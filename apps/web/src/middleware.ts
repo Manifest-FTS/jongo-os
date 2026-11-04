@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isPublicPath } from "@/lib/public-paths";
 import { isDevAuthBypassEnabled, resolveAuthSecret } from "@/lib/auth-secret";
+import { safeEqual } from "@/lib/safe-equal";
 
 
 
@@ -39,10 +40,10 @@ export async function middleware(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
   const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
   const hasOwnershipOpsToken = Boolean(
-    ownershipSyncToken && providedToken && providedToken === ownershipSyncToken
+    ownershipSyncToken && providedToken && safeEqual(providedToken, ownershipSyncToken)
   );
   const hasBackupReconcileToken = Boolean(
-    backupReconcileToken && providedToken && providedToken === backupReconcileToken
+    backupReconcileToken && providedToken && safeEqual(providedToken, backupReconcileToken)
   );
   const hasOpsToken = hasOwnershipOpsToken || hasBackupReconcileToken;
 

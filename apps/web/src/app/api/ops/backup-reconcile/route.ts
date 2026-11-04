@@ -18,12 +18,13 @@ import { scheduledBackupsDefaultEnabled } from "@/lib/backup-schedule";
 import { notifyBackupEvent } from "@/lib/site-notify";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { syncCoolifyProjectsToOrganizations } from "@/lib/organization-reconcile";
+import { safeEqual } from "@/lib/safe-equal";
 
 async function isAuthorized(session: Awaited<ReturnType<typeof auth>>, request: Request): Promise<boolean> {
   const reconcileToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const authHeader = request.headers.get("authorization") ?? "";
   const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-  const tokenAuthorized = Boolean(reconcileToken && providedToken && providedToken === reconcileToken);
+  const tokenAuthorized = Boolean(reconcileToken && providedToken && safeEqual(providedToken, reconcileToken));
 
   return tokenAuthorized || await isPlatformAdminUser(session?.user?.id);
 }

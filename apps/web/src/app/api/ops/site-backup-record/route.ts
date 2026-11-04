@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { decideDeferral, resolveMaxDeferralHours } from "@/lib/backup-deferral";
+import { safeEqual } from "@/lib/safe-equal";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const opsToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-  if (!opsToken || !provided || provided !== opsToken) {
+  if (!opsToken || !provided || !safeEqual(provided, opsToken)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -2,10 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { AUTH_RATE_LIMITS, clientIp, hitRateLimit, tooManyAttemptsMessage } from "@/lib/auth-rate-limit";
 
 const MIN_PASSWORD_LENGTH = 8;
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const limited = await hitRateLimit(AUTH_RATE_LIMITS.resetPerIp, clientIp(req.headers));
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { error: tooManyAttemptsMessage(limited.retryAfterSeconds) },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSeconds) } }
+    );
+  }
+
   let token: string;
   let password: string;
   try {

@@ -356,65 +356,14 @@ export async function listCoolifyProjects(): Promise<CoolifyProjectRecord[]> {
   return normalizeProjectRecords(projectsPayload);
 }
 
-function mockOverview(): CoolifyOverview {
-  return {
-    mode: "mock",
-    generatedAt: new Date().toISOString(),
-    projects: [
-      { id: "project-main", name: "Main Client" },
-      { id: "project-portal", name: "Portal Client" }
-    ],
-    environments: [
-      { id: "env-main", name: "production", projectId: "project-main", projectName: "Main Client" },
-      { id: "env-portal", name: "production", projectId: "project-portal", projectName: "Portal Client" }
-    ],
-    sites: [
-      {
-        id: "site-main",
-        deployTargetId: "site-main",
-        name: "Main Marketing Site",
-        status: "healthy",
-        productionStatus: "healthy",
-        stagingStatus: "degraded",
-        siteType: "generic",
-        coolifyProjectId: "project-main",
-        coolifyProjectName: "Main Client"
-      },
-      {
-        id: "site-client-portal",
-        deployTargetId: "site-client-portal",
-        name: "Client Portal",
-        status: "degraded",
-        productionStatus: "healthy",
-        stagingStatus: "degraded",
-        siteType: "generic",
-        coolifyProjectId: "project-portal",
-        coolifyProjectName: "Portal Client"
-      }
-    ],
-    deployments: [
-      {
-        id: "dep-001",
-        siteName: "Main Marketing Site",
-        environment: "production",
-        status: "healthy",
-        finishedAt: new Date(Date.now() - 1000 * 60 * 50).toISOString()
-      },
-      {
-        id: "dep-002",
-        siteName: "Client Portal",
-        environment: "staging",
-        status: "degraded",
-        finishedAt: new Date(Date.now() - 1000 * 60 * 140).toISOString()
-      }
-    ],
-    stats: {
-      healthySites: 1,
-      degradedSites: 1,
-      errorSites: 0,
-      unknownSites: 0
-    }
-  };
+/**
+ * What the overview reports when hosting credentials are not configured: no
+ * projects, no sites, flagged "mock" so the UI says hosting isn't connected.
+ * It used to return two invented clients with invented sites and deploys,
+ * which a misconfigured install showed as if they were real.
+ */
+function unconfiguredOverview(): CoolifyOverview {
+  return { ...emptyLiveOverview(), mode: "mock" };
 }
 
 function emptyLiveOverview(): CoolifyOverview {
@@ -692,7 +641,7 @@ async function fetchCoolifyOverviewFresh(): Promise<CoolifyOverview> {
   const token = process.env.COOLIFY_API_TOKEN;
 
   if (!baseUrl || !token) {
-    const overview = mockOverview();
+    const overview = unconfiguredOverview();
     recordCoolifyInventoryResult({
       mode: "mock",
       source: "mock",
