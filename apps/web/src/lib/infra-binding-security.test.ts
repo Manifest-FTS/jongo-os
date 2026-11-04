@@ -18,6 +18,9 @@ vi.mock("@/lib/auth.config", () => ({ auth: m.auth }));
 vi.mock("@/lib/rbac", () => ({ isPlatformAdminUser: m.isPlatformAdmin }));
 vi.mock("@/lib/tenant-route-access", () => ({ resolveOrganizationAccess: m.orgAccess }));
 vi.mock("@/lib/coolify-project-import", () => ({ importLinkedCoolifyProjectSites: m.importSites }));
+vi.mock("@/lib/organization-hosting", () => ({
+  ensureOrganizationHostingProject: async (id: string) => ({ ok: true, projectUuid: `project-of-${id}`, created: true })
+}));
 vi.mock("@/lib/coolify", () => ({
   getCoolifyOverview: m.overview,
   provisionCoolifyWordPressService: m.provision,

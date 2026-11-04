@@ -7,6 +7,7 @@ import { ArrowRightIcon } from "@/components/JongoIcons";
 import { getCoolifyOverview } from "@/lib/coolify";
 import { buildAvailableCoolifyAppOptions } from "@/lib/coolify-app-picker";
 import SiteDirectoryView from "@/components/SiteDirectoryView";
+import { isPlatformAdminUser } from "@/lib/rbac";
 
 type Params = { params: Promise<{ clientId: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> };
 
@@ -67,6 +68,7 @@ export default async function ClientAppsPage({ params, searchParams }: Params) {
   // always available to the client's team.
   const githubAvailable = true;
   const showCreate = true;
+  const canAdopt = Boolean(session?.user?.id && (await isPlatformAdminUser(session.user.id)));
 
   return (
     <div className="page-stack">
@@ -75,7 +77,7 @@ export default async function ClientAppsPage({ params, searchParams }: Params) {
           <h2 style={{ margin: 0 }}>Apps</h2>
           <p className="card-muted" style={{ marginTop: "0.35rem" }}>All apps mapped to this client workspace.</p>
         </div>
-        {client.dbId && showCreate ? <CreateSiteForm organizationId={client.dbId} availableApps={availableApps} githubOnly={!canManageClient} githubAvailable={githubAvailable} /> : null}
+        {client.dbId && showCreate ? <CreateSiteForm organizationId={client.dbId} availableApps={canAdopt ? availableApps : []} githubOnly={!canManageClient} githubAvailable={githubAvailable} canAdopt={canAdopt} /> : null}
       </div>
 
       {githubReturn ? (
