@@ -9,7 +9,7 @@ import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import PromoteToProductionCard from "@/components/PromoteToProductionCard";
 import StagingActionsPanel from "@/components/StagingActionsPanel";
 import StagingSiteFacts from "@/components/StagingSiteFacts";
-import PageAutoRefresh from "@/components/PageAutoRefresh";
+import LiveRefresh from "@/components/LiveRefresh";
 import StagingDomainsPanel from "@/components/StagingDomainsPanel";
 import StagingDatabasesSummary from "@/components/StagingDatabasesSummary";
 import { stagingDatabaseView } from "@/lib/staging-databases";
@@ -435,7 +435,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
       {/* Was 12s. Each render re-probes Coolify, and at 5 sequences a
           minute per open tab this page was a major consumer of the 200/min
           budget — rate-limiting itself into reporting staging as missing. */}
-      <PageAutoRefresh intervalMs={60000} />
+      <LiveRefresh siteId={siteId} connectedIntervalMs={300_000} fallbackIntervalMs={60000} />
 
       {stagingConfigured ? (
         <article className="card">

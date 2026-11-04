@@ -2,7 +2,6 @@ import { getCoolifyOverview, getCoolifyAppBackupInventory, getCoolifyAppStagingC
 import { getActivityFeedEmptyMessage } from "@/lib/reason-messages";
 import { getBackupReadiness } from "@/lib/deploy-guards";
 import { buildBackupReadModelSnapshot } from "@/lib/backup-read-model";
-import DeployButton from "@/components/DeployButton";
 import { getSiteActivityFeed, getSiteWorkspace } from "@/lib/repositories";
 import Link from "next/link";
 import { ArrowRightIcon } from "@/components/JongoIcons";
@@ -258,9 +257,6 @@ export default async function SiteOverviewPage({ params }: Params) {
   const backupReadiness = getBackupReadiness(backupInventory, workspace.coolifyServiceUuid);
   // Live-derived, so an app added later is judged correctly with no setup.
   const backupNotApplicable = backupReadiness.code === "backups_not_applicable";
-  const backupLockReason = backupReadiness.locked
-    ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
-    : "Dry-run mode: execution remains disabled in this interface.";
 
   // Two sources, newest wins: the hosting server's database-backup runs, and
   // Jongo's own full-site backups (SiteBackup), which is all an app whose
@@ -759,23 +755,6 @@ export default async function SiteOverviewPage({ params }: Params) {
               </ul>
               {stagingConfigured ? (
                 <>
-                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.85rem" }}>
-                    <DeployButton
-                      siteId={siteId}
-                      deployTargetId={site?.deployTargetId}
-                      environment="production"
-                      disabled
-                      disabledReason={backupLockReason}
-                    />
-                    <DeployButton
-                      siteId={siteId}
-                      deployTargetId={site?.deployTargetId}
-                      environment="staging"
-                      disabled
-                      disabledReason={backupLockReason}
-                    />
-                  </div>
-                  <p style={{ margin: "0.7rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>{backupLockReason}</p>
                   <p style={{ margin: "0.75rem 0 0" }}>
                     <Link href={`/apps/${siteId}/staging`} className="action-link">
                       Open publishing workflow <ArrowRightIcon className="btn-icon" />

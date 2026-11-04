@@ -32,12 +32,13 @@ describe.skipIf(!url)("ensureOrganizationHostingProject against Postgres", () =>
   let orgId: string;
   let projects: Array<Record<string, unknown>>;
   let n = 0;
+  const run = Math.random().toString(36).slice(2, 8); // fake ids unique to this run
 
   const fakeCoolify = () => ({
     listProjects: vi.fn(async () => projects),
     createProject: vi.fn(async (body: { name: string; description: string }) => {
       await new Promise((resolve) => setTimeout(resolve, 50)); // widen any race
-      const uuid = `proj-${++n}`;
+      const uuid = `proj-${run}-${++n}`;
       projects.push({ uuid, ...body });
       return { ok: true, status: 201, body: { uuid } };
     })
@@ -72,7 +73,7 @@ describe.skipIf(!url)("ensureOrganizationHostingProject against Postgres", () =>
     expect(results.filter((r) => r.ok && r.created)).toHaveLength(1);
 
     const org = await db.organization.findUnique({ where: { id: orgId } });
-    expect(org.coolifyProjectId).toBe("proj-1");
+    expect(org.coolifyProjectId).toBe(projects[0].uuid);
     expect(org.coolifyProjectName).toBe("Acme Corp");
     const links = await db.$queryRawUnsafe(`select "isPrimary" from "OrganizationCoolifyProjectLink" where "organizationId" = '${orgId}'`);
     expect(links).toEqual([{ isPrimary: true }]);

@@ -11,9 +11,9 @@ Static review of `jongo-os` on branch `stage` @ `d8381ba`. Nothing was exploited
 | S-17 | **High** | Any signed-up user could create an organization bound to an unlinked hosting project, which auto-imports its apps — *fixed* |
 | S-18 | Medium | Site creation's own membership check ignored removed collaborators — *fixed* |
 | S-02 | **Critical** | Authentication fails **open** when `NEXTAUTH_SECRET` is missing or the default string — *fixed* |
-| S-03 | **High** | Web container holds a **root** SSH key to the Coolify host; host-key checking `accept-new` |
+| S-03 | **High** | Web container holds a **root** SSH key to the Coolify host; host-key checking `accept-new` — *partly fixed (host key pinning, key restricted to the server itself; still root)* |
 | S-04 | **High** | Encryption key for stored secrets falls back to `NEXTAUTH_SECRET`, then to a hard-coded string; no key id/rotation — *fixed* |
-| S-05 | **High** | Single static ops token grants cross-tenant machine access (backup callbacks, every site's staging routes, diagnostics) |
+| S-05 | **High** | Single static ops token grants cross-tenant machine access (backup callbacks, every site's staging routes, diagnostics) — *fixed (token honoured only on local requests)* |
 | S-06 | **High** | No rate limiting on sign-in, registration or password reset — *fixed* |
 | S-07 | Medium | Mock deploy results recorded as real deployments when Coolify creds are missing — *fixed* |
 | S-08 | Medium | Privacy-mode passwords stored in plaintext |
@@ -42,6 +42,7 @@ Endpoint sweep (2026-11-04): every `/api/sites/[siteId]/*` route resolves the si
 
 ### S-03 — Root SSH from the web tier (High)
 `lib/ssh-exec.ts` defaults `STAGING_SYNC_SSH_USER` to `root`, writes the key to a temp file, `StrictHostKeyChecking=accept-new`. Any RCE/SSRF-to-RCE in Next.js = root on the host running every customer's containers and Coolify itself.
+**Done (2026-11-04):** host key pinned for every SSH caller via `STAGING_SYNC_SSH_KNOWN_HOSTS` (`scripts/ssh-host-key.mjs`, applied at container start); `scripts/host/restrict-jongo-ssh-key.sh` limits Jongo's key on the server to connections from the server itself, with no port/agent forwarding and no terminal. **Still open:** the key is root; least privilege needs the typed host agent below, because any user that can run `docker exec` is root-equivalent.
 **Fix (staged):** (1) pin host key (`known_hosts` baked in, `yes`); (2) move all host ops to the worker process only — web never holds the key; (3) dedicated non-root user with `sudo` limited to a fixed set of wrapper scripts that take validated arguments; (4) later, a small host agent with mTLS and a typed command catalogue (no shell).
 
 ### S-04 — Weak secret key management (High)
@@ -50,6 +51,7 @@ Endpoint sweep (2026-11-04): every `/api/sites/[siteId]/*` route resolves the si
 
 ### S-05 — Shared ops token (High)
 `OWNERSHIP_SYNC_TOKEN` / `BACKUP_RECONCILE_TOKEN` bypass middleware for `/api/ops/*`, `/api/diagnostics/runtime` and **every** `/api/sites/*/staging/*` route. One leaked token (they're in host scripts and env files) = cross-tenant staging operations.
+**Done (2026-11-04):** every caller runs inside the container, so `lib/ops-request.ts` honours the tokens only on direct local requests (no `X-Real-IP`, loopback `X-Forwarded-For`, loopback `Host`); through the proxy they are ignored. In-container callers moved to 127.0.0.1; staging content sync now calls itself locally. `OPS_TOKEN_ALLOW_REMOTE=true` is the escape hatch. Later: per-job signed callbacks.
 **Fix:** per-job signed callbacks (HMAC over `{jobId, backupId, status}` with a per-job nonce), or a worker that writes results directly to the DB so no inbound callback exists.
 
 ### S-06 — No auth rate limiting (High)

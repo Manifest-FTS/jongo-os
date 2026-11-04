@@ -30,9 +30,11 @@ function normalizeBaseUrl(value) {
 function resolveWatchUrl() {
   const direct = (process.env.COOLIFY_DELETION_WATCH_URL || "").trim();
   if (direct) return direct;
-
+  // Inside the container (the default), call the app directly: machine tokens
+  // are only honoured on local requests. A separate worker container uses the
+  // public address, which also needs OPS_TOKEN_ALLOW_REMOTE=true on the app.
   const base = normalizeBaseUrl(process.env.NEXTAUTH_URL);
-  if (base) return `${base}/api/ops/coolify-deletion-watch`;
+  if (base && (process.env.JONGO_WORKER_MODE || "").trim().toLowerCase() === "external") return `${base}/api/ops/coolify-deletion-watch`;
 
   const port = (process.env.PORT || "3000").trim() || "3000";
   return `http://127.0.0.1:${port}/api/ops/coolify-deletion-watch`;

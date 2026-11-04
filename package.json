@@ -98,6 +98,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "pg": "8.23.1",
     "pg-boss": "10.4.2"
   }
 }

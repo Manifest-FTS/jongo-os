@@ -259,15 +259,46 @@ export async function deployNow(siteId: string, actorId: string): Promise<Outcom
   if (site.githubInstallationId && site.gitStatus && site.gitStatus !== "linked") {
     return { ok: false, status: 409, message: "Jongo can't read this repo right now. Reconnect it on GitHub first." };
   }
-  const result = await deploySite(site, "production");
-  if (result.ok) {
+  if (!site.coolifyServiceUuid) return { ok: false, status: 409, message: "This app isn't linked to a running site yet." };
+
+  // Same path as Redeploy: queued, retried if hosting turns it away, followed
+  // to the end, and joined rather than doubled if a deploy is already running.
+  // Progress shows on the Redeploy button at the top of the app's page.
+  let queued: { ok: boolean; joined: boolean; message: string };
+  try {
+    const { requestSiteDeploy } = await import("@/lib/deploy-operation");
+    const { enqueueOperationRun } = await import("@/lib/job-queue");
+    const { operation, created } = await requestSiteDeploy({
+      siteId: site.id,
+      organizationId: site.organizationId,
+      environment: "production",
+      actorId
+    });
+    if (created) await enqueueOperationRun(operation.id);
+    queued = { ok: true, joined: !created, message: created ? "Deploy queued." : "A deploy is already running." };
+  } catch (error) {
+    console.error("[github] manual deploy could not be queued", { siteId: site.id, error });
+    queued = { ok: false, joined: false, message: "The deploy couldn't be started." };
+  }
+
+  // Only a new deploy takes the waiting commit. A deploy already running may
+  // have started before it, so the commit stays marked as waiting.
+  if (queued.ok && !queued.joined) {
     await db.site.update({
       where: { id: site.id },
       data: { pendingCommitSha: null, pendingCommitMessage: null, ...(site.pendingCommitSha ? { lastDeployedSha: site.pendingCommitSha } : {}) }
     });
   }
-  await audit(site.organizationId, actorId, result.ok ? "github_push_deploy" : "github_push_deploy_failed", { manual: true, sha: site.pendingCommitSha, message: result.message }, site.id);
-  return { ok: result.ok, status: result.ok ? 200 : 502, message: result.ok ? "Deploy started. It takes a few minutes." : `${result.message} Try again in a minute.` };
+  await audit(site.organizationId, actorId, queued.ok ? "github_push_deploy" : "github_push_deploy_failed", { manual: true, sha: site.pendingCommitSha, message: queued.message }, site.id);
+  return {
+    ok: queued.ok,
+    status: queued.ok ? 200 : 503,
+    message: queued.ok
+      ? queued.joined
+        ? "A deploy of this app is already running. If it started before your latest commit, deploy again once it finishes."
+        : "Deploy started. Progress shows at the top of the page; it takes a few minutes."
+      : `${queued.message} Try again in a minute.`
+  };
 }
 
 /** Webhook `push`: deploy (or record) every site linked to this repo and branch. */

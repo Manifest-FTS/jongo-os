@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { safeEqual } from "@/lib/safe-equal";
+import { opsTokenOriginAllowed } from "@/lib/ops-request";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,7 @@ export const runtime = "nodejs";
  */
 function hasMachineToken(request: Request): boolean {
   const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-  if (!provided) return false;
+  if (!provided || !opsTokenOriginAllowed(request.headers)) return false;
   return [process.env.BACKUP_RECONCILE_TOKEN, process.env.OWNERSHIP_SYNC_TOKEN].some(
     (token) => Boolean(token?.trim()) && safeEqual(provided, token!.trim())
   );

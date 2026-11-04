@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { isPublicPath } from "@/lib/public-paths";
 import { isDevAuthBypassEnabled, resolveAuthSecret } from "@/lib/auth-secret";
 import { safeEqual } from "@/lib/safe-equal";
+import { opsTokenOriginAllowed } from "@/lib/ops-request";
 
 
 
@@ -38,7 +39,12 @@ export async function middleware(req: NextRequest) {
   const ownershipSyncToken = process.env.OWNERSHIP_SYNC_TOKEN;
   const backupReconcileToken = process.env.BACKUP_RECONCILE_TOKEN;
   const authHeader = req.headers.get("authorization") ?? "";
-  const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  // Machine tokens count only on direct requests from inside the container
+  // (see lib/ops-request.ts). Through the public proxy they are ignored, so a
+  // leaked token cannot be used from the internet.
+  const providedToken = opsTokenOriginAllowed(req.headers)
+    ? authHeader.replace(/^Bearer\s+/i, "").trim()
+    : "";
   const hasOwnershipOpsToken = Boolean(
     ownershipSyncToken && providedToken && safeEqual(providedToken, ownershipSyncToken)
   );

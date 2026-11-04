@@ -30,6 +30,8 @@ type AttemptEvent = {
   blockingReason?: string;
   /** Finished by a restart (WordPress): nothing further to track. */
   restarted?: boolean;
+  /** The background deploy that finishes the promote. */
+  operationId?: string;
 };
 
 const RESTART_PROMOTE_MESSAGE = "Promoted. Staging's content is live on production and the site was restarted.";
@@ -173,6 +175,7 @@ export async function GET(req: Request, { params }: Params) {
       actionType: restarted ? "staging_promote_succeeded" : actionTypeRaw,
       message: restarted ? RESTART_PROMOTE_MESSAGE : rawMessage,
       deploymentId: !restarted && typeof details?.deploymentId === "string" ? details.deploymentId : undefined,
+      operationId: typeof details?.operationId === "string" ? details.operationId : undefined,
       deploymentStatus: typeof details?.deploymentStatus === "string" ? details.deploymentStatus : undefined,
       blockingReason: typeof details?.blockingReason === "string" ? details.blockingReason : undefined,
       restarted
@@ -189,6 +192,27 @@ export async function GET(req: Request, { params }: Params) {
   let deploymentStatus = latestEvent.deploymentStatus;
   let triggeredAt: string | undefined;
   let finishedAt: string | undefined = latestEvent.restarted ? latestEvent.createdAt : undefined;
+
+  // Promotes since deploys became operations: the operation says how the final
+  // deploy went, including after a retry.
+  let message = latestEvent.message;
+  if (latestEvent.operationId && !deploymentId) {
+    const { getOperation } = await import("@/lib/operations");
+    const operation = await getOperation(latestEvent.operationId);
+    if (operation && operation.resourceId === workspace.id && operation.organizationId === workspace.organizationId) {
+      if (operation.status === "succeeded") {
+        status = "succeeded";
+        finishedAt = operation.finishedAt?.toISOString();
+      } else if (operation.status === "failed" || operation.status === "cancelled") {
+        status = "failed";
+        finishedAt = operation.finishedAt?.toISOString();
+        message = `${latestEvent.message} The final deploy did not finish: ${operation.error ?? "it failed."}`;
+      } else {
+        status = "in_progress";
+      }
+      triggeredAt = operation.createdAt.toISOString();
+    }
+  }
 
   if (deploymentId) {
     const deployments = await listSiteDeployments(siteId, viewer);
@@ -219,7 +243,7 @@ export async function GET(req: Request, { params }: Params) {
     status,
     statusLabel: statusLabel(status),
     statusTone: statusTone(status),
-    message: latestEvent.message,
+    message,
     deploymentId,
     deploymentStatus,
     blockingReason: latestEvent.blockingReason,
