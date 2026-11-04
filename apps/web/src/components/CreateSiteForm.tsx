@@ -17,7 +17,7 @@ import {
 type Props = {
   organizationId: string;
   availableApps?: CoolifyAppPickerOption[];
-  /** Collaborators: only "Deploy from GitHub" (adopting or creating WordPress is admin-only). */
+  /** Collaborators: create apps (WordPress or from a repository), but not adopt running ones. */
   githubOnly?: boolean;
   /** False until the platform's GitHub App exists: the GitHub option is hidden. */
   githubAvailable?: boolean;
@@ -54,7 +54,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
   // and with link as the default that path produced a Jongo row and nothing in
   // Coolify — the exact phantom-record failure this form was reworked to end.
   // Adopting is a migration activity; it costs one click to select.
-  const [mode, setMode] = useState<Mode>(githubOnly ? (githubAvailable ? "private" : "public") : "create");
+  const [mode, setMode] = useState<Mode>("create");
   const [github, setGithub] = useState<GithubRepoValue>(EMPTY_GITHUB_REPO_VALUE);
 
   const selectedApp = useMemo(
@@ -296,7 +296,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
           ["create", "WordPress", "Create a new WordPress + MariaDB site."],
           ["link", "Link existing app", "Adopt an app that is already running on Jongo's servers."]
         ] as const).filter(([value]) =>
-          (!githubOnly || value === "public" || value === "private" || value === "deploykey") &&
+          (!githubOnly || value !== "link") &&
           (githubAvailable || value !== "private") &&
           (canAdopt || value !== "link")
         ).map(([value, label, help]) => (
