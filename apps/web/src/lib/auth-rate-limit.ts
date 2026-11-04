@@ -24,7 +24,11 @@ export const AUTH_RATE_LIMITS = {
   resetPerIp: { scope: "reset:ip", limit: 10, windowSeconds: 15 * 60 },
   inviteAcceptPerIp: { scope: "invite:ip", limit: 10, windowSeconds: 15 * 60 },
   // Not sign-in, but the same shape: each new client creates a hosting project.
-  createClientPerUser: { scope: "client-create:user", limit: 20, windowSeconds: 60 * 60 }
+  createClientPerUser: { scope: "client-create:user", limit: 20, windowSeconds: 60 * 60 },
+  // Framework detection reads the repo from the Git host on each call.
+  repoInspectPerUser: { scope: "repo-inspect:user", limit: 60, windowSeconds: 10 * 60 },
+  // Each deploy key is stored in hosting.
+  deployKeyPerOrg: { scope: "deploy-key:org", limit: 10, windowSeconds: 60 * 60 }
 } satisfies Record<string, RateLimitRule>;
 
 export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };

@@ -75,7 +75,7 @@ async function defaultDeps(): Promise<Deps> {
 
 /** Create the deploy operation, or return the one already queued or running. */
 export async function requestSiteDeploy(
-  params: { siteId: string; organizationId: string; environment: DeployEnvironment; actorId: string },
+  params: { siteId: string; organizationId: string; environment: DeployEnvironment; actorId: string | null },
   options: { db?: any } = {}
 ) {
   return createOrJoinActiveOperation(
@@ -260,6 +260,38 @@ async function followBuild(operation: OperationRecord, result: DeployResult, dep
     return { done: true };
   }
   return { done: false, recheckAfterSeconds: RECHECK_SECONDS };
+}
+
+/**
+ * Deploy after a Git push. Normally a tracked operation, like Redeploy. If a
+ * deploy is already running, a new operation would join it and this newer
+ * commit would never deploy, so hosting is asked directly instead: it queues
+ * deploys of the same app and builds this commit after the current one.
+ */
+export async function deployOnPush(params: {
+  siteId: string;
+  organizationId: string;
+  environment: DeployEnvironment;
+  targetUuid: string;
+}): Promise<{ ok: boolean; via: "operation" | "hosting"; message: string }> {
+  const { operation, created } = await requestSiteDeploy({
+    siteId: params.siteId,
+    organizationId: params.organizationId,
+    environment: params.environment,
+    actorId: null
+  });
+  if (created) {
+    const { enqueueOperationRun } = await import("@/lib/job-queue");
+    await enqueueOperationRun(operation.id);
+    return { ok: true, via: "operation", message: "Deploy started." };
+  }
+  try {
+    const { triggerCoolifyDeploy } = await import("@/lib/coolify");
+    await triggerCoolifyDeploy(params.targetUuid, params.environment);
+    return { ok: true, via: "hosting", message: "Queued after the deploy already running." };
+  } catch (error) {
+    return { ok: false, via: "hosting", message: error instanceof Error ? error.message : "The deploy didn't start." };
+  }
 }
 
 /** What a client may see about a deploy operation. No hosting ids. */

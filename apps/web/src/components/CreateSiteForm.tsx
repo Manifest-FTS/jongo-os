@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon } from "@/components/JongoIcons";
 import RemedyButton from "@/components/RemedyButton";
-import GithubRepoFields, { EMPTY_GITHUB_REPO_VALUE, type GithubRepoValue } from "@/components/GithubRepoFields";
+import GithubRepoFields, { EMPTY_GITHUB_REPO_VALUE, buildSettingsFor, type GithubRepoValue } from "@/components/GithubRepoFields";
 import { remedy as buildRemedy, type Remedy } from "@/lib/remedies";
 import type { CoolifyAppPickerOption } from "@/lib/coolify-app-picker";
 import {
@@ -23,9 +23,13 @@ type Props = {
   githubAvailable?: boolean;
   /** Platform admins only: adopt an app already running on the servers. */
   canAdopt?: boolean;
+  /** Start with the form open (the New app page). */
+  initiallyOpen?: boolean;
 };
 
-export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false, githubAvailable = true, canAdopt = false }: Props) {
+type Mode = "link" | "create" | "public" | "private" | "deploykey";
+
+export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false, githubAvailable = true, canAdopt = false, initiallyOpen = false }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -38,7 +42,10 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeFix, setNoticeFix] = useState<{ siteId: string; remedy: Remedy } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
+  // Shown after creating an app from a deploy-key repo: where to send pushes.
+  const [webhookInfo, setWebhookInfo] = useState<{ siteId: string; url: string; secret: string; sshUrl: string } | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   // Two genuinely different intents shared one form: ADOPT a Coolify resource
   // that already exists, or CREATE one. Only adopting ever worked, so "Add App"
   // silently produced a Jongo record with no infrastructure behind it.
@@ -47,7 +54,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
   // and with link as the default that path produced a Jongo row and nothing in
   // Coolify — the exact phantom-record failure this form was reworked to end.
   // Adopting is a migration activity; it costs one click to select.
-  const [mode, setMode] = useState<"link" | "create" | "public" | "private">(githubOnly ? "private" : "create");
+  const [mode, setMode] = useState<Mode>(githubOnly ? (githubAvailable ? "private" : "public") : "create");
   const [github, setGithub] = useState<GithubRepoValue>(EMPTY_GITHUB_REPO_VALUE);
 
   const selectedApp = useMemo(
@@ -89,7 +96,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
     setError(null);
   }
 
-  function handlePickMode(value: "link" | "create" | "public" | "private") {
+  function handlePickMode(value: Mode) {
     setMode(value);
     setError(null);
     setNotice(null);
@@ -109,7 +116,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
     setLoading(true);
 
     try {
-      if (mode === "public" || mode === "private") {
+      if (mode === "public" || mode === "private" || mode === "deploykey") {
         const res = await fetch(`/api/organizations/${organizationId}/sites/github`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -119,8 +126,11 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
             source: github.source,
             repoUrl: github.repoUrl,
             repo: github.repo,
+            sshUrl: github.sshUrl,
+            deployKeyId: github.deployKeyId,
             branch: github.branch || (mode === "public" ? "main" : ""),
             buildPack: github.buildPack,
+            build: buildSettingsFor(github),
             port: github.port,
             baseDirectory: github.baseDirectory,
             envVars: github.envVars.filter((row) => row.key.trim()),
@@ -133,10 +143,21 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
           setError(data?.message ?? "Failed to create app");
           return;
         }
-        setNotice(data.message ?? "App created.");
-        setNoticeFix(null);
+        if (data.webhook?.url && data.webhook?.secret && data.siteId) {
+          // Shown once: the secret is how pushes prove they come from the repo.
+          setWebhookInfo({ siteId: data.siteId, url: data.webhook.url, secret: data.webhook.secret, sshUrl: github.sshUrl });
+          resetForm();
+          return;
+        }
         resetForm();
         setOpen(false);
+        if (data.siteId) {
+          // Straight to the new app, where the first deploy's progress shows.
+          router.push(`/apps/${data.siteId}`);
+          return;
+        }
+        setNotice(data.message ?? "App created.");
+        setNoticeFix(null);
         router.refresh();
         return;
       }
@@ -211,6 +232,50 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
     );
   }
 
+  if (webhookInfo) {
+    const copy = async (field: string, text: string) => {
+      await navigator.clipboard?.writeText(text).catch(() => undefined);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    };
+    const host = /@([^:/]+)/.exec(webhookInfo.sshUrl)?.[1]?.toLowerCase() ?? "";
+    const where = host.includes("gitlab")
+      ? "GitLab: Settings → Webhooks. Paste the address, put the secret in Secret token, tick Push events."
+      : host.includes("bitbucket")
+        ? "Bitbucket: Repository settings → Webhooks → Add webhook. Paste the address and the secret, trigger: Repository push."
+        : host.includes("github")
+          ? "GitHub: Settings → Webhooks → Add webhook. Paste the address, content type application/json, and the secret."
+          : "Your Git host: the repository's webhook settings. Paste the address and the secret, for push events.";
+    return (
+      <div className="card" style={{ marginBottom: "1rem", display: "grid", gap: "0.75rem" }}>
+        <h3 className="card-title" style={{ margin: 0 }}>App created — its first deploy is running</h3>
+        <p className="card-muted" style={{ margin: 0 }}>
+          One more step so every push deploys automatically: add this webhook to the repository. The secret is shown only now; keep it with the webhook.
+        </p>
+        {[
+          ["url", "Webhook address", webhookInfo.url],
+          ["secret", "Secret", webhookInfo.secret]
+        ].map(([field, label, text]) => (
+          <div key={field}>
+            <label className="form-label">{label}</label>
+            <div className="flex gap-2">
+              <input className="form-input mono-input" readOnly value={text} onFocus={(event) => event.currentTarget.select()} />
+              <button type="button" className="btn btn-secondary px-3" onClick={() => copy(field, text)}>
+                {copiedField === field ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+        ))}
+        <p className="form-help" style={{ margin: 0 }}>{where}</p>
+        <div className="form-row">
+          <button type="button" className="btn" onClick={() => router.push(`/apps/${webhookInfo.siteId}`)}>
+            Open app
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="card" style={{ marginBottom: "1rem" }}>
       <h3 className="card-title" style={{ marginBottom: "0.5rem" }}>Add App</h3>
@@ -225,11 +290,16 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
       )}
       <div role="radiogroup" aria-label="How to add this app" style={{ display: "flex", gap: "0.5rem", marginBottom: "0.9rem", flexWrap: "wrap" }}>
         {([
-          ["link", "Link existing app", "Adopt an app that is already running on Jongo's servers."],
-          ["create", "Create WordPress site", "Create a new WordPress + MariaDB site."],
+          ["private", "GitHub", "Import a repository from your connected GitHub; every push deploys."],
+          ["deploykey", "GitLab, Bitbucket & other Git", "A private repository on any Git host, read with a deploy key; pushes deploy through a webhook."],
           ["public", "Public repository", "Deploy a public GitHub, GitLab, Bitbucket or Codeberg repository by URL."],
-          ["private", "Private repository (GitHub App)", "Deploy a private repository through one of your Git sources; pushes deploy automatically."]
-        ] as const).filter(([value]) => (!githubOnly || value === "public" || value === "private") && (githubAvailable || (value !== "public" && value !== "private")) && (canAdopt || value !== "link")).map(([value, label, help]) => (
+          ["create", "WordPress", "Create a new WordPress + MariaDB site."],
+          ["link", "Link existing app", "Adopt an app that is already running on Jongo's servers."]
+        ] as const).filter(([value]) =>
+          (!githubOnly || value === "public" || value === "private" || value === "deploykey") &&
+          (githubAvailable || value !== "private") &&
+          (canAdopt || value !== "link")
+        ).map(([value, label, help]) => (
           <button
             key={value}
             type="button"
@@ -248,8 +318,10 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
           ? "A new WordPress + MariaDB site is created and deployed. It is added here once the server confirms it."
           : mode === "private"
             ? "Builds the repository and deploys it. Every push to the branch deploys again."
+            : mode === "deploykey"
+              ? "Builds a private repository from any Git host. After creating it, add the webhook shown so pushes deploy."
             : mode === "public"
-              ? "Builds the public repository and deploys it. Use Deploy now to update it."
+              ? "Builds the public repository and deploys it. Use Redeploy to update it."
             : "Adopts an app that is already running. Nothing new is created."}
       </p>
       <form onSubmit={handleSubmit} className="form-stack">
@@ -297,7 +369,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
             className="form-input"
           />
         </div>
-        {mode === "public" || mode === "private" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} mode={mode} /> : null}
+        {mode === "public" || mode === "private" || mode === "deploykey" ? <GithubRepoFields organizationId={organizationId} value={github} onChange={setGithub} mode={mode} /> : null}
         {mode === "link" ? (
         <>
         <div>
@@ -356,7 +428,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
         {error && <p className="form-error">{error}</p>}
         <div className="form-row">
           <button type="submit" className="btn" disabled={loading}>
-            {loading ? "Creating…" : "Create App"}
+            {loading ? "Creating…" : mode === "create" || mode === "link" ? "Create App" : "Deploy"}
           </button>
           <button
             type="button"

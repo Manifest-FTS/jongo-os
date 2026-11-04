@@ -43,7 +43,10 @@ export const PUBLIC_PATHS = [
   "/api/coolify/connection",
   "/api/setup",
   // Internal collector route is secured by bearer token in its route handler.
-  "/api/internal/wordpress-collector"
+  "/api/internal/wordpress-collector",
+  // Git push webhooks: each request is verified against the app's own secret
+  // in its handler (lib/git-webhooks.ts).
+  "/api/webhooks/git"
 ];
 
 const PREFIX_PUBLIC_PATHS = ["/opengraph-image"];

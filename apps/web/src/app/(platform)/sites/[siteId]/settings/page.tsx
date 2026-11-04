@@ -5,6 +5,7 @@ import SiteStagingToggle from "@/components/SiteStagingToggle";
 import WordPressAdvancedControls from "@/components/WordPressAdvancedControls";
 import SiteDangerZone from "@/components/SiteDangerZone";
 import SiteSourceCard from "@/components/SiteSourceCard";
+import GitWebhookCard from "@/components/GitWebhookCard";
 import { loadSiteSource } from "@/lib/site-source";
 import LiveRefresh from "@/components/LiveRefresh";
 import Link from "next/link";
@@ -150,6 +151,9 @@ export default async function SiteSettingsPage({ params }: Params) {
           canDeploy={permissionSnapshot.canPromoteStaging}
         />
       ) : null}
+
+      {/* Apps from a deploy-key repo (GitLab, Bitbucket, any Git): shows nothing otherwise. */}
+      {!isWordPress ? <GitWebhookCard siteId={siteId} canRotate={permissionSnapshot.role === "admin"} /> : null}
 
       {/* Site Record (non-WordPress DB-backed sites) */}
       {!isWordPress && workspace?.source === "db" && (
