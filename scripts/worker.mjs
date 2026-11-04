@@ -16,7 +16,13 @@
  */
 import { pathToFileURL } from "node:url";
 import PgBoss from "pg-boss";
-import { jobDefinitions, pgConnectionString } from "./worker-jobs.mjs";
+import {
+  OPERATION_RUN_QUEUE,
+  OPERATION_RUN_QUEUE_OPTIONS,
+  jobDefinitions,
+  pgConnectionString,
+  runOperationStep
+} from "./worker-jobs.mjs";
 
 function log(message) {
   console.log(`[worker] ${message}`);
@@ -27,6 +33,8 @@ function describe(job) {
 }
 
 async function setupQueues(boss, jobs) {
+  await boss.createQueue(OPERATION_RUN_QUEUE, OPERATION_RUN_QUEUE_OPTIONS);
+  await boss.updateQueue(OPERATION_RUN_QUEUE, OPERATION_RUN_QUEUE_OPTIONS);
   for (const job of jobs) {
     const queue = {
       name: job.name,
@@ -60,7 +68,10 @@ export async function startWorker(env = process.env) {
   await boss.start();
   log("connected; queue schema is pgboss");
 
-  const jobs = jobDefinitions(env);
+  // Legacy mode: the old loops do the scheduled jobs, this process only runs
+  // operations (deploys).
+  const operationsOnly = (env.JONGO_WORKER_OPERATIONS_ONLY || "").trim() === "1";
+  const jobs = jobDefinitions(env).map((job) => (operationsOnly ? { ...job, enabled: false } : job));
 
   // Queue and schedule setup is idempotent, but two workers starting at the
   // same moment (a deploy overlapping the old container) can deadlock on
@@ -101,6 +112,21 @@ export async function startWorker(env = process.env) {
     }
   }
 
+  // Deploys and other long tasks, one step per job. Different operations run
+  // side by side; the queue never runs two steps of the same one at once.
+  await boss.work(OPERATION_RUN_QUEUE, { localConcurrency: 4, includeMetadata: true }, async ([job]) => {
+    const operationId = job?.data?.operationId;
+    if (typeof operationId !== "string" || !operationId) return;
+    const finalAttempt = (job.retryCount ?? 0) >= (job.retryLimit ?? 0);
+    try {
+      await runOperationStep(operationId, finalAttempt);
+    } catch (error) {
+      console.error(`[worker] ${error instanceof Error ? error.message : String(error)}${finalAttempt ? " (final attempt)" : ""}`);
+      throw error;
+    }
+  });
+  log(`${OPERATION_RUN_QUEUE}: on`);
+
   let stopping = false;
   const stop = async (signal) => {
     if (stopping) return;
@@ -121,6 +147,7 @@ export async function startWorker(env = process.env) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv.includes("--list")) {
     for (const job of jobDefinitions()) console.log(describe(job));
+    console.log(`${OPERATION_RUN_QUEUE}: on (deploys)`);
     process.exit(0);
   }
   try {

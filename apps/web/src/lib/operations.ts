@@ -54,9 +54,11 @@ type Db = {
   operation: {
     create(args: unknown): Promise<OperationRecord>;
     findUnique(args: unknown): Promise<OperationRecord | null>;
+    findFirst(args: unknown): Promise<OperationRecord | null>;
     updateMany(args: unknown): Promise<{ count: number }>;
   };
   $executeRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<number>;
+  $transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T>;
 };
 
 const MAX_ERROR_LENGTH = 4000;
@@ -113,6 +115,65 @@ export async function createOperation(
 }
 
 /**
+ * Join the operation already queued or running for the same resource, or
+ * start a new one. Used where a second copy must never run at once (two
+ * deploys of one app). A transaction-scoped Postgres lock on `lockKey`
+ * serialises the check and the insert, so simultaneous requests — two tabs, a
+ * double click — get one operation, not two.
+ */
+export async function createOrJoinActiveOperation(
+  input: CreateOperationInput & { kind: string; resourceType: string; resourceId: string },
+  match: { lockKey: string; inputEquals?: Record<string, string> },
+  options: { db?: Db } = {}
+): Promise<{ operation: OperationRecord; created: boolean }> {
+  const db = options.db ?? (await loadDb());
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`select pg_advisory_xact_lock(hashtextextended(${match.lockKey}, 0))`;
+    const inputFilters = Object.entries(match.inputEquals ?? {}).map(([key, value]) => ({
+      input: { path: [key], equals: value }
+    }));
+    const active = await tx.operation.findFirst({
+      where: {
+        kind: input.kind,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        status: { in: ["queued", "running"] },
+        AND: inputFilters
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    if (active) return { operation: active, created: false };
+    return createOperation(input, { db: tx });
+  });
+}
+
+export async function getOperation(id: string, options: { db?: Db } = {}): Promise<OperationRecord | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const db = options.db ?? (await loadDb());
+  return db.operation.findUnique({ where: { id } });
+}
+
+/**
+ * Merge fields into `result` while the operation runs, e.g. the hosting
+ * deployment id once a deploy has been accepted, so a retry resumes instead of
+ * starting the work again.
+ */
+export async function mergeOperationResult(
+  id: string,
+  fields: Record<string, unknown>,
+  options: { db?: Db } = {}
+): Promise<boolean> {
+  const db = options.db ?? (await loadDb());
+  const count = await db.$executeRaw`
+    update "Operation"
+    set "result" = coalesce("result", '{}'::jsonb) || ${JSON.stringify(fields)}::jsonb,
+        "updatedAt" = now() at time zone 'utc'
+    where "id" = ${id}::uuid and "status" = 'running'
+  `;
+  return count === 1;
+}
+
+/**
  * Mark an operation running and count the attempt. Also succeeds for an
  * operation already running, so a retry after a worker crash can pick it up.
  * Returns false when it is finished or cancelled; the job should then stop.
@@ -158,8 +219,15 @@ export async function succeedOperation(id: string, result?: unknown, options: { 
   const db = options.db ?? (await loadDb());
   const done = await db.operation.updateMany({
     where: { id, status: "running" },
-    data: { status: "succeeded", result: result === undefined ? undefined : (result as object), error: null, finishedAt: new Date() }
+    data: { status: "succeeded", error: null, finishedAt: new Date() }
   });
+  if (done.count === 1 && result !== undefined && result !== null && typeof result === "object") {
+    // Merged into what the run already recorded (see mergeOperationResult).
+    await db.$executeRaw`
+      update "Operation" set "result" = coalesce("result", '{}'::jsonb) || ${JSON.stringify(result)}::jsonb
+      where "id" = ${id}::uuid
+    `;
+  }
   return done.count === 1;
 }
 

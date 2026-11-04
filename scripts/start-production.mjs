@@ -100,16 +100,16 @@ let shuttingDown = false;
 
 // The worker is restarted if it dies, so a lost database connection does not
 // silently stop backups and metering until the next deploy.
-function startWorker() {
+function startWorker(extraEnv = {}) {
   log("Starting background worker...");
-  const child = spawn("node", ["./scripts/worker.mjs"], { stdio: "inherit", env: process.env });
+  const child = spawn("node", ["./scripts/worker.mjs"], { stdio: "inherit", env: { ...process.env, ...extraEnv } });
   backgroundChildren.push(child);
   child.on("exit", (code, signal) => {
     backgroundChildren = backgroundChildren.filter((c) => c !== child);
     if (shuttingDown) return;
     console.error(`[startup] Background worker exited (${signal || `code ${code}`}); restarting in 30s.`);
     setTimeout(() => {
-      if (!shuttingDown) startWorker();
+      if (!shuttingDown) startWorker(extraEnv);
     }, 30_000).unref();
   });
 }
@@ -129,11 +129,13 @@ try {
   // Background jobs. "embedded" (default): the pg-boss worker runs in this
   // container. "external": another container runs `npm run worker`, so start
   // nothing here. "legacy": the old setInterval loops, kept for one release as
-  // a way back. "off": no background jobs.
+  // a way back, plus the worker for deploys only. "off": no background jobs
+  // (deploys will stay queued).
   const workerMode = (process.env.JONGO_WORKER_MODE || "embedded").trim().toLowerCase();
   if (workerMode === "embedded") {
     startWorker();
   } else if (workerMode === "legacy") {
+    startWorker({ JONGO_WORKER_OPERATIONS_ONLY: "1" });
     const backupSchedulerEnabled = (process.env.BACKUP_RECONCILE_SCHEDULE_ENABLED || "false").trim().toLowerCase() === "true";
     if (backupSchedulerEnabled) {
       startBackgroundProcess("Starting backup reconcile scheduler", ["run", "ops:backup-reconcile:scheduler"]);

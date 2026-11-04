@@ -114,6 +114,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // One step of a background operation, called by scripts/worker.mjs with the
+  // machine token. The route re-checks the token.
+  if (pathname === "/api/internal/operations/run" && hasOpsToken) {
+    return NextResponse.next();
+  }
+
   // The webhook authenticates itself — HMAC over the raw body, or a shared token —
   // and fails closed when no secret is configured. It therefore has to reach its
   // own handler unauthenticated at this layer; gating it on a session would make
