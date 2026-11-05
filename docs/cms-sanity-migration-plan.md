@@ -1,6 +1,6 @@
 # Phase 1 — Sanity migration technical execution plan
 
-Status, 2026-10-19: **a bounded registered-draft importer is implemented; the full legacy/NCW migration pipeline below remains a target, not completed work.** CMS persistence, dataset draft UI/actions and Stripe reconciliation also exist in source. No configured application DB has received the new CMS/Stripe migrations; no NCW rehearsal, restored asset store, production import or compatible delivery API is claimed. See [actual local commands and safety gates](cms-local-verification.md).
+Status, 2026-10-19: **a bounded registered-draft importer is implemented; the full legacy/NCW migration pipeline below remains a target, not completed work.** CMS persistence, dataset draft UI/actions and Stripe reconciliation also exist in source. No configured application DB has received the new CMS/Stripe migrations; no NCW rehearsal, restored asset store, production import or compatible delivery API is claimed. **Update 2026-11-04:** an authenticated, in-process GROQ query engine over Jongo documents (Sanity's `groq-js`) is implemented in source on branch `craft`; there is still no HTTP query route and no Sanity-compatible API. See [GROQ query engine](cms-persistence.md#groq-query-engine--implemented-authenticated-in-process-no-http-route) and the [compatibility matrix](#sanity-compatibility-matrix). **Update 2026-11-04 (Phase 3):** a Sanity-export-compatible NDJSON writer/reader and an authenticated in-process dataset export service exist in source on `craft`; no route/CLI, and **no real Sanity export has been used to test any of it**. See [NDJSON export](cms-persistence.md#ndjson-export--implemented-authenticated-in-process-no-http-route) and [Sanity NDJSON in and out](#sanity-ndjson-in-and-out). See [actual local commands and safety gates](cms-local-verification.md).
 Parent roadmap: [Manifest ecosystem and Jongo CMS](../../../mfts-2026/plan.md). This plan adds gates **M3-S-envelope** and **M4-S-dryrun** to its Phase 1; it does not authorize production execution.
 
 ## 1. Scope and evidence boundary
@@ -13,7 +13,37 @@ Parent roadmap: [Manifest ecosystem and Jongo CMS](../../../mfts-2026/plan.md). 
   - NDJSON input: data.ndjson within that backup root; asset files beneath its assets directory.
 - Snapshot: **9,967,815 bytes**, SHA-256 **989f294854d1334bc01b6dc46c15e0e82bc152bf0b2a5780b6b3d742ada01dac**. Pin exact bytes, not reserialized JSON.
 - Counts below are supplied verified inspection facts, not results from an importer implemented by this task. Reproduce them in the future private dry-run report before accepting this snapshot.
-- Goal: native, independently operable Jongo document/schema/content migration. **No Sanity query API, GROQ, SDK, Studio plugin, patch protocol, or hosted image/CDN compatibility promise.** NCW frontend query/render adaptation is a separate approved workstream.
+- Goal: native, independently operable Jongo document/schema/content migration, with **GROQ query compatibility (via Sanity's MIT `groq-js`) and Sanity NDJSON envelope compatibility as goals** so a Sanity-hosted client can later back up to, or migrate onto, Jongo. GROQ evaluation over Jongo documents is implemented (Phase 1, see matrix); NDJSON *import* of registered drafts is implemented, and NDJSON *export* in the Sanity `data.ndjson` shape is implemented in source (Phase 3, documents only; not tested against a real Sanity export). **Not promised: the hosted Sanity HTTP API / `@sanity/client` host swap, Studio plugins, the patch/mutation protocol, real-time listeners, or the hosted image/CDN and asset pipeline.** NCW frontend query/render adaptation is a separate approved workstream.
+
+### Sanity compatibility matrix
+
+Status words are exact: **Implemented** = in source with automated tests (see Verification in [cms-persistence.md](cms-persistence.md#groq-query-engine--implemented-authenticated-in-process-no-http-route)); **Partial** = a bounded slice; **Not implemented** = planned only; **Not promised** = outside the compatibility goal.
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| GROQ query language | **Implemented** (in-process, via `groq-js` 2.x) | Authenticated server function `queryCmsDataset`; no HTTP route. Semantics are `groq-js`'s; only a small hand-written conformance sample was run, not the full groq-test-suite. |
+| Query perspectives `published`, `previewDrafts`, `raw` | **Implemented** | Draft overlay is by `drafts.` prefix; `versions.` (release) documents are hidden outside `raw`. |
+| `->` references (`{_type:'reference',_ref,_weak}`) | **Implemented** | Resolved only inside the queried dataset and perspective; foreign/broken refs are `null`. |
+| `drafts.` ID prefix and document envelope (`_id,_type,_rev,_createdAt,_updatedAt`) | **Implemented** | `_rev` is the source `_rev` when present, otherwise the Jongo revision token. |
+| `defineType`-style schema, `private` field flag | **Implemented** (descriptor subset only) | Registry types, not Sanity Studio schema files. |
+| Portable Text AST | **Partial** | Stored/validated and returned as data by queries; no HTML/Markdown renderer here. |
+| NDJSON import | **Partial** | Registered draft documents only, bounded (see importer section). Reads an extracted `data.ndjson`, not a tar.gz. |
+| NDJSON export in Sanity `data.ndjson` shape | **Implemented** (documents only; in-process, no route) | `serializeNdjson`/`streamNdjson` + `exportCmsDatasetNdjson`; deterministic bytes, SHA-256 manifest, privacy/secret stripping, typed limits. Round-trip, GROQ-equivalence and importer-planner tests pass on synthetic data. **Not tested against a real Sanity export or by Sanity tooling.** |
+| Reading a Sanity `data.ndjson` into Jongo | **Partial** | Reader safeguards are real (strict UTF-8, duplicate/unsafe keys, bounds); the importer applies only registered draft types, at most 100 drafts per apply. Everything else is reported, not stored. |
+| Asset binaries (`images/`, `files/` in a Sanity export; Jongo media) in export/import | **Not implemented** | Known full-restore blocker, see section 7. NDJSON carries asset *documents* only if they are in the dataset; no bytes either way. |
+| Document history / revisions in export | **Not implemented** | Export is each document's current revision only. |
+| Dataset config, schema, grants, releases in export | **Not implemented** | Not part of `data.ndjson` and not exported by Jongo. |
+| `sanity dataset import` of a Jongo export | **Not verified** | Output follows the documented envelope, but no Sanity tooling has read it. Sanity's import additionally expects asset references to resolve. |
+| Studio editing of arrays, references, Portable Text, images | **Not implemented** | Planned Phase 2. |
+| Hosted Sanity HTTP query API / `@sanity/client` host swap | **Not promised** | No public query route exists. |
+| Studio plugins, patch/mutation API, real-time listeners | **Not promised** | |
+| Image CDN, asset pipeline (`image-url`, hotspots served from CDN) | **Not promised** | Asset documents may be queried as data; no transformation service. |
+
+### Sanity NDJSON in and out
+
+**Into Jongo (Sanity project to Jongo).** A Sanity project is exported with the Sanity CLI (`sanity dataset export`), which, as Sanity documents it, produces a `.tar.gz` holding `data.ndjson` (one document per line, drafts as `drafts.`-prefixed ids unless excluded) plus the asset files. Jongo's reader consumes **an extracted `data.ndjson`** only: it does not open the archive (archive bounds are a future requirement, section 7) and it never reads the asset files. Current importer limits are unchanged: registered draft types only (the types in the schema registry), at most 100 eligible drafts and 8 MiB retained per apply, published variants and unregistered/asset records reported but not stored. Asset bytes remain the documented full-restore blocker. **No real Sanity export was available, so none of this has been run against one.**
+
+**Out of Jongo (Jongo back to Sanity-readable).** `serializeNdjson`/`streamNdjson` write the same `data.ndjson` envelope: one full document per line, `_id,_type,_rev,_createdAt,_updatedAt` plus payload, `drafts.` ids preserved in the `raw` perspective, UTF-8 without BOM, trailing newline, deterministic order and key order. Exported: **documents only**, current revision, after privacy and secret stripping. Not exported: asset binaries or Sanity asset-pipeline metadata Jongo never held, revision history, dataset configuration, schema, grants or releases. A separate manifest (`jongo-ndjson-v1`: counts, SHA-256 of the exact bytes, perspective, `includePrivate`, schema versions) travels beside the file, not inside it, so `data.ndjson` stays a plain Sanity-shaped file. Whether Sanity's own `dataset import` accepts it, and whether references to assets resolve there, is **unverified**.
 
 ### Implemented slice versus full pipeline
 
