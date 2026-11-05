@@ -1,20 +1,39 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { createContentRegistry, type TypeDefinition } from './schema.js';
 import { createReferenceIndex, deepEqual, documentTitle, ensureKeys, setField, type ContentDocument, type ImageAssetDocument } from './content-ops.js';
 import { validateDocument, publishState, type Path } from './validate.js';
 import { randomKey } from './portable-text.js';
 import { Field } from './fields.js';
 import { StudioContext, fieldId, type StudioApi } from './studio-context.js';
+import { ConnectedStudio, type StudioInitial } from './studio-connected.js';
+import type { StudioStore } from './studio-store.js';
 
 export type StudioConfig = { schemas: readonly TypeDefinition[]; documents: readonly ContentDocument[]; assets?: readonly ImageAssetDocument[] };
 const pathLabel = (path: Path) => path.map(part => typeof part === 'number' ? `item ${part + 1}` : part).join(' › ');
 
-/** Framework-neutral content desk over Sanity-shaped documents. No operational adapters, auth, publishing, persistence or network. */
-export function ContentStudio({ config, initialType, initialDocument, basePath, brand = { name: 'Jongo', homeHref: '/craft' } }: {
+export type ContentStudioProps = {
   config: StudioConfig; initialType?: string; initialDocument?: string; basePath?: string;
   brand?: { name: string; homeHref: string; logoSrc?: string; designSystemHref?: string };
-}) {
+  /** Persistence adapter. Absent: local-draft mode, drafts live in page memory only. Present: documents come from the store, which is the source of truth, and `config.documents` is ignored. */
+  store?: StudioStore;
+  /** Store mode only: server-prefetched list/record (or a prefetch failure) for the first paint. */
+  initial?: StudioInitial;
+  /** One honest line shown above the editor in either mode, e.g. what is missing or what publishing does not do yet. */
+  notice?: string;
+  /** Extra top-bar content, e.g. a sign-out form. */
+  topbarSlot?: ReactNode;
+  /** Store mode: where a `denied` result sends the editor to sign in again. */
+  signInHref?: string;
+};
+
+/** Framework-neutral content desk over Sanity-shaped documents. With a `store` it persists through that adapter; without one it keeps local drafts in page memory only. */
+export function ContentStudio({ store, initial, signInHref, brand = { name: 'Jongo', homeHref: '/craft' }, ...rest }: ContentStudioProps) {
+  if (store) return <ConnectedStudio {...rest} brand={brand} store={store} initial={initial} signInHref={signInHref} />;
+  return <LocalStudio {...rest} brand={brand} />;
+}
+
+function LocalStudio({ config, initialType, initialDocument, basePath, brand, notice, topbarSlot }: Omit<ContentStudioProps, 'store' | 'initial' | 'signInHref' | 'brand'> & { brand: NonNullable<ContentStudioProps['brand']> }) {
   const registry = useMemo(() => createContentRegistry(config.schemas), [config.schemas]);
   // Original snapshot: supplied documents with any missing or duplicate keys filled in deterministically.
   const original = useMemo(() => config.documents.map(doc => { const schema = registry.get(doc._type); return schema ? ensureKeys(schema, doc) : doc; }), [config.documents, registry]);
@@ -74,10 +93,10 @@ export function ContentStudio({ config, initialType, initialDocument, basePath, 
   const api: StudioApi | null = working ? { docId: working._id, values: working, issues, index, schemas: registry, makeKey: randomKey, announce, focus } : null;
   const visible = documents.filter(doc => doc._type === type && documentTitle(doc, schema).toLowerCase().includes(query.toLowerCase()));
   const chip = dirty ? 'Unsaved changes' : edited ? 'Local draft (edited)' : 'Original snapshot';
-  return <div className="jongo-studio"><a className="jongo-skip" href="#jongo-editor">Skip to editor</a><header className="jongo-topbar"><a className="jongo-brand" href={brand.homeHref}>{brand.logoSrc && <img src={brand.logoSrc} alt="" />}{brand.name}<span>Studio</span></a><span>Content workspace</span>{brand.designSystemHref && <a href={brand.designSystemHref}>Design system ↗</a>}</header>
+  return <div className="jongo-studio"><a className="jongo-skip" href="#jongo-editor">Skip to editor</a><header className="jongo-topbar"><a className="jongo-brand" href={brand.homeHref}>{brand.logoSrc && <img src={brand.logoSrc} alt="" />}{brand.name}<span>Studio</span></a><span>Content workspace</span>{brand.designSystemHref && <a href={brand.designSystemHref}>Design system ↗</a>}{topbarSlot && <div className="jongo-topbar-slot">{topbarSlot}</div>}</header>
     <div className="jongo-desk"><aside className="jongo-structure"><p className="jongo-eyebrow">Structure</p><h2>Content</h2><nav aria-label="Content structure">{config.schemas.map(item => <a className="jongo-nav-item" href={documentHref(item.name)} key={item.name} aria-current={type === item.name ? 'page' : undefined} onClick={event => navigate(event, item.name)}>{item.title ?? item.name}<span>›</span></a>)}</nav></aside>
       <section className="jongo-documents" aria-label="Document list"><h2>{schema?.title ?? schema?.name ?? 'Documents'}</h2><label>Search documents<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by title" /></label><div className="jongo-document-list">{visible.map(doc => <a className="jongo-nav-item" href={documentHref(doc._type, doc._id)} key={doc._id} aria-current={selectedId === doc._id ? 'page' : undefined} onClick={event => navigate(event, type, doc._id)}><strong>{documentTitle(doc, schema)}</strong><small>{deepEqual(doc, original.find(item => item._id === doc._id)) ? 'Original snapshot' : 'Local draft (edited)'} · {doc._type}</small></a>)}</div>{!visible.length && <p>No matching documents.</p>}</section>
-      <main id="jongo-editor" className="jongo-editor" tabIndex={-1}>{schema && working && api ? <StudioContext.Provider value={api}><div className="jongo-editor-heading"><div><p className="jongo-eyebrow">{schema.title ?? schema.name}</p><h1>{documentTitle(working, schema)}</h1></div><span className={`jongo-state ${dirty ? 'jongo-dirty' : ''}`}>{chip}</span></div><p className="jongo-help">Drafts are kept in page memory only. Reloading or leaving resets all changes. Saving does not publish to the website: persistence and publishing are not connected.</p>
+      <main id="jongo-editor" className="jongo-editor" tabIndex={-1}>{notice && <p className="jongo-notice" role="note">{notice}</p>}{schema && working && api ? <StudioContext.Provider value={api}><div className="jongo-editor-heading"><div><p className="jongo-eyebrow">{schema.title ?? schema.name}</p><h1>{documentTitle(working, schema)}</h1></div><span className={`jongo-state ${dirty ? 'jongo-dirty' : ''}`}>{chip}</span></div><p className="jongo-help">Drafts are kept in page memory only. Reloading or leaving resets all changes. Saving does not publish to the website: persistence and publishing are not connected.</p>
         <section className="jongo-summary" aria-labelledby="jongo-checks-title" data-publish-ready={state.ready ? 'true' : 'false'}>
           <h2 id="jongo-checks-title">Document checks</h2>
           <p><strong className={state.ready ? 'jongo-ready' : 'jongo-blocked'}>{state.ready ? 'Publish-ready checks passed' : `Not publish-ready: ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}`}</strong>{state.warnings > 0 && ` · ${state.warnings} ${state.warnings === 1 ? 'note' : 'notes'} about preserved content`}</p>

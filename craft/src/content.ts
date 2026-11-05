@@ -3,3 +3,4 @@ export * from './schema.js';
 export * from './portable-text.js';
 export * from './content-ops.js';
 export * from './validate.js';
+export * from './studio-store.js';

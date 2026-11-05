@@ -6,6 +6,18 @@ Exports: `@jongo/craft`, `@jongo/craft/content` (pure schema/Portable Text/valid
 
 Preview.7 turns `ContentStudio` into a neutral Sanity-style content editor: documents are `{ _id, _type, ...fields }` (the flat `{id,type,title,values}` shape and `validateContent` are gone), with string/text/number/boolean/date/datetime/url/slug/enum/object/array/reference/image/Portable Text fields, per-field validation and a bounded Portable Text editor that preserves unknown blocks, marks and annotations. Drafts live in page memory only; persistence, publishing, uploads and authentication are not connected, and this is not Sanity Studio parity.
 
+Preview.9 adds an optional `store` prop to `ContentStudio` (type `StudioStore`, UI only: it never imports `@jongo/craft/server`, `pg` or `groq-js`, and a test keeps the client entries clear of them). Without `store` nothing changes (local drafts in page memory). With a store the Studio lists/loads/saves/publishes/unpublishes/discards through the host's adapter and shows per-document state (saved, unsaved changes, saving, conflict, error), a visible Published or Draft status, and disables Save while saving. Contract:
+
+```ts
+store.list():                         Promise<{ ok: true, documents: StudioDocSummary[] } | StudioFailure>
+store.load(id):                       Promise<{ ok: true, doc, nativeRev, lockVersion, variant, published?, publishedDiffers? } | StudioFailure>
+store.saveDraft(doc, expect):         same record shape   // expect = { nativeRev, lockVersion, mutationKey }
+store.publish(id, expect) / unpublish(id, expect) / discardDraft(id, expect)
+StudioFailure = { ok: false, code: 'conflict' | 'invalid' | 'denied' | 'unavailable', message, fieldErrors? }
+```
+
+Concurrency is optimistic: every mutation carries the revision the editor loaded. On `conflict` the Studio keeps the editor's text, says so and offers **Reload latest** (which discards the unsaved edits); it never retries with a newer revision on its own. `mutationKey` is generated per attempt and is identical for an immediate retry of the same request (same operation, document, precondition and body), so a lost response can be retried safely; any change makes a new key. Publish is enabled only for a saved, valid draft. Unpublish needs `published` (its own revision) on the record. `initial` lets a server component prefetch the list and the open record (or a failure, shown as an unavailable state), `notice` shows one honest line above the editor in either mode, `topbarSlot` adds e.g. a sign-out form, and `signInHref` is offered on `denied`. The store is the only trust boundary the browser sees: the server must authenticate every call, re-validate and enforce the compare-and-set itself.
+
 Preview.6 retains role-scoped RFC 5545 Golf calendar downloads and restores labeled native date inputs using the existing scoped form styles. Schedule day, booking/edit, inclusive recurrence end, reports, admin resume review and style-guide dates use browser-native controls; the custom picker, its export, standalone CSS and theme tokens have been removed. Booking day/week grids and normal week/Today buttons are preserved. Downloads are snapshots, not calendar sync, OAuth integration or provider invitations.
 
 Full boundary, review scenarios, limitations and vendor-artifact deployment instructions: `jongo/docs/craft-preview.md` in the source repository. Browser demo changes are fictional and in-memory. Never use the role switch as real authorization.
