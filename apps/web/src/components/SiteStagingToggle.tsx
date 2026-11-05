@@ -207,7 +207,7 @@ export default function SiteStagingToggle({
     return { completed: false };
   }
 
-  async function submitToggle(nextEnabled: boolean, burnExisting: boolean) {
+  async function submitToggle(nextEnabled: boolean, burnExisting: boolean, replaceExisting = false) {
     if (loading) {
       return;
     }
@@ -229,7 +229,7 @@ export default function SiteStagingToggle({
     try {
       const streamed = await postWithProgress(
         `/api/sites/${siteId}/staging`,
-        { enabled: nextEnabled, burnExisting },
+        { enabled: nextEnabled, burnExisting, ...(replaceExisting ? { replaceExisting: true } : {}) },
         (step) => setSteps((current) => applyStep(current, step))
       );
       const response = { ok: streamed.status >= 200 && streamed.status < 300, status: streamed.status };
@@ -342,11 +342,11 @@ export default function SiteStagingToggle({
   }
 
   const interactionLocked = loading || finalizing || Boolean(elsewhere);
-  // Locked only for a copy Jongo did not record. The app's own recorded copy
-  // is re-attached by enabling, so it must never lock the switch.
-  const enableBlockedByResidualStaging = !enabled && detectedStagingTarget && !ownStagingTarget;
+  // A copy Jongo did not record: turning staging on replaces it with a fresh
+  // one (removing it first). The app's own recorded copy is reconnected.
+  const leftoverCopy = !enabled && detectedStagingTarget && !ownStagingTarget;
   const canReattachOwnStaging = !enabled && detectedStagingTarget && ownStagingTarget;
-  const toggleDisabled = interactionLocked || enableBlockedByResidualStaging;
+  const toggleDisabled = interactionLocked;
   const isDisableAction = pendingAction === "disable";
   const isEnableAction = pendingAction === "enable";
   const waitingForManualStagingSetup = enabled && !detectedStagingTarget;
@@ -382,9 +382,9 @@ export default function SiteStagingToggle({
             display: "flex",
             alignItems: "center",
             justifyContent: enabled ? "flex-start" : "flex-end",
-            padding: "0 9px",
-            color: "#fff",
-            fontSize: "0.75rem",
+            padding: "0 7px",
+            color: enabled ? "#fff" : "var(--muted)",
+            fontSize: "0.66rem",
             fontWeight: 700,
             letterSpacing: "0.02em"
           }}
@@ -416,9 +416,6 @@ export default function SiteStagingToggle({
         <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Updating…</p>
       ) : null}
 
-      {!interactionLocked && enableBlockedByResidualStaging ? (
-        <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Locked until staging is fully deleted</p>
-      ) : null}
 
       {!interactionLocked && canReattachOwnStaging ? (
         <p className="m-0 max-w-[320px] text-right text-[0.78rem] text-muted">
@@ -426,23 +423,10 @@ export default function SiteStagingToggle({
         </p>
       ) : null}
 
-      {enableBlockedByResidualStaging ? (
-        <div className="flex flex-col items-end gap-1.5 max-w-[320px] text-right">
-          <p style={{ margin: 0, fontSize: "0.78rem", color: "#a15c00" }}>
-            An old staging copy still exists and has to be removed before staging can be turned on.
-          </p>
-          <RemedyButton
-            remedy={buildRemedy("retry_staging_cleanup")}
-            endpoint={`/api/sites/${siteId}/remedies`}
-            confirmText="Remove the old staging copy of this app? Production is not touched."
-            onDone={(ok) => {
-              if (ok) {
-                void refreshStagingTargetStatus();
-                router.refresh();
-              }
-            }}
-          />
-        </div>
+      {!interactionLocked && leftoverCopy ? (
+        <p className="m-0 max-w-[320px] text-right text-[0.78rem] text-muted">
+          An earlier staging copy is still on the server. Turning staging on replaces it with a fresh one.
+        </p>
       ) : null}
 
       {modalOpen ? (
@@ -501,7 +485,11 @@ export default function SiteStagingToggle({
               <>
                 <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
                   {isEnableAction
-                    ? "Jongo creates the staging copy now. It appears on this page in a few minutes."
+                    ? leftoverCopy
+                      ? "An earlier staging copy is still on the server. Jongo removes it and builds a fresh copy from production. Your live site isn't touched."
+                      : canReattachOwnStaging
+                        ? "Jongo reconnects your existing staging copy. It's ready in a minute or two."
+                        : "Jongo builds a staging copy from production. It's ready in a few minutes; your live site isn't touched."
                     : "Disable staging in Jongo. By default, existing staging resources are removed."}
                 </p>
 
@@ -529,7 +517,7 @@ export default function SiteStagingToggle({
                   <button
                     type="button"
                     className="button"
-                    onClick={() => submitToggle(isEnableAction, isDisableAction ? burnOnDisable : false)}
+                    onClick={() => submitToggle(isEnableAction, isDisableAction ? burnOnDisable : false, isEnableAction && leftoverCopy)}
                     disabled={interactionLocked}
                   >
                     {interactionLocked

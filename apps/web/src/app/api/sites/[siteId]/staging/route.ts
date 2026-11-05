@@ -1190,7 +1190,9 @@ async function runStagingToggle(req: Request, { params }: Params) {
 
   const { siteId } = await params;
 
-  let body: { enabled?: boolean; burnExisting?: boolean; stagingServerUuid?: string };
+  // replaceExisting (enable only): remove a leftover staging copy of this app
+  // first, instead of refusing, so one click both cleans up and turns on.
+  let body: { enabled?: boolean; burnExisting?: boolean; replaceExisting?: boolean; stagingServerUuid?: string };
   try {
     body = await req.json();
   } catch {
@@ -1333,11 +1335,38 @@ async function runStagingToggle(req: Request, { params }: Params) {
       // re-attaches it (the existing-target path below). The lock is only for a
       // copy Jongo did not record, typically one whose removal is still running.
       const firstLook = await withStep("check", "Checking for an existing staging copy", () => getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH));
-      const residualCapability = firstLook.pinned
+      let residualCapability = firstLook.pinned
         ? null
         : await waitForStagingCapabilityToClear(async () => {
             return await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
           }, 6, 1500);
+      // Strict match only (STAGING_IDENTITY_MATCH): the same rule that picks
+      // what disabling deletes, so this never removes another app's copy.
+      if (residualCapability?.applicationUuid && body.replaceExisting) {
+        const leftoverUuid = residualCapability.applicationUuid;
+        const leftoverKind = residualCapability.resourceKind;
+        const removed = await withStep(
+          "remove",
+          "Removing the old staging copy",
+          () => destroyCoolifyApplication(leftoverUuid, leftoverKind),
+          (result) => result.ok
+        );
+        await tryRecordStagingAuditLog({
+          organizationId: site.organizationId,
+          actorId,
+          actionType: removed.ok ? "staging_leftover_removed" : "staging_leftover_remove_failed",
+          resourceId: site.id,
+          details: { stagingUuid: leftoverUuid, message: removed.message ?? null },
+          req
+        });
+        if (removed.ok) {
+          residualCapability = await withStep("cleared", "Waiting for the old copy to disappear", () =>
+            waitForStagingCapabilityToClear(async () => {
+              return await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
+            }, 12, 2500)
+          , (left) => !left.applicationUuid);
+        }
+      }
       if (residualCapability?.applicationUuid) {
         const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
         return NextResponse.json({

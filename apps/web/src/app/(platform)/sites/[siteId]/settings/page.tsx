@@ -60,9 +60,19 @@ export default async function SiteSettingsPage({ params }: Params) {
   const canViewInternalMetadata = permissionSnapshot.canViewInternalMetadata;
   const githubSource = await loadSiteSource(workspace.id);
   const isWordPress = workspace.siteType === "wordpress" || workspace.resourceType === "WordPress";
-  const stagingCapability = workspace?.coolifyServiceUuid
-    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
-    : null;
+  const loadStagingCapability = () => workspace?.coolifyServiceUuid
+    ? getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
+    : Promise.resolve(null);
+  let stagingCapability = await loadStagingCapability();
+  // A copy found but not yet recorded is usually this app's own (a setup that
+  // was cut off, or staging turned off without removing it). Record it now,
+  // the same check enabling does, so the page offers "reconnect" instead of
+  // locking the switch over the app's own copy.
+  if (stagingCapability?.applicationUuid && !stagingCapability.pinned) {
+    const { claimStagingCopyForSite } = await import("@/lib/staging-target-reconcile");
+    const claimDb = await (await import("@/lib/db")).getDb();
+    if (claimDb && (await claimStagingCopyForSite(claimDb, workspace.id))) stagingCapability = await loadStagingCapability();
+  }
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
