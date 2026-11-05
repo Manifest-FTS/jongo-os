@@ -22,7 +22,10 @@ const ALGORITHM = "aes-256-gcm";
 
 export const TARGETS = [
   { model: "githubAppConfig", columns: ["clientSecretEnc", "webhookSecretEnc", "privateKeyEnc"] },
-  { model: "wordPressTelemetryConfig", columns: ["passwordCiphertext"] }
+  { model: "wordPressTelemetryConfig", columns: ["passwordCiphertext"] },
+  // SFTP passwords were stored in plain text before encryption; those are
+  // encrypted as they are, not decrypted first.
+  { model: "sftpAccount", columns: ["password"], plaintextLegacy: true }
 ];
 
 export function parseKey(raw, name = "SECRETS_ENCRYPTION_KEY") {
@@ -93,7 +96,7 @@ async function main() {
   let failed = 0;
 
   try {
-    for (const { model, columns } of TARGETS) {
+    for (const { model, columns, plaintextLegacy } of TARGETS) {
       const rows = await db[model].findMany({ select: { id: true, ...Object.fromEntries(columns.map((c) => [c, true])) } });
       for (const row of rows) {
         for (const column of columns) {
@@ -102,7 +105,8 @@ async function main() {
           pending += 1;
           let next;
           try {
-            next = encrypt(decrypt(value, keys), keys);
+            const legacyPlain = plaintextLegacy && !/^v[12]:/.test(value);
+            next = encrypt(legacyPlain ? value : decrypt(value, keys), keys);
           } catch (error) {
             failed += 1;
             console.error(`[reencrypt] ${model}.${column} id=${row.id}: cannot decrypt (${error.message})`);

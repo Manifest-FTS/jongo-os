@@ -608,9 +608,12 @@ export default async function SiteOverviewPage({ params }: Params) {
 
           <SiteIpAddressCard ipAddress={hostingServerIp} countryName={hostingServerCountryName} />
 
-          <article className="card">
-            <SftpAccessCard siteId={siteId} canManage={permissions.canManageSftp} />
-          </article>
+          {/* SFTP opens the WordPress files folder; other app types have none. */}
+          {isWordPress || workspace.resourceType === "WordPress" ? (
+            <article className="card">
+              <SftpAccessCard siteId={siteId} canManage={permissions.canManageSftp} />
+            </article>
+          ) : null}
 
           <article className="card">
             <SitePrivacyModeControl

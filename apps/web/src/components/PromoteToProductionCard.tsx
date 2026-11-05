@@ -110,7 +110,7 @@ function BackupStep({ siteId, step }: { siteId: string; step: NonNullable<Props[
         {running ? (
           <span className="loader__spinner" style={{ width: 18, height: 18 }} aria-hidden="true" />
         ) : step.canBackUp ? (
-          <button type="button" className="button" onClick={() => void backUpNow()} disabled={starting}>
+          <button type="button" className="btn" onClick={() => void backUpNow()} disabled={starting}>
             {starting ? "Starting…" : "Back up now"}
           </button>
         ) : null}
@@ -561,7 +561,7 @@ export default function PromoteToProductionCard({
       <div style={{ display: "flex", justifyContent: "center", padding: "0.35rem 0" }}>
         <button
           type="button"
-          className="button"
+          className="btn"
           style={{ width: "min(100%, 18rem)" }}
           onClick={openConfirmPanel}
           disabled={isPromoteLocked}
@@ -624,7 +624,7 @@ export default function PromoteToProductionCard({
             </button>
             <button
               type="button"
-              className="button"
+              className="btn"
               onClick={submitPromote}
               disabled={isPromoteLocked || confirmationPhrase.trim().toUpperCase() !== "PROMOTE"}
             >

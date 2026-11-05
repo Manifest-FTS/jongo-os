@@ -516,7 +516,7 @@ export default function SiteStagingToggle({
                   </button>
                   <button
                     type="button"
-                    className="button"
+                    className="btn"
                     onClick={() => submitToggle(isEnableAction, isDisableAction ? burnOnDisable : false, isEnableAction && leftoverCopy)}
                     disabled={interactionLocked}
                   >
@@ -603,7 +603,7 @@ export default function SiteStagingToggle({
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
                   <button
                     type="button"
-                    className="button"
+                    className="btn"
                     onClick={closeResultModal}
                     disabled={finalizing && !loading}
                   >
