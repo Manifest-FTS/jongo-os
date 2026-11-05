@@ -1,6 +1,6 @@
 {
   "name": "@jongo/craft",
-  "version": "0.1.0-preview.9",
+  "version": "0.1.0-preview.10",
   "description": "Bounded Craft shell, neutral Sanity-style content studio, fictional Golf Lab review extension and a server-only Postgres persistence subpath; preview, not production-ready",
   "type": "module",
   "license": "Apache-2.0",

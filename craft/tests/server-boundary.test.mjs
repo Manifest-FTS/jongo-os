@@ -66,8 +66,8 @@ test('the server graph is where the Node-only imports live, and it never imports
   assert.ok(!external.has('pg'));
 });
 
-test('package.json: ./server export, optional peers, shipped migrations, preview.9', () => {
-  assert.equal(pkg.version, '0.1.0-preview.9');
+test('package.json: ./server export, optional peers, shipped migrations, preview.10', () => {
+  assert.equal(pkg.version, '0.1.0-preview.10');
   assert.deepEqual(pkg.exports['./server'], { types: './dist/server/index.d.ts', import: './dist/server/index.js' });
   assert.ok(pkg.files.includes('migrations') && pkg.files.includes('dist'));
   for (const name of ['pg', 'groq-js']) {

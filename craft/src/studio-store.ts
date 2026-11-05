@@ -42,7 +42,7 @@ export interface StudioStore {
   discardDraft(id: string, expect: StudioExpect): Promise<StudioResult<StudioRecord>>;
 }
 
-export const unavailableFailure = (message = 'The studio could not reach storage. Nothing was confirmed as saved; try again.'): StudioFailure => ({ ok: false, code: 'unavailable', message });
+export const unavailableFailure = (message = 'Jongo Craft could not reach storage. Nothing was confirmed as saved; try again.'): StudioFailure => ({ ok: false, code: 'unavailable', message });
 
 /** Never rejects: a thrown error or a malformed result becomes an `unavailable` failure, so the UI always has a typed outcome. */
 export async function settle<T>(call: () => Promise<StudioResult<T>>): Promise<StudioResult<T>> {
