@@ -15,7 +15,15 @@ type Domain = {
   isPrimary: boolean;
 };
 
-type View = { canManage: boolean; fallbackHost: string; primaryHost: string; max: number; domains: Domain[] };
+type View = {
+  canManage: boolean;
+  fallbackHost: string;
+  primaryHost: string;
+  max: number;
+  domains: Domain[];
+  /** Set when the plan doesn't include adding a custom staging domain. */
+  upgrade?: { message: string; actionUrl: string | null } | null;
+};
 
 const STATUS: Record<string, { label: string; tone: string }> = {
   pending_dns: { label: "Waiting for DNS", tone: "unknown" },
@@ -105,7 +113,7 @@ export default function StagingDomainsPanel({ siteId }: { siteId: string }) {
   if (loadError) return <p className="m-0 mt-3 text-[13px] text-muted">{loadError}</p>;
   if (!view) return <p className="m-0 mt-3 text-[13px] text-muted">Loading staging domains…</p>;
 
-  const canAdd = view.canManage && view.domains.length < view.max;
+  const canAdd = view.canManage && !view.upgrade && view.domains.length < view.max;
 
   return (
     <div className="mt-4 flex flex-col gap-3">
@@ -233,6 +241,13 @@ export default function StagingDomainsPanel({ siteId }: { siteId: string }) {
             {busy === "add" ? "Adding…" : "Add domain"}
           </button>
         </form>
+      ) : view.canManage && view.upgrade ? (
+        <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2.5 rounded-lg border border-solid border-border bg-surface-alt">
+          <p className="m-0 text-[12.5px] text-muted">{view.upgrade.message}</p>
+          {view.upgrade.actionUrl ? (
+            <a className="btn btn-secondary px-3 py-1.5 text-[12.5px]" href={view.upgrade.actionUrl}>See plans</a>
+          ) : null}
+        </div>
       ) : view.canManage ? (
         <p className="m-0 text-[12px] text-muted">A site can have up to {view.max} custom staging domains.</p>
       ) : null}

@@ -120,11 +120,17 @@ async function notifyStagingCreated(params: {
 }): Promise<void> {
   try {
     const { notifyBackupEvent } = await import("@/lib/site-notify");
+    // The client's own verified domain is THE staging link when there is one;
+    // the .mfts.link address is only the fallback.
+    const { primaryStagingUrl } = await import("@/lib/staging-domains");
+    const stagingUrl = (await primaryStagingUrl(params.siteDbId, params.stagingUrl).catch(() => undefined)) ?? params.stagingUrl ?? null;
+    const { primaryProductionUrl } = await import("@/lib/production-domains");
+    const productionUrl = (await primaryProductionUrl(params.siteDbId)) ?? params.productionUrl ?? null;
     await notifyBackupEvent({
       siteId: params.siteDbId,
       event: "staging_created",
-      stagingUrl: params.stagingUrl ?? null,
-      productionUrl: params.productionUrl ?? null,
+      stagingUrl,
+      productionUrl,
       contentSynced: params.contentSynced,
       actorEmail: params.actorEmail ?? null
     });

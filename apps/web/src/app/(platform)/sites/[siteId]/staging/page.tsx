@@ -411,6 +411,10 @@ export default async function StagingPage({ params, searchParams }: Params) {
     const domains = Array.isArray(details?.domains)
       ? details.domains.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       : [];
+    // Custom staging domain events record the one hostname they acted on.
+    if (typeof details?.hostname === "string" && details.hostname.trim() && !domains.includes(details.hostname)) {
+      domains.push(details.hostname);
+    }
     const preferredStagingDomain = typeof details?.preferredStagingDomain === "string" && details.preferredStagingDomain
       ? details.preferredStagingDomain
       : undefined;

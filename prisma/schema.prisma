@@ -240,6 +240,13 @@ model Site {
   stagingSharedServices String?
   temporaryDomainSlug   String?
   temporaryDomainSuffix String?
+  // The production address WordPress saves and every link uses (lib/production-domains.ts).
+  // Other attached hosts (the .manifest-fts.com address) stay as fallbacks.
+  // primaryDomainDnsStatus: ok | dns_lost | unknown, from the hourly check.
+  primaryDomain          String?
+  primaryDomainDnsStatus String?
+  primaryDomainCheckedAt DateTime?
+  primaryDomainError     String?
 
   // Deploy from the customer's own GitHub (lib/github-deploys.ts). gitRepoId
   // survives renames; gitStatus: linked | repo_access_lost | install_removed |

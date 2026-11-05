@@ -98,3 +98,48 @@ export function paymentRequiredBody(entitlement: Extract<HostingEntitlement, { o
     actionUrl: entitlement.actorIsOwner ? (entitlement.reason === "payment_past_due" ? "/billing" : "/pricing") : null
   };
 }
+
+/** Plans that include the client's own domain on staging (pricing matrix). */
+export const CUSTOM_STAGING_DOMAIN_PLANS = new Set(["core-sla", "enterprise-sla"]);
+
+export type PlanFeatureEntitlement =
+  | { ok: true; via: "not_required" | "platform_admin" | "agency_client" | "agency_billing" | "plan" }
+  | { ok: false; actorIsOwner: boolean; message: string; actionUrl: string | null };
+
+/**
+ * May this client ADD a custom staging domain? Same exemptions as hosting;
+ * otherwise the owner's paid plan must be Core SLA or Enterprise SLA. Domains
+ * already added keep working whatever the plan does.
+ */
+export async function checkCustomStagingDomainEntitlement(
+  input: { organizationId: string; actorUserId: string },
+  injected?: Partial<Deps>
+): Promise<PlanFeatureEntitlement> {
+  const deps = { ...(await defaultDeps()), ...injected } as Deps;
+  if (!paymentRequired(deps.env)) return { ok: true, via: "not_required" };
+  if (await deps.isPlatformAdmin(input.actorUserId)) return { ok: true, via: "platform_admin" };
+
+  const org = await deps.db.organization.findUnique({
+    where: { id: input.organizationId },
+    select: {
+      ownerId: true,
+      billingMode: true,
+      billingStatus: true,
+      owner: { select: { id: true, deletedAt: true, subscriptionStatus: true, subscriptionCurrentPeriodEnd: true, subscriptionPlanId: true } }
+    }
+  });
+  const actorIsOwner = org?.ownerId === input.actorUserId;
+  if (org?.ownerId && (await deps.isPlatformAdmin(org.ownerId))) return { ok: true, via: "agency_client" };
+  if (org && org.billingMode !== "native_stripe" && org.billingStatus === "active_paid") return { ok: true, via: "agency_billing" };
+  if (org && subscriptionIsPaid(org.owner, deps.now()) && CUSTOM_STAGING_DOMAIN_PLANS.has(org.owner?.subscriptionPlanId ?? "")) {
+    return { ok: true, via: "plan" };
+  }
+  return {
+    ok: false,
+    actorIsOwner,
+    message: actorIsOwner
+      ? "Your own staging domain comes with the Core SLA and Enterprise SLA plans. Upgrade to add one."
+      : "Your own staging domain comes with the Core SLA and Enterprise SLA plans. The client's owner can upgrade to add one.",
+    actionUrl: actorIsOwner ? "/billing" : null
+  };
+}

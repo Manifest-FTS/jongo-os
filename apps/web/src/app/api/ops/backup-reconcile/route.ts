@@ -262,6 +262,16 @@ export async function POST(request: Request) {
       console.error("[jongo] backup-reconcile: staging domain reconcile failed:", error);
     }
 
+    // Live sites' main address: warn when the client's domain stops pointing
+    // here (the backup address keeps the site reachable meanwhile).
+    let primaryDomains: import("@/lib/production-domains").PrimaryDomainWatchResult | null = null;
+    try {
+      const { watchPrimaryDomains } = await import("@/lib/production-domains");
+      primaryDomains = await watchPrimaryDomains();
+    } catch (error) {
+      console.error("[jongo] backup-reconcile: primary domain watch failed:", error);
+    }
+
     // A staging copy whose removal failed is retried here, so it clears without
     // anyone opening the hosting panel. Copies kept on purpose are skipped.
     let stagingCleanup: import("@/lib/staging-cleanup-retry").StagingCleanupRetryResult | null = null;
@@ -857,6 +867,7 @@ export async function POST(request: Request) {
         stagingTargets,
         domains,
         stagingDomains,
+        primaryDomains,
         stagingCleanup,
         github
       },
