@@ -30,6 +30,8 @@ type Props = {
   initiallyOpen?: boolean;
   /** "drawer": an Add app button opening a side panel. "inline": in the page. */
   presentation?: "drawer" | "inline";
+  /** Set when new hosting needs a paid plan first (lib/hosting-entitlement.ts). */
+  paywall?: { message: string; actionUrl: string | null } | null;
 };
 
 /** Open the Add app panel from elsewhere on the page (the empty state). */
@@ -45,7 +47,7 @@ const SOURCE_OPTIONS: Array<{ value: Mode; title: string; help: string; detail: 
   { value: "link", title: "Link existing app", help: "Adopt an app already running on Jongo's servers.", detail: "Nothing new is created", icon: <LinkMark /> }
 ];
 
-export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false, githubAvailable = true, canAdopt = false, initiallyOpen = false, presentation = "inline" }: Props) {
+export default function CreateSiteForm({ organizationId, availableApps = [], githubOnly = false, githubAvailable = true, canAdopt = false, initiallyOpen = false, presentation = "inline", paywall = null }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -514,8 +516,28 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
     </div>
   );
 
+  const paywallCard = paywall ? (
+    <div style={{ display: "grid", gap: "0.85rem", justifyItems: "start" }}>
+      <span className="source-card__icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18M7 15h3" /></svg>
+      </span>
+      <div style={{ display: "grid", gap: "0.3rem" }}>
+        <h3 className="card-title" style={{ margin: 0 }}>{paywall.actionUrl === "/billing" ? "Update your payment to add apps" : "Choose a plan to start hosting"}</h3>
+        <p className="card-muted" style={{ margin: 0 }}>
+          {/* The heading already says it; keep the rest of the message. */}
+          {paywall.message.replace(/^Choose a plan to start hosting apps\.\s*/, "") || paywall.message}
+          {paywall.actionUrl === "/pricing" ? " Every plan includes unlimited sites and staging." : ""}
+        </p>
+      </div>
+      {paywall.actionUrl ? (
+        <a className="btn" href={paywall.actionUrl}>{paywall.actionUrl === "/billing" ? "Update payment" : "See plans"}</a>
+      ) : null}
+    </div>
+  ) : null;
+
   let body: React.ReactNode;
-  if (progress) body = <CreationProgress title={progress.title} steps={progress.steps} startedAt={progress.startedAt} />;
+  if (paywallCard && !progress && !webhookInfo) body = paywallCard;
+  else if (progress) body = <CreationProgress title={progress.title} steps={progress.steps} startedAt={progress.startedAt} />;
   else if (webhookInfo) body = webhookPanel();
   else if (!sourceChosen) body = sourcePicker;
   else body = configure;

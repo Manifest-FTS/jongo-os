@@ -28,6 +28,13 @@ async function createApp(request: Request, { params }: Params): Promise<Response
   if ("response" in access) return access.response;
   const body: any = await request.json().catch(() => null);
   if (!body || typeof body.name !== "string" || !body.name.trim()) return NextResponse.json({ ok: false, message: "Give the app a name." }, { status: 400 });
+  // New hosting needs a paid plan (lib/hosting-entitlement.ts).
+  {
+    const { checkHostingEntitlement, paymentRequiredBody } = await import("@/lib/hosting-entitlement");
+    const entitlement = await checkHostingEntitlement({ organizationId: organizationId, actorUserId: access.userId });
+    if (!entitlement.ok) return NextResponse.json(paymentRequiredBody(entitlement), { status: 402 });
+  }
+
 
   const { createSiteFromGithub, createSiteFromPublicRepo, createSiteFromDeployKey } = await import("@/lib/github-deploys");
   const common = {

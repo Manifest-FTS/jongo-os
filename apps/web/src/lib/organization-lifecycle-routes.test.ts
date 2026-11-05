@@ -31,6 +31,10 @@ vi.mock("@/lib/db", () => ({
   db: { organization: m.org, site: m.site, $queryRaw: m.queryRaw, $executeRaw: m.executeRaw }
 }));
 
+vi.mock("@/lib/hosting-entitlement", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./hosting-entitlement")>()),
+  checkHostingEntitlement: async () => ({ ok: true, via: "subscription" })
+}));
 import { POST as createClient } from "../app/api/organizations/route";
 import { DELETE as deleteClient } from "../app/api/organizations/[organizationId]/route";
 

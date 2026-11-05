@@ -22,7 +22,18 @@
 
 export type HostingProjectResult =
   | { ok: true; projectUuid: string; created: boolean }
-  | { ok: false; reason: string; message: string };
+  | { ok: false; reason: string; message: string; /** For admins: what hosting said. */ detail?: string };
+
+/** What a refusal from hosting most likely means, in words an admin can act on. */
+export function explainHostingRefusal(status: number | undefined): string {
+  if (status === 401 || status === 403) {
+    return `Hosting refused (HTTP ${status}). The hosting API token Jongo uses can't create projects: give it write access in the hosting dashboard's API token settings, then update COOLIFY_API_TOKEN.`;
+  }
+  if (status === 429) return "Hosting is rate-limiting requests (HTTP 429). Try again in a minute.";
+  if (typeof status === "number" && status >= 500) return `Hosting had an internal error (HTTP ${status}). Check the hosting server's own logs.`;
+  if (typeof status === "number" && status > 0) return `Hosting refused the request (HTTP ${status}).`;
+  return "Hosting didn't answer (timeout or network). Check that Jongo can reach Coolify's API.";
+}
 
 type Deps = {
   db: any;
@@ -134,8 +145,9 @@ async function ensureProjectInner(organizationId: string, injected?: Partial<Dep
             isJongoProjectFor(project.description, organizationId)
           );
         } catch (error) {
-          console.error("[hosting] could not list projects", { organizationId, message: (error as Error)?.message });
-          return UNAVAILABLE;
+          const status = (error as { status?: number })?.status;
+          console.error("[hosting] could not list projects", { organizationId, status, message: (error as Error)?.message });
+          return { ...UNAVAILABLE, detail: explainHostingRefusal(status) } as HostingProjectResult;
         }
         if (existing && typeof existing.uuid === "string" && existing.uuid) {
           const name = typeof existing.name === "string" ? existing.name : hostingProjectName(org.name);
@@ -150,7 +162,7 @@ async function ensureProjectInner(organizationId: string, injected?: Partial<Dep
           console.error("[hosting] project create failed", { organizationId, status: created.status });
           // If it was created but the answer was lost, the marker lets the next
           // attempt adopt it rather than create a second one.
-          return UNAVAILABLE;
+          return { ...UNAVAILABLE, detail: explainHostingRefusal(created.status) } as HostingProjectResult;
         }
         await saveProject(tx, organizationId, uuid, name);
         console.info("[hosting] created project for client", { organizationId, projectUuid: uuid });
@@ -160,8 +172,14 @@ async function ensureProjectInner(organizationId: string, injected?: Partial<Dep
     );
   } catch (error) {
     // Includes a project id already linked to another client (unique column).
-    console.error("[hosting] ensure project failed", { organizationId, message: (error as Error)?.message });
-    return UNAVAILABLE;
+    const message = (error as Error)?.message ?? "";
+    console.error("[hosting] ensure project failed", { organizationId, message });
+    return {
+      ...UNAVAILABLE,
+      detail: /unique constraint/i.test(message)
+        ? "The hosting project is already linked to another client in Jongo."
+        : "Jongo's database couldn't save the hosting project. Check the app's logs for [hosting]."
+    } as HostingProjectResult;
   }
 }
 

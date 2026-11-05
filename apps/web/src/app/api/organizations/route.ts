@@ -229,11 +229,19 @@ export async function POST(req: Request) {
     // still created; the project is made when its first app is created.
     let hosting: { ready: boolean; message: string | null } = { ready: Boolean(org.coolifyProjectId), message: null };
     if (!org.coolifyProjectId) {
-      const { ensureOrganizationHostingProject } = await import("@/lib/organization-hosting");
-      const ensured = await ensureOrganizationHostingProject(org.id);
-      hosting = ensured.ok
-        ? { ready: true, message: null }
-        : { ready: false, message: "Client created. Its hosting is set up automatically when you add its first app." };
+      // Hosting is made only for a paid plan; without one the client exists
+      // and its hosting is set up once a plan is chosen.
+      const { checkHostingEntitlement } = await import("@/lib/hosting-entitlement");
+      const entitlement = await checkHostingEntitlement({ organizationId: org.id, actorUserId: session.user.id });
+      if (!entitlement.ok) {
+        hosting = { ready: false, message: "Client created. Choose a plan to start hosting its apps." };
+      } else {
+        const { ensureOrganizationHostingProject } = await import("@/lib/organization-hosting");
+        const ensured = await ensureOrganizationHostingProject(org.id);
+        hosting = ensured.ok
+          ? { ready: true, message: null }
+          : { ready: false, message: "Client created. Its hosting is set up automatically when you add its first app." };
+      }
     }
 
     if (org.coolifyProjectId) {
