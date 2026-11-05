@@ -12,7 +12,119 @@ type Props = {
   disabledReason?: string;
   preflightLabel: string;
   preflightTone: "healthy" | "degraded" | "error" | "unknown";
+  /**
+   * Set when the only thing between staging and going live is a backup (none
+   * yet, or too old): the card offers to take it here, then unlocks itself.
+   */
+  backupStep?: {
+    canBackUp: boolean;
+    stale: boolean;
+    running: boolean;
+    lastFailed: boolean;
+    runningSince: string | null;
+  } | null;
 };
+
+/** Checks back this often while the backup runs; the page re-renders with the new state. */
+const BACKUP_REFRESH_MS = 8000;
+
+function BackupStep({ siteId, step }: { siteId: string; step: NonNullable<Props["backupStep"]> }) {
+  const router = useRouter();
+  const [starting, setStarting] = useState(false);
+  const [startedHere, setStartedHere] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const running = step.running || startedHere !== null;
+
+  // Once the page has shown this backup running, the page's state decides:
+  // a success unmounts this step (go live unlocks); a failure lands here.
+  const [seenRunning, setSeenRunning] = useState(false);
+  useEffect(() => {
+    if (step.running) {
+      setSeenRunning(true);
+      return;
+    }
+    if (seenRunning && startedHere !== null) {
+      setStartedHere(null);
+      setSeenRunning(false);
+      if (step.lastFailed) setError("The backup didn't finish. Try again; if it keeps failing, open Backups to see why.");
+    }
+  }, [step.running, step.lastFailed, seenRunning, startedHere]);
+
+  useEffect(() => {
+    if (!running) return;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    const refresh = setInterval(() => router.refresh(), BACKUP_REFRESH_MS);
+    return () => {
+      clearInterval(tick);
+      clearInterval(refresh);
+    };
+  }, [running, router]);
+
+  async function backUpNow() {
+    setStarting(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/sites/${siteId}/backups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "Before going live" })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (response.ok || /already running/i.test(payload.error ?? payload.message ?? "")) {
+        setStartedHere(Date.now());
+        router.refresh();
+      } else {
+        setError(payload.error ?? "The backup couldn't be started. Try again in a minute.");
+      }
+    } catch {
+      setError("Couldn't reach Jongo. Check your connection and try again.");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  const since = step.runningSince ? new Date(step.runningSince).getTime() : startedHere ?? now;
+  const seconds = Math.max(0, Math.floor((now - since) / 1000));
+  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+  return (
+    <div
+      className="card"
+      style={{ display: "grid", gap: "0.6rem", padding: "0.9rem 1rem", background: "var(--surface-alt)" }}
+      aria-live="polite"
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+        <div style={{ display: "grid", gap: "0.2rem", minWidth: 0 }}>
+          <strong style={{ fontSize: "0.9rem" }}>
+            {running ? "Backing up your live site…" : step.stale ? "Step 1: Take a fresh backup" : "Step 1: Back up your live site"}
+          </strong>
+          <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
+            {running
+              ? `This usually takes 1–5 minutes. Go live unlocks as soon as it's done. ${elapsed}`
+              : step.stale
+                ? "Your last backup is too old to undo a go-live safely. One click takes a new one."
+                : "Going live replaces your live site, so Jongo backs it up first. If anything looks wrong, you can restore it."}
+          </span>
+        </div>
+        {running ? (
+          <span className="loader__spinner" style={{ width: 18, height: 18 }} aria-hidden="true" />
+        ) : step.canBackUp ? (
+          <button type="button" className="button" onClick={() => void backUpNow()} disabled={starting}>
+            {starting ? "Starting…" : "Back up now"}
+          </button>
+        ) : null}
+      </div>
+      {!running && !step.canBackUp ? (
+        <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>Ask a client admin to take a backup from the Backups tab.</span>
+      ) : null}
+      {!running && step.lastFailed && !error ? (
+        <span className="form-error" style={{ margin: 0, fontSize: "0.82rem" }}>The last backup didn't finish. Try again.</span>
+      ) : null}
+      {error ? <span className="form-error" style={{ margin: 0, fontSize: "0.82rem" }}>{error}</span> : null}
+    </div>
+  );
+}
 
 // "backup-wait" is deliberately not "error": promote was declined, but the
 // backup it was waiting on is now running, and the message must not read red.
@@ -150,6 +262,7 @@ export default function PromoteToProductionCard({
   siteId,
   disabled,
   disabledReason,
+  backupStep,
   preflightLabel,
   preflightTone
 }: Props) {
@@ -443,6 +556,8 @@ export default function PromoteToProductionCard({
         This action copies staging WordPress files and database content into production, then triggers a production deployment.
       </p>
 
+      {backupStep ? <BackupStep siteId={siteId} step={backupStep} /> : null}
+
       <div style={{ display: "flex", justifyContent: "center", padding: "0.35rem 0" }}>
         <button
           type="button"
@@ -451,11 +566,11 @@ export default function PromoteToProductionCard({
           onClick={openConfirmPanel}
           disabled={isPromoteLocked}
         >
-          {status === "pending" ? "Promoting staging to production..." : "Promote to production"}
+          {status === "pending" ? "Promoting staging to production..." : backupStep ? "Step 2: Promote to production" : "Promote to production"}
         </button>
       </div>
 
-      {isPromoteLocked && promoteLockReason ? (
+      {isPromoteLocked && promoteLockReason && !backupStep ? (
         <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
           Why locked: {promoteLockReason}
         </p>
