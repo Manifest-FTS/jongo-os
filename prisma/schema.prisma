@@ -778,7 +778,12 @@ model SftpAccount {
   id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   siteId   String @db.Uuid
   username String @unique
+  // Encrypted with lib/secret-box (v2:...). Rows from before encryption hold
+  // plain text until they are next read or scripts/reencrypt-secrets.mjs runs.
   password String
+  // OpenSSH public keys allowed to log in, besides the password. Private keys
+  // Jongo generates are handed over once and never stored.
+  publicKeys String[] @default([])
   // Absolute path inside the SFTP service that this account is confined to.
   homePath String
 
