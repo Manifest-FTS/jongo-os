@@ -197,6 +197,13 @@ async function createApp(req: Request, { params }: Params): Promise<Response> {
     if (!canCreate) {
       return NextResponse.json({ error: "Only the client's admins can add this kind of app." }, { status: 403 });
     }
+  // New hosting needs a paid plan (lib/hosting-entitlement.ts).
+  {
+    const { checkHostingEntitlement, paymentRequiredBody } = await import("@/lib/hosting-entitlement");
+    const entitlement = await checkHostingEntitlement({ organizationId: organizationId, actorUserId: session.user.id });
+    if (!entitlement.ok) return NextResponse.json(paymentRequiredBody(entitlement), { status: 402 });
+  }
+
     const org = access.organization;
 
     // Adopting an EXISTING hosting resource binds infrastructure to this client,

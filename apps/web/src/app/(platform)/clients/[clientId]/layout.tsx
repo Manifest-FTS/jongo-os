@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import HostingSetupBanner from "@/components/HostingSetupBanner";
 import WorkspaceTabs, { type WorkspaceTab } from "@/components/navigation/WorkspaceTabs";
 import { auth } from "@/lib/auth.config";
 import { getClientWorkspace, isClientAdmin } from "@/lib/repositories";
@@ -51,6 +52,23 @@ export default async function ClientWorkspaceLayout({ children, params }: Layout
     await isClientAdmin(client.dbId, session.user.id)
   );
 
+  // A client without its hosting project: its automatic setup failed, or it
+  // predates that. Shown on every tab so it isn't missed.
+  const hostingMissing = client.dbId
+    ? await (async () => {
+        try {
+          const { db } = await import("@/lib/db");
+          const org = await db.organization.findUnique({ where: { id: client.dbId! }, select: { coolifyProjectId: true } });
+          return Boolean(org && !org.coolifyProjectId?.trim());
+        } catch {
+          return false; // never let this notice break the page
+        }
+      })()
+    : false;
+  const { isPlatformAdminUser } = await import("@/lib/rbac");
+  const canSetUpHosting = canManageClient || Boolean(session?.user?.id && (await isPlatformAdminUser(session.user.id)));
+  const hostingPaywall = hostingMissing && client.dbId && session?.user?.id ? await loadPaywall(client.dbId, session.user.id) : null;
+
   const tabs: WorkspaceTab[] = [
     { name: "Overview", href: `/clients/${clientId}`, match: "exact" },
     { name: "Apps", href: `/clients/${clientId}/apps` },
@@ -85,7 +103,23 @@ export default async function ClientWorkspaceLayout({ children, params }: Layout
       </div>
 
 
+      {hostingMissing && client.dbId ? <HostingSetupBanner organizationId={client.dbId} canSetUp={canSetUpHosting} paywall={hostingPaywall} /> : null}
+
       <div className="workspace-content">{children}</div>
     </div>
   );
+}
+
+/** A paid plan is needed before this client can get hosting; null when it isn't. */
+async function loadPaywall(organizationId: string, userId: string) {
+  try {
+    const { checkHostingEntitlement } = await import("@/lib/hosting-entitlement");
+    const entitlement = await checkHostingEntitlement({ organizationId, actorUserId: userId });
+    if (entitlement.ok) return null;
+    const { paymentRequiredBody } = await import("@/lib/hosting-entitlement");
+    const body = paymentRequiredBody(entitlement);
+    return { message: body.message, actionUrl: body.actionUrl };
+  } catch {
+    return null; // never let this break the page; the routes still enforce it
+  }
 }

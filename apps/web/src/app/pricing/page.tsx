@@ -18,9 +18,9 @@ import { showErrorToast } from "@/lib/ui/toast";
 import PublicSiteHeader from "@/components/PublicSiteHeader";
 
 /**
- * Signed-in visitors skip the registration form and go straight through
- * Checkout for their existing account (the server requires a super admin).
- * Signed-out visitors can create an account, but signup never starts billing.
+ * Signed-in visitors go straight to Checkout for their account. Signed-out
+ * visitors create an account first and then continue straight to Checkout
+ * (/billing/start), so choosing a plan always ends at payment.
  */
 function PlanSelectButton({
   plan,
@@ -57,9 +57,9 @@ function PlanSelectButton({
               body: JSON.stringify({ planId: plan.id, interval: isAnnual ? "annual" : "monthly" })
             });
             const payload = await response.json();
-            if (response.status === 403) {
-              showErrorToast("Only a super admin can manage billing. Contact your administrator.");
-              setPending(false);
+            if (response.status === 409 && typeof payload?.url === "string") {
+              // Already on a plan: change it from Billing rather than buy a second one.
+              window.location.href = payload.url;
               return;
             }
             if (!response.ok || typeof payload?.url !== "string") {
@@ -80,7 +80,10 @@ function PlanSelectButton({
   }
 
   return (
-    <Link href={`/auth/register?plan=${plan.id}&interval=${isAnnual ? "annual" : "monthly"}`} className={buttonClass}>
+    <Link
+      href={`/auth/register?plan=${plan.id}&interval=${isAnnual ? "annual" : "monthly"}&callbackUrl=${encodeURIComponent(`/billing/start?plan=${plan.id}&interval=${isAnnual ? "annual" : "monthly"}`)}`}
+      className={buttonClass}
+    >
       {text}
     </Link>
   );

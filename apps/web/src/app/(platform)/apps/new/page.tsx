@@ -35,6 +35,17 @@ export default async function NewAppPage({ searchParams }: Props) {
   const workspace = workspaces.find((candidate) => candidate.id === chosen) ?? (workspaces.length === 1 ? workspaces[0] : null);
   const canManage = workspace ? platformAdmin || (await isClientAdmin(workspace.id, userId)) : false;
 
+  // A paid plan is needed before new hosting (lib/hosting-entitlement.ts).
+  const paywall = workspace?.id && userId
+    ? await (async () => {
+        const { checkHostingEntitlement, paymentRequiredBody } = await import("@/lib/hosting-entitlement");
+        const entitlement = await checkHostingEntitlement({ organizationId: workspace!.id, actorUserId: userId! }).catch(() => null);
+        if (!entitlement || entitlement.ok) return null;
+        const body = paymentRequiredBody(entitlement);
+        return { message: body.message, actionUrl: body.actionUrl };
+      })()
+    : null;
+
   return (
     <div className="page-stack">
       <div className="page-head">
@@ -76,6 +87,7 @@ export default async function NewAppPage({ searchParams }: Props) {
           githubAvailable
           canAdopt={false}
           initiallyOpen
+          paywall={paywall}
         />
       ) : null}
     </div>

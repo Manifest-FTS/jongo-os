@@ -73,6 +73,17 @@ export default async function ClientAppsPage({ params, searchParams }: Params) {
 
   const rows = await buildAppRows(apps, overview);
 
+  // A paid plan is needed before new hosting (lib/hosting-entitlement.ts).
+  const paywall = client.dbId && session?.user?.id
+    ? await (async () => {
+        const { checkHostingEntitlement, paymentRequiredBody } = await import("@/lib/hosting-entitlement");
+        const entitlement = await checkHostingEntitlement({ organizationId: client.dbId!, actorUserId: session?.user?.id! }).catch(() => null);
+        if (!entitlement || entitlement.ok) return null;
+        const body = paymentRequiredBody(entitlement);
+        return { message: body.message, actionUrl: body.actionUrl };
+      })()
+    : null;
+
   return (
     <div className="page-stack">
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -90,6 +101,7 @@ export default async function ClientAppsPage({ params, searchParams }: Params) {
             githubAvailable={githubAvailable}
             canAdopt={canAdopt}
             presentation="drawer"
+            paywall={paywall}
           />
         ) : null}
       </div>

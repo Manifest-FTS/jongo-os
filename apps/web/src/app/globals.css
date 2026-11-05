@@ -4146,3 +4146,11 @@ button .card:hover {
 .leftover-actions__ask { font-size: 0.82rem; }
 .leftover-actions__ok { font-size: 0.82rem; color: #027a48; }
 .leftover-actions__err { font-size: 0.82rem; }
+
+/* Client without a hosting project. */
+.hosting-banner {
+  display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  padding: 0.9rem 1.1rem; border: 1px solid #f5d9a8; border-radius: 14px; background: #fffaf0; font-size: 0.88rem;
+}
+.hosting-banner--ok { border-color: #a6e3c4; background: #effbf4; }
+.hosting-banner__error { color: #8c1d18; }

@@ -35,6 +35,10 @@ vi.mock("@/lib/db", () => ({
   }
 }));
 
+vi.mock("@/lib/hosting-entitlement", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./hosting-entitlement")>()),
+  checkHostingEntitlement: async () => ({ ok: true, via: "subscription" })
+}));
 import { POST as createOrganization } from "../app/api/organizations/route";
 import { POST as createSite } from "../app/api/organizations/[organizationId]/sites/route";
 
