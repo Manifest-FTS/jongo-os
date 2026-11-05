@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
 import {
-  createDataset, discardDraft, exportNdjson, getDataset, getDocument, importNdjson, listDocuments, publishDocument, queryDataset, saveDraft, unpublishDocument
+  createDataset, deleteDocument, discardDraft, exportNdjson, getDataset, getDocument, getDocumentHistory, importNdjson, listDocuments, publishDocument, queryDataset, saveDraft, unpublishDocument
 } from '../../dist/server/index.js';
 import { ALL_ACTIONS, count, freshDb, key, makeCtx, page, registry, spyExecutor } from './helpers.mjs';
 
@@ -26,6 +26,8 @@ const CALLS = [
   ['discardDraft', ['write'], ctx => discardDraft(ctx, { ...base, mutationKey: key() })],
   ['publishDocument', ['publish'], ctx => publishDocument(ctx, { ...base, mutationKey: key() })],
   ['unpublishDocument', ['publish'], ctx => unpublishDocument(ctx, { ...base, mutationKey: key() })],
+  ['getDocumentHistory', ['read-drafts'], ctx => getDocumentHistory(ctx, { ...D, documentId: 'p1' })],
+  ['deleteDocument', ['write', 'publish'], ctx => deleteDocument(ctx, { dataset: 'production', documentId: 'p1', expectedLockVersion: 1, mutationKey: key() })],
   ['getDocument published/public', ['read'], ctx => getDocument(ctx, { ...D, documentId: 'p1' })],
   ['getDocument previewDrafts', ['read-drafts'], ctx => getDocument(ctx, { ...D, documentId: 'p1', perspective: 'previewDrafts' })],
   ['getDocument raw', ['read-drafts'], ctx => getDocument(ctx, { ...D, documentId: 'p1', perspective: 'raw' })],
@@ -105,6 +107,7 @@ test('denied callers learn nothing from input validation: malformed requests are
     () => publishDocument(ctx, { ...D, documentId: 'bad id', mutationKey: 'x' }),
     () => unpublishDocument(ctx, { ...D, documentId: 'bad id', mutationKey: 'x', expectedLockVersion: -5 }),
     () => discardDraft(ctx, { ...D, documentId: 'bad id', mutationKey: 'x' }),
+    () => deleteDocument(ctx, { dataset: 'production', documentId: 'bad id', mutationKey: 'x', expectedLockVersion: -5 }),
     () => getDocument(ctx, { ...D, documentId: 'bad id' }),
     () => listDocuments(ctx, { dataset: 'production', limit: 9999, cursor: '!' }),
     () => queryDataset(ctx, { ...D, query: '*[', params: { 'bad name': 1 } }),

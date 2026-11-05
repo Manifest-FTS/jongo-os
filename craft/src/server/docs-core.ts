@@ -102,10 +102,10 @@ export function validateOrFail(schema: TypeDefinition, doc: JsonObject, index: R
 export type DocRow = {
   id: string; native_id: string; type: string; logical_id: string; variant: Variant; lock_version: number; archived: boolean;
   current_revision_id: string | null; native_rev: string | null; sequence: number | null; schema_version: number | null;
-  payload: JsonObject | null; payload_sha256: string | null; created_at: string; updated_at: string | null;
+  payload: JsonObject | null; payload_sha256: string | null; actor_id: string | null; created_at: string; updated_at: string | null;
 };
 export const DOC_COLUMNS = `d.id, d.native_id, d.type, d.logical_id, d.variant, d.lock_version, (d.archived_at IS NOT NULL) AS archived,
-  d.current_revision_id, r.native_rev, r.sequence, r.schema_version, r.payload, r.payload_sha256,
+  d.current_revision_id, r.native_rev, r.sequence, r.schema_version, r.payload, r.payload_sha256, r.actor_id,
   ${TS('d.created_at')} AS created_at, ${TS('r.created_at')} AS updated_at`;
 export const DOC_FROM = `FROM craft.documents d LEFT JOIN craft.revisions r
   ON r.dataset_id = d.dataset_id AND r.document_id = d.id AND r.id = d.current_revision_id`;

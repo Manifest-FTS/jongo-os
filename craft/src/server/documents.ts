@@ -148,6 +148,45 @@ export async function discardDraft(ctx: CraftContext, options: LifecycleInput): 
   });
 }
 
+export type DeleteDocumentInput = { dataset: string; documentId: string; mutationKey: string } & Cas;
+export type DeleteDocumentResult = { logicalId: string; type: string; variants: Variant[]; replayed: boolean };
+
+/**
+ * Requires BOTH 'write' and 'publish' (it can remove published content). Soft-archives the live draft and the live published row of the
+ * logical id in one transaction: revisions, references, receipts and audit rows are never touched, so the log stays append-only. Afterwards
+ * the id is absent from get/list/query/export (all of them read only non-archived rows). The same id may later be created again with
+ * saveDraft (no expectation): that un-archives the old row and appends a revision, so the history continues but nothing of the old content is live.
+ * Compare-and-set is on the head (draft, else published), like publish. Refused with 'referenced' while another LIVE document holds a
+ * strong reference to this id (weak references and self-references do not block), the same rule that makes a missing target fail validation.
+ */
+export async function deleteDocument(ctx: CraftContext, options: DeleteDocumentInput): Promise<DeleteDocumentResult> {
+  await requireAccess(ctx, options?.dataset, 'write', 'publish');
+  const id = parseDocumentId(options.documentId);
+  const expected = readExpectation(options.expectedNativeRev, options.expectedLockVersion);
+  const request = { documentId: id.logical, expectedNativeRev: expected.nativeRev ?? null, expectedLockVersion: expected.lockVersion ?? null };
+  return runMutation<Omit<DeleteDocumentResult, 'replayed'>>(ctx, {
+    dataset: options.dataset, action: 'publish', operation: 'delete', key: options.mutationKey, request, authorized: true,
+    async work(q, dataset) {
+      const rows = await lockLogical(q, dataset.id, id.logical);
+      const head = headOf(rows) ?? fail('not_found');
+      checkExpectation(head, expected);
+      const referrers = await q.query<{ n: string }>(
+        `SELECT count(DISTINCT d.logical_id) AS n FROM craft."references" rf
+         JOIN craft.documents d ON d.dataset_id = rf.dataset_id AND d.current_revision_id = rf.revision_id AND d.archived_at IS NULL
+         WHERE rf.dataset_id = $1 AND rf.target_native_id = $2 AND NOT rf.weak AND d.logical_id <> $2`, [dataset.id, id.logical]);
+      if (Number(referrers.rows[0].n) > 0) return fail('referenced');
+      const variants: Variant[] = [];
+      for (const row of [live(rows.draft), live(rows.published)]) {
+        if (!row) continue;
+        await archive(q, dataset.id, row);
+        variants.push(row.variant);
+      }
+      const result = { logicalId: id.logical, type: head.type, variants };
+      return { result, audit: { action: 'document.delete', documentId: head.id, detail: { documentId: id.logical, type: head.type, variants } } };
+    }
+  });
+}
+
 const READ_VARIANTS: Record<Perspective, Variant[]> = { published: ['published'], previewDrafts: ['draft', 'published'], raw: ['draft', 'published'] };
 function readActions(perspective: unknown, consumer: unknown) {
   if (perspective !== 'published' && perspective !== 'previewDrafts' && perspective !== 'raw') return fail('invalid_perspective');
@@ -162,7 +201,7 @@ export type GetDocumentInput = {
   /** Default 'public' (private and undeclared fields removed). 'editor' keeps them and needs 'read-drafts'. */
   consumer?: 'public' | 'editor';
 };
-export type GetDocumentResult = { document: JsonObject; variant: Variant; nativeRev: string; lockVersion: number; sequence: number; schemaVersion: number };
+export type GetDocumentResult = { document: JsonObject; variant: Variant; nativeRev: string; lockVersion: number; sequence: number; schemaVersion: number; /** When and by which actor id this revision was written. */ updatedAt: string; actorId: string };
 
 /** 'published' perspective needs 'read'; 'previewDrafts'/'raw' (and consumer 'editor') need 'read-drafts'. Returns null when absent. */
 export async function getDocument(ctx: CraftContext, options: GetDocumentInput): Promise<GetDocumentResult | null> {
@@ -181,7 +220,7 @@ export async function getDocument(ctx: CraftContext, options: GetDocumentInput):
     if (!row || !row.payload) return null;
     const full = composeDocument(row, perspective !== 'raw');
     const document = consumer === 'public' ? toPublicDocument(full, options.registry) : full;
-    return document ? { document, variant: row.variant, nativeRev: row.native_rev!, lockVersion: row.lock_version, sequence: row.sequence!, schemaVersion: row.schema_version! } : null;
+    return document ? { document, variant: row.variant, nativeRev: row.native_rev!, lockVersion: row.lock_version, sequence: row.sequence!, schemaVersion: row.schema_version!, updatedAt: row.updated_at!, actorId: row.actor_id! } : null;
   }, { snapshot: true });
 }
 
@@ -216,5 +255,25 @@ export async function listDocuments(ctx: CraftContext, options: ListDocumentsInp
     const items = found.rows.slice(0, limit).map(row => ({ id: row.id, nativeId: row.native_id, type: row.type, variant: row.variant, nativeRev: row.native_rev, lockVersion: row.lock_version, updatedAt: row.updated_at }));
     const nextCursor = found.rows.length > limit ? Buffer.from(items[items.length - 1].id, 'utf8').toString('base64url') : null;
     return { items, nextCursor };
+  }, { snapshot: true });
+}
+
+export type DocumentHistoryInput = { dataset: string; documentId: string; limit?: number };
+export type DocumentHistoryEntry = { at: string; /** 'save' | 'publish' | 'unpublish' | 'discard' | 'delete' */ action: string; actorId: string };
+
+/** Requires 'read-drafts'. Newest first, from the append-only audit trail (so it survives delete and re-create). Metadata only: no content, no hashes. */
+export async function getDocumentHistory(ctx: CraftContext, options: DocumentHistoryInput): Promise<{ entries: DocumentHistoryEntry[] }> {
+  await requireAccess(ctx, options?.dataset, 'read-drafts');
+  const id = parseDocumentId(options.documentId);
+  const limit = options.limit ?? 50;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE) return fail('invalid_input');
+  return inTransaction(ctx, async q => {
+    const dataset = await resolveDataset(q, options.dataset);
+    const found = await q.query<{ at: string; action: string; actor_id: string }>(
+      `SELECT ${TS('a.at')} AS at, a.action, a.actor_id FROM craft.audit_log a
+       WHERE a.dataset_id = $1 AND a.action LIKE 'document.%'
+         AND a.document_id IN (SELECT id FROM craft.documents WHERE dataset_id = $1 AND logical_id = $2)
+       ORDER BY a.at DESC, a.id DESC LIMIT $3`, [dataset.id, id.logical, limit]);
+    return { entries: found.rows.map(row => ({ at: row.at, action: row.action.slice('document.'.length), actorId: row.actor_id })) };
   }, { snapshot: true });
 }

@@ -8,6 +8,10 @@ export type StudioFailure = { ok: false; code: StudioFailureCode; message: strin
 export type StudioResult<T> = ({ ok: true } & T) | StudioFailure;
 
 export type StudioVariant = 'draft' | 'published';
+/** Who did something. `id` is opaque; `name` is a display label (hosts without real identities send a generic one, never a raw session id). */
+export type StudioActor = { id: string; name?: string; avatarUrl?: string };
+export type StudioStamp = { at: string; by?: StudioActor };
+export type StudioHistoryEntry = { at: string; action: 'save' | 'publish' | 'unpublish' | 'discard' | 'delete' | (string & {}); by?: StudioActor };
 export type StudioDocSummary = {
   id: string; type: string; title: string;
   /** Which stored version an editor sees first: the draft when one exists, else the published version. */
@@ -26,6 +30,10 @@ export type StudioRecord = {
   published?: { nativeRev: string; lockVersion: number };
   /** A draft exists that differs from the published version. */
   publishedDiffers?: boolean;
+  /** When and by whom the published version was last published. Present only while a published version exists. */
+  lastPublished?: StudioStamp;
+  /** When and by whom the head (the draft if there is one, else the published version) was last written. */
+  lastEdited?: StudioStamp;
 };
 export type StudioExpect = {
   nativeRev?: string; lockVersion?: number;
@@ -40,6 +48,12 @@ export interface StudioStore {
   publish(id: string, expect: StudioExpect): Promise<StudioResult<StudioRecord>>;
   unpublish(id: string, expect: StudioExpect): Promise<StudioResult<StudioRecord>>;
   discardDraft(id: string, expect: StudioExpect): Promise<StudioResult<StudioRecord>>;
+  /** Read-only revision/activity list of one document, newest first. The Studio offers History only when this exists. */
+  history?(id: string): Promise<StudioResult<{ entries: StudioHistoryEntry[] }>>;
+  /** Creates a NEW draft copy and returns it. The host owns id generation and the copy rules. The Studio offers Duplicate only when this exists. */
+  duplicate?(id: string, expect?: StudioExpect): Promise<StudioResult<StudioRecord>>;
+  /** Removes the document (draft and published). The Studio offers Delete only when this exists. */
+  delete?(id: string, expect: StudioExpect): Promise<StudioResult<{ id: string }>>;
 }
 
 export const unavailableFailure = (message = 'Jongo Craft could not reach storage. Nothing was confirmed as saved; try again.'): StudioFailure => ({ ok: false, code: 'unavailable', message });
@@ -88,7 +102,40 @@ export class MutationKeys {
   clear(): void { this.last = null; }
 }
 
+/** Deterministic `17 Aug 2026, 14:32` (24-hour). `timeZone` defaults to the runtime's; pass 'UTC' for output that must match between server and browser. Empty for an unparsable value. */
+export function formatStamp(iso: string, timeZone?: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...(timeZone ? { timeZone } : {}) }).formatToParts(date);
+  const part = (type: string) => parts.find(item => item.type === type)?.value ?? '';
+  return `${part('day')} ${part('month')} ${part('year')}, ${part('hour')}:${part('minute')}`;
+}
+/** `14:32` in the runtime's time zone (or `timeZone`). Empty for an unparsable value. */
+export function formatClock(iso: string, timeZone?: string): string {
+  const full = formatStamp(iso, timeZone);
+  return full ? full.slice(full.indexOf(',') + 2) : '';
+}
+/** One or two capital letters for an avatar chip; empty when there is no usable name. */
+export function initialsOf(name: string | undefined): string {
+  const words = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  const first = Array.from(words[0])[0] ?? '';
+  const last = words.length > 1 ? Array.from(words[words.length - 1])[0] ?? '' : '';
+  return (first + last).toUpperCase();
+}
+/** The normalized URL only for a plain https address (no credentials, bounded length); anything else is dropped. */
+export function safeAvatarUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length > 2048) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : undefined;
+  } catch { return undefined; }
+}
+
 export const statusLabel = (record: Pick<StudioRecord, 'variant' | 'published'>): 'Published' | 'Draft' => record.variant === 'published' ? 'Published' : 'Draft';
+const HISTORY_LABELS: Readonly<Record<string, string>> = { save: 'Saved draft', publish: 'Published', unpublish: 'Unpublished', discard: 'Discarded draft', delete: 'Deleted' };
+/** Display text for a history action; unknown actions from a newer host read as a neutral 'Changed'. */
+export const historyLabel = (action: string): string => Object.hasOwn(HISTORY_LABELS, action) ? HISTORY_LABELS[action] : 'Changed';
 export function statusDetail(record: Pick<StudioRecord, 'variant' | 'published' | 'publishedDiffers'>): string {
   if (record.variant === 'published') return 'Published and up to date. Editing creates a draft.';
   return record.published ? 'A published version exists; this draft has changes that are not published.' : 'Never published. This is a draft.';

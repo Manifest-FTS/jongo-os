@@ -7,7 +7,8 @@ import { randomKey } from './portable-text.js';
 import { Field } from './fields.js';
 import { StudioContext, fieldId, type StudioApi } from './studio-context.js';
 import { ConnectedStudio, type StudioInitial } from './studio-connected.js';
-import type { StudioStore } from './studio-store.js';
+import { formatClock, type StudioStore } from './studio-store.js';
+import { ActionMenu, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, type MenuEntry } from './studio-chrome.js';
 
 export type StudioConfig = { schemas: readonly TypeDefinition[]; documents: readonly ContentDocument[]; assets?: readonly ImageAssetDocument[] };
 const pathLabel = (path: Path) => path.map(part => typeof part === 'number' ? `item ${part + 1}` : part).join(' › ');
@@ -45,6 +46,7 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState({ text: '', count: 0 });
   const [focusTick, setFocusTick] = useState(0);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const pending = useRef<{ id: string; select?: readonly [number, number] } | null>(null);
   const schema = registry.get(type);
   const dirty = !!working && !!selected && !deepEqual(working, selected);
@@ -93,23 +95,40 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
   const api: StudioApi | null = working ? { docId: working._id, values: working, issues, index, schemas: registry, makeKey: randomKey, announce, focus } : null;
   const visible = documents.filter(doc => doc._type === type && documentTitle(doc, schema).toLowerCase().includes(query.toLowerCase()));
   const chip = dirty ? 'Unsaved changes' : edited ? 'Local draft (edited)' : 'Original snapshot';
-  return <div className="jongo-studio"><a className="jongo-skip" href="#jongo-editor">Skip to editor</a><header className="jongo-topbar"><a className="jongo-brand" href={brand.homeHref}>{brand.logoSrc && <img src={brand.logoSrc} alt="" />}{brand.name}<span>Craft</span></a><span>Content workspace</span>{brand.designSystemHref && <a href={brand.designSystemHref}>Design system ↗</a>}{topbarSlot && <div className="jongo-topbar-slot">{topbarSlot}</div>}</header>
+  const menu: MenuEntry[] = [
+    { id: 'jongo-reset', label: 'Reset changes', icon: 'reset', disabled: !dirty, onSelect: () => { setWorking(selected); announce('Unsaved changes reset to the last local draft.'); } },
+    { id: 'jongo-revert', label: 'Revert to original snapshot', icon: 'reset', disabled: !edited && !dirty, onSelect: () => { if (snapshot) { setDocuments(previous => previous.map(doc => doc._id === snapshot._id ? snapshot : doc)); setWorking(snapshot); setSavedAt(null); announce('Document reverted to its original snapshot.'); } } }
+  ];
+  return <div className="jongo-studio"><a className="jongo-skip" href="#jongo-editor">Skip to editor</a><header className="jongo-topbar"><a className="jongo-brand" href={brand.homeHref}>{brand.logoSrc && <img src={brand.logoSrc} alt="" />}{brand.name}<span>Craft</span></a>{brand.designSystemHref && <a href={brand.designSystemHref}>Design system ↗</a>}{topbarSlot && <div className="jongo-topbar-slot">{topbarSlot}</div>}</header>
     <div className="jongo-desk"><aside className="jongo-structure"><p className="jongo-eyebrow">Structure</p><h2>Content</h2><nav aria-label="Content structure">{config.schemas.map(item => <a className="jongo-nav-item" href={documentHref(item.name)} key={item.name} aria-current={type === item.name ? 'page' : undefined} onClick={event => navigate(event, item.name)}>{item.title ?? item.name}<span>›</span></a>)}</nav></aside>
       <section className="jongo-documents" aria-label="Document list"><h2>{schema?.title ?? schema?.name ?? 'Documents'}</h2><label>Search documents<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by title" /></label><div className="jongo-document-list">{visible.map(doc => <a className="jongo-nav-item" href={documentHref(doc._type, doc._id)} key={doc._id} aria-current={selectedId === doc._id ? 'page' : undefined} onClick={event => navigate(event, type, doc._id)}><strong>{documentTitle(doc, schema)}</strong><small>{deepEqual(doc, original.find(item => item._id === doc._id)) ? 'Original snapshot' : 'Local draft (edited)'} · {doc._type}</small></a>)}</div>{!visible.length && <p>No matching documents.</p>}</section>
-      <main id="jongo-editor" className="jongo-editor" tabIndex={-1}>{notice && <p className="jongo-notice" role="note">{notice}</p>}{schema && working && api ? <StudioContext.Provider value={api}><div className="jongo-editor-heading"><div><p className="jongo-eyebrow">{schema.title ?? schema.name}</p><h1>{documentTitle(working, schema)}</h1></div><span className={`jongo-state ${dirty ? 'jongo-dirty' : ''}`}>{chip}</span></div><p className="jongo-help">Drafts are kept in page memory only. Reloading or leaving resets all changes. Saving does not publish to the website: persistence and publishing are not connected.</p>
+      <main id="jongo-editor" className="jongo-editor" tabIndex={-1}>{schema && working && api ? <StudioContext.Provider value={api}>
+        <EditorHeader eyebrow={schema.title ?? schema.name} title={documentTitle(working, schema)} pills={<span className={`jongo-state ${dirty ? 'jongo-dirty' : ''}`}>{chip}</span>}
+          tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} announce={announce} /></>} />
+        <div className="jongo-editor-body">
+        {notice && <p className="jongo-notice" role="note">{notice}</p>}
+        <p className="jongo-help">Drafts are kept in page memory only. Reloading or leaving resets all changes. Saving does not publish to the website: persistence and publishing are not connected.</p>
         <section className="jongo-summary" aria-labelledby="jongo-checks-title" data-publish-ready={state.ready ? 'true' : 'false'}>
           <h2 id="jongo-checks-title">Document checks</h2>
           <p><strong className={state.ready ? 'jongo-ready' : 'jongo-blocked'}>{state.ready ? 'Publish-ready checks passed' : `Not publish-ready: ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}`}</strong>{state.warnings > 0 && ` · ${state.warnings} ${state.warnings === 1 ? 'note' : 'notes'} about preserved content`}</p>
           <p className="jongo-hint">Checks run locally against the schema. They do not publish anything, and a draft with issues can still be saved locally.</p>
           {issues.length > 0 && <ul className="jongo-summary-list">{issues.slice(0, 20).map((issue, i) => <li key={i}><button type="button" className="jongo-link" onClick={() => jump(issue.path)}><span className={issue.severity === 'error' ? 'jongo-error' : 'jongo-warning'}>{issue.severity === 'error' ? 'Error' : 'Note'}</span> {pathLabel(issue.path)}: {issue.message}</button></li>)}{issues.length > 20 && <li>…and {issues.length - 20} more.</li>}</ul>}
         </section>
-        <form noValidate onSubmit={event => {
+        <form id="jongo-doc-form" noValidate onSubmit={event => {
           event.preventDefault();
+          if (!dirty) return;
           setDocuments(previous => previous.map(doc => doc._id === working._id ? working : doc));
+          setSavedAt(new Date().toISOString());
           announce(state.ready ? 'Draft saved in local page memory only. No website content was published.' : `Draft saved in local page memory only with ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}. It is not publish-ready and nothing was published.`);
         }}>
           {schema.fields.map(field => <Field key={field.name} d={field} label={field.title ?? field.name} path={[field.name]} value={working[field.name]} onChange={next => { setWorking(setField(working, field.name, next) as ContentDocument); announce(''); }} />)}
-          <div className="jongo-savebar"><button className="jongo-primary" type="submit" disabled={!dirty}>Save local draft</button><button type="button" disabled={!dirty} onClick={() => { setWorking(selected); announce('Unsaved changes reset to the last local draft.'); }}>Reset changes</button><button type="button" disabled={!edited && !dirty} onClick={() => { if (snapshot) { setDocuments(previous => previous.map(doc => doc._id === snapshot._id ? snapshot : doc)); setWorking(snapshot); announce('Document reverted to its original snapshot.'); } }}>Revert to original snapshot</button></div>
-          <div role="status" aria-live="polite" aria-atomic="true" className="jongo-live">{message.text}{message.count % 2 ? '\u200b' : ''}</div></form><details><summary>Schema information</summary><p>{schema.name} · version {schema.schemaVersion} · {schema.fields.length} registered fields · {working._id}</p></details></StudioContext.Provider> : <p>Select a document to begin.</p>}</main>
+        </form>
+        <div role="status" aria-live="polite" aria-atomic="true" className="jongo-live">{message.text}{message.count % 2 ? '\u200b' : ''}</div>
+        </div>
+        <EditorFooter status={dirty ? 'Draft, unsaved changes' : savedAt ? `Saved ${formatClock(savedAt)} (page memory only)` : 'Local draft mode: nothing is stored'} actions={<>
+          <button id="jongo-save" form="jongo-doc-form" className="jongo-primary" type="submit" disabled={!dirty}><Icon name="save" />Save local draft</button>
+          <ActionMenu id="jongo-more" label="More actions" placement="up" entries={menu} />
+        </>} />
+      </StudioContext.Provider> : <div className="jongo-editor-body">{notice && <p className="jongo-notice" role="note">{notice}</p>}<p>Select a document to begin.</p></div>}</main>
     </div></div>;
 }

@@ -8,8 +8,8 @@ export { createPgExecutor, type PgPoolLike, type PgQueryable, type Queryable, ty
 export { loadMigrations, migrationChecksum, migrationsDir, runMigrations, type Migration, type MigrationReport } from './migrate.js';
 export { createDataset, getDataset, type DatasetInfo } from './datasets.js';
 export {
-  discardDraft, getDocument, listDocuments, publishDocument, saveDraft, unpublishDocument,
-  type DocumentMutationResult, type DocumentSummary, type GetDocumentInput, type GetDocumentResult, type ListDocumentsInput, type ListDocumentsResult, type SaveDraftInput
+  deleteDocument, discardDraft, getDocument, getDocumentHistory, listDocuments, publishDocument, saveDraft, unpublishDocument,
+  type DeleteDocumentInput, type DeleteDocumentResult, type DocumentHistoryEntry, type DocumentHistoryInput, type DocumentMutationResult, type DocumentSummary, type GetDocumentInput, type GetDocumentResult, type ListDocumentsInput, type ListDocumentsResult, type SaveDraftInput
 } from './documents.js';
 export type { SchemaRegistry } from './docs-core.js';
 export { queryDataset, exportNdjson, type ExportNdjsonInput, type QueryDatasetInput } from './dataset-read.js';

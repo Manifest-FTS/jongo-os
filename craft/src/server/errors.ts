@@ -5,7 +5,7 @@ export type CraftErrorCode =
   // concurrency and idempotency
   | 'conflict' | 'precondition_required' | 'idempotency_conflict'
   // documents
-  | 'validation_failed' | 'unknown_type' | 'invalid_document' | 'limit_exceeded' | 'unsafe_content'
+  | 'validation_failed' | 'unknown_type' | 'invalid_document' | 'limit_exceeded' | 'unsafe_content' | 'referenced'
   // infrastructure
   | 'unavailable' | 'dependency_missing'
   | 'migration_invalid' | 'migration_failed' | 'migration_checksum_mismatch' | 'migration_missing'
@@ -30,6 +30,7 @@ const MESSAGES: Record<CraftErrorCode, string> = {
   invalid_document: 'Document cannot be represented as safe JSON.',
   limit_exceeded: 'A size or count limit was exceeded.',
   unsafe_content: 'Document contains unsafe content.',
+  referenced: 'Other documents still reference this document.',
   unavailable: 'Craft storage unavailable.',
   dependency_missing: 'An optional dependency required for this operation is not installed.',
   migration_invalid: 'Migration files are invalid.',

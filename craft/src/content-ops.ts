@@ -113,6 +113,20 @@ export function documentTitle(doc: JsonObject, schema?: TypeDefinition): string 
   for (const name of ['originalFilename', 'title']) if (typeof doc[name] === 'string' && doc[name]) return doc[name] as string;
   return typeof doc._id === 'string' ? logicalId(doc._id) : 'Untitled';
 }
+export const COPY_SUFFIX = ' (copy)';
+/** Body of a new draft that copies `doc`: deep copy without envelope or `_id` (the server assigns the id), title suffixed when a string title field has text. */
+export function duplicateDocument(doc: JsonObject, schema?: TypeDefinition): { _type: string } & JsonObject {
+  const copy = JSON.parse(JSON.stringify(doc)) as { _type: string } & JsonObject;
+  for (const key of ['_id', '_rev', '_createdAt', '_updatedAt']) delete copy[key];
+  const name = schema?.preview?.title ?? schema?.fields.find(item => item.type === 'string')?.name;
+  const definition = schema?.fields.find(item => item.name === name);
+  const value = name ? copy[name] : undefined;
+  if (name && definition?.type === 'string' && typeof value === 'string' && value.trim()) {
+    const max = definition.maxLength;
+    copy[name] = max !== undefined && value.length + COPY_SUFFIX.length > max ? value.slice(0, Math.max(0, max - COPY_SUFFIX.length)).trimEnd() + COPY_SUFFIX : value + COPY_SUFFIX;
+  }
+  return copy;
+}
 export type Candidate = { id: string; type: string; title: string; entry: IndexEntry };
 /** Search references by title, type or ID over supplied documents of the allowed types only. */
 export function searchReferences(index: ReferenceIndex, to: readonly string[], query: string, schemas: ReadonlyMap<string, TypeDefinition>): Candidate[] {
