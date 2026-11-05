@@ -604,7 +604,10 @@ export async function POST(req: Request, { params }: Params) {
     : normalizePublicUrl(stagingCapability.stagingUrl ?? stagingCapability.fqdn);
   const stagingUrl = normalizePublicUrl(await primaryStagingUrl(site.id, fallbackStagingUrl)) ?? fallbackStagingUrl;
   const stagingRewriteUrls = await stagingUrlsForRewrite(site.id, fallbackStagingUrl);
-  const productionUrl = normalizePublicUrl(site.name) ?? normalizePublicUrl(site.slug);
+  // The site's chosen main address (lib/production-domains.ts); the app name
+  // is only a guess for sites that never chose one.
+  const { primaryProductionUrl } = await import("@/lib/production-domains");
+  const productionUrl = (await primaryProductionUrl(site.id)) ?? normalizePublicUrl(site.name) ?? normalizePublicUrl(site.slug);
 
   // Never backed up, but otherwise ready to promote: take the backup instead of
   // sending the operator to another tab to press a different button. The guard

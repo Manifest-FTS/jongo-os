@@ -254,6 +254,15 @@ export const PRICING_MATRIX_ROWS: MatrixRow[] = [
     enterpriseSla: "Included, with automatic checks"
   },
   {
+    // Enforced by checkCustomStagingDomainEntitlement (CUSTOM_STAGING_DOMAIN_PLANS).
+    metric: "Your own staging domain",
+    category: "Included",
+    starter: "Not included",
+    pro: "Not included",
+    coreSla: "Included",
+    enterpriseSla: "Included"
+  },
+  {
     metric: "Developer time",
     category: "Support",
     starter: "None",

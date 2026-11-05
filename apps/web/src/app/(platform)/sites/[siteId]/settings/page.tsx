@@ -1,5 +1,6 @@
 type Params = { params: Promise<{ siteId: string }> };
 
+import ProductionDomainsCard from "@/components/ProductionDomainsCard";
 import SiteInfoForm from "@/components/SiteInfoForm";
 import SiteStagingToggle from "@/components/SiteStagingToggle";
 import WordPressAdvancedControls from "@/components/WordPressAdvancedControls";
@@ -152,6 +153,8 @@ export default async function SiteSettingsPage({ params }: Params) {
           </div>
         </div>
       ) : null}
+
+      {workspace?.coolifyServiceUuid && !isStagingResource ? <ProductionDomainsCard siteId={siteId} /> : null}
 
       {githubSource ? (
         <SiteSourceCard
