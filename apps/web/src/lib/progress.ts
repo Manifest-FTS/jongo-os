@@ -30,8 +30,15 @@ export function wantsProgress(request: Request): boolean {
 }
 
 /** Run `handler` and stream its steps, then its response, as NDJSON. */
+/**
+ * A quiet step (a deploy can take minutes) must not look like a dead
+ * connection to a proxy, which cuts idle responses (Cloudflare at ~100s).
+ */
+const KEEPALIVE_MS = 15_000;
+
 export function progressResponse(handler: () => Promise<Response>): Response {
   const encoder = new TextEncoder();
+  let keepalive: ReturnType<typeof setInterval> | undefined;
   let push: Emit = () => {};
   let finish: () => void = () => {};
   const stream = new ReadableStream<Uint8Array>({
@@ -46,6 +53,7 @@ export function progressResponse(handler: () => Promise<Response>): Response {
         }
       };
       finish = () => {
+        if (keepalive) clearInterval(keepalive);
         if (!open) return;
         open = false;
         try {
@@ -55,8 +63,10 @@ export function progressResponse(handler: () => Promise<Response>): Response {
         }
       };
       push({ type: "started" });
+      keepalive = setInterval(() => push({ type: "ping" }), KEEPALIVE_MS);
     },
     cancel() {
+      if (keepalive) clearInterval(keepalive);
       push = () => {};
     }
   });
@@ -84,4 +94,21 @@ export function progressResponse(handler: () => Promise<Response>): Response {
       "X-Accel-Buffering": "no"
     }
   });
+}
+
+/**
+ * Run one step of a long request and report it: active, then done (or
+ * failed if it throws, which is rethrown). Does nothing extra outside a
+ * streamed request.
+ */
+export async function withStep<T>(id: string, label: string, run: () => Promise<T>, isOk?: (value: T) => boolean): Promise<T> {
+  reportStep(id, label, "active");
+  try {
+    const value = await run();
+    reportStep(id, label, isOk && !isOk(value) ? "failed" : "done");
+    return value;
+  } catch (error) {
+    reportStep(id, label, "failed");
+    throw error;
+  }
 }

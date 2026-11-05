@@ -75,17 +75,19 @@ const STATUS_TEXT: Record<CreationStep["status"], string> = {
 };
 
 /** The checklist shown while an app is being created. */
-export default function CreationProgress({ title, steps, startedAt }: { title: string; steps: CreationStep[]; startedAt: number }) {
+export default function CreationProgress({ title, steps, startedAt, note, running = true }: { title: string; steps: CreationStep[]; startedAt: number; note?: string; running?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [running]);
   const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
   const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
   return (
-    <div className="card" style={{ marginBottom: "1rem", display: "grid", gap: "0.9rem" }} aria-live="polite" aria-busy="true">
+    <div className="card" style={{ marginBottom: "1rem", display: "grid", gap: "0.9rem" }} aria-live="polite" aria-busy={running}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem" }}>
         <h3 className="card-title" style={{ margin: 0 }}>{title}</h3>
         <span className="card-muted" style={{ fontVariantNumeric: "tabular-nums" }}>{elapsed}</span>
@@ -104,9 +106,9 @@ export default function CreationProgress({ title, steps, startedAt }: { title: s
           </li>
         ))}
       </ol>
-      <p className="card-muted" style={{ margin: 0, fontSize: "0.82rem" }}>
-        This usually takes under a minute. You can leave this page; the app keeps being created and appears in your app list.
-      </p>
+      {note === "" ? null : <p className="card-muted" style={{ margin: 0, fontSize: "0.82rem" }}>
+        {note ?? "This usually takes under a minute. You can leave this page; the app keeps being created and appears in your app list."}
+      </p>}
     </div>
   );
 }
