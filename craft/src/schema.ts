@@ -17,6 +17,8 @@ export type TypeDefinition = {
   fields: readonly FieldDefinition[];
   /** Field names used for list titles; falls back to the first string field. */
   preview?: { title?: string };
+  /** A fixed document that other code addresses by id: the Studio hides Duplicate and Delete, and hosts must refuse both server-side. */
+  singleton?: boolean;
 };
 export const IMAGE_ASSET_TYPE = 'sanity.imageAsset';
 
@@ -61,7 +63,7 @@ export function createContentRegistry(schemas: readonly TypeDefinition[]): Map<s
     }
   }
   for (const schema of schemas) {
-    if (!/^[a-zA-Z][\w.-]*$/.test(schema.name) || registry.has(schema.name) || schema.type !== 'document' || !(schema.schemaVersion >= 1)) fail();
+    if (!/^[a-zA-Z][\w.-]*$/.test(schema.name) || registry.has(schema.name) || schema.type !== 'document' || !(schema.schemaVersion >= 1) || (schema.singleton !== undefined && typeof schema.singleton !== 'boolean')) fail();
     checkFields(schema.fields);
     registry.set(schema.name, schema);
   }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ContentStudio, MutationKeys, newMutationKey, settle, stableJson, statusDetail, statusLabel, unavailableFailure } from '../dist/index.js';
+import { ContentStudio, MutationKeys, duplicateDocument, formatClock, formatStamp, historyLabel, initialsOf, newMutationKey, safeAvatarUrl, settle, stableJson, statusDetail, statusLabel, unavailableFailure } from '../dist/index.js';
 import * as content from '../dist/content.js';
 
 const schema = { name: 'article', title: 'Articles', type: 'document', schemaVersion: 1, fields: [
@@ -16,6 +16,7 @@ const store = new Proxy({}, { get: () => async () => ({ ok: false, code: 'unavai
 const render = props => renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [] }, store, ...props }));
 const button = (html, id) => html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))?.[0] ?? assert.fail(`no ${id} button`);
 const disabled = (html, id) => /disabled=""/.test(button(html, id));
+const hasItem = (html, id) => new RegExp(`<button[^>]*id="${id}"`).test(html);
 
 test('store mode is opt-in: without a store the Studio keeps its exact local-draft wording', () => {
   const local = renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] } }));
@@ -26,12 +27,12 @@ test('store mode is opt-in: without a store the Studio keeps its exact local-dra
 
 test('connected Studio drops the not-connected notice and shows saved + Published status with only valid actions', () => {
   const html = render({ initial: { documents: [summary({ variant: 'published', hasPublished: true })], record: record({ variant: 'published', published: { nativeRev: 'r1', lockVersion: 3 } }) }, initialType: 'article', initialDocument: 'welcome' });
-  for (const text of ['data-studio-mode="store"', 'data-save-state="saved"', 'data-doc-status="published"', 'Save draft', 'Unpublish', 'Discard draft', 'aria-live="polite"', 'Published and up to date', 'Published · article']) assert.ok(html.includes(text), text);
+  for (const text of ['data-studio-mode="store"', 'data-save-state="saved"', 'data-doc-status="published"', 'Save draft', 'Unpublish', 'aria-live="polite"', 'Published and up to date', 'Published · article']) assert.ok(html.includes(text), text);
   for (const text of ['persistence and publishing are not connected', 'Save local draft', 'page memory only', 'Revert to original snapshot']) assert.ok(!html.includes(text), text);
   assert.ok(disabled(html, 'jongo-save'), 'nothing to save yet');
   assert.ok(disabled(html, 'jongo-publish'), 'a published document has nothing to publish');
-  assert.ok(!disabled(html, 'jongo-unpublish'));
-  assert.ok(disabled(html, 'jongo-discard'), 'no draft to discard');
+  assert.ok(hasItem(html, 'jongo-unpublish') && !disabled(html, 'jongo-unpublish'));
+  assert.ok(!hasItem(html, 'jongo-discard'), 'no draft to discard, so no menu item');
 });
 
 test('a draft over a published version offers publish (when valid) and discard, and labels itself Draft', () => {
@@ -40,8 +41,10 @@ test('a draft over a published version offers publish (when valid) and discard, 
   assert.ok(html.includes('Draft changes · article'));
   assert.ok(html.includes('this draft has changes that are not published'));
   assert.ok(!disabled(html, 'jongo-publish'));
-  assert.ok(!disabled(html, 'jongo-discard'));
-  assert.ok(!disabled(html, 'jongo-unpublish'));
+  assert.ok(hasItem(html, 'jongo-discard') && !disabled(html, 'jongo-discard'));
+  assert.ok(hasItem(html, 'jongo-unpublish') && !disabled(html, 'jongo-unpublish'));
+  const same = render({ initial: { documents: [summary({ hasPublished: true })], record: record({ published: { nativeRev: 'r0', lockVersion: 2 }, publishedDiffers: false }) }, initialType: 'article', initialDocument: 'welcome' });
+  assert.ok(!hasItem(same, 'jongo-discard'), 'a draft identical to the published version has nothing to discard');
 });
 
 test('a never-published draft cannot be unpublished or discarded; an invalid draft cannot be published and says why', () => {
@@ -50,8 +53,8 @@ test('a never-published draft cannot be unpublished or discarded; an invalid dra
   assert.ok(html.includes('data-publish-ready="false"'));
   assert.ok(disabled(html, 'jongo-publish'));
   assert.ok(html.includes('Fix the blocking issues above to enable publishing.'));
-  assert.ok(disabled(html, 'jongo-unpublish'));
-  assert.ok(disabled(html, 'jongo-discard'));
+  assert.ok(!hasItem(html, 'jongo-unpublish'));
+  assert.ok(!hasItem(html, 'jongo-discard'));
 });
 
 test('failed prefetch renders an unavailable state with retry, never the local fallback; no prefetch shows loading', () => {
@@ -112,4 +115,105 @@ test('settle turns throws, rejections and malformed results into typed unavailab
   const ok = await settle(async () => ({ ok: true, documents: [] }));
   assert.deepEqual(ok, { ok: true, documents: [] });
   assert.ok(!JSON.stringify(await settle(async () => { throw new Error('SELECT secret'); })).includes('secret'));
+});
+
+// --- Editor panel: sticky header/footer, action menus, capabilities ---
+const ok = async () => ({ ok: true });
+const base = () => ({ list: ok, load: ok, saveDraft: ok, publish: ok, unpublish: ok, discardDraft: ok });
+const published = record({ variant: 'published', published: { nativeRev: 'r1', lockVersion: 3 } });
+const open = (storeObject, rec = published, config = { schemas: [schema], documents: [] }, extra = {}) => renderToStaticMarkup(createElement(ContentStudio, { config, store: storeObject, initial: { documents: [summary({ variant: rec.variant, hasPublished: rec.variant === 'published' || !!rec.published })], record: rec }, initialType: 'article', initialDocument: 'welcome', ...extra }));
+const localHtml = () => renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] } }));
+
+test('both modes drop the "Content workspace" label and render a sticky header and an action bar with accessible roles', () => {
+  for (const html of [open(base()), localHtml()]) {
+    assert.ok(!html.includes('Content workspace'));
+    for (const text of ['class="jongo-doc-header"', 'aria-label="Document header"', 'class="jongo-doc-footer"', 'role="group" aria-label="Document actions"', 'aria-label="Document tools"', 'aria-label="More actions"', 'aria-haspopup="menu"', 'aria-expanded="false"', 'aria-controls="jongo-more-menu"', 'aria-controls="jongo-tools-menu"', 'role="menu"', 'role="menuitem"']) {
+      assert.ok(html.includes(text), text);
+    }
+    assert.ok(html.includes('Inspect') && html.includes('Copy document') && html.includes('data-issue-chip="clear"'));
+    assert.ok(html.indexOf('class="jongo-doc-header"') < html.indexOf('jongo-editor-body') && html.indexOf('jongo-editor-body') < html.indexOf('class="jongo-doc-footer"'), 'header, body, footer order');
+  }
+  assert.ok(!/<details/.test(open(base())), 'the schema block moved into Inspect');
+});
+
+test('footer menu items follow the document state and the capabilities the store implements', () => {
+  const none = open(base());
+  assert.ok(hasItem(none, 'jongo-unpublish'));
+  for (const id of ['jongo-duplicate', 'jongo-delete', 'jongo-history']) assert.ok(!hasItem(none, id), `${id} only with the store method`);
+  const full = open({ ...base(), history: ok, duplicate: ok, delete: ok });
+  for (const id of ['jongo-unpublish', 'jongo-duplicate', 'jongo-delete', 'jongo-history', 'jongo-inspect', 'jongo-copy-document']) assert.ok(hasItem(full, id), id);
+  assert.ok(/<button[^>]*id="jongo-delete"[^>]*class="jongo-menu-item jongo-menu-danger"|<button[^>]*class="jongo-menu-item jongo-menu-danger"[^>]*id="jongo-delete"/.test(full), 'destructive styling');
+  assert.ok(/role="separator"[^>]*><\/div><button[^>]*id="jongo-delete"/.test(full), 'Delete is separated');
+  const draftOnly = open({ ...base(), duplicate: ok, delete: ok }, record());
+  assert.ok(!hasItem(draftOnly, 'jongo-unpublish') && !hasItem(draftOnly, 'jongo-discard') && hasItem(draftOnly, 'jongo-duplicate'));
+});
+
+test('singleton types hide Duplicate and Delete even when the store offers them', () => {
+  const single = { schemas: [{ ...schema, singleton: true }], documents: [] };
+  const html = open({ ...base(), duplicate: ok, delete: ok }, published, single);
+  assert.ok(!hasItem(html, 'jongo-duplicate') && !hasItem(html, 'jongo-delete'));
+  assert.ok(hasItem(html, 'jongo-unpublish'));
+  assert.throws(() => content.createContentRegistry([{ ...schema, singleton: 'yes' }]), /Invalid/);
+  assert.equal(content.createContentRegistry([{ ...schema, singleton: true }]).get('article').singleton, true);
+});
+
+test('icons are decorative and every icon button has an accessible name', () => {
+  for (const html of [open({ ...base(), history: ok, duplicate: ok, delete: ok }), localHtml()]) {
+    const svgs = html.match(/<svg\b[^>]*>/g) ?? [];
+    assert.ok(svgs.length >= 5);
+    for (const svg of svgs) assert.ok(svg.includes('aria-hidden="true"') && svg.includes('focusable="false"'), svg);
+    for (const trigger of html.match(/<button[^>]*class="jongo-icon-button"[^>]*>/g) ?? []) assert.ok(/aria-label="[^"]+"/.test(trigger), trigger);
+  }
+});
+
+test('local mode keeps its exact labels inside the menu and offers no store actions', () => {
+  const html = localHtml();
+  for (const text of ['Save local draft', 'Reset changes', 'Revert to original snapshot', 'id="jongo-reset"', 'id="jongo-revert"', 'role="menuitem"']) assert.ok(html.includes(text), text);
+  for (const text of ['Unpublish', 'Discard draft', 'Duplicate', 'Delete', 'History', 'Publish</button>']) assert.ok(!html.includes(text), text);
+  assert.ok(disabled(html, 'jongo-reset') && disabled(html, 'jongo-revert'), 'nothing to reset yet');
+  assert.ok(html.includes('Local draft mode: nothing is stored'));
+});
+
+test('footer status shows who and when from the store, with a safe avatar; header chip counts issues', () => {
+  const by = { id: 'studio', name: 'Craft session' };
+  const html = open(base(), { ...published, lastPublished: { at: '2026-08-17T14:32:10.000Z', by } });
+  assert.ok(html.includes('Published <time dateTime="2026-08-17T14:32:10.000Z">17 Aug 2026, 14:32 UTC</time> \u00b7 Craft session'), 'status text');
+  assert.ok(html.includes('<span class="jongo-avatar" aria-hidden="true">CS</span>'), 'initials chip');
+  const photo = open(base(), { ...published, lastPublished: { at: '2026-08-17T14:32:10.000Z', by: { ...by, avatarUrl: 'https://img.example.com/a.png' } } });
+  assert.ok(photo.includes('<img src="https://img.example.com/a.png" alt=""'));
+  for (const bad of ['javascript:alert(1)', 'http://img.example.com/a.png', 'data:image/png;base64,AAAA', '//img.example.com/a.png', 'https://user:pw@img.example.com/a.png']) {
+    const unsafe = open(base(), { ...published, lastPublished: { at: '2026-08-17T14:32:10.000Z', by: { ...by, avatarUrl: bad } } });
+    assert.ok(!unsafe.includes('<img src=') && unsafe.includes('>CS<'), bad);
+  }
+  const noWho = open(base(), { ...published, lastPublished: { at: '2026-08-17T14:32:10.000Z' } });
+  assert.ok(noWho.includes('Published <time') && !noWho.includes('jongo-avatar'));
+  const draft = open(base(), record({ lastEdited: { at: '2026-08-17T09:05:00.000Z', by } }));
+  assert.ok(draft.includes('Draft saved <time dateTime="2026-08-17T09:05:00.000Z">17 Aug 2026, 09:05 UTC</time>'));
+  const invalid = open(base(), record({ doc: doc({ summary: undefined }) }));
+  assert.ok(invalid.includes('data-issue-chip="error"') && />1 issue</.test(invalid));
+});
+
+test('pure display helpers: stamps, clocks, initials, avatar URLs, history labels', () => {
+  assert.equal(formatStamp('2026-08-17T14:32:10.000Z', 'UTC'), '17 Aug 2026, 14:32');
+  assert.equal(formatStamp('2026-08-17T14:32:10.000Z', 'America/Chicago'), '17 Aug 2026, 09:32');
+  assert.equal(formatClock('2026-08-17T14:32:10.000Z', 'UTC'), '14:32');
+  assert.equal(formatStamp('not a date'), ''); assert.equal(formatClock('x'), '');
+  assert.equal(initialsOf('Craft session'), 'CS'); assert.equal(initialsOf('ada'), 'A'); assert.equal(initialsOf('  '), ''); assert.equal(initialsOf(undefined), '');
+  assert.equal(safeAvatarUrl('https://a.example/x.png'), 'https://a.example/x.png');
+  for (const bad of [undefined, 5, '', 'http://a.example/x', 'javascript:alert(1)', 'ftp://a.example', 'https://u:p@a.example/', `https://a.example/${'x'.repeat(2100)}`]) assert.equal(safeAvatarUrl(bad), undefined, String(bad));
+  assert.equal(historyLabel('publish'), 'Published'); assert.equal(historyLabel('delete'), 'Deleted'); assert.equal(historyLabel('__proto__'), 'Changed'); assert.equal(historyLabel('new-thing'), 'Changed');
+});
+
+test('duplicateDocument: deep copy without envelope or id, " (copy)" on the title within its length limit, never aliasing the source', () => {
+  const source = { _id: 'a', _type: 'article', _rev: 'r', _createdAt: 'x', _updatedAt: 'y', title: 'Hello', summary: 'S', nested: { list: [1, { k: 'v' }] } };
+  const copy = duplicateDocument(source, schema);
+  assert.deepEqual(copy, { _type: 'article', title: 'Hello (copy)', summary: 'S', nested: { list: [1, { k: 'v' }] } });
+  copy.nested.list[1].k = 'changed';
+  assert.equal(source.nested.list[1].k, 'v');
+  assert.equal(source.title, 'Hello');
+  const long = duplicateDocument({ _id: 'b', _type: 'article', title: 'A'.repeat(20) }, schema);
+  assert.equal(long.title.length, 20); assert.ok(long.title.endsWith(' (copy)'));
+  assert.equal(duplicateDocument({ _id: 'c', _type: 'article', title: '  ' }, schema).title, '  ', 'no text, no suffix');
+  assert.equal(duplicateDocument({ _id: 'd', _type: 'other', count: 1 }).count, 1);
+  assert.equal(Object.hasOwn(duplicateDocument({ _id: 'e', _type: 'article', title: 'x' }, schema), '_id'), false);
 });
