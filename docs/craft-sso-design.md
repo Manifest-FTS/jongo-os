@@ -144,17 +144,17 @@ The Craft contract (`jongo/craft/src/server/auth.ts`, verified): `authorize(acto
 | admin | publisher + `export` |
 | any role | `export-private`, `import`, `admin` **denied** unless explicitly granted by site configuration |
 
-Note: the Studio lists and loads with the `previewDrafts` perspective, which needs `read-drafts` (verified in `service.ts`). A `reader` therefore cannot use the studio. Recommendation: the callback accepts readers but `/craft` shows a plain "you have view-only access" page. The authorize closure stays per call and per session, as `authorizeSession` does today (verified: `session !== null && datasetName === dataset && STUDIO_ACTIONS.has(action)`), now parameterized by the role in the session and by the configured Craft dataset name (`CRAFT_DATASET`, default `production`, verified).
+Note: the Studio lists and loads with the `previewDrafts` perspective, which needs `read-drafts` (verified in `service.ts`). A `reader` therefore cannot use the studio. Recommendation: the callback accepts readers but `/craft` shows a plain "you have view-only access" page. The authorize closure stays per call and per session, as `authorizeSession` does today (verified: `session !== null && datasetName === dataset && STUDIO_ACTIONS.has(action)`), now parameterized by the role in the session and by the configured Craft dataset name (`JONGO_CRAFT_DATASET`, default `production`, verified).
 
 ### 4.4 Site session
 
 Reuse the existing stateless HMAC token design (`src/lib/craft/session.ts`, verified: `v1.<payload>.<sig>`, `timingSafeEqual`, expiry, clock skew, 8 h cap) as `v2` with payload `{ sid, sub, email, role, ds, iat, exp }`. Changes: absolute lifetime **2 h** (was 8 h; this is the revocation latency, see section 5); the actor id stored on Craft revisions and audit rows becomes `jongo:<sub>` (verified: actor id must be 1-128 chars without control characters) instead of the opaque `studio-session:<sid>`, giving per-person accountability. Cookie flags unchanged: `httpOnly`, `Secure` in production, path-scoped to `/craft`.
 
-Server-side revocation (replacing the in-memory, per-instance `SessionRevocations`, whose limit is documented in `docs/craft-preview.md`): add a Craft migration `0002` in the site's own `craft` schema with a tiny `sso_revocations(sub, not_before)` table; sessions with `iat < not_before` for their `sub` are rejected, checked on each server action. Written on site logout and by an operator command ("revoke person X on this site now"). Rotating `CRAFT_SESSION_SECRET` remains the global kill switch.
+Server-side revocation (replacing the in-memory, per-instance `SessionRevocations`, whose limit is documented in `docs/craft-preview.md`): add a Craft migration `0002` in the site's own `craft` schema with a tiny `sso_revocations(sub, not_before)` table; sessions with `iat < not_before` for their `sub` are rejected, checked on each server action. Written on site logout and by an operator command ("revoke person X on this site now"). Rotating `JONGO_CRAFT_SESSION_SECRET` remains the global kill switch.
 
 ### 4.5 Break-glass password
 
-Keep `CRAFT_STUDIO_PASSWORD` login (verified, with rate limiting in `rate-limit.ts`). Env switch `CRAFT_BREAKGLASS_ENABLED`: default **true** while SSO is off, default **false** once `CRAFT_SSO_ENABLED=true` (must be explicitly set to `true` to coexist). Break-glass sessions get role `publisher`-equivalent actions (today's `STUDIO_ACTIONS`), actor id `breakglass`, are labeled in the UI, and every use is logged. Remove in Phase 3 after a rehearsal that proves recovery without it.
+Keep `JONGO_CRAFT_STUDIO_PASSWORD` login (verified, with rate limiting in `rate-limit.ts`). Env switch `CRAFT_BREAKGLASS_ENABLED`: default **true** while SSO is off, default **false** once `CRAFT_SSO_ENABLED=true` (must be explicitly set to `true` to coexist). Break-glass sessions get role `publisher`-equivalent actions (today's `STUDIO_ACTIONS`), actor id `breakglass`, are labeled in the UI, and every use is logged. Remove in Phase 3 after a rehearsal that proves recovery without it.
 
 ### 4.6 Packaging: shared helpers, not per-site code
 
@@ -165,7 +165,7 @@ New server-only entry **`@jongo/craft/auth`** (preferred over growing `@jongo/cr
 - `actionsForRole(role)` and `authorizeForRole(role, datasetName, configuredDataset)` returning a Craft `Authorize`.
 - A session codec for the `v2` token (sign/verify/expiry), reusing the algorithm in `session.ts`.
 
-The site keeps only glue: three route handlers, the cookie plumbing and its environment names: `CRAFT_SSO_ENABLED`, `CRAFT_SSO_ISSUER`, `CRAFT_SSO_CLIENT_ID`, `CRAFT_SSO_CLIENT_SECRET`, `CRAFT_SSO_REDIRECT_URI`, `CRAFT_SSO_DATASET_ID`, `CRAFT_BREAKGLASS_ENABLED`, plus the existing `CRAFT_SESSION_SECRET`.
+The site keeps only glue: three route handlers, the cookie plumbing and its environment names: `CRAFT_SSO_ENABLED`, `CRAFT_SSO_ISSUER`, `CRAFT_SSO_CLIENT_ID`, `CRAFT_SSO_CLIENT_SECRET`, `CRAFT_SSO_REDIRECT_URI`, `CRAFT_SSO_DATASET_ID`, `CRAFT_BREAKGLASS_ENABLED`, plus the existing `JONGO_CRAFT_SESSION_SECRET`.
 
 ## 5. Authorization model
 
@@ -236,5 +236,5 @@ Required before merge: lint/type-check, the existing `apps/web` suite, a middlew
 | 5 | Custom domains for sites | Each domain is an exact redirect URI and allowed origin; add/remove through client update (audited); no wildcards |
 | 6 | Later support Google/GitHub login via Jongo? | **Yes, as Jongo-side login methods only** (the `User` model already has `authProvider`/`authProviderId`, verified); sites stay unchanged because they only trust Jongo |
 | 7 | User removal without SCIM | Immediate at next authorization; existing sessions end at 2 h or via `sso_revocations`; an operator "revoke now" command |
-| 8 | Does a `CmsDataset` row exist (or will it be created) for the Golf Lab in Jongo, separate from the Golf Lab's own `craft` database dataset? | **Yes, create one**; Jongo's dataset is the access-policy anchor (`craft.dataset` claim), the site maps it to its local `CRAFT_DATASET` by configuration (assumption: not verified that Jongo has it today) |
+| 8 | Does a `CmsDataset` row exist (or will it be created) for the Golf Lab in Jongo, separate from the Golf Lab's own `craft` database dataset? | **Yes, create one**; Jongo's dataset is the access-policy anchor (`craft.dataset` claim), the site maps it to its local `JONGO_CRAFT_DATASET` by configuration (assumption: not verified that Jongo has it today) |
 | 9 | Should readers be able to sign in at all? | Yes, to a view-only page; no studio access |

@@ -28,14 +28,14 @@ A standalone, single-tenant PostgreSQL store for Craft documents. It is a **serv
 
 **Install.** `npm i @jongo/craft pg groq-js`. UI-only consumers need neither (`pg` and `groq-js` are optional peer dependencies; Craft itself never imports `pg`, and loads `groq-js` lazily, only when a query runs). `groq-js` ^2 requires **Node >= 22.12**. PostgreSQL 16 and 17 on Windows are the only versions the DB tests have run against.
 
-**Connection.** `DATABASE_URL` belongs to the host app; Craft reads nothing from the environment. Pass a `pg.Pool` through the adapter:
+**Connection.** `JONGO_CRAFT_DATABASE_URL` belongs to the host app (the Golf Lab website's name for it); Craft reads nothing from the environment. Pass a `pg.Pool` through the adapter:
 
 ```ts
 import pg from 'pg';
 import { createContentRegistry, defineType } from '@jongo/craft';
 import { createDataset, createPgExecutor, runMigrations, saveDraft, type Authorize } from '@jongo/craft/server';
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL }); // the host's own configuration
+const pool = new pg.Pool({ connectionString: process.env.JONGO_CRAFT_DATABASE_URL }); // the host's own configuration
 const executor = createPgExecutor(pool);
 const registry = createContentRegistry([/* defineType({...}) schemas, the same descriptors the Studio uses */]);
 ```
