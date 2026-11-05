@@ -319,12 +319,23 @@ export default async function StagingPage({ params, searchParams }: Params) {
       const { getDb } = await import("@/lib/db");
       const prisma = await getDb();
       if (!prisma || !("siteBackup" in prisma)) return null;
-      const last = await (prisma as any).siteBackup.findFirst({
-        where: { siteId: workspace.id, status: "success" },
-        orderBy: { completedAt: "desc" },
-        select: { completedAt: true }
-      });
-      return { lastSuccessAt: last?.completedAt ?? null };
+      const [last, latest] = await Promise.all([
+        (prisma as any).siteBackup.findFirst({
+          where: { siteId: workspace.id, status: "success" },
+          orderBy: { completedAt: "desc" },
+          select: { completedAt: true }
+        }),
+        (prisma as any).siteBackup.findFirst({
+          where: { siteId: workspace.id },
+          orderBy: { startedAt: "desc" },
+          select: { status: true, startedAt: true }
+        })
+      ]);
+      return {
+        lastSuccessAt: last?.completedAt ?? null,
+        latestStatus: (latest?.status as string | undefined) ?? null,
+        latestStartedAt: latest?.startedAt ? new Date(latest.startedAt).toISOString() : null
+      };
     } catch {
       // Unknown is not "never": fall back to the Coolify rule rather than
       // locking on a database hiccup.
@@ -447,6 +458,19 @@ export default async function StagingPage({ params, searchParams }: Params) {
             siteId={siteId}
             disabled={Boolean(promoteLockedReason)}
             disabledReason={promoteLockedReason}
+            backupStep={
+              permissionSnapshot.canPromoteStaging &&
+              stagingConfigured &&
+              (backupReadiness.code === "no_successful_backup" || backupReadiness.code === "backup_stale")
+                ? {
+                    canBackUp: Boolean(permissionSnapshot.canCreateBackup),
+                    stale: backupReadiness.code === "backup_stale",
+                    running: jongoBackupState?.latestStatus === "running",
+                    lastFailed: jongoBackupState?.latestStatus === "failed",
+                    runningSince: jongoBackupState?.latestStatus === "running" ? jongoBackupState.latestStartedAt : null
+                  }
+                : null
+            }
             preflightLabel={stagingToProdPreflight.label}
             preflightTone={stagingToProdPreflight.tone}
           />
