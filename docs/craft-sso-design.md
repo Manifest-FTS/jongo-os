@@ -1,6 +1,6 @@
 # Sign in with Jongo: SSO for Craft-enabled customer sites
 
-Status: **design proposal, 2026-11-05, branch `craft`. Phase 1a (Jongo-side provider and per-app access model) was implemented on 2026-11-06: see section 10, "Implemented in Phase 1a", for what exists and where it deliberately differs from this proposal (owner decisions of 2026-11-06 override sections 1, 3.2, 3.4, 5 and 9 where they differ).** Nothing in this document has been run against production or any real database. Statements marked **(verified)** were read in the code on this branch; **(assumption)** means I could not verify it (for example anything that depends on production environment values, which were deliberately not read).
+Status: **design proposal, 2026-11-05, branch `craft`. Phase 1a (Jongo-side provider and per-app access model) was implemented on 2026-11-06: see section 10, "Implemented in Phase 1a", for what exists and where it deliberately differs from this proposal (owner decisions of 2026-11-06 override sections 1, 3.2, 3.4, 5 and 9 where they differ). Phase 2 (the relying party in `@jongo/craft/auth` and the Golf Lab site) was implemented on 2026-11-06: see section 11, "Implemented in Phase 2", including what is not verified.** Nothing in this document has been run against production or any real database. Statements marked **(verified)** were read in the code on this branch; **(assumption)** means I could not verify it (for example anything that depends on production environment values, which were deliberately not read).
 
 ## 1. Goals, non-goals, threat model
 
@@ -113,22 +113,22 @@ One additive Prisma migration, folder pattern `prisma/migrations/YYYYMMDDHHMMSS_
 
 ### 4.1 Flow and routes (`dd-thegolflab/src/app/craft/`)
 
-1. `/craft/login` (exists, verified) gains a **Sign in with Jongo** button when `CRAFT_SSO_ENABLED=true`. It submits a POST to `/craft/auth/start`, same-origin checked by the existing `isSameOriginRequest` helper (`src/lib/craft/origin.ts`, verified present).
+1. `/craft/login` (exists, verified) gains a **Sign in with Jongo** button when `JONGO_CRAFT_SSO_ENABLED=true`. It submits a POST to `/craft/auth/start`, same-origin checked by the existing `isSameOriginRequest` helper (`src/lib/craft/origin.ts`, verified present).
 2. `start` generates `state` (128-bit), `nonce` (128-bit) and the PKCE verifier (256-bit); stores them in one short-lived (10 min) signed transaction cookie `craft_oidc_tx`; redirects to the authorize endpoint with `response_type=code`, `scope=openid email profile`, `code_challenge_method=S256`.
 3. `/craft/auth/callback` (GET): reject `error`; require the tx cookie; compare `state` in constant time; **delete the cookie immediately** (single use); exchange the code server-to-server (5 s timeout, no redirect following, TLS to the pinned issuer); verify the ID token; create the session; redirect to `/craft`.
 
-The tx cookie must be `SameSite=Lax`, **not** `Strict` like the current session cookie (verified `SameSite=Strict`, `Path=/craft`): the callback is a cross-site top-level navigation and a Strict cookie would not be sent. Also verify in Playwright whether the redirect from callback to `/craft` still carries a Strict session cookie after a cross-site-initiated chain (browser behavior varies; **to be verified**); the safe choice is `SameSite=Lax` for the new session cookie, relying on the existing same-origin checks on every action for CSRF (verified in `actions.ts` per `docs/craft-preview.md`).
+The tx cookie must be `SameSite=Lax`, **not** `Strict` like the current session cookie (verified `SameSite=Strict`, `Path=/craft`): the callback is a cross-site top-level navigation and a Strict cookie would not be sent. Also verify in Playwright whether the redirect from callback to `/craft` still carries a Strict session cookie after a cross-site-initiated chain (browser behavior varies; **to be verified**); the safe choice is `SameSite=Lax` for the new session cookie, relying on the existing same-origin checks on every action for CSRF (verified in `actions.ts` per `docs/craft-preview.md`). **Answered in Phase 2 (section 11.3):** measured in Chromium; Lax is required whenever the person clicks through a Jongo page first.
 
 ### 4.2 ID token verification (all must pass, else deny)
 
 | Check | Rule |
 |---|---|
-| Signature | Header `alg` in allowlist `["EdDSA"]`; `kid` found in cached JWKS from `CRAFT_SSO_ISSUER` discovery; no `jku`/`x5u`/embedded keys honored |
-| `iss` | Exactly equals configured `CRAFT_SSO_ISSUER` (pinned; discovery document `issuer` must also match) |
-| `aud` | Exactly `CRAFT_SSO_CLIENT_ID` (single value; `azp` if present equals it) |
+| Signature | Header `alg` in allowlist `["EdDSA"]`; `kid` found in cached JWKS from `JONGO_CRAFT_SSO_ISSUER` discovery; no `jku`/`x5u`/embedded keys honored |
+| `iss` | Exactly equals configured `JONGO_CRAFT_SSO_ISSUER` (pinned; discovery document `issuer` must also match) |
+| `aud` | Exactly `JONGO_CRAFT_SSO_CLIENT_ID` (single value; `azp` if present equals it) |
 | Time | `exp` in the future, `iat` not older than 5 min and not more than 60 s ahead (60 s skew, same as existing `CLOCK_SKEW_SECONDS` in `session.ts`, verified) |
 | `nonce` | Equals the tx cookie nonce |
-| Claims | `sub` UUID; `email_verified === true`; `craft.dataset === CRAFT_SSO_DATASET_ID`; `craft.role` in the four known roles |
+| Claims | `sub` UUID; `email_verified === true`; `craft.dataset === JONGO_CRAFT_DATASET` (the Craft dataset name; see section 10.2, decision 3); `craft.role` in the four known roles |
 
 JWKS caching: in memory, 10 min TTL; on unknown `kid` refetch once, rate limited to one refetch per minute; keep the last good set if Jongo is briefly unreachable (never fail open: no key, no login).
 
@@ -154,7 +154,7 @@ Server-side revocation (replacing the in-memory, per-instance `SessionRevocation
 
 ### 4.5 Break-glass password
 
-Keep `JONGO_CRAFT_STUDIO_PASSWORD` login (verified, with rate limiting in `rate-limit.ts`). Env switch `CRAFT_BREAKGLASS_ENABLED`: default **true** while SSO is off, default **false** once `CRAFT_SSO_ENABLED=true` (must be explicitly set to `true` to coexist). Break-glass sessions get role `publisher`-equivalent actions (today's `STUDIO_ACTIONS`), actor id `breakglass`, are labeled in the UI, and every use is logged. Remove in Phase 3 after a rehearsal that proves recovery without it.
+Keep `JONGO_CRAFT_STUDIO_PASSWORD` login (verified, with rate limiting in `rate-limit.ts`). Env switch `JONGO_CRAFT_BREAKGLASS_ENABLED`: default **true** while SSO is off, default **false** once `JONGO_CRAFT_SSO_ENABLED=true` (must be explicitly set to `true` to coexist). Break-glass sessions get role `publisher`-equivalent actions (today's `STUDIO_ACTIONS`), actor id `breakglass`, are labeled in the UI, and every use is logged. Remove in Phase 3 after a rehearsal that proves recovery without it.
 
 ### 4.6 Packaging: shared helpers, not per-site code
 
@@ -165,7 +165,7 @@ New server-only entry **`@jongo/craft/auth`** (preferred over growing `@jongo/cr
 - `actionsForRole(role)` and `authorizeForRole(role, datasetName, configuredDataset)` returning a Craft `Authorize`.
 - A session codec for the `v2` token (sign/verify/expiry), reusing the algorithm in `session.ts`.
 
-The site keeps only glue: three route handlers, the cookie plumbing and its environment names: `CRAFT_SSO_ENABLED`, `CRAFT_SSO_ISSUER`, `CRAFT_SSO_CLIENT_ID`, `CRAFT_SSO_CLIENT_SECRET`, `CRAFT_SSO_REDIRECT_URI`, `CRAFT_SSO_DATASET_ID`, `CRAFT_BREAKGLASS_ENABLED`, plus the existing `JONGO_CRAFT_SESSION_SECRET`.
+The site keeps only glue: three route handlers, the cookie plumbing and its environment names: `JONGO_CRAFT_SSO_ENABLED`, `JONGO_CRAFT_SSO_ISSUER`, `JONGO_CRAFT_SSO_CLIENT_ID`, `JONGO_CRAFT_SSO_CLIENT_SECRET`, `JONGO_CRAFT_SSO_REDIRECT_URI`, `JONGO_CRAFT_SSO_SESSION_MINUTES` (optional), `JONGO_CRAFT_BREAKGLASS_ENABLED`, plus the existing `JONGO_CRAFT_SESSION_SECRET` and `JONGO_CRAFT_DATASET` (the dataset name that `craft.dataset` must equal; there is no separate dataset-id setting).
 
 ## 5. Authorization model
 
@@ -203,7 +203,7 @@ The site keeps only glue: three route handlers, the cookie plumbing and its envi
 |---|---|---|
 | 0. Design review | This document, owner answers section 9 | Owner signs off decisions; migration procedure for production confirmed |
 | 1. Jongo IdP behind `JONGO_OIDC_ENABLED`, staging client | Migration, endpoints, middleware exact paths, key env, client script, audit, rate limits | Flag off: every new path 404 and existing suite unchanged. Flag on (staging): discovery and JWKS valid; authorize/consent/token happy path; all negative tests in the matrix below pass; production Jongo untouched |
-| 2. Golf Lab RP behind `CRAFT_SSO_ENABLED`, break-glass kept | `@jongo/craft/auth`, routes, `v2` session, `sso_revocations` | Real login from a staging Jongo account on the Golf Lab preview; role matrix verified end to end; removed user denied at next authorization; password login still works |
+| 2. Golf Lab RP behind `JONGO_CRAFT_SSO_ENABLED`, break-glass kept | `@jongo/craft/auth`, routes, `v2` session, `sso_revocations` | Real login from a staging Jongo account on the Golf Lab preview; role matrix verified end to end; removed user denied at next authorization; password login still works |
 | 3. Production enablement, remove password | Real client, secrets in Coolify, break-glass default off, then removed | Two named editors sign in; revocation rehearsed; key-rotation rehearsed; recovery without the password rehearsed |
 
 **Test strategy.**
@@ -299,7 +299,7 @@ Enabled but misconfigured (missing/invalid variable, undecodable key, or `NODE_E
 1. **Generate the key.** `node scripts/oidc-generate-key.mjs` prints a one-line private JWK, its `kid` and the public JWK; `--out <file>` writes the private key to a new `0600` file instead (refuses to overwrite). Store the private line in the secret store as `JONGO_OIDC_SIGNING_KEY`; never commit it or paste it into chat or logs.
 2. **Apply the migration** with the normal procedure (`prisma migrate deploy`; confirm how production applies migrations, still **unverified**). It is safe with the flag off.
 3. **Set env**: `JONGO_OIDC_ISSUER`, `JONGO_OIDC_SIGNING_KEY` (optionally `JONGO_OIDC_PREVIOUS_PUBLIC_KEYS`), and make sure `JONGO_CMS_ENABLED=true`. Do not flip the flag yet.
-4. **Register the client** for the app: `node scripts/oidc-register-client.mjs register --site-id <Site uuid> --name "<app> Craft" --redirect-uri https://<site>/craft/auth/callback [--dataset production]` (uses `DATABASE_URL` from the process environment). The secret is printed once; put it in the site's secret store as `CRAFT_SSO_CLIENT_SECRET`. `rotate --client-id jc_...` keeps the old secret valid for 24 h; `disable --client-id jc_...` blocks the client.
+4. **Register the client** for the app: `node scripts/oidc-register-client.mjs register --site-id <Site uuid> --name "<app> Craft" --redirect-uri https://<site>/craft/auth/callback [--dataset production]` (uses `DATABASE_URL` from the process environment). The secret is printed once; put it in the site's secret store as `JONGO_CRAFT_SSO_CLIENT_SECRET`. `rotate --client-id jc_...` keeps the old secret valid for 24 h; `disable --client-id jc_...` blocks the client.
 5. **Grant people access** (until the Phase 1b UI exists, through `grantCraftAccess` in a script or console), or rely on owner / org admin / platform admin.
 6. **Flip the flag**: `JONGO_OIDC_ENABLED=true`, redeploy, then check `GET /.well-known/openid-configuration` and `GET /api/oidc/jwks`.
 7. **Key rotation**: generate a new key; put the **old public JWK** into `JONGO_OIDC_PREVIOUS_PUBLIC_KEYS` together with the new `JONGO_OIDC_SIGNING_KEY` in one deploy; keep it at least as long as relying parties cache JWKS (10 min) plus the ID token lifetime (5 min), 24 h is ample; then remove it. Rollback of the whole feature: set the flag to anything other than `true`.

@@ -7,7 +7,7 @@ import { randomKey } from './portable-text.js';
 import { Field } from './fields.js';
 import { StudioContext, fieldId, type StudioApi } from './studio-context.js';
 import { ConnectedStudio, type StudioInitial } from './studio-connected.js';
-import { formatClock, type StudioStore } from './studio-store.js';
+import { formatClock, type StudioPermissions, type StudioStore } from './studio-store.js';
 import type { MediaLimits } from './media-contract.js';
 import type { PutFile } from './media-client.js';
 import { ActionMenu, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, type MenuEntry } from './studio-chrome.js';
@@ -28,6 +28,8 @@ export type ContentStudioProps = {
   topbarSlot?: ReactNode;
   /** Store mode: where a `denied` result sends the editor to sign in again. */
   signInHref?: string;
+  /** Store mode: what the signed-in person may do (interface hint; the store enforces it). Default: everything. */
+  permissions?: StudioPermissions;
   /** Developer-oriented explanations (storage notes, check descriptions, field type hints) appear only when true. Default false. */
   debug?: boolean;
   /** Store mode: upload limits shown in the picker. The host enforces its own. */
@@ -37,12 +39,12 @@ export type ContentStudioProps = {
 };
 
 /** Framework-neutral content desk over Sanity-shaped documents. With a `store` it persists through that adapter; without one it keeps local drafts in page memory only. */
-export function ContentStudio({ store, initial, signInHref, brand = { name: 'Jongo', homeHref: '/craft' }, mediaLimits, putFile, ...rest }: ContentStudioProps) {
-  if (store) return <ConnectedStudio {...rest} brand={brand} store={store} initial={initial} signInHref={signInHref} mediaLimits={mediaLimits} putFile={putFile} />;
+export function ContentStudio({ store, initial, signInHref, permissions, brand = { name: 'Jongo', homeHref: '/craft' }, mediaLimits, putFile, ...rest }: ContentStudioProps) {
+  if (store) return <ConnectedStudio {...rest} brand={brand} store={store} initial={initial} signInHref={signInHref} permissions={permissions} mediaLimits={mediaLimits} putFile={putFile} />;
   return <LocalStudio {...rest} brand={brand} />;
 }
 
-function LocalStudio({ config, initialType, initialDocument, basePath, brand, notice, topbarSlot, debug = false }: Omit<ContentStudioProps, 'store' | 'initial' | 'signInHref' | 'brand' | 'mediaLimits' | 'putFile'> & { brand: NonNullable<ContentStudioProps['brand']> }) {
+function LocalStudio({ config, initialType, initialDocument, basePath, brand, notice, topbarSlot, debug = false }: Omit<ContentStudioProps, 'store' | 'initial' | 'signInHref' | 'permissions' | 'brand' | 'mediaLimits' | 'putFile'> & { brand: NonNullable<ContentStudioProps['brand']> }) {
   const registry = useMemo(() => createContentRegistry(config.schemas), [config.schemas]);
   // Original snapshot: supplied documents with any missing or duplicate keys filled in deterministically.
   const original = useMemo(() => config.documents.map(doc => { const schema = registry.get(doc._type); return schema ? ensureKeys(schema, doc) : doc; }), [config.documents, registry]);

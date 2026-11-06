@@ -14,13 +14,13 @@ test('migrations apply on a fresh database and record checksums', async () => {
   const db = await freshDb('mig1', { migrate: false });
   try {
     const report = await runMigrations(db.executor);
-    assert.deepEqual(report.applied, ['0001_init.sql']);
+    assert.deepEqual(report.applied, ['0001_init.sql', '0002_sso_actors_revocations.sql']);
     assert.deepEqual(report.alreadyApplied, []);
     const tables = (await db.sql(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'craft' ORDER BY 1`)).rows.map(r => r.table_name);
-    assert.deepEqual(tables, ['audit_log', 'datasets', 'documents', 'mutations', 'references', 'revisions', 'schema_migrations']);
-    const rows = (await db.sql('SELECT name, checksum FROM craft.schema_migrations')).rows;
-    const [migration] = await loadMigrations();
-    assert.deepEqual(rows, [{ name: migration.name, checksum: migration.checksum }]);
+    assert.deepEqual(tables, ['actors', 'audit_log', 'datasets', 'documents', 'mutations', 'references', 'revisions', 'schema_migrations', 'sso_denied_sessions', 'sso_revocations']);
+    const rows = (await db.sql('SELECT name, checksum FROM craft.schema_migrations ORDER BY name')).rows;
+    const files = await loadMigrations();
+    assert.deepEqual(rows, files.map(migration => ({ name: migration.name, checksum: migration.checksum })));
     // Nothing escapes the dedicated schema.
     const outside = await db.sql(`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'`);
     assert.equal(outside.rows[0].n, 0);
@@ -31,8 +31,8 @@ test('running migrations again is idempotent', async () => {
   const db = await freshDb('mig2');
   try {
     const again = await runMigrations(db.executor);
-    assert.deepEqual(again, { applied: [], alreadyApplied: ['0001_init.sql'] });
-    assert.equal((await db.sql('SELECT count(*)::int AS n FROM craft.schema_migrations')).rows[0].n, 1);
+    assert.deepEqual(again, { applied: [], alreadyApplied: ['0001_init.sql', '0002_sso_actors_revocations.sql'] });
+    assert.equal((await db.sql('SELECT count(*)::int AS n FROM craft.schema_migrations')).rows[0].n, 2);
   } finally { await db.close(); }
 });
 
@@ -41,9 +41,9 @@ test('concurrent runners from separate connection pools apply exactly once witho
   try {
     const other = db.track(poolFor(db.database));
     const results = await Promise.all([runMigrations(db.executor), runMigrations(createPgExecutor(other)), runMigrations(db.executor), runMigrations(createPgExecutor(other))]);
-    assert.equal(results.flatMap(r => r.applied).length, 1, 'one runner applied it');
-    assert.equal(results.filter(r => r.alreadyApplied.length === 1).length, 3);
-    assert.equal((await db.sql('SELECT count(*)::int AS n FROM craft.schema_migrations')).rows[0].n, 1);
+    assert.deepEqual(results.flatMap(r => r.applied).sort(), ['0001_init.sql', '0002_sso_actors_revocations.sql'], 'each migration was applied by exactly one runner');
+    assert.equal(results.flatMap(r => r.applied.concat(r.alreadyApplied)).length, 8, 'every runner accounted for both files');
+    assert.equal((await db.sql('SELECT count(*)::int AS n FROM craft.schema_migrations')).rows[0].n, 2);
   } finally { await db.close(); }
 });
 
@@ -60,7 +60,7 @@ test('a held advisory lock makes the runner wait, then proceed', async () => {
     const waiting = await db.sql(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`);
     assert.ok(waiting.rows[0].n >= 1);
     await holder.query('COMMIT'); holder.release();
-    assert.deepEqual((await pending).applied, ['0001_init.sql']);
+    assert.deepEqual((await pending).applied, ['0001_init.sql', '0002_sso_actors_revocations.sql']);
   } finally { await db.close(); }
 });
 
@@ -86,7 +86,7 @@ test('line-ending changes alone do not change a checksum', async () => {
     const dir = await copyMigrations();
     const text = await readFile(join(dir, '0001_init.sql'), 'utf8');
     await writeFile(join(dir, '0001_init.sql'), text.replace(/\r?\n/g, '\r\n'));
-    assert.deepEqual((await runMigrations(db.executor, { dir })).alreadyApplied, ['0001_init.sql']);
+    assert.deepEqual((await runMigrations(db.executor, { dir })).alreadyApplied, ['0001_init.sql', '0002_sso_actors_revocations.sql']);
   } finally { await db.close(); }
 });
 
@@ -100,7 +100,7 @@ test('a failing migration rolls back completely, is not recorded, and reports on
     assert.equal((await db.sql(`SELECT to_regclass('craft.half') AS t`)).rows[0].t, null);
     assert.equal((await db.sql('SELECT count(*)::int AS n FROM craft.schema_migrations')).rows[0].n, 0);
     // The real migrations still apply afterwards.
-    assert.deepEqual((await runMigrations(db.executor)).applied, ['0001_init.sql']);
+    assert.deepEqual((await runMigrations(db.executor)).applied, ['0001_init.sql', '0002_sso_actors_revocations.sql']);
   } finally { await db.close(); }
 });
 

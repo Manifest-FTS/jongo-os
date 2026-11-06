@@ -8,6 +8,13 @@ export type StudioFieldError = { path: readonly (string | number)[]; message: st
 export type StudioFailure = { ok: false; code: StudioFailureCode; message: string; fieldErrors?: readonly StudioFieldError[] };
 export type StudioResult<T> = ({ ok: true } & T) | StudioFailure;
 
+/** What the signed-in person may do. A hint for the interface only: the host's store must refuse the same actions itself. Both default to true. */
+export type StudioPermissions = {
+  /** false: view-only. Fields are disabled and Save, Duplicate, Discard, Delete and Publish are not offered. */
+  canWrite?: boolean;
+  /** false: Publish, Unpublish and Delete are not offered. */
+  canPublish?: boolean;
+};
 export type StudioVariant = 'draft' | 'published';
 /** Who did something. `id` is opaque; `name` is a display label (hosts without real identities send a generic one, never a raw session id). */
 export type StudioActor = { id: string; name?: string; avatarUrl?: string };

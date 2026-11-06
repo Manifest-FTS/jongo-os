@@ -104,6 +104,14 @@
 /* Store-backed mode: status badges, notices, problems. */
 .jongo-studio .jongo-topbar-slot { margin-left:auto; display:flex; align-items:center; gap:.8rem; font-size:.8rem; }
 .jongo-studio .jongo-topbar-slot button { min-height:32px; padding:.35rem .7rem; }
+.jongo-studio .jongo-identity { display:inline-flex; align-items:center; gap:.5rem; min-width:0; }
+.jongo-studio .jongo-identity-name { font-weight:600; max-width:18ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.jongo-studio .jongo-role-badge { display:inline-flex; align-items:center; padding:.1rem .55rem; border-radius:999px; border:1px solid var(--studio-line); background:#f0f0f4; color:#3d3e48; font-size:.7rem; font-weight:600; white-space:nowrap; }
+.jongo-studio .jongo-role-elevated { background:#201d3a; border-color:#201d3a; color:#fff; }
+.jongo-studio .jongo-fields { border:0; margin:0; padding:0; min-width:0; }
+.jongo-studio .jongo-fields:disabled { opacity:.8; }
+.jongo-studio .jongo-fields:disabled input, .jongo-studio .jongo-fields:disabled textarea, .jongo-studio .jongo-fields:disabled select { background:#f6f6f8; color:#4f505b; cursor:not-allowed; }
+.jongo-studio .jongo-viewonly { border-color:#e3d3a0; background:#fff9e8; }
 .jongo-studio .jongo-dirty { background:#fff3dc; color:#76520d; border-color:#ecd49c; }
 .jongo-studio .jongo-state-error { background:#fdf3f4; color:#a32e3d; border-color:#e3b4ba; }
 .jongo-studio .jongo-dot { width:8px; height:8px; border-radius:50%; background:#6b6c77; flex:none; }

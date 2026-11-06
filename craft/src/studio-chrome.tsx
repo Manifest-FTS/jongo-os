@@ -80,6 +80,17 @@ export function Avatar({ by }: { by?: StudioActor }) {
   return <span className="jongo-avatar" aria-hidden="true">{src ? <img src={src} alt="" width={24} height={24} referrerPolicy="no-referrer" loading="lazy" /> : initialsOf(by.name) || '·'}</span>;
 }
 
+/** Who is signed in, for the top bar: avatar (picture only for plain https), name or email, and a role badge. `elevated` marks platform-level access. */
+export type StudioPerson = { name?: string; email?: string; avatarUrl?: string };
+export function StudioIdentity({ person, roleLabel, elevated = false }: { person: StudioPerson; roleLabel: string; elevated?: boolean }) {
+  const label = person.name || person.email || 'Signed in';
+  return <span className="jongo-identity" data-studio-identity="true">
+    <Avatar by={{ id: 'viewer', name: label, avatarUrl: person.avatarUrl }} />
+    <span className="jongo-identity-name" data-identity-name="true">{label}</span>
+    <span className={`jongo-role-badge${elevated ? ' jongo-role-elevated' : ''}`} data-role-badge="true">{roleLabel}</span>
+  </span>;
+}
+
 /** UTC (labelled) until mounted, then the viewer's zone: the first client render matches the server HTML. */
 export function Stamp({ iso }: { iso: string }) {
   const [local, setLocal] = useState(false);
