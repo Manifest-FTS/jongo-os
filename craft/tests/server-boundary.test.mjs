@@ -59,15 +59,15 @@ test('the server graph is where the Node-only imports live, and it never imports
   const { files, external } = graph(join(dist, 'server', 'index.js'));
   assert.ok([...files].some(f => f.endsWith(join('server', 'migrate.js'))));
   for (const specifier of external) assert.ok(!/^react/.test(specifier), specifier);
-  const shared = ['schema.js', 'content-ops.js', 'validate.js', 'portable-text.js'].map(name => join(dist, name));
+  const shared = ['schema.js', 'content-ops.js', 'validate.js', 'portable-text.js', 'media-contract.js'].map(name => join(dist, name));
   for (const file of files) assert.ok(file.startsWith(join(dist, 'server')) || shared.includes(file), `unexpected module in the server graph: ${file}`);
   // Optional peers are never imported statically: groq-js is dynamic, pg is not imported at all.
   assert.ok(![...files].some(file => /\bimport\s+[^(]*from\s*["']pg["']|\bimport\s+[^(]*from\s*["']groq-js["']/.test(readFileSync(file, 'utf8'))));
   assert.ok(!external.has('pg'));
 });
 
-test('package.json: ./server export, optional peers, shipped migrations, preview.12', () => {
-  assert.equal(pkg.version, '0.1.0-preview.12');
+test('package.json: ./server export, optional peers, shipped migrations, preview.14', () => {
+  assert.equal(pkg.version, '0.1.0-preview.14');
   assert.deepEqual(pkg.exports['./server'], { types: './dist/server/index.d.ts', import: './dist/server/index.js' });
   assert.ok(pkg.files.includes('migrations') && pkg.files.includes('dist'));
   for (const name of ['pg', 'groq-js']) {

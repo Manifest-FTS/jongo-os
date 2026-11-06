@@ -21,6 +21,8 @@ export type TypeDefinition = {
   singleton?: boolean;
 };
 export const IMAGE_ASSET_TYPE = 'sanity.imageAsset';
+/** Uploaded video and any other non-image file. No field type points at it yet. */
+export const FILE_ASSET_TYPE = 'sanity.fileAsset';
 
 export function defineField<const T extends FieldDefinition>(field: T): T { return field; }
 export function defineArrayMember<const T extends Descriptor>(member: T): T { return member; }

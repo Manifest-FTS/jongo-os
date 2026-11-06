@@ -5,8 +5,10 @@ import { createReferenceIndex, deepEqual, documentTitle, ensureKeys, setField, t
 import { validateDocument, publishState, type Path } from './validate.js';
 import { randomKey } from './portable-text.js';
 import { Field } from './fields.js';
-import { StudioContext, fieldId, type StudioApi } from './studio-context.js';
+import { StudioContext, fieldId, type MediaApi, type StudioApi } from './studio-context.js';
 import { MutationKeys, formatClock, settle, statusDetail, statusLabel, type StudioDocSummary, type StudioFailure, type StudioRecord, type StudioResult, type StudioStamp, type StudioStore } from './studio-store.js';
+import { mediaLimits, type MediaLimits, type StudioAssetDocument } from './media-contract.js';
+import { uploadAsset, type PutFile } from './media-client.js';
 import { ActionMenu, Avatar, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, Stamp, type MenuEntry } from './studio-chrome.js';
 import type { StudioConfig } from './studio.js';
 
@@ -17,11 +19,19 @@ export type StudioInitial = {
   record?: StudioRecord;
   /** The prefetch failed: the Studio renders an unavailable state with a retry instead of the list. */
   error?: StudioFailure;
+  /** Server-prefetched uploaded assets, so a document that uses one resolves on the first paint. */
+  assets?: readonly StudioAssetDocument[];
 };
 export type ConnectedStudioProps = {
   config: StudioConfig; store: StudioStore; initial?: StudioInitial; initialType?: string; initialDocument?: string; basePath?: string;
   brand: { name: string; homeHref: string; logoSrc?: string; designSystemHref?: string };
   notice?: string; topbarSlot?: ReactNode; signInHref?: string;
+  /** Developer-oriented explanations are shown only when true. */
+  debug?: boolean;
+  /** Upload limits the picker shows and checks before sending; the server enforces its own. */
+  mediaLimits?: Partial<MediaLimits>;
+  /** Replaces the XHR transfer. For tests. */
+  putFile?: PutFile;
 };
 type Operation = 'loading' | 'saving' | 'publishing' | 'unpublishing' | 'discarding' | 'duplicating' | 'deleting';
 const BUSY_LABEL: Record<Operation, string> = { loading: 'Loading…', saving: 'Saving…', publishing: 'Publishing…', unpublishing: 'Unpublishing…', discarding: 'Discarding…', duplicating: 'Duplicating…', deleting: 'Deleting…' };
@@ -31,7 +41,7 @@ const pathLabel = (path: Path) => path.map(part => typeof part === 'number' ? `i
 const stripEnvelope = (doc: ContentDocument): ContentDocument => { const next = { ...doc }; for (const key of ENVELOPE) delete next[key]; return next; };
 
 /** Studio backed by a host-supplied `StudioStore`. The store is the only persistence boundary; this component never imports server code. */
-export function ConnectedStudio({ config, store, initial, initialType, initialDocument, basePath, brand, notice, topbarSlot, signInHref }: ConnectedStudioProps) {
+export function ConnectedStudio({ config, store, initial, initialType, initialDocument, basePath, brand, notice, topbarSlot, signInHref, debug = false, mediaLimits: limitOverrides, putFile }: ConnectedStudioProps) {
   const registry = useMemo(() => createContentRegistry(config.schemas), [config.schemas]);
   const adopt = useCallback((record: StudioRecord): StudioRecord => {
     const schema = registry.get(record.doc._type);
@@ -50,6 +60,7 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   const [message, setMessage] = useState({ text: '', count: 0 });
   const [focusTick, setFocusTick] = useState(0);
   const [savedAt, setSavedAt] = useState<{ rev: string; at: string } | null>(null);
+  const [uploaded, setUploaded] = useState<readonly StudioAssetDocument[]>(initial?.assets ?? []);
   const busyRef = useRef(false);
   const keys = useRef(new MutationKeys());
   const pending = useRef<{ id: string; select?: readonly [number, number] } | null>(null);
@@ -59,8 +70,8 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   const titleField = useCallback((docType: string) => { const definition = registry.get(docType); return definition?.preview?.title ?? definition?.fields.find(field => field.type === 'string')?.name; }, [registry]);
   const index = useMemo(() => {
     const known = summaries.filter(item => !(working && item.id === working._id)).map(item => { const field = titleField(item.type); return { _id: item.id, _type: item.type, ...(field ? { [field]: item.title } : {}) }; });
-    return createReferenceIndex(working ? [...known, working] : known, config.assets);
-  }, [summaries, working, config.assets, titleField]);
+    return createReferenceIndex(working ? [...known, working] : known, [...(config.assets ?? []), ...uploaded]);
+  }, [summaries, working, config.assets, uploaded, titleField]);
   const issues = useMemo(() => schema && working ? validateDocument(schema, working, index) : [], [schema, working, index]);
   const state = publishState(issues);
   const announce = useCallback((text: string) => setMessage(previous => ({ text, count: previous.count + 1 })), []);
@@ -103,6 +114,22 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     if (result.ok) { keys.current.clear(); show(result); announce(doneText || 'Document loaded.'); } else setProblem(result);
   }, [store, show, announce]);
   const started = useRef(false);
+  const maxImageBytes = limitOverrides?.maxImageBytes, maxVideoBytes = limitOverrides?.maxVideoBytes;
+  const limits = useMemo(() => mediaLimits({ maxImageBytes, maxVideoBytes }), [maxImageBytes, maxVideoBytes]);
+  const canUpload = !!store.requestUpload && !!store.completeUpload;
+  // Upload appears only when the host store can take it; the picker still lists existing assets either way.
+  const media = useMemo<MediaApi | undefined>(() => canUpload ? {
+    limits,
+    upload: (file, handlers) => uploadAsset(store, file, handlers, { limits, put: putFile }),
+    adopt: asset => setUploaded(previous => [asset, ...previous.filter(item => item._id !== asset._id)])
+  } : undefined, [canUpload, store, limits, putFile]);
+  useEffect(() => {
+    if (initial?.assets || !store.listAssets) return;
+    let current = true;
+    void settle(() => store.listAssets!()).then(result => { if (current && result.ok) setUploaded(result.assets); });
+    return () => { current = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- once on mount
+  }, []);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
@@ -189,7 +216,7 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     });
   };
 
-  const api: StudioApi | null = working ? { docId: working._id, values: working, issues, index, schemas: registry, makeKey: randomKey, announce, focus } : null;
+  const api: StudioApi | null = working ? { docId: working._id, values: working, issues, index, schemas: registry, makeKey: randomKey, announce, focus, media, debug } : null;
   const visible = summaries.filter(item => item.type === type && item.title.toLowerCase().includes(query.toLowerCase()));
   const saveState = busy ?? (problem?.code === 'conflict' ? 'conflict' : problem ? 'error' : dirty ? 'dirty' : 'saved');
   const chip = busy ? BUSY_LABEL[busy] : problem?.code === 'conflict' ? 'Conflict' : problem ? 'Error' : dirty ? 'Unsaved changes' : 'Saved';
@@ -215,22 +242,22 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   const editorBody = schema && working && record && api ? <StudioContext.Provider value={api}>
     <EditorHeader eyebrow={schema.title ?? schema.name} title={documentTitle(working, schema)}
       pills={<><span className={`jongo-state jongo-status jongo-status-${statusLabel(record).toLowerCase()}`} data-doc-status={statusLabel(record).toLowerCase()}><span className="jongo-dot" aria-hidden="true" />{statusLabel(record)}</span><span className={`jongo-state ${saveState === 'dirty' || saveState === 'conflict' ? 'jongo-dirty' : saveState === 'error' ? 'jongo-state-error' : ''}`} data-save-state={saveState}>{chip}</span></>}
-      tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} revision={record.nativeRev} announce={announce} loadHistory={store.history ? () => store.history!(working._id) : undefined} /></>} />
+      tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} revision={record.nativeRev} announce={announce} debug={debug} loadHistory={store.history ? () => store.history!(working._id) : undefined} /></>} />
     <div className="jongo-editor-body">
     {noticeEl}
-    <p className="jongo-help">{statusDetail(record)} Changes are saved as drafts in the connected store; publishing is a separate, explicit step.</p>
+    <p className="jongo-help">{statusDetail(record)}{debug && ' Changes are saved as drafts in the connected store; publishing is a separate, explicit step.'}</p>
     {problem && <div role="alert" className={`jongo-problem jongo-problem-${problem.code}`} data-problem={problem.code}>
       <h2>{PROBLEM_TITLE[problem.code]}</h2>
       <p>{problem.message}</p>
       {problem.code === 'conflict' && <><p>Your edits are still on this page and were not saved. Reload latest loads the newest saved version and discards your unsaved edits here.</p><button type="button" onClick={() => { if (!busyRef.current) void loadDocument(working._id, 'Reloaded the latest saved version. Your unsaved edits were discarded.'); }} disabled={!!busy}>Reload latest</button></>}
       {problem.fieldErrors?.length ? <ul className="jongo-summary-list">{problem.fieldErrors.slice(0, 20).map((item, i) => <li key={i}>{item.path.length ? `${pathLabel(item.path)}: ` : ''}{item.message}</li>)}</ul> : null}
       {problem.code === 'denied' && signInHref && <p><a className="jongo-link" href={signInHref}>Sign in again</a></p>}
-      {problem.code === 'unavailable' && <p className="jongo-hint">Pressing the same button again retries the same request safely.</p>}
+      {problem.code === 'unavailable' && debug && <p className="jongo-hint">Pressing the same button again retries the same request safely.</p>}
     </div>}
     <section className="jongo-summary" aria-labelledby="jongo-checks-title" data-publish-ready={state.ready ? 'true' : 'false'}>
       <h2 id="jongo-checks-title">Document checks</h2>
       <p><strong className={state.ready ? 'jongo-ready' : 'jongo-blocked'}>{state.ready ? 'Publish-ready checks passed' : `Not publish-ready: ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}`}</strong>{state.warnings > 0 && ` · ${state.warnings} ${state.warnings === 1 ? 'note' : 'notes'} about preserved content`}</p>
-      <p className="jongo-hint">Checks run in the browser against the schema; the server repeats them and decides. Publishing needs the document to be saved and pass every check.</p>
+      {debug && <p className="jongo-hint">Checks run in the browser against the schema; the server repeats them and decides. Publishing needs the document to be saved and pass every check.</p>}
       {issues.length > 0 && <ul className="jongo-summary-list">{issues.slice(0, 20).map((issue, i) => <li key={i}><button type="button" className="jongo-link" onClick={() => jump(issue.path)}><span className={issue.severity === 'error' ? 'jongo-error' : 'jongo-warning'}>{issue.severity === 'error' ? 'Error' : 'Note'}</span> {pathLabel(issue.path)}: {issue.message}</button></li>)}{issues.length > 20 && <li>…and {issues.length - 20} more.</li>}</ul>}
     </section>
     <form id="jongo-doc-form" noValidate onSubmit={event => { event.preventDefault(); save(); }}>
@@ -247,7 +274,7 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
       <ActionMenu id="jongo-more" label="More actions" entries={footerEntries} placement="up" />
     </>} />
   </StudioContext.Provider>
-    : unavailable ? <div role="alert" className="jongo-problem jongo-problem-unavailable" data-problem={unavailable.code}><h2>{PROBLEM_TITLE[unavailable.code]}</h2><p>{unavailable.message}</p><p className="jongo-hint">The document list could not be loaded, so nothing is shown here. Local drafts are not available while a store is connected.</p><button type="button" disabled={listing} onClick={() => { void refreshList(); }}>Try again</button>{unavailable.code === 'denied' && signInHref && <p><a className="jongo-link" href={signInHref}>Sign in again</a></p>}</div>
+    : unavailable ? <div role="alert" className="jongo-problem jongo-problem-unavailable" data-problem={unavailable.code}><h2>{PROBLEM_TITLE[unavailable.code]}</h2><p>{unavailable.message}</p><p className="jongo-hint">The document list could not be loaded.{debug && ' Nothing is shown here, and local drafts are not available while a store is connected.'}</p><button type="button" disabled={listing} onClick={() => { void refreshList(); }}>Try again</button>{unavailable.code === 'denied' && signInHref && <p><a className="jongo-link" href={signInHref}>Sign in again</a></p>}</div>
     : problem ? <div role="alert" className={`jongo-problem jongo-problem-${problem.code}`} data-problem={problem.code}><h2>{PROBLEM_TITLE[problem.code]}</h2><p>{problem.message}</p>{selectedId && <button type="button" onClick={() => { void loadDocument(selectedId); }}>Try again</button>}{problem.code === 'denied' && signInHref && <p><a className="jongo-link" href={signInHref}>Sign in again</a></p>}</div>
     : busy === 'loading' || listing ? <p role="status">Loading…</p>
     : <p>Select a document to begin.</p>;
