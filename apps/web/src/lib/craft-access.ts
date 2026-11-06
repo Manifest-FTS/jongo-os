@@ -146,10 +146,41 @@ export async function resolveCraftAccess(userId: string, siteId: string, now: Da
 }
 
 /** Platform admin, organization owner or live organization admin. App collaborators never manage grants. */
+export type CraftManagerCapacity = "platform_admin" | "org_owner" | "org_admin";
+
+/** The one definition of who may manage Craft access; app-level collaborators (even site admins) are never managers. */
+export function craftManagerCapacity(input: { userId: string; ownerId: string; orgRole: unknown; isPlatformAdmin: boolean }): CraftManagerCapacity | null {
+  if (input.ownerId === input.userId) return "org_owner";
+  if (input.orgRole === "admin") return "org_admin";
+  return input.isPlatformAdmin ? "platform_admin" : null;
+}
+
+async function managerCapacity(actorId: string, snapshot: Snapshot | null): Promise<CraftManagerCapacity | null> {
+  if (!snapshot) return null;
+  const tenant = craftManagerCapacity({
+    userId: actorId, ownerId: snapshot.site.organization!.ownerId,
+    orgRole: isOrgAdmin(snapshot, actorId) ? "admin" : null, isPlatformAdmin: false
+  });
+  if (tenant) return tenant;
+  return craftManagerCapacity({ userId: actorId, ownerId: "", orgRole: null, isPlatformAdmin: await isPlatformAdminUser(actorId) });
+}
+
+/**
+ * Highest role a manager may hand out: never more than they hold themselves. Every manager capacity holds admin on
+ * the site (see candidates()), so today the ceiling is admin; keeping it explicit means a future lower tier of
+ * manager cannot silently gain the ability to mint admins.
+ */
+export function grantCeiling(capacity: CraftManagerCapacity): CraftRole {
+  switch (capacity) {
+    case "platform_admin":
+    case "org_owner":
+    case "org_admin":
+      return "admin";
+  }
+}
+
 async function canManage(actorId: string, snapshot: Snapshot | null): Promise<boolean> {
-  if (!snapshot) return false;
-  if (snapshot.site.organization!.ownerId === actorId || isOrgAdmin(snapshot, actorId)) return true;
-  return isPlatformAdminUser(actorId);
+  return (await managerCapacity(actorId, snapshot)) !== null;
 }
 
 export type CraftAccessFailure = "invalid" | "forbidden" | "not_found" | "unavailable";
@@ -159,7 +190,11 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: string }).code === "P2002";
 }
 
-export type GrantCraftAccessInput = CraftAccessContext & { actorId: string; siteId: string; userId: string; role: unknown };
+export type GrantCraftAccessInput = CraftAccessContext & {
+  actorId: string; siteId: string; userId: string; role: unknown;
+  /** Set when the grant is applied from an accepted invitation (audit provenance only). */
+  invitationId?: string;
+};
 
 export async function grantCraftAccess(input: GrantCraftAccessInput): Promise<{ ok: true; id: string; created: boolean } | { ok: false; reason: CraftAccessFailure }> {
   if (!isUuid(input.actorId) || !isUuid(input.siteId) || !isUuid(input.userId) || !isCraftRole(input.role)) return { ok: false, reason: "invalid" };
@@ -170,7 +205,8 @@ export async function grantCraftAccess(input: GrantCraftAccessInput): Promise<{ 
   const attempt = () => db.$transaction(async (tx: any) => {
     const snapshot = await loadSnapshot(tx, input.actorId, input.siteId);
     if (!snapshot) return { ok: false as const, reason: "not_found" as const };
-    if (!(await canManage(input.actorId, snapshot))) return { ok: false as const, reason: "forbidden" as const };
+    const capacity = await managerCapacity(input.actorId, snapshot);
+    if (!capacity || RANK[role] > RANK[grantCeiling(capacity)]) return { ok: false as const, reason: "forbidden" as const };
     const target = await tx.user.findUnique({ where: { id: input.userId }, select: { id: true, deletedAt: true } });
     if (!target || target.deletedAt) return { ok: false as const, reason: "not_found" as const };
 
@@ -189,7 +225,10 @@ export async function grantCraftAccess(input: GrantCraftAccessInput): Promise<{ 
     await writeOidcAudit(tx, {
       organizationId: snapshot.site.organizationId, actorId: input.actorId, action: "craft.access.grant",
       resourceType: "site", resourceId: input.siteId,
-      details: { targetUserId: input.userId, role, replaced: Boolean(existing) },
+      details: {
+        targetUserId: input.userId, role, replaced: Boolean(existing),
+        ...(input.invitationId ? { via: "invite", invitationId: input.invitationId } : {})
+      },
       ipAddress: input.ipAddress, userAgent: input.userAgent
     });
     return { ok: true as const, id, created: !existing };

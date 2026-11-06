@@ -12,6 +12,9 @@ import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyAppStagingCapability, getCoolifyOverview } from "@/lib/coolify";
 import { auth } from "@/lib/auth.config";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
+import CraftAccessPanel from "@/components/CraftAccessPanel";
+import { isOidcEnabled } from "@/lib/oidc/config";
+import { resolveCraftManager } from "@/lib/craft-admin/gate";
 
 function formatAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -57,6 +60,9 @@ export default async function SiteSettingsPage({ params }: Params) {
     viewer
   });
   const canViewInternalMetadata = permissionSnapshot.canViewInternalMetadata;
+  // Flag off: short-circuits before any Craft lookup, and nothing extra is rendered.
+  const showCraftPanel = isOidcEnabled() && workspace.source === "db" && Boolean(session?.user?.id) &&
+    (await resolveCraftManager(session!.user!.id!, workspace.id)).ok;
   const githubSource = await loadSiteSource(workspace.id);
   const isWordPress = workspace.siteType === "wordpress" || workspace.resourceType === "WordPress";
   const stagingCapability = workspace?.coolifyServiceUuid
@@ -171,6 +177,12 @@ export default async function SiteSettingsPage({ params }: Params) {
           />
         </article>
       )}
+
+      {showCraftPanel ? (
+        <div style={{ marginBottom: "1.5rem" }}>
+          <CraftAccessPanel siteId={workspace.id} />
+        </div>
+      ) : null}
 
       {canViewInternalMetadata && workspace?.ownershipState !== "mapped" && (
         <div className="diagnostic-banner" style={{ marginBottom: "1rem" }}>

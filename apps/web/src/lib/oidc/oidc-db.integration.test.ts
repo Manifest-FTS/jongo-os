@@ -17,8 +17,10 @@ const holder = vi.hoisted(() => ({ prisma: null as unknown }));
 vi.mock("@/lib/db", () => ({ getDb: async () => holder.prisma }));
 
 import { grantCraftAccess, resolveCraftAccess, revokeCraftAccess } from "@/lib/craft-access";
+import { applyInviteCraftAccess, getCraftAccessOverview, loadInviteCraftRoles, rememberInviteCraftRole } from "@/lib/craft-admin/access";
+import { createCraftClient, rotateCraftClientSecret, updateCraftClient } from "@/lib/craft-admin/client";
 import { processAuthorize, processConsent } from "./authorize";
-import { generateClientSecret, hashClientSecret } from "./clients";
+import { generateClientSecret, hashClientSecret, verifyClientSecret } from "./clients";
 import { issueAuthCode, redeemAuthCode } from "./codes";
 import { loadOidcKeys, publicJwks } from "./keys";
 import { s256Challenge } from "./pkce";
@@ -222,6 +224,137 @@ describe.skipIf(!enabled)("OIDC against a real PostgreSQL cluster", () => {
 
       // A user with no access at all never gets as far as consent.
       expect((await processAuthorize(deps, outsider.id, params)).kind).toBe("no_access");
+    });
+  });
+});
+
+describe.skipIf(!enabled)("Phase 1b admin services against a real PostgreSQL cluster", () => {
+  let prisma: any;
+  let owner: any, orgAdmin: any, target: any, target2: any, org: any, app: any;
+  const FUTURE = new Date("2099-01-01");
+
+  const make = (label: string, extra: Record<string, unknown> = {}) =>
+    prisma.user.create({ data: { email: `${label}-b-${tag}@example.test`, fullName: label, emailVerified: true, ...extra } });
+  const invitation = (invitedById: string, label: string) => prisma.invitation.create({
+    data: { organizationId: org.id, siteId: app.id, email: `${label}-b-${tag}@example.test`, role: "collaborator", tokenHash: randomUUID(), inviteType: "site", invitedById, expiresAt: FUTURE }
+  });
+
+  beforeAll(async () => {
+    prisma = new PrismaClient({ datasourceUrl: url });
+    holder.prisma = prisma;
+    vi.stubEnv("JONGO_CMS_ENABLED", "true");
+    vi.stubEnv("JONGO_OIDC_ENABLED", "true");
+    owner = await make("owner", { subscriptionPlanId: "core-sla", subscriptionStatus: "active", subscriptionCurrentPeriodEnd: FUTURE });
+    orgAdmin = await make("orgadmin");
+    target = await make("target");
+    target2 = await make("target2");
+    org = await prisma.organization.create({ data: { slug: `org-b-${tag}`, name: "Org B", ownerId: owner.id } });
+    app = await prisma.site.create({ data: { organizationId: org.id, slug: `app-b-${tag}`, name: "App B" } });
+    await prisma.collaborator.create({ data: { organizationId: org.id, userId: orgAdmin.id, role: "admin" } });
+  });
+
+  afterAll(async () => {
+    vi.unstubAllEnvs();
+    await prisma?.$disconnect();
+  });
+
+  describe("OIDC client management", () => {
+    const site = () => ({ id: app.id, organizationId: org.id });
+    const base = () => ({ actorId: owner.id, site: site(), name: "App Craft", datasetName: "production", redirectUris: [REDIRECT], allowedOrigins: ["https://site.example"], ipAddress: "203.0.113.5", userAgent: "vitest" });
+
+    it("one client per app even under concurrent creates (advisory lock works with $executeRaw)", async () => {
+      const results = await Promise.all(Array.from({ length: 6 }, () => createCraftClient(base())));
+      const created = results.filter((r) => r.ok);
+      expect(created).toHaveLength(1);
+      expect(results.filter((r) => !r.ok && r.reason === "conflict")).toHaveLength(5);
+      expect(await prisma.oidcClient.count({ where: { siteId: app.id } })).toBe(1);
+      const row = await prisma.oidcClient.findFirst({ where: { siteId: app.id } });
+      const secret = (created[0] as { secret: string }).secret;
+      expect(verifyClientSecret(secret, row.secretHash)).toBe(true);
+      expect(row.secretHash).not.toContain(secret);
+      expect(row.createdById).toBe(owner.id);
+      const audits = await prisma.auditLog.findMany({ where: { action: "oidc.client.create", resourceId: row.id } });
+      expect(audits).toHaveLength(1);
+      expect(JSON.stringify(audits)).not.toContain(secret);
+    });
+
+    it("update, rotate, disable and enable persist and audit; the view never carries a hash", async () => {
+      const updated = await updateCraftClient({ actorId: owner.id, site: site(), redirectUris: { redirectUris: ["https://new.example/cb"], allowedOrigins: ["https://new.example"] }, datasetName: "staging" });
+      expect(updated).toMatchObject({ ok: true, client: { datasetName: "staging", redirectUris: ["https://new.example/cb"], status: "active" } });
+      const before = await prisma.oidcClient.findFirst({ where: { siteId: app.id } });
+      const rotated = await rotateCraftClientSecret({ actorId: owner.id, site: site() });
+      expect(rotated.ok).toBe(true);
+      const after = await prisma.oidcClient.findFirst({ where: { siteId: app.id } });
+      expect(after.previousSecretHash).toBe(before.secretHash);
+      expect(after.previousSecretExpiresAt.getTime()).toBeGreaterThan(Date.now() + 23 * 3600_000);
+      expect(after.rotatedAt).toBeInstanceOf(Date);
+      expect(JSON.stringify(rotated)).not.toContain(after.secretHash);
+
+      expect(await updateCraftClient({ actorId: owner.id, site: site(), status: "disabled" })).toMatchObject({ ok: true, client: { status: "disabled" } });
+      expect(await prisma.oidcClient.findFirst({ where: { siteId: app.id } })).toMatchObject({ status: "disabled", previousSecretHash: null, previousSecretExpiresAt: null });
+      expect(await rotateCraftClientSecret({ actorId: owner.id, site: site() })).toMatchObject({ ok: false, reason: "conflict" });
+      expect(await updateCraftClient({ actorId: owner.id, site: site(), status: "active" })).toMatchObject({ ok: true, client: { status: "active" } });
+
+      const actions = (await prisma.auditLog.findMany({ where: { organizationId: org.id, action: { startsWith: "oidc.client." } }, orderBy: { createdAt: "asc" } })).map((a: any) => a.action);
+      expect(actions).toEqual(["oidc.client.create", "oidc.client.update", "oidc.client.rotate", "oidc.client.disable", "oidc.client.enable"]);
+    });
+
+    it("a site of another client can never be addressed with this client's organization id", async () => {
+      const stranger = await prisma.organization.create({ data: { slug: `org-c-${tag}`, name: "Org C", ownerId: owner.id } });
+      expect(await updateCraftClient({ actorId: owner.id, site: { id: app.id, organizationId: stranger.id }, datasetName: "x" })).toMatchObject({ ok: false, reason: "not_found" });
+      expect(await rotateCraftClientSecret({ actorId: owner.id, site: { id: app.id, organizationId: stranger.id } })).toMatchObject({ ok: false, reason: "not_found" });
+    });
+  });
+
+  describe("invitation Craft role (InvitationCraftAccess)", () => {
+    it("Invitation itself gained no column: the Craft role lives in its own table", async () => {
+      const columns: Array<{ column_name: string }> = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'Invitation'`;
+      expect(columns.map((c) => c.column_name).filter((name) => /craft/i.test(name))).toEqual([]);
+      const own: Array<{ column_name: string }> = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'InvitationCraftAccess' ORDER BY 1`;
+      expect(own.map((c) => c.column_name)).toEqual(["createdAt", "id", "invitationId", "role"]);
+    });
+
+    it("one role per invitation, upsert updates it, bad roles are rejected, deleting the invitation removes it", async () => {
+      const invite = await invitation(owner.id, "i1");
+      await rememberInviteCraftRole(prisma, invite.id, "reader");
+      await rememberInviteCraftRole(prisma, invite.id, "publisher");
+      expect(await prisma.invitationCraftAccess.count({ where: { invitationId: invite.id } })).toBe(1);
+      expect([...(await loadInviteCraftRoles(prisma, [invite.id, randomUUID()])).entries()]).toEqual([[invite.id, "publisher"]]);
+      expect((await prisma.invitationCraftAccess.create({ data: { invitationId: invite.id, role: "admin" } }).catch((e: any) => e)).code).toBe("P2002");
+      await expect(prisma.invitationCraftAccess.create({ data: { invitationId: invite.id, role: "owner" } })).rejects.toThrow();
+      await prisma.invitation.delete({ where: { id: invite.id } });
+      expect(await prisma.invitationCraftAccess.count({ where: { invitationId: invite.id } })).toBe(0);
+    });
+
+    it("accepting applies the stored role through grantCraftAccess, attributed to the inviter and audited with provenance", async () => {
+      const invite = await invitation(owner.id, "i2");
+      await rememberInviteCraftRole(prisma, invite.id, "editor");
+      expect(await applyInviteCraftAccess(invite, target.id)).toEqual({ status: "applied", role: "editor" });
+      expect(await prisma.siteCraftAccess.findFirst({ where: { siteId: app.id, userId: target.id, revokedAt: null } })).toMatchObject({ role: "editor", grantedByUserId: owner.id });
+      expect(await resolveCraftAccess(target.id, app.id)).toMatchObject({ role: "editor", via: "site_grant" });
+      const audit = await prisma.auditLog.findFirst({ where: { action: "craft.access.grant", actorId: owner.id, resourceId: app.id } });
+      expect(audit.details).toMatchObject({ via: "invite", invitationId: invite.id, role: "editor", targetUserId: target.id });
+    });
+
+    it("an inviter demoted before acceptance grants nothing, and the skip is audited", async () => {
+      const invite = await invitation(orgAdmin.id, "i3");
+      await rememberInviteCraftRole(prisma, invite.id, "admin");
+      await prisma.collaborator.update({ where: { organizationId_userId: { organizationId: org.id, userId: orgAdmin.id } }, data: { role: "collaborator" } });
+      expect(await applyInviteCraftAccess(invite, target2.id)).toEqual({ status: "skipped", reason: "inviter_no_longer_authorized" });
+      expect(await prisma.siteCraftAccess.count({ where: { siteId: app.id, userId: target2.id } })).toBe(0);
+      const audit = await prisma.auditLog.findFirst({ where: { action: "craft.access.invite", actorId: orgAdmin.id } });
+      expect(audit.details).toMatchObject({ outcome: "skipped", reason: "inviter_no_longer_authorized", invitationId: invite.id });
+      await prisma.collaborator.update({ where: { organizationId_userId: { organizationId: org.id, userId: orgAdmin.id } }, data: { role: "admin" } });
+    });
+  });
+
+  describe("access overview", () => {
+    it("lists explicit grants with their grantor, plus owner and client admins as read-only inherited rows", async () => {
+      const result = await getCraftAccessOverview(owner.id, { id: app.id, organizationId: org.id });
+      if (!result.ok) throw new Error(result.reason);
+      expect(result.overview.explicit).toEqual([expect.objectContaining({ userId: target.id, role: "editor", grantedBy: { email: owner.email, name: "owner" } })]);
+      expect(result.overview.inherited.map((row) => [row.source, row.userId])).toEqual([["platform_admin", null], ["org_owner", owner.id], ["org_admin", orgAdmin.id]]);
+      expect(await getCraftAccessOverview(target.id, { id: app.id, organizationId: org.id })).toEqual({ ok: false, reason: "forbidden" });
     });
   });
 });

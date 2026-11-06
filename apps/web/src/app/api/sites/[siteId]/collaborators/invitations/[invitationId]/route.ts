@@ -11,6 +11,9 @@ import {
 } from "@/lib/invitations";
 import { normalizeRole } from "@/lib/roles";
 import { resolveSiteAccess } from "@/lib/tenant-route-access";
+import { isOidcEnabled } from "@/lib/oidc/config";
+import { loadInviteCraftRoles, rememberInviteCraftRole } from "@/lib/craft-admin/access";
+import { resolveCraftManager } from "@/lib/craft-admin/gate";
 
 type Params = { params: Promise<{ siteId: string; invitationId: string }> };
 
@@ -204,6 +207,18 @@ export async function POST(req: Request, { params }: Params) {
       where: { id: created.id },
       data: { tokenHash: hashInviteToken(stableToken) }
     });
+
+    // Only a manager (owner, client admin, platform admin) carries a Craft role onto the new link; acceptance re-checks the inviter anyway.
+    if (isOidcEnabled()) {
+      try {
+        const previous = (await loadInviteCraftRoles(db, [invite.id])).get(invite.id);
+        if (previous && (await resolveCraftManager(session.user.id, access.siteId)).ok) {
+          await rememberInviteCraftRole(db, created.id, previous);
+        }
+      } catch {
+        console.error("[craft-admin] carrying the Craft role onto a regenerated invite failed");
+      }
+    }
 
     const inviteUrl = buildInviteUrlForInvitation(created.id);
     const emailConfigured = isSmtpConfigured();

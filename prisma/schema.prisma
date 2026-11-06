@@ -728,6 +728,7 @@ model Invitation {
   site           Site?        @relation(fields: [siteId], references: [id], onDelete: Cascade)
   invitedBy      User?        @relation("InvitationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
   acceptedByUser User?        @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  craftAccess    InvitationCraftAccess?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1713,4 +1714,15 @@ model SiteCraftAccess {
 
   @@index([siteId, userId])
   @@index([userId])
+}
+
+/// Craft role chosen while inviting someone to an app; applied (after re-checking the inviter) when the invite is accepted.
+/// A side table, not a column on Invitation, so existing Invitation queries are untouched with the feature off.
+model InvitationCraftAccess {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invitationId String        @unique @db.Uuid
+  role         SiteCraftRole
+  createdAt    DateTime      @default(now())
+
+  invitation Invitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
 }

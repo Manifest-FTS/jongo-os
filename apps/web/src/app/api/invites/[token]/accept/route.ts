@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth.config";
 import { isSmtpConfigured, sendInviteAcceptedEmail } from "@/lib/email";
 import { hashInviteToken, isInviteExpired, parseInvitationIdFromToken } from "@/lib/invitations";
 import { normalizeRole } from "@/lib/roles";
+import { isOidcEnabled } from "@/lib/oidc/config";
+import { applyInviteCraftAccess } from "@/lib/craft-admin/access";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -301,6 +303,15 @@ export async function POST(req: Request, { params }: Params) {
         }
       });
     });
+
+    // Craft role chosen at invite time. Re-verifies the inviter; never fails the acceptance. Flag off: not reached.
+    if (isOidcEnabled() && invite.inviteType === "site") {
+      await applyInviteCraftAccess(
+        { id: invite.id, organizationId: invite.organizationId, siteId: invite.siteId, invitedById: invite.invitedById },
+        user.id,
+        { ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null, userAgent: req.headers.get("user-agent") }
+      );
+    }
 
     if (isSmtpConfigured() && invite.invitedBy?.email) {
       const scopeLabel = invite.inviteType === "site" ? "site team" : "client team";
