@@ -533,8 +533,9 @@ async function buildLiveOverview(
   });
 
   const deploymentSampleLimit = Math.max(0, Math.min(Number(process.env.COOLIFY_DEPLOYMENT_SAMPLE_LIMIT ?? 8), 20));
+  // Every application is listed (a cap here once hid app #21 onward from admins); only the per-app deployment lookups are bounded.
   const applicationSitesWithDeployments = await Promise.all(
-    standaloneApplications.slice(0, 20).map(async (application, index): Promise<{ site: SiteOverview; deployments: DeploymentRecord[] }> => {
+    standaloneApplications.map(async (application, index): Promise<{ site: SiteOverview; deployments: DeploymentRecord[] }> => {
       const site = makeSiteOverview(
         application,
         `application-${index + 1}`,
