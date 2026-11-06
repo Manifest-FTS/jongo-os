@@ -457,10 +457,10 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
             type="text"
             value={coolifyUuid}
             onChange={(e) => setCoolifyUuid(parseCoolifyResourceReference(e.target.value).id)}
-            placeholder={selectedApp ? selectedApp.id : "Paste the app's Coolify address or its id"}
+            placeholder={selectedApp ? selectedApp.id : "Paste the app's address or its id"}
             className="form-input mono-input"
           />
-          <p className="form-help">Pasting the app's page address from Coolify works: the id is picked out for you.</p>
+          <p className="form-help">You can paste the app's page address from the hosting dashboard: the id is picked out for you.</p>
         </div>
         <div>
           <label className="form-label">Git Repository URL</label>
