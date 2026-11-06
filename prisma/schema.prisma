@@ -109,6 +109,11 @@ model User {
   cmsContentOutboxEvents CmsContentOutbox[]
   cmsMediaCreated CmsApprovedMedia[] @relation("CmsMediaCreator")
   cmsMediaReviewed CmsApprovedMedia[] @relation("CmsMediaReviewer")
+  oidcClientsCreated OidcClient[]
+  oidcAuthCodes OidcAuthCode[]
+  oidcConsents OidcConsent[]
+  siteCraftAccess SiteCraftAccess[] @relation("SiteCraftAccessUser")
+  siteCraftAccessGranted SiteCraftAccess[] @relation("SiteCraftAccessGrantedBy")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -327,6 +332,8 @@ model Site {
   sftpAccounts             SftpAccount[]
   notifications            Notification[]
   cmsDatasets              CmsDataset[]
+  oidcClients              OidcClient[]
+  craftAccess              SiteCraftAccess[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1599,4 +1606,111 @@ model CmsContentDelivery {
   @@unique([eventId, targetId])
   @@index([datasetId, eventId])
   @@index([datasetId, targetId])
+}
+
+// ============================================================
+// "Sign in with Jongo": OpenID Connect provider for Craft sites (Phase 1a).
+// Additive only; inert unless JONGO_OIDC_ENABLED=true. See docs/craft-sso-design.md.
+// SQL-only (not expressible here): partial unique index on SiteCraftAccess(siteId, userId)
+// WHERE revokedAt IS NULL, plus CHECK constraints. Preserve them in future migrations.
+// ============================================================
+
+enum OidcClientStatus {
+  active
+  disabled
+}
+
+enum SiteCraftRole {
+  reader
+  editor
+  publisher
+  admin
+}
+
+/// One client per Site. Secrets are stored only as salted hashes ("v1$salt$hash").
+model OidcClient {
+  id                      String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Public identifier; the `aud` of ID tokens.
+  clientId                String           @unique
+  organizationId          String           @db.Uuid
+  siteId                  String           @db.Uuid
+  name                    String
+  /// Craft dataset NAME the site uses (not a CmsDataset id).
+  datasetName             String           @default("production")
+  status                  OidcClientStatus @default(active)
+  secretHash              String
+  previousSecretHash      String?
+  previousSecretExpiresAt DateTime?
+  /// Exact-match list; no wildcards.
+  redirectUris            String[]
+  allowedOrigins          String[]
+  createdById             String?          @db.Uuid
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  rotatedAt               DateTime?
+  disabledAt              DateTime?
+
+  site      Site          @relation(fields: [siteId, organizationId], references: [id, organizationId], onDelete: Cascade, onUpdate: Restrict)
+  createdBy User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  authCodes OidcAuthCode[]
+  consents  OidcConsent[]
+
+  @@index([siteId, organizationId])
+}
+
+/// Single-use authorization code. Only a SHA-256 of the code is stored.
+model OidcAuthCode {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codeHash      String    @unique
+  oidcClientId  String    @db.Uuid
+  userId        String    @db.Uuid
+  redirectUri   String
+  codeChallenge String
+  nonce         String
+  scope         String
+  authTime      DateTime
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  client OidcClient @relation(fields: [oidcClientId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([oidcClientId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model OidcConsent {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @db.Uuid
+  oidcClientId String    @db.Uuid
+  scope        String
+  grantedAt    DateTime  @default(now())
+  revokedAt    DateTime?
+
+  client OidcClient @relation(fields: [oidcClientId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, oidcClientId])
+  @@index([oidcClientId])
+}
+
+/// Explicit per-app Craft access granted to one Jongo user (soft-revoked).
+model SiteCraftAccess {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteId          String        @db.Uuid
+  userId          String        @db.Uuid
+  role            SiteCraftRole
+  grantedByUserId String?       @db.Uuid
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  revokedAt       DateTime?
+
+  site      Site  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user      User  @relation("SiteCraftAccessUser", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy User? @relation("SiteCraftAccessGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([siteId, userId])
+  @@index([userId])
 }

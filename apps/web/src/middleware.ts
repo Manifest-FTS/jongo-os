@@ -70,6 +70,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
+  // Sign in with Jongo (OIDC provider): exactly these three method+path pairs are public. Exact
+  // equality on purpose, never PUBLIC_PATHS (startsWith) and never /api/auth. Each handler 404s
+  // unless JONGO_OIDC_ENABLED=true; /oidc/authorize stays behind the normal login redirect.
+  if (
+    ((req.method === "GET" || req.method === "HEAD") &&
+      (pathname === "/.well-known/openid-configuration" || pathname === "/api/oidc/jwks")) ||
+    (req.method === "POST" && pathname === "/api/oidc/token")
+  ) {
+    return NextResponse.next();
+  }
+
   const ownershipSyncToken = process.env.OWNERSHIP_SYNC_TOKEN;
   const backupReconcileToken = process.env.BACKUP_RECONCILE_TOKEN;
   const authHeader = req.headers.get("authorization") ?? "";
