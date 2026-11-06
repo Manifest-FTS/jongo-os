@@ -6,7 +6,7 @@ import { validateDocument, publishState, type Path } from './validate.js';
 import { randomKey } from './portable-text.js';
 import { Field } from './fields.js';
 import { StudioContext, fieldId, type MediaApi, type StudioApi } from './studio-context.js';
-import { MutationKeys, formatClock, settle, statusDetail, statusLabel, type StudioDocSummary, type StudioFailure, type StudioPermissions, type StudioRecord, type StudioResult, type StudioStamp, type StudioStore } from './studio-store.js';
+import { MutationKeys, formatClock, planPublish, saveThenPublish, settle, statusDetail, statusLabel, type StudioDocSummary, type StudioFailure, type StudioPermissions, type StudioRecord, type StudioResult, type StudioStamp, type StudioStore } from './studio-store.js';
 import { mediaLimits, type MediaLimits, type StudioAssetDocument } from './media-contract.js';
 import { uploadAsset, type PutFile } from './media-client.js';
 import { ActionMenu, Avatar, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, Stamp, type MenuEntry } from './studio-chrome.js';
@@ -78,6 +78,10 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   }, [summaries, working, config.assets, uploaded, titleField]);
   const issues = useMemo(() => schema && working ? validateDocument(schema, working, index) : [], [schema, working, index]);
   const state = publishState(issues);
+  // A conflict leaves the page on a stale revision: every write would conflict again until Reload latest.
+  const stale = problem?.code === 'conflict';
+  const plan = record ? planPublish({ variant: record.variant, dirty, errors: state.errors, busy: !!busy, stale }) : null;
+  const firstError = issues.find(issue => issue.severity === 'error');
   const announce = useCallback((text: string) => setMessage(previous => ({ text, count: previous.count + 1 })), []);
   const focus = useCallback((id: string, select?: readonly [number, number]) => { pending.current = { id, select }; setFocusTick(tick => tick + 1); }, []);
   useEffect(() => {
@@ -179,16 +183,22 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   }
   const mutate = (operation: Exclude<Operation, 'loading'>, trigger: string, call: () => Promise<StudioResult<StudioRecord>>, done: string) => perform(operation, trigger, call, result => { show(result); announce(done); });
   const save = () => {
-    if (!record || !working || !dirty || !canWrite) return;
+    if (!record || !working || !dirty || !canWrite || stale) return;
     const doc = stripEnvelope(working), expect = { nativeRev: record.nativeRev, lockVersion: record.lockVersion };
     void perform('saving', 'jongo-save', () => store.saveDraft(doc, { ...expect, mutationKey: keys.current.keyFor('save', doc._id, expect, doc) }), result => {
       const adopted = show(result); setSavedAt({ rev: adopted.nativeRev, at: new Date().toISOString() }); announce('Draft saved. It is not published.');
     });
   };
-  const publish = () => {
-    if (!record || !working || !canPublishDocs) return;
-    const id = working._id, expect = { nativeRev: record.nativeRev, lockVersion: record.lockVersion };
-    void mutate('publishing', 'jongo-publish', () => store.publish(id, { ...expect, mutationKey: keys.current.keyFor('publish', id, expect) }), 'Published.');
+  // One user action: with unsaved edits it saves first (existing compare-and-set and keys), stops on any failure, then publishes the NEW revision.
+  const publish = async () => {
+    if (!record || !working || !canPublishDocs || busyRef.current || plan?.can !== true) return;
+    const saveFirst = plan.saveFirst, expect = { nativeRev: record.nativeRev, lockVersion: record.lockVersion };
+    busyRef.current = true; restoreFocus.current = 'jongo-publish'; setBusy('publishing'); setProblem(null); announce(saveFirst ? 'Saving and publishing…' : BUSY_LABEL.publishing);
+    const outcome = await saveThenPublish(store, { id: working._id, expect, doc: saveFirst ? stripEnvelope(working) : undefined, keys: keys.current });
+    busyRef.current = false; setBusy(null);
+    if (outcome.ok) { keys.current.clear(); show(outcome.record); announce(outcome.saved ? 'Saved and published.' : 'Published.'); return; }
+    if (outcome.saved) { const adopted = show(outcome.saved); setSavedAt({ rev: adopted.nativeRev, at: new Date().toISOString() }); announce('Draft saved, but it was not published.'); }
+    setProblem(outcome.failure);
   };
   const unpublish = () => {
     if (!record?.published || !working || !canPublishDocs || !window.confirm('Unpublish this document? The published version is withdrawn from the website and a draft is kept.')) return;
@@ -196,7 +206,7 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     void mutate('unpublishing', 'jongo-more', () => store.unpublish(id, { ...expect, mutationKey: keys.current.keyFor('unpublish', id, expect) }), 'Unpublished. The document is now a draft.');
   };
   const discard = () => {
-    if (!record || !working || !window.confirm('Discard the saved draft and return to the published version? Draft changes are not recoverable from Jongo Craft.')) return;
+    if (!record || !working || !window.confirm(`Discard the saved draft and return to the published version? Draft changes are not recoverable from Jongo Craft.${dirty ? ' Your unsaved edits on this page are discarded too.' : ''}`)) return;
     const id = working._id, expect = { nativeRev: record.nativeRev, lockVersion: record.lockVersion };
     void mutate('discarding', 'jongo-more', () => store.discardDraft(id, { ...expect, mutationKey: keys.current.keyFor('discard', id, expect) }), 'Draft discarded. Showing the published version.');
   };
@@ -224,8 +234,9 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   const visible = summaries.filter(item => item.type === type && item.title.toLowerCase().includes(query.toLowerCase()));
   const saveState = busy ?? (problem?.code === 'conflict' ? 'conflict' : problem ? 'error' : dirty ? 'dirty' : 'saved');
   const chip = busy ? BUSY_LABEL[busy] : problem?.code === 'conflict' ? 'Conflict' : problem ? 'Error' : dirty ? 'Unsaved changes' : 'Saved';
-  const canPublish = !!record && record.variant === 'draft' && !dirty && state.ready && !busy;
-  const publishHint = !record ? '' : record.variant === 'published' ? 'Published and up to date: nothing to publish.' : dirty ? 'Save your changes before publishing.' : !state.ready ? 'Fix the blocking issues above to enable publishing.' : '';
+  const canPublish = plan?.can === true;
+  const publishHint = plan && !plan.can ? plan.text : '';
+  const reload = 'Reload the latest version first.';
   const stateOf = (item: StudioDocSummary) => item.variant === 'published' ? 'Published' : item.hasPublished ? 'Draft changes' : 'Draft';
   const unavailable = listError ?? null;
   const singleton = !!schema?.singleton;
@@ -233,10 +244,10 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   const liveEl = <div role="status" aria-live="polite" aria-atomic="true" className="jongo-live">{message.text}{message.count % 2 ? '\u200b' : ''}</div>;
   const footerEntries: MenuEntry[] = !record || !working || !canWrite ? [] : [
     ...(dirty ? [{ id: 'jongo-reset', label: 'Reset changes', icon: 'reset' as const, disabled: !!busy, onSelect: () => { setWorking(record.doc); announce('Unsaved changes reset to the last saved version.'); } }] : []),
-    ...(record.published && canPublishDocs ? [{ id: 'jongo-unpublish', label: 'Unpublish', icon: 'unpublish' as const, danger: true, disabled: dirty || !!busy, title: dirty ? 'Save or reset your changes first.' : undefined, onSelect: unpublish }] : []),
-    ...(record.variant === 'draft' && record.published && record.publishedDiffers !== false ? [{ id: 'jongo-discard', label: 'Discard draft', icon: 'reset' as const, danger: true, disabled: !!busy, onSelect: discard }] : []),
-    ...(store.duplicate && !singleton ? [{ id: 'jongo-duplicate', label: 'Duplicate', icon: 'duplicate' as const, disabled: dirty || !!busy, title: dirty ? 'Save or reset your changes first.' : undefined, onSelect: duplicate }] : []),
-    ...(store.delete && !singleton && canPublishDocs ? [{ id: 'jongo-delete', label: 'Delete', icon: 'delete' as const, danger: true, separatorBefore: true, disabled: !!busy, onSelect: remove }] : [])
+    ...(record.published && canPublishDocs ? [{ id: 'jongo-unpublish', label: 'Unpublish', icon: 'unpublish' as const, danger: true, disabled: dirty || stale || !!busy, title: stale ? reload : dirty ? 'Save or reset your changes first.' : undefined, onSelect: unpublish }] : []),
+    ...(record.variant === 'draft' && record.published && record.publishedDiffers !== false ? [{ id: 'jongo-discard', label: 'Discard draft', icon: 'reset' as const, danger: true, disabled: stale || !!busy, title: stale ? reload : undefined, onSelect: discard }] : []),
+    ...(store.duplicate && !singleton ? [{ id: 'jongo-duplicate', label: 'Duplicate', icon: 'duplicate' as const, disabled: dirty || stale || !!busy, title: stale ? reload : dirty ? 'Save or reset your changes first.' : undefined, onSelect: duplicate }] : []),
+    ...(store.delete && !singleton && canPublishDocs ? [{ id: 'jongo-delete', label: 'Delete', icon: 'delete' as const, danger: true, separatorBefore: true, disabled: stale || !!busy, title: stale ? reload : undefined, onSelect: remove }] : [])
   ];
   const stamp: StudioStamp | undefined = !record ? undefined : record.variant === 'published' ? record.lastPublished ?? record.lastEdited : record.lastEdited;
   const prefix = record?.variant === 'published' ? 'Published' : 'Draft saved';
@@ -250,11 +261,12 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     <div className="jongo-editor-body">
     {noticeEl}
     {!canWrite && <p className="jongo-notice jongo-viewonly" role="note" data-view-only="true">You have view-only access. You can read content here but not change or publish it.</p>}
+    {canWrite && !canPublishDocs && <p className="jongo-notice jongo-editonly" role="note" data-edit-only="true">You can edit and save drafts. Publishing, unpublishing and deleting need publisher access.</p>}
     <p className="jongo-help">{statusDetail(record)}{debug && ' Changes are saved as drafts in the connected store; publishing is a separate, explicit step.'}</p>
     {problem && <div role="alert" className={`jongo-problem jongo-problem-${problem.code}`} data-problem={problem.code}>
       <h2>{PROBLEM_TITLE[problem.code]}</h2>
       <p>{problem.message}</p>
-      {problem.code === 'conflict' && <><p>Your edits are still on this page and were not saved. Reload latest loads the newest saved version and discards your unsaved edits here.</p><button type="button" onClick={() => { if (!busyRef.current) void loadDocument(working._id, 'Reloaded the latest saved version. Your unsaved edits were discarded.'); }} disabled={!!busy}>Reload latest</button></>}
+      {problem.code === 'conflict' && <><p>{dirty ? 'Your edits are still on this page and were not saved. Reload latest loads the newest saved version and discards your unsaved edits here.' : 'Reload latest loads the newest version of this document.'}</p><button type="button" onClick={() => { if (!busyRef.current) void loadDocument(working._id, 'Reloaded the latest saved version. Your unsaved edits were discarded.'); }} disabled={!!busy}>Reload latest</button></>}
       {problem.fieldErrors?.length ? <ul className="jongo-summary-list">{problem.fieldErrors.slice(0, 20).map((item, i) => <li key={i}>{item.path.length ? `${pathLabel(item.path)}: ` : ''}{item.message}</li>)}</ul> : null}
       {problem.code === 'denied' && signInHref && <p><a className="jongo-link" href={signInHref}>Sign in again</a></p>}
       {problem.code === 'unavailable' && debug && <p className="jongo-hint">Pressing the same button again retries the same request safely.</p>}
@@ -274,10 +286,11 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     </form>
     {liveEl}
     </div>
-    <EditorFooter status={footerStatus} actions={<>
-      {canWrite && <button id="jongo-save" form="jongo-doc-form" type="submit" disabled={!dirty || !!busy}><Icon name="save" />{busy === 'saving' ? 'Saving…' : 'Save draft'}</button>}
-      {canPublishDocs && <><span className="jongo-tip" title={publishHint || undefined}><button id="jongo-publish" className="jongo-primary" type="button" onClick={publish} disabled={!canPublish} aria-describedby="jongo-publish-hint"><Icon name="publish" />{busy === 'publishing' ? 'Publishing…' : 'Publish'}</button></span>
-      <span id="jongo-publish-hint" className="jongo-sr">{publishHint}</span></>}
+    <EditorFooter status={footerStatus} note={canPublishDocs && plan && !plan.can && plan.text ? (plan.reason === 'blocked' && firstError
+      ? <button id="jongo-publish-reason" type="button" className="jongo-link jongo-footer-reason" data-publish-reason="blocked" onClick={() => jump(firstError.path)}>{plan.text}</button>
+      : <span id="jongo-publish-reason" className="jongo-footer-reason" data-publish-reason={plan.reason}>{plan.text}</span>) : undefined} actions={<>
+      {canWrite && <button id="jongo-save" form="jongo-doc-form" type="submit" disabled={!dirty || !!busy || stale}><Icon name="save" />{busy === 'saving' ? 'Saving…' : 'Save draft'}</button>}
+      {canPublishDocs && <span className="jongo-tip" title={publishHint || undefined}><button id="jongo-publish" className="jongo-primary" type="button" onClick={() => { void publish(); }} disabled={!canPublish} aria-describedby={publishHint ? 'jongo-publish-reason' : undefined}><Icon name="publish" />{busy === 'publishing' ? 'Publishing…' : 'Publish'}</button></span>}
       <ActionMenu id="jongo-more" label="More actions" entries={footerEntries} placement="up" />
     </>} />
   </StudioContext.Provider>

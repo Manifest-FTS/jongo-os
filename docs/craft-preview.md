@@ -16,7 +16,25 @@
 
 - *Optimistic concurrency.* Every mutation sends the revision and lock version the editor loaded. A `conflict` keeps the editor's text on screen, says plainly that it was not saved, and offers **Reload latest** (which discards the unsaved edits). The Studio never retries with a newer revision by itself, so it cannot silently overwrite.
 - *Retry-safe mutation keys.* A key is generated per attempt and is identical for an immediate retry of the same request (same operation, document, precondition and body; key order irrelevant). Any change, or a confirmed outcome, makes a new key. After a lost response the same button retries safely; the server replays the stored receipt.
-- *Rules.* Save is disabled while saving or when nothing changed; Publish only for a saved, valid draft (client checks mirror the server, which decides); Unpublish needs a published version; Discard draft needs a draft over a published version. Fields are inert while an operation runs. Focus is restored to the pressed button afterwards. A polite live region announces results and an `role="alert"` region shows problems.
+- *Rules.* Save draft is enabled only when there are unsaved edits (and no conflict is pending); Publish is enabled whenever the document passes the checks and there is something to publish (a draft, saved or not, or a published document with unsaved edits). With unsaved edits Publish is **Save then Publish as one action** (preview.16): it saves with the existing compare-and-set and mutation key, stops on a failure or conflict and shows the usual problem panel without publishing, and otherwise publishes the new revision with its own key and announces "Saved and published." After a lost response the same button retries with the same keys. When Publish is disabled the reason is visible text beside the buttons (and a tooltip and `aria-describedby`): "Published, up to date", "Fix N issue(s) to publish" (a link to the first issue) or "Reload latest to continue" (after a conflict, when every write would conflict again). Unpublish needs a published version; Discard draft needs a draft over a published version that differs from it. Fields are inert while an operation runs. Focus is restored to the pressed button afterwards. A polite live region announces results and an `role="alert"` region shows problems.
+
+  Action matrix (connected mode; server permissions are authoritative, the interface only mirrors them). "-" = not shown.
+
+  | State | Save draft | Publish | Unpublish | Discard draft | Duplicate | Delete |
+  |---|---|---|---|---|---|---|
+  | Draft, clean, valid | disabled | enabled | - | - | enabled | enabled |
+  | Draft, unsaved edits, valid | enabled | enabled (saves first) | - | - | disabled until saved or reset | enabled |
+  | Draft, any issues | enabled if edited | disabled, "Fix N issue(s) to publish" | - | - | as above | enabled |
+  | Published, clean | disabled | disabled, "Published, up to date" | enabled | - | enabled | enabled |
+  | Published, unsaved edits | enabled | enabled (saves first) | disabled until saved or reset | - | disabled until saved or reset | enabled |
+  | Draft over published (differs) | disabled if clean | enabled | enabled (keeps the draft) | enabled | enabled | enabled |
+  | Draft identical to published | disabled | enabled (clears the draft) | enabled | - | enabled | enabled |
+  | Conflict pending | disabled | disabled, "Reload latest to continue" | disabled | disabled | disabled | disabled |
+  | Busy | disabled | disabled | disabled | disabled | disabled | disabled |
+  | Editor (write, no publish) | as above | - | - | enabled when applicable | as above | - (view note: "You can edit and save drafts...") |
+  | Reader | - | - | - | - | - | - (view-only note, fields inert) |
+
+  Fixed (singleton) documents never offer Duplicate or Delete (the server refuses them too); the header tools menu says "Fixed page content: can't be duplicated or deleted". In **local draft mode** (no database) the same set is shown honestly: Save local draft, a disabled Publish with the visible reason "Publishing needs the Jongo Craft database", and a menu with Reset changes, Revert to original snapshot and disabled Duplicate and Delete ("Needs the Jongo Craft database"); Unpublish and Discard draft are omitted because they have no meaning there.
 - *Props.* `initial` (server-prefetched list/record or a prefetch failure, shown as an unavailable state with a retry), `notice` (one honest line, both modes), `topbarSlot` (sign-out form), `signInHref` (shown on `denied`). The old "persistence and publishing are not connected" text is dropped only when a store is connected.
 
 ### Website server layer (`dd-thegolflab/src/lib/craft/*`, `src/app/craft/*`)

@@ -22,7 +22,8 @@ test('store mode is opt-in: without a store the Studio keeps its exact local-dra
   const local = renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] }, debug: true }));
   for (const text of ['Save local draft', 'Revert to original snapshot', 'persistence and publishing are not connected', 'page memory only']) assert.ok(local.includes(text), text);
   assert.ok(!local.includes('data-studio-mode'));
-  for (const text of ['Publish</button>', 'Unpublish', 'Discard draft', 'Reload latest']) assert.ok(!local.includes(text), text);
+  for (const text of ['Unpublish', 'Discard draft', 'Reload latest']) assert.ok(!local.includes(text), text);
+  assert.ok(disabled(local, 'jongo-publish') && local.includes('Publishing needs the Jongo Craft database'), 'Publish stays visible but disabled, with its reason');
   const plain = renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] } }));
   assert.ok(plain.includes('Save local draft'), 'labels stay');
   for (const text of ['persistence and publishing are not connected', 'page memory only', 'Local draft mode: nothing is stored', 'Checks run locally', 'Drafts are kept in page memory']) assert.ok(!plain.includes(text), `not without debug: ${text}`);
@@ -55,7 +56,7 @@ test('a never-published draft cannot be unpublished or discarded; an invalid dra
   assert.ok(html.includes('Never published'));
   assert.ok(html.includes('data-publish-ready="false"'));
   assert.ok(disabled(html, 'jongo-publish'));
-  assert.ok(html.includes('Fix the blocking issues above to enable publishing.'));
+  assert.ok(html.includes('Fix 1 issue to publish') && html.includes('data-publish-reason="blocked"'), 'the reason is visible text, not only a tooltip');
   assert.ok(!hasItem(html, 'jongo-unpublish'));
   assert.ok(!hasItem(html, 'jongo-discard'));
 });
@@ -205,10 +206,12 @@ test('icons are decorative and every icon button has an accessible name', () => 
   }
 });
 
-test('local mode keeps its exact labels inside the menu and offers no store actions', () => {
+test('local mode keeps its exact labels inside the menu and shows the full action set, honestly disabled', () => {
   const html = localHtml({ debug: true });
   for (const text of ['Save local draft', 'Reset changes', 'Revert to original snapshot', 'id="jongo-reset"', 'id="jongo-revert"', 'role="menuitem"']) assert.ok(html.includes(text), text);
-  for (const text of ['Unpublish', 'Discard draft', 'Duplicate', 'Delete', 'History', 'Publish</button>']) assert.ok(!html.includes(text), text);
+  for (const text of ['Unpublish', 'Discard draft', 'History']) assert.ok(!html.includes(text), text);
+  assert.ok(disabled(html, 'jongo-publish') && html.includes('Publishing needs the Jongo Craft database'), 'Publish is visible, disabled and explains why');
+  for (const id of ['jongo-duplicate', 'jongo-delete']) assert.ok(hasItem(html, id) && disabled(html, id), `${id} is listed but disabled in local mode`);
   assert.ok(disabled(html, 'jongo-reset') && disabled(html, 'jongo-revert'), 'nothing to reset yet');
   assert.ok(html.includes('Local draft mode: nothing is stored'));
 });

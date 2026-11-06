@@ -10,7 +10,7 @@ import { ConnectedStudio, type StudioInitial } from './studio-connected.js';
 import { formatClock, type StudioPermissions, type StudioStore } from './studio-store.js';
 import type { MediaLimits } from './media-contract.js';
 import type { PutFile } from './media-client.js';
-import { ActionMenu, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, type MenuEntry } from './studio-chrome.js';
+import { ActionMenu, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, NEEDS_DATABASE, type MenuEntry } from './studio-chrome.js';
 
 export type StudioConfig = { schemas: readonly TypeDefinition[]; documents: readonly ContentDocument[]; assets?: readonly ImageAssetDocument[] };
 const pathLabel = (path: Path) => path.map(part => typeof part === 'number' ? `item ${part + 1}` : part).join(' › ');
@@ -107,7 +107,12 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
   const chip = dirty ? 'Unsaved changes' : edited ? 'Local draft (edited)' : 'Original snapshot';
   const menu: MenuEntry[] = [
     { id: 'jongo-reset', label: 'Reset changes', icon: 'reset', disabled: !dirty, onSelect: () => { setWorking(selected); announce('Unsaved changes reset to the last local draft.'); } },
-    { id: 'jongo-revert', label: 'Revert to original snapshot', icon: 'reset', disabled: !edited && !dirty, onSelect: () => { if (snapshot) { setDocuments(previous => previous.map(doc => doc._id === snapshot._id ? snapshot : doc)); setWorking(snapshot); setSavedAt(null); announce('Document reverted to its original snapshot.'); } } }
+    { id: 'jongo-revert', label: 'Revert to original snapshot', icon: 'reset', disabled: !edited && !dirty, onSelect: () => { if (snapshot) { setDocuments(previous => previous.map(doc => doc._id === snapshot._id ? snapshot : doc)); setWorking(snapshot); setSavedAt(null); announce('Document reverted to its original snapshot.'); } } },
+    // Shown disabled so the action set matches the connected editor; fixed (singleton) documents never offer them.
+    ...(schema?.singleton ? [] : [
+      { id: 'jongo-duplicate', label: 'Duplicate', icon: 'duplicate' as const, disabled: true, description: NEEDS_DATABASE, onSelect: () => undefined },
+      { id: 'jongo-delete', label: 'Delete', icon: 'delete' as const, danger: true, separatorBefore: true, disabled: true, description: NEEDS_DATABASE, onSelect: () => undefined }
+    ])
   ];
   return <div className="jongo-studio"><a className="jongo-skip" href="#jongo-editor">Skip to editor</a><header className="jongo-topbar"><a className="jongo-brand" href={brand.homeHref}>{brand.logoSrc && <img src={brand.logoSrc} alt="" />}{brand.name}<span>Craft</span></a>{brand.designSystemHref && <a href={brand.designSystemHref}>Design system ↗</a>}{topbarSlot && <div className="jongo-topbar-slot">{topbarSlot}</div>}</header>
     <div className="jongo-desk"><aside className="jongo-structure"><p className="jongo-eyebrow">Structure</p><h2>Content</h2><nav aria-label="Content structure">{config.schemas.map(item => <a className="jongo-nav-item" href={documentHref(item.name)} key={item.name} aria-current={type === item.name ? 'page' : undefined} onClick={event => navigate(event, item.name)}>{item.title ?? item.name}<span>›</span></a>)}</nav></aside>
@@ -137,8 +142,9 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
         </form>
         <div role="status" aria-live="polite" aria-atomic="true" className="jongo-live">{message.text}{message.count % 2 ? '\u200b' : ''}</div>
         </div>
-        <EditorFooter status={dirty ? 'Draft, unsaved changes' : savedAt ? (debug ? `Saved ${formatClock(savedAt)} (page memory only)` : `Kept for this session ${formatClock(savedAt)}`) : debug ? 'Local draft mode: nothing is stored' : null} actions={<>
-          <button id="jongo-save" form="jongo-doc-form" className="jongo-primary" type="submit" disabled={!dirty}><Icon name="save" />Save local draft</button>
+        <EditorFooter status={dirty ? 'Draft, unsaved changes' : savedAt ? (debug ? `Saved ${formatClock(savedAt)} (page memory only)` : `Kept for this session ${formatClock(savedAt)}`) : debug ? 'Local draft mode: nothing is stored' : null} note={<span id="jongo-publish-reason" className="jongo-footer-reason" data-publish-reason="database">Publishing needs the Jongo Craft database</span>} actions={<>
+          <button id="jongo-save" form="jongo-doc-form" type="submit" disabled={!dirty}><Icon name="save" />Save local draft</button>
+          <span className="jongo-tip" title="Publishing needs the Jongo Craft database"><button id="jongo-publish" className="jongo-primary" type="button" disabled aria-describedby="jongo-publish-reason"><Icon name="publish" />Publish</button></span>
           <ActionMenu id="jongo-more" label="More actions" placement="up" entries={menu} />
         </>} />
       </StudioContext.Provider> : <div className="jongo-editor-body">{notice && <p className="jongo-notice" role="note">{notice}</p>}<p>Select a document to begin.</p></div>}</main>

@@ -24,10 +24,10 @@ export function Icon({ name }: { name: IconName }) {
   return <svg className="jongo-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{ICONS[name]}</svg>;
 }
 
-export type MenuEntry = { id?: string; label: string; icon?: IconName; onSelect: () => void; disabled?: boolean; danger?: boolean; separatorBefore?: boolean; title?: string };
+export type MenuEntry = { id?: string; label: string; icon?: IconName; onSelect: () => void; disabled?: boolean; danger?: boolean; separatorBefore?: boolean; title?: string; /** Visible muted line under the item (read as its description); use it to say why an item is disabled. */ description?: string };
 
-/** Popover menu button: arrow keys, Home/End, Escape (returns focus to the trigger), Tab and outside click close it. */
-export function ActionMenu({ id, label, entries, placement = 'down' }: { id: string; label: string; entries: readonly MenuEntry[]; placement?: 'up' | 'down' }) {
+/** Popover menu button: arrow keys (disabled items are skipped), Home/End, Escape (returns focus to the trigger), Tab and outside click close it. `note` is an informational, non-interactive line. */
+export function ActionMenu({ id, label, entries, note, placement = 'down' }: { id: string; label: string; entries: readonly MenuEntry[]; note?: string; placement?: 'up' | 'down' }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
   const start = useRef<'first' | 'last'>('first');
@@ -45,7 +45,7 @@ export function ActionMenu({ id, label, entries, placement = 'down' }: { id: str
     document.addEventListener('pointerdown', away);
     return () => document.removeEventListener('pointerdown', away);
   }, [open]);
-  if (!entries.length) return null;
+  if (!entries.length && !note) return null;
   const openWith = (where: 'first' | 'last') => { start.current = where; setOpen(true); };
   const onTriggerKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openWith(event.key === 'ArrowDown' ? 'first' : 'last'); }
@@ -63,12 +63,14 @@ export function ActionMenu({ id, label, entries, placement = 'down' }: { id: str
   return <div className="jongo-menu-wrap" ref={wrap} data-placement={placement}>
     <button ref={trigger} id={id} type="button" className="jongo-icon-button" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} aria-controls={menuId}
       onClick={() => { if (open) close(false); else openWith('first'); }} onKeyDown={onTriggerKey}><Icon name="more" /></button>
-    <div ref={menu} id={menuId} role="menu" tabIndex={-1} aria-labelledby={id} className="jongo-menu" hidden={!open} onKeyDown={onMenuKey}>
+    <div ref={menu} id={menuId} role="menu" tabIndex={-1} aria-labelledby={id} aria-describedby={note ? `${id}-note` : undefined} className="jongo-menu" hidden={!open} onKeyDown={onMenuKey}>
       {entries.map((entry, index) => <div key={entry.label} role="none" className="jongo-menu-row">
         {entry.separatorBefore && index > 0 && <div role="separator" className="jongo-menu-sep" />}
-        <button type="button" role="menuitem" tabIndex={-1} id={entry.id} disabled={entry.disabled} title={entry.title} className={`jongo-menu-item${entry.danger ? ' jongo-menu-danger' : ''}`}
+        <button type="button" role="menuitem" tabIndex={-1} id={entry.id} disabled={entry.disabled} title={entry.title ?? entry.description} aria-describedby={entry.description && entry.id ? `${entry.id}-description` : undefined} className={`jongo-menu-item${entry.danger ? ' jongo-menu-danger' : ''}`}
           onClick={() => { close(true); entry.onSelect(); }}>{entry.icon && <Icon name={entry.icon} />}<span>{entry.label}</span></button>
+        {entry.description && <span id={entry.id ? `${entry.id}-description` : undefined} className="jongo-menu-desc">{entry.description}</span>}
       </div>)}
+      {note && <p id={`${id}-note`} className="jongo-menu-note" data-menu-note="true">{note}</p>}
     </div>
   </div>;
 }
@@ -100,6 +102,8 @@ export function Stamp({ iso }: { iso: string }) {
 }
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+export const FIXED_CONTENT_NOTE = "Fixed page content: can't be duplicated or deleted";
+export const NEEDS_DATABASE = 'Needs the Jongo Craft database';
 /** Live validation summary: jumps to the first blocking issue (or first note). */
 export function IssueChip({ issues, onJump }: { issues: readonly Issue[]; onJump: (path: Path) => void }) {
   const errors = issues.filter(issue => issue.severity === 'error');
@@ -159,7 +163,7 @@ export function InspectDialog({ doc, schema, revision, onClose }: { doc: Record<
   </Dialog>;
 }
 
-/** Header tools menu: History for everyone; Inspect and Copy document (raw JSON, schema details) only when `debug`. Plus the dialogs they open. */
+/** Header tools menu: History for everyone; Inspect and Copy document (raw JSON, schema details) only when `debug`. Singleton types add an informational line. Plus the dialogs they open. */
 export function DocumentTools({ doc, schema, revision, loadHistory, announce, debug = false }: { doc: Record<string, unknown>; schema: TypeDefinition; revision?: string; loadHistory?: HistoryLoader; announce: (text: string) => void; debug?: boolean }) {
   const [dialog, setDialog] = useState<'history' | 'inspect' | null>(null);
   const entries: MenuEntry[] = [
@@ -170,7 +174,7 @@ export function DocumentTools({ doc, schema, revision, loadHistory, announce, de
     ] : [])
   ];
   return <>
-    <ActionMenu id="jongo-tools" label="Document tools" entries={entries} placement="down" />
+    <ActionMenu id="jongo-tools" label="Document tools" entries={entries} note={schema.singleton ? FIXED_CONTENT_NOTE : undefined} placement="down" />
     {dialog === 'history' && loadHistory && <HistoryDialog load={loadHistory} onClose={() => setDialog(null)} />}
     {dialog === 'inspect' && <InspectDialog doc={doc} schema={schema} revision={revision} onClose={() => setDialog(null)} />}
   </>;
@@ -183,9 +187,10 @@ export function EditorHeader({ eyebrow, title, pills, tools }: { eyebrow: string
     <div className="jongo-doc-tools">{tools}</div>
   </header>;
 }
-export function EditorFooter({ status, actions }: { status: ReactNode; actions: ReactNode }) {
+export function EditorFooter({ status, note, actions }: { status: ReactNode; /** Visible next to the buttons, e.g. why Publish is disabled. */ note?: ReactNode; actions: ReactNode }) {
   return <footer className="jongo-doc-footer">
     <div className="jongo-footer-status">{status}</div>
+    {note && <div className="jongo-footer-note">{note}</div>}
     <div className="jongo-footer-actions" role="group" aria-label="Document actions">{actions}</div>
   </footer>;
 }
