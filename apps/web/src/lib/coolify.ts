@@ -434,7 +434,9 @@ function makeSiteOverview(
     // the real domain costs no additional Coolify call — this page render used
     // to be the thing tripping the API rate limit.
     primaryDomain: domains[0] ?? undefined,
-    domains: domains.length > 0 ? domains : undefined
+    domains: domains.length > 0 ? domains : undefined,
+    ...(typeof resource.git_repository === "string" && resource.git_repository.trim() ? { gitRepository: resource.git_repository.trim() } : {}),
+    ...(typeof resource.git_branch === "string" && resource.git_branch.trim() ? { gitBranch: resource.git_branch.trim() } : {})
   };
 }
 

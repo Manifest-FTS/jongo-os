@@ -10,6 +10,7 @@ import GithubRepoFields, { EMPTY_GITHUB_REPO_VALUE, buildSettingsFor, type Githu
 import CreationProgress, { applyStep, postWithProgress, type CreationStep } from "@/components/CreationProgress";
 import { remedy as buildRemedy, type Remedy } from "@/lib/remedies";
 import type { CoolifyAppPickerOption } from "@/lib/coolify-app-picker";
+import { parseCoolifyResourceReference } from "@/lib/coolify-app-picker";
 import {
   DEFAULT_TEMPORARY_DOMAIN_SUFFIX,
   TEMPORARY_DOMAIN_SUFFIX_OPTIONS,
@@ -95,6 +96,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
 
     setName(selectedApp.name);
     setCoolifyUuid(selectedApp.id);
+    setGitUrl(selectedApp.gitRepositoryUrl ?? "");
   }, [selectedApp]);
 
   function handlePickApp(appId: string) {
@@ -108,6 +110,7 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
 
     setName(picked.name);
     setCoolifyUuid(picked.id);
+    setGitUrl(picked.gitRepositoryUrl ?? "");
   }
 
   function resetForm() {
@@ -453,10 +456,11 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
           <input
             type="text"
             value={coolifyUuid}
-            onChange={(e) => setCoolifyUuid(e.target.value)}
-            placeholder={selectedApp ? selectedApp.id : "e.g. dt0v391xre5rgtp50062tunm"}
+            onChange={(e) => setCoolifyUuid(parseCoolifyResourceReference(e.target.value).id)}
+            placeholder={selectedApp ? selectedApp.id : "Paste the app's Coolify address or its id"}
             className="form-input mono-input"
           />
+          <p className="form-help">Pasting the app's page address from Coolify works: the id is picked out for you.</p>
         </div>
         <div>
           <label className="form-label">Git Repository URL</label>
