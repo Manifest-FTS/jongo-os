@@ -111,9 +111,9 @@ describe.skipIf(!enabled)("OIDC against a real PostgreSQL cluster", () => {
       expect(await resolveCraftAccess(platform.id, otherSite.id)).toBeNull();
     });
 
-    it("an inactive owner subscription caps every role to reader (existing entitlement semantics)", async () => {
+    it("an inactive owner subscription caps every role but a platform admin's to reader (existing entitlement semantics)", async () => {
       await prisma.user.update({ where: { id: owner.id }, data: { subscriptionStatus: "canceled" } });
-      expect(await resolveCraftAccess(platform.id, site.id)).toMatchObject({ role: "reader", capped: true });
+      expect(await resolveCraftAccess(platform.id, site.id)).toMatchObject({ role: "admin", via: "platform_admin", capped: false });
       expect(await resolveCraftAccess(owner.id, site.id)).toMatchObject({ role: "reader", capped: true });
       await prisma.user.update({ where: { id: owner.id }, data: { subscriptionStatus: "active" } });
     });

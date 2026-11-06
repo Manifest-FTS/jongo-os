@@ -116,7 +116,8 @@ export async function resolveCraftAccess(userId: string, siteId: string, now: Da
     if (!snapshot) return null;
     const org = snapshot.site.organization!;
 
-    const selected = best(candidates(snapshot, userId, await isPlatformAdminUser(userId)));
+    const platformAdmin = await isPlatformAdminUser(userId);
+    const selected = best(candidates(snapshot, userId, platformAdmin));
     if (!selected) return null;
 
     const permits = (feature: "cms.read" | "cms.author") => evaluateCmsEntitlement({
@@ -125,7 +126,8 @@ export async function resolveCraftAccess(userId: string, siteId: string, now: Da
       enabled: process.env.JONGO_CMS_ENABLED === "true", now
     });
     if (!permits("cms.read")) return null;
-    const capped = !permits("cms.author") && selected.role !== "reader";
+    // A platform admin runs the product, so the owner's missing subscription never limits them; everyone else is capped to reader.
+    const capped = !permits("cms.author") && selected.role !== "reader" && !platformAdmin;
 
     return {
       role: capped ? "reader" : selected.role,

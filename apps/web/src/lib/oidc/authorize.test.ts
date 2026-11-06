@@ -105,7 +105,7 @@ describe("authorize flow", () => {
     const out = await processAuthorize(deps(), ids.user, valid());
     expect(out.kind).toBe("consent");
     if (out.kind !== "consent") return;
-    expect(out.view).toMatchObject({ siteName: "Golf Lab Craft", datasetName: "production", email: "ed@example.com", name: "Ed", role: "editor", via: "site_grant" });
+    expect(out.view).toMatchObject({ siteName: "Golf Lab", datasetName: "production", email: "ed@example.com", name: "Ed", role: "editor", via: "site_grant" });
     expect(out.view.fields).toMatchObject({ client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, state: "state-123", code_challenge: challenge });
     expect(db.codes).toHaveLength(0);
     expect(db.audits).toHaveLength(0);
@@ -113,7 +113,7 @@ describe("authorize flow", () => {
 
   it("denies with no_access (rendered, not redirected) when the user has no Craft role", async () => {
     resolveAccess.mockResolvedValue(null);
-    expect(await processAuthorize(deps(), ids.user, valid())).toEqual({ kind: "no_access", clientName: "Golf Lab Craft" });
+    expect(await processAuthorize(deps(), ids.user, valid())).toEqual({ kind: "no_access", clientName: "Golf Lab" });
     expect(db.codes).toHaveLength(0);
   });
 
