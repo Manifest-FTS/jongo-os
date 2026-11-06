@@ -169,11 +169,49 @@ export function safeAvatarUrl(value: unknown): string | undefined {
   } catch { return undefined; }
 }
 
+/** Visible reasons the footer shows next to a disabled Publish. */
+export const PUBLISH_REASON = { current: 'Published, up to date', stale: 'Reload latest to continue', blocked: (count: number) => `Fix ${count} ${count === 1 ? 'issue' : 'issues'} to publish` } as const;
+export type PublishPlan =
+  | { can: true; /** Unsaved edits exist: Publish saves them first, in one user action. */ saveFirst: boolean }
+  | { can: false; reason: 'busy' | 'stale' | 'blocked' | 'current'; /** Visible text for the footer; empty while busy. */ text: string };
+/** Whether Publish can run, and why not. `stale`: the last attempt hit a conflict, so every write would conflict again until the document is reloaded. */
+export function planPublish(input: { variant: StudioVariant; dirty: boolean; errors: number; busy: boolean; stale: boolean }): PublishPlan {
+  if (input.busy) return { can: false, reason: 'busy', text: '' };
+  if (input.stale) return { can: false, reason: 'stale', text: PUBLISH_REASON.stale };
+  if (input.variant === 'published' && !input.dirty) return { can: false, reason: 'current', text: PUBLISH_REASON.current };
+  if (input.errors > 0) return { can: false, reason: 'blocked', text: PUBLISH_REASON.blocked(input.errors) };
+  return { can: true, saveFirst: input.dirty };
+}
+
+export type SaveThenPublishOutcome =
+  | { ok: true; record: StudioRecord; /** Present when unsaved edits were saved first. */ saved?: StudioRecord }
+  | { ok: false; stage: 'save' | 'publish'; failure: StudioFailure; /** The save succeeded before the publish failed: the page must adopt it. */ saved?: StudioRecord };
+/**
+ * Save (when `doc` is given) and then publish, as one user action. The save uses the head's compare-and-set precondition; the publish uses the NEW
+ * revision's. Any failure stops the sequence. Keys come from `keys`, so repeating the call after a failure reuses the keys of the step that failed.
+ */
+export async function saveThenPublish(store: Pick<StudioStore, 'saveDraft' | 'publish'>, input: { id: string; expect: { nativeRev: string; lockVersion: number }; doc?: ContentDocument; keys: MutationKeys }): Promise<SaveThenPublishOutcome> {
+  let expect = input.expect;
+  let saved: StudioRecord | undefined;
+  const doc = input.doc;
+  if (doc) {
+    const result = await settle(() => store.saveDraft(doc, { ...expect, mutationKey: input.keys.keyFor('save', doc._id, expect, doc) }));
+    if (!result.ok) return { ok: false, stage: 'save', failure: result };
+    saved = result;
+    expect = { nativeRev: saved.nativeRev, lockVersion: saved.lockVersion };
+  }
+  const done = await settle(() => store.publish(input.id, { ...expect, mutationKey: input.keys.keyFor('publish', input.id, expect) }));
+  if (done.ok) return { ok: true, record: done, ...(saved ? { saved } : {}) };
+  const failure: StudioFailure = saved && done.code === 'unavailable' ? { ...done, message: 'Your draft was saved, but publishing was not confirmed. Press Publish again to retry.' } : done;
+  return { ok: false, stage: 'publish', failure, ...(saved ? { saved } : {}) };
+}
+
 export const statusLabel = (record: Pick<StudioRecord, 'variant' | 'published'>): 'Published' | 'Draft' => record.variant === 'published' ? 'Published' : 'Draft';
 const HISTORY_LABELS: Readonly<Record<string, string>> = { save: 'Saved draft', publish: 'Published', unpublish: 'Unpublished', discard: 'Discarded draft', delete: 'Deleted' };
 /** Display text for a history action; unknown actions from a newer host read as a neutral 'Changed'. */
 export const historyLabel = (action: string): string => Object.hasOwn(HISTORY_LABELS, action) ? HISTORY_LABELS[action] : 'Changed';
 export function statusDetail(record: Pick<StudioRecord, 'variant' | 'published' | 'publishedDiffers'>): string {
   if (record.variant === 'published') return 'Published and up to date. Editing creates a draft.';
-  return record.published ? 'A published version exists; this draft has changes that are not published.' : 'Never published. This is a draft.';
+  if (!record.published) return 'Never published. This is a draft.';
+  return record.publishedDiffers === false ? 'This draft matches the published version. Publishing clears the draft.' : 'A published version exists; this draft has changes that are not published.';
 }
