@@ -235,6 +235,14 @@ describe("flag on: authorize page and consent route", () => {
     expect(db.codes).toHaveLength(0);
   });
 
+  it("error page passes only the code to the status card, which renders static copy", async () => {
+    enable();
+    const element = (await ErrorPage({ searchParams: Promise.resolve({ e: "origin" }) })) as { props: { code: string } };
+    expect(element.props.code).toBe("origin");
+    const unknown = (await ErrorPage({ searchParams: Promise.resolve({ e: ["a", "b"] }) })) as { props: { code: string } };
+    expect(unknown.props.code).toBe("unavailable");
+  });
+
   it("consent route rejects a foreign Origin and an anonymous caller", async () => {
     enable();
     const body = new URLSearchParams({ decision: "allow" });
@@ -244,7 +252,7 @@ describe("flag on: authorize page and consent route", () => {
     for (const origin of [null, "https://evil.example", "http://jongo.example", `${ISSUER}.evil.example`]) {
       const response = await post(origin);
       expect(response.status).toBe(303);
-      expect(response.headers.get("location")).toBe("/oidc/error?e=invalid_request");
+      expect(response.headers.get("location")).toBe("/oidc/error?e=origin");
     }
     mocks.auth.mockResolvedValue(null);
     expect((await post(ISSUER)).headers.get("location")).toBe("/auth/login");

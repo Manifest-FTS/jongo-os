@@ -190,3 +190,44 @@
 /* Coarse pointers get a 44px hit area. */
 @media(pointer:coarse) { .jongo-studio button, .jongo-studio .jongo-nav-item, .jongo-studio :is(input,textarea,select) { min-height:44px; } .jongo-studio button.jongo-icon-button { width:44px; } .jongo-studio button.jongo-link { min-height:44px; } }
 @media(prefers-reduced-motion:reduce) { .jongo-studio *, .jongo-studio *::before, .jongo-studio *::after { scroll-behavior:auto !important; transition:none !important; animation:none !important; } }
+/* Sign-in card (CraftLoginCard). Light only, like the rest of Jongo Craft. Selectors carry .jongo-studio to win over its element defaults. */
+.jongo-studio.jongo-login { background:#f5f5f8; display:flex; min-height:100vh; min-height:100dvh; }
+.jongo-studio .jongo-login-main { flex:1; display:flex; align-items:center; justify-content:center; padding:1.5rem; min-width:0; }
+.jongo-studio .jongo-login-main:focus { outline:none; }
+.jongo-studio .jongo-login-card { width:100%; max-width:440px; background:#fff; border:1px solid var(--studio-line); border-radius:16px; padding:2.25rem 2rem 2rem; box-shadow:0 1px 2px rgba(32,33,38,.05), 0 16px 40px -16px rgba(48,44,68,.22); overflow-wrap:anywhere; }
+.jongo-studio .jongo-login-brand { display:flex; align-items:center; gap:.55rem; margin:0 0 1.6rem; font-size:1.05rem; font-weight:700; letter-spacing:-.02em; }
+.jongo-studio .jongo-login-brand img { width:28px; height:28px; object-fit:contain; }
+.jongo-studio .jongo-login-eyebrow { margin:0 0 .4rem; text-transform:uppercase; font-size:.68rem; letter-spacing:.12em; color:#62636d; }
+.jongo-studio .jongo-login-title { margin:0; font-size:1.6rem; line-height:1.2; letter-spacing:-.035em; font-weight:650; }
+.jongo-studio .jongo-login-context { margin:.4rem 0 1.5rem; font-size:.95rem; color:#4a4b55; }
+.jongo-studio .jongo-login-form { display:grid; gap:.85rem; margin:0; }
+.jongo-studio .jongo-login-form + .jongo-login-emergency { margin-top:1.4rem; }
+.jongo-studio button.jongo-login-primary { width:100%; min-height:52px; padding:.7rem 1.1rem; gap:.6rem; border-radius:12px; border:1px solid #302c44; background:#302c44; color:#fff; font-size:1rem; font-weight:650; transition:background-color .15s ease; }
+.jongo-studio button.jongo-login-primary:hover { background:#3d3858; }
+.jongo-studio button.jongo-login-secondary { width:100%; min-height:44px; padding:.6rem 1rem; border-radius:10px; border:1px solid #cfcfd8; background:#fff; color:#302c44; font-size:.9rem; font-weight:600; transition:background-color .15s ease; }
+.jongo-studio button.jongo-login-secondary:hover { background:#f5f5f8; }
+.jongo-studio .jongo-login-icon { flex:none; width:20px; height:20px; }
+.jongo-studio .jongo-login-reassure { margin:0; text-align:center; font-size:.8rem; line-height:1.5; color:#62636d; }
+.jongo-studio .jongo-login-help { margin:0; font-size:.82rem; color:#62636d; }
+.jongo-studio .jongo-login-field { display:grid; gap:.4rem; margin:0; }
+.jongo-studio .jongo-login-field label { font-size:.85rem; }
+.jongo-studio .jongo-login-field input { min-height:44px; border-color:#b9bac6; border-radius:10px; }
+.jongo-studio .jongo-login-emergency { margin:0; padding:.35rem 0 0; border-top:1px solid var(--studio-line); font-size:inherit; color:inherit; }
+.jongo-studio .jongo-login-summary { display:flex; align-items:center; justify-content:center; gap:.4rem; min-height:44px; padding:0 .5rem; border-radius:8px; font-size:.875rem; font-weight:500; color:#62636d; cursor:pointer; list-style:none; }
+.jongo-studio .jongo-login-summary::-webkit-details-marker { display:none; }
+.jongo-studio .jongo-login-summary::after { content:""; width:.45rem; height:.45rem; margin-top:-.15rem; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg); transition:transform .15s ease; }
+.jongo-studio .jongo-login-emergency[open] > .jongo-login-summary::after { margin-top:.2rem; transform:rotate(-135deg); }
+.jongo-studio .jongo-login-summary:hover { color:#302c44; }
+.jongo-studio .jongo-login-emergency .jongo-login-form { padding:.9rem 0 .2rem; }
+.jongo-studio .jongo-login-alert { display:flex; gap:.7rem; align-items:flex-start; margin:0 0 1.2rem; padding:.85rem 1rem; border:1px solid; border-radius:10px; font-size:.875rem; line-height:1.5; }
+.jongo-studio .jongo-login-alert > div { min-width:0; }
+.jongo-studio .jongo-login-alert .jongo-login-icon { margin-top:.1rem; }
+.jongo-studio .jongo-login-alert p { margin:0; }
+.jongo-studio .jongo-login-alert-title { margin:0 0 .25rem; font-size:.9rem; font-weight:650; }
+.jongo-studio .jongo-login-alert-body p + p { margin-top:.5rem; }
+.jongo-studio .jongo-login-alert--error { border-color:#f1c3ca; background:#fdf2f4; color:#7a1f2c; }
+.jongo-studio .jongo-login-alert--locked { border-color:#ecd7a6; background:#fff8e8; color:#6a4a0c; }
+.jongo-studio .jongo-login-alert--info { border-color:#d5d6dd; background:#f7f7f9; color:#33343d; margin-bottom:0; }
+.jongo-studio .jongo-login-alert--info a { text-decoration:underline; text-underline-offset:3px; }
+@media (max-width:420px) { .jongo-studio .jongo-login-main { padding:.75rem; } .jongo-studio .jongo-login-card { padding:1.6rem 1.25rem 1.4rem; border-radius:14px; } .jongo-studio .jongo-login-title { font-size:1.4rem; } }
+@media (pointer:coarse) { .jongo-studio .jongo-login-field input { min-height:48px; } .jongo-studio button.jongo-login-secondary { min-height:48px; } }

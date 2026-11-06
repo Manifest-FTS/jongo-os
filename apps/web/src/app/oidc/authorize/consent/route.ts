@@ -18,7 +18,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!gate.ok) return gate.response;
   const { config, keys } = gate.runtime;
 
-  if (request.headers.get("origin") !== config.issuer) return see("/oidc/error?e=invalid_request");
+  if (request.headers.get("origin") !== config.issuer) return see("/oidc/error?e=origin");
 
   const session = await auth();
   if (!session?.user?.id) return see("/auth/login");

@@ -2,6 +2,7 @@ export { CraftShell, Button, Badge, Card, Dialog, Tabs } from './shell.js';
 export type { CraftIdentity, CraftPlugin, CraftView, CraftContext, ContentSchema } from './shell.js';
 export { ContentStudio } from './studio.js';
 export { StudioIdentity, type StudioPerson } from './studio-chrome.js';
+export { CraftLoginCard, type CraftLoginCardProps, type CraftLoginNotice, type CraftLoginUnavailable } from './login.js';
 export type { StudioConfig, ContentStudioProps } from './studio.js';
 export type { StudioInitial } from './studio-connected.js';
 export * from './content.js';
