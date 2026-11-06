@@ -170,10 +170,16 @@ describe("effective Craft role", () => {
 });
 
 describe("entitlement (same denial as resolveDatasetCmsCapabilities)", () => {
-  it("keeps read but caps everyone to reader when the owner subscription is not active", async () => {
-    for (const s of [{ platformAdmin: true }, { actor: OWNER }, { orgRole: "admin" as const }, { grant: { role: "publisher" } }]) {
+  it("keeps read but caps everyone but a platform admin to reader when the owner subscription is not active", async () => {
+    for (const s of [{ actor: OWNER }, { orgRole: "admin" as const }, { grant: { role: "publisher" } }]) {
       expect(await resolve({ ...s, subscription: "inactive" })).toMatchObject({ role: "reader", capped: true });
     }
+  });
+
+  it("never caps a platform admin: the owner's missing subscription does not limit them", async () => {
+    expect(await resolve({ platformAdmin: true, subscription: "inactive" })).toMatchObject({ role: "admin", via: "platform_admin", capped: false });
+    // Still denied when the owner is gone: read capacity is required for everyone.
+    expect(await resolve({ platformAdmin: true, ownerDeleted: true, subscription: "inactive" })).toBeNull();
   });
 
   it("does not report capped for an explicit reader", async () => {

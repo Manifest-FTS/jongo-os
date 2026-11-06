@@ -159,6 +159,12 @@ async function issueAndRedirect(deps: AuthorizeDeps, userId: string, request: Au
   return { kind: "redirect", location: buildRedirect(request.redirectUri, deps.issuer, { code, state: request.state }) };
 }
 
+/** The app's own name for people: the client is registered as "<app> Craft", but the approval page talks about the app. Display only. */
+export function appDisplayName(name: string): string {
+  const trimmed = name.replace(/[\s\-–—:|]*\bCraft\b\s*$/i, "").trim();
+  return trimmed.length > 0 ? trimmed : name;
+}
+
 function bindingFor(userId: string, request: AuthorizeRequest): ConsentBinding {
   return {
     userId,
@@ -179,7 +185,7 @@ export async function processAuthorize(deps: AuthorizeDeps, userId: string, para
   const { request } = validated;
 
   const access = await deps.resolveAccess(userId, request.client.siteId);
-  if (!access) return { kind: "no_access", clientName: request.client.name };
+  if (!access) return { kind: "no_access", clientName: appDisplayName(request.client.name) };
 
   if (await hasConsent(deps.db, userId, request.client.id, request.scopes)) {
     return issueAndRedirect(deps, userId, request, access);
@@ -188,7 +194,7 @@ export async function processAuthorize(deps: AuthorizeDeps, userId: string, para
   return {
     kind: "consent",
     view: {
-      siteName: request.client.name,
+      siteName: appDisplayName(request.client.name),
       datasetName: request.client.datasetName,
       email: access.user.email,
       name: access.user.name,
@@ -231,7 +237,7 @@ export async function processConsent(
   }
 
   const access = await deps.resolveAccess(userId, request.client.siteId);
-  if (!access) return { kind: "no_access", clientName: request.client.name };
+  if (!access) return { kind: "no_access", clientName: appDisplayName(request.client.name) };
 
   await recordConsent(deps.db, userId, request.client.id, request.scopes, deps.now);
   await writeOidcAudit(deps.db, {
