@@ -5,13 +5,19 @@ export type AuditWriter = {
 };
 
 export type OidcAuditAction =
+  | "oidc.client.create"
+  | "oidc.client.update"
+  | "oidc.client.rotate"
+  | "oidc.client.enable"
+  | "oidc.client.disable"
   | "oidc.code.issue"
   | "oidc.code.replay"
   | "oidc.consent.grant"
   | "oidc.token.issue"
   | "oidc.token.deny"
   | "craft.access.grant"
-  | "craft.access.revoke";
+  | "craft.access.revoke"
+  | "craft.access.invite";
 
 export type OidcAuditEvent = {
   organizationId: string;

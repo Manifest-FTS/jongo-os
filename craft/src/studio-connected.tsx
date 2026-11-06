@@ -6,7 +6,7 @@ import { validateDocument, publishState, type Path } from './validate.js';
 import { randomKey } from './portable-text.js';
 import { Field } from './fields.js';
 import { StudioContext, fieldId, type MediaApi, type StudioApi } from './studio-context.js';
-import { MutationKeys, formatClock, settle, statusDetail, statusLabel, type StudioDocSummary, type StudioFailure, type StudioRecord, type StudioResult, type StudioStamp, type StudioStore } from './studio-store.js';
+import { MutationKeys, formatClock, settle, statusDetail, statusLabel, type StudioDocSummary, type StudioFailure, type StudioPermissions, type StudioRecord, type StudioResult, type StudioStamp, type StudioStore } from './studio-store.js';
 import { mediaLimits, type MediaLimits, type StudioAssetDocument } from './media-contract.js';
 import { uploadAsset, type PutFile } from './media-client.js';
 import { ActionMenu, Avatar, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, Stamp, type MenuEntry } from './studio-chrome.js';
@@ -26,6 +26,8 @@ export type ConnectedStudioProps = {
   config: StudioConfig; store: StudioStore; initial?: StudioInitial; initialType?: string; initialDocument?: string; basePath?: string;
   brand: { name: string; homeHref: string; logoSrc?: string; designSystemHref?: string };
   notice?: string; topbarSlot?: ReactNode; signInHref?: string;
+  /** What this person may do (interface hint only; the store enforces it). Default: everything. */
+  permissions?: StudioPermissions;
   /** Developer-oriented explanations are shown only when true. */
   debug?: boolean;
   /** Upload limits the picker shows and checks before sending; the server enforces its own. */
@@ -41,7 +43,9 @@ const pathLabel = (path: Path) => path.map(part => typeof part === 'number' ? `i
 const stripEnvelope = (doc: ContentDocument): ContentDocument => { const next = { ...doc }; for (const key of ENVELOPE) delete next[key]; return next; };
 
 /** Studio backed by a host-supplied `StudioStore`. The store is the only persistence boundary; this component never imports server code. */
-export function ConnectedStudio({ config, store, initial, initialType, initialDocument, basePath, brand, notice, topbarSlot, signInHref, debug = false, mediaLimits: limitOverrides, putFile }: ConnectedStudioProps) {
+export function ConnectedStudio({ config, store, initial, initialType, initialDocument, basePath, brand, notice, topbarSlot, signInHref, permissions, debug = false, mediaLimits: limitOverrides, putFile }: ConnectedStudioProps) {
+  const canWrite = permissions?.canWrite !== false;
+  const canPublishDocs = canWrite && permissions?.canPublish !== false;
   const registry = useMemo(() => createContentRegistry(config.schemas), [config.schemas]);
   const adopt = useCallback((record: StudioRecord): StudioRecord => {
     const schema = registry.get(record.doc._type);
@@ -116,7 +120,7 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   const started = useRef(false);
   const maxImageBytes = limitOverrides?.maxImageBytes, maxVideoBytes = limitOverrides?.maxVideoBytes;
   const limits = useMemo(() => mediaLimits({ maxImageBytes, maxVideoBytes }), [maxImageBytes, maxVideoBytes]);
-  const canUpload = !!store.requestUpload && !!store.completeUpload;
+  const canUpload = canWrite && !!store.requestUpload && !!store.completeUpload;
   // Upload appears only when the host store can take it; the picker still lists existing assets either way.
   const media = useMemo<MediaApi | undefined>(() => canUpload ? {
     limits,
@@ -175,19 +179,19 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   }
   const mutate = (operation: Exclude<Operation, 'loading'>, trigger: string, call: () => Promise<StudioResult<StudioRecord>>, done: string) => perform(operation, trigger, call, result => { show(result); announce(done); });
   const save = () => {
-    if (!record || !working || !dirty) return;
+    if (!record || !working || !dirty || !canWrite) return;
     const doc = stripEnvelope(working), expect = { nativeRev: record.nativeRev, lockVersion: record.lockVersion };
     void perform('saving', 'jongo-save', () => store.saveDraft(doc, { ...expect, mutationKey: keys.current.keyFor('save', doc._id, expect, doc) }), result => {
       const adopted = show(result); setSavedAt({ rev: adopted.nativeRev, at: new Date().toISOString() }); announce('Draft saved. It is not published.');
     });
   };
   const publish = () => {
-    if (!record || !working) return;
+    if (!record || !working || !canPublishDocs) return;
     const id = working._id, expect = { nativeRev: record.nativeRev, lockVersion: record.lockVersion };
     void mutate('publishing', 'jongo-publish', () => store.publish(id, { ...expect, mutationKey: keys.current.keyFor('publish', id, expect) }), 'Published.');
   };
   const unpublish = () => {
-    if (!record?.published || !working || !window.confirm('Unpublish this document? The published version is withdrawn from the website and a draft is kept.')) return;
+    if (!record?.published || !working || !canPublishDocs || !window.confirm('Unpublish this document? The published version is withdrawn from the website and a draft is kept.')) return;
     const id = working._id, expect = { nativeRev: record.published.nativeRev, lockVersion: record.published.lockVersion };
     void mutate('unpublishing', 'jongo-more', () => store.unpublish(id, { ...expect, mutationKey: keys.current.keyFor('unpublish', id, expect) }), 'Unpublished. The document is now a draft.');
   };
@@ -227,12 +231,12 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   const singleton = !!schema?.singleton;
   const noticeEl = notice ? <p className="jongo-notice" role="note">{notice}</p> : null;
   const liveEl = <div role="status" aria-live="polite" aria-atomic="true" className="jongo-live">{message.text}{message.count % 2 ? '\u200b' : ''}</div>;
-  const footerEntries: MenuEntry[] = !record || !working ? [] : [
+  const footerEntries: MenuEntry[] = !record || !working || !canWrite ? [] : [
     ...(dirty ? [{ id: 'jongo-reset', label: 'Reset changes', icon: 'reset' as const, disabled: !!busy, onSelect: () => { setWorking(record.doc); announce('Unsaved changes reset to the last saved version.'); } }] : []),
-    ...(record.published ? [{ id: 'jongo-unpublish', label: 'Unpublish', icon: 'unpublish' as const, danger: true, disabled: dirty || !!busy, title: dirty ? 'Save or reset your changes first.' : undefined, onSelect: unpublish }] : []),
+    ...(record.published && canPublishDocs ? [{ id: 'jongo-unpublish', label: 'Unpublish', icon: 'unpublish' as const, danger: true, disabled: dirty || !!busy, title: dirty ? 'Save or reset your changes first.' : undefined, onSelect: unpublish }] : []),
     ...(record.variant === 'draft' && record.published && record.publishedDiffers !== false ? [{ id: 'jongo-discard', label: 'Discard draft', icon: 'reset' as const, danger: true, disabled: !!busy, onSelect: discard }] : []),
     ...(store.duplicate && !singleton ? [{ id: 'jongo-duplicate', label: 'Duplicate', icon: 'duplicate' as const, disabled: dirty || !!busy, title: dirty ? 'Save or reset your changes first.' : undefined, onSelect: duplicate }] : []),
-    ...(store.delete && !singleton ? [{ id: 'jongo-delete', label: 'Delete', icon: 'delete' as const, danger: true, separatorBefore: true, disabled: !!busy, onSelect: remove }] : [])
+    ...(store.delete && !singleton && canPublishDocs ? [{ id: 'jongo-delete', label: 'Delete', icon: 'delete' as const, danger: true, separatorBefore: true, disabled: !!busy, onSelect: remove }] : [])
   ];
   const stamp: StudioStamp | undefined = !record ? undefined : record.variant === 'published' ? record.lastPublished ?? record.lastEdited : record.lastEdited;
   const prefix = record?.variant === 'published' ? 'Published' : 'Draft saved';
@@ -245,6 +249,7 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
       tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} revision={record.nativeRev} announce={announce} debug={debug} loadHistory={store.history ? () => store.history!(working._id) : undefined} /></>} />
     <div className="jongo-editor-body">
     {noticeEl}
+    {!canWrite && <p className="jongo-notice jongo-viewonly" role="note" data-view-only="true">You have view-only access. You can read content here but not change or publish it.</p>}
     <p className="jongo-help">{statusDetail(record)}{debug && ' Changes are saved as drafts in the connected store; publishing is a separate, explicit step.'}</p>
     {problem && <div role="alert" className={`jongo-problem jongo-problem-${problem.code}`} data-problem={problem.code}>
       <h2>{PROBLEM_TITLE[problem.code]}</h2>
@@ -262,15 +267,17 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     </section>
     <form id="jongo-doc-form" noValidate onSubmit={event => { event.preventDefault(); save(); }}>
       <div inert={busy ? true : undefined} aria-busy={busy ? 'true' : undefined}>
+        <fieldset className="jongo-fields" disabled={!canWrite}>
         {schema.fields.map(field => <Field key={field.name} d={field} label={field.title ?? field.name} path={[field.name]} value={working[field.name]} onChange={next => { setWorking(setField(working, field.name, next) as ContentDocument); announce(''); }} />)}
+        </fieldset>
       </div>
     </form>
     {liveEl}
     </div>
     <EditorFooter status={footerStatus} actions={<>
-      <button id="jongo-save" form="jongo-doc-form" type="submit" disabled={!dirty || !!busy}><Icon name="save" />{busy === 'saving' ? 'Saving…' : 'Save draft'}</button>
-      <span className="jongo-tip" title={publishHint || undefined}><button id="jongo-publish" className="jongo-primary" type="button" onClick={publish} disabled={!canPublish} aria-describedby="jongo-publish-hint"><Icon name="publish" />{busy === 'publishing' ? 'Publishing…' : 'Publish'}</button></span>
-      <span id="jongo-publish-hint" className="jongo-sr">{publishHint}</span>
+      {canWrite && <button id="jongo-save" form="jongo-doc-form" type="submit" disabled={!dirty || !!busy}><Icon name="save" />{busy === 'saving' ? 'Saving…' : 'Save draft'}</button>}
+      {canPublishDocs && <><span className="jongo-tip" title={publishHint || undefined}><button id="jongo-publish" className="jongo-primary" type="button" onClick={publish} disabled={!canPublish} aria-describedby="jongo-publish-hint"><Icon name="publish" />{busy === 'publishing' ? 'Publishing…' : 'Publish'}</button></span>
+      <span id="jongo-publish-hint" className="jongo-sr">{publishHint}</span></>}
       <ActionMenu id="jongo-more" label="More actions" entries={footerEntries} placement="up" />
     </>} />
   </StudioContext.Provider>

@@ -13,6 +13,12 @@ import { normalizeRole } from "@/lib/roles";
 import { hasOnlyFields, isTenantMutationRole, resolveSiteAccess } from "@/lib/tenant-route-access";
 import { getClientTeamMembers } from "@/lib/repositories";
 import { getPlatformAdminContacts } from "@/lib/permissions";
+import { isOidcEnabled } from "@/lib/oidc/config";
+import { writeOidcAuditBestEffort } from "@/lib/oidc/audit";
+import { grantCraftAccess, type CraftRole } from "@/lib/craft-access";
+import { loadInviteCraftRoles, rememberInviteCraftRole } from "@/lib/craft-admin/access";
+import { resolveCraftManager } from "@/lib/craft-admin/gate";
+import { parseCraftRole } from "@/lib/craft-admin/validation";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -100,6 +106,11 @@ export async function GET(_req: Request, { params }: Params) {
       }
     });
 
+    // Feature flag off: no Craft query runs and the response has exactly the fields it always had.
+    const craftOn = isOidcEnabled();
+    const craftRoles = craftOn ? await loadInviteCraftRoles(db, pendingInvites.map((invite: any) => invite.id)) : null;
+    const craftCanGrant = craftOn ? (await resolveCraftManager(session.user.id, access.siteId)).ok : false;
+
     return NextResponse.json({
       collaborators: rows.map((row: any) => ({
         id: row.id,
@@ -122,10 +133,12 @@ export async function GET(_req: Request, { params }: Params) {
         expiresAt: invite.expiresAt,
         createdAt: invite.createdAt,
         delivery: invite.deliveryStatus,
-        note: invite.deliveryError ?? null
+        note: invite.deliveryError ?? null,
+        ...(craftRoles ? { craftRole: craftRoles.get(invite.id) ?? null } : {})
       })),
       emailDeliveryConfigured: isSmtpConfigured(),
-      callerRole: access.callerRole
+      callerRole: access.callerRole,
+      ...(craftOn ? { craftEnabled: true, craftCanGrant } : {})
     });
   } catch (error) {
     console.error("GET /api/sites/[siteId]/collaborators error:", error);
@@ -141,14 +154,16 @@ export async function POST(req: Request, { params }: Params) {
 
   const { siteId } = await params;
 
-  let body: { email?: string; role?: string; forceInvite?: boolean };
+  let body: { email?: string; role?: string; forceInvite?: boolean; craftRole?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!hasOnlyFields(body, ["email", "role", "forceInvite"]) || !isTenantMutationRole(body.role)) {
+  // With the Craft flag off the accepted field set is exactly what it was before, so `craftRole` is rejected like any unknown field.
+  const craftOn = isOidcEnabled();
+  if (!hasOnlyFields(body, craftOn ? ["email", "role", "forceInvite", "craftRole"] : ["email", "role", "forceInvite"]) || !isTenantMutationRole(body.role)) {
     return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
   }
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -159,6 +174,14 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
   }
 
+  // null/undefined/"none" = no Craft access (the default).
+  let craftRole: CraftRole | null = null;
+  if (craftOn && body.craftRole !== undefined && body.craftRole !== null && body.craftRole !== "none") {
+    const parsedCraftRole = parseCraftRole(body.craftRole);
+    if (!parsedCraftRole.ok) return NextResponse.json({ error: parsedCraftRole.error }, { status: 400 });
+    craftRole = parsedCraftRole.value;
+  }
+
   try {
     const access = await getCallerAccess(siteId, session.user.id);
     if (!access) {
@@ -167,6 +190,15 @@ export async function POST(req: Request, { params }: Params) {
 
     if (access.callerRole !== "admin" && requestedRole === "admin") {
       return NextResponse.json({ error: "Only admins can invite admins" }, { status: 403 });
+    }
+
+    // Craft access is a bigger decision than app membership: only the owner, client admins and platform admins may attach it.
+    // Site-level admins and collaborators are refused before anything is written.
+    if (craftRole) {
+      const manager = await resolveCraftManager(session.user.id, access.siteId);
+      if (!manager.ok) {
+        return NextResponse.json({ error: "Only the client owner or admins can grant Jongo Craft access" }, { status: manager.status });
+      }
     }
 
     const { db } = await import("@/lib/db");
@@ -189,6 +221,14 @@ export async function POST(req: Request, { params }: Params) {
         include: { user: { select: { id: true, email: true, fullName: true } } }
       });
 
+      // The user exists, so the Craft grant applies now (it re-verifies the caller and audits itself).
+      const craftGrant = craftRole
+        ? await grantCraftAccess({
+            actorId: session.user.id, siteId: access.siteId, userId: targetUser.id, role: craftRole,
+            ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null, userAgent: req.headers.get("user-agent")
+          })
+        : null;
+
       return NextResponse.json(
         {
           status: "active",
@@ -196,7 +236,8 @@ export async function POST(req: Request, { params }: Params) {
           userId: created.userId,
           role: normalizeRole(created.role),
           email: created.user.email,
-          fullName: created.user.fullName
+          fullName: created.user.fullName,
+          ...(craftRole ? { craftAccess: { role: craftRole, applied: Boolean(craftGrant?.ok) } } : {})
         },
         { status: 201 }
       );
@@ -215,6 +256,13 @@ export async function POST(req: Request, { params }: Params) {
     });
 
     if (activePending) {
+      if (craftRole) {
+        await rememberInviteCraftRole(db, activePending.id, craftRole);
+        await writeOidcAuditBestEffort(db, {
+          organizationId: access.orgId, actorId: session.user.id, action: "craft.access.invite", resourceType: "site", resourceId: access.siteId,
+          details: { invitationId: activePending.id, role: craftRole, outcome: "updated" }
+        });
+      }
       return NextResponse.json(
         {
           status: "pending",
@@ -223,7 +271,8 @@ export async function POST(req: Request, { params }: Params) {
           role: normalizeRole(activePending.role),
           expiresAt: activePending.expiresAt,
           inviteUrl: buildInviteUrlForInvitation(activePending.id),
-          message: "A pending invite already exists for this email."
+          message: "A pending invite already exists for this email.",
+          ...(craftRole ? { craftRole } : {})
         },
         { status: 202 }
       );
@@ -257,6 +306,14 @@ export async function POST(req: Request, { params }: Params) {
       where: { id: created.id },
       data: { tokenHash: stableTokenHash }
     });
+
+    if (craftRole) {
+      await rememberInviteCraftRole(db, created.id, craftRole);
+      await writeOidcAuditBestEffort(db, {
+        organizationId: access.orgId, actorId: session.user.id, action: "craft.access.invite", resourceType: "site", resourceId: access.siteId,
+        details: { invitationId: created.id, role: craftRole, outcome: "created" }
+      });
+    }
 
     const inviteUrl = buildInviteUrlForInvitation(created.id);
     const emailConfigured = isSmtpConfigured();
@@ -298,7 +355,8 @@ export async function POST(req: Request, { params }: Params) {
         emailDeliveryConfigured: emailConfigured,
         message: emailConfigured
           ? "Invitation created and email sent."
-          : "Email delivery not configured yet - copy this invite link manually."
+          : "Email delivery not configured yet - copy this invite link manually.",
+        ...(craftRole ? { craftRole } : {})
       },
       { status: 202 }
     );

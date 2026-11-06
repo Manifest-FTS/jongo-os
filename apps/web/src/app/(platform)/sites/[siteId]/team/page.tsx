@@ -2,7 +2,10 @@ import Link from "next/link";
 import { auth } from "@/lib/auth.config";
 import { notFound } from "next/navigation";
 import PendingBadge from "@/components/PendingBadge";
+import SiteCollaboratorManager from "@/components/SiteCollaboratorManager";
 import { getSiteWorkspace } from "@/lib/repositories";
+import { isOidcEnabled } from "@/lib/oidc/config";
+import { resolveCraftManager } from "@/lib/craft-admin/gate";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -18,6 +21,10 @@ export default async function AppTeamPage({ params }: Params) {
   if (!workspace) {
     notFound();
   }
+
+  // Flag off: short-circuits before any Craft lookup, and nothing extra is rendered.
+  const showCraftInvite = isOidcEnabled() && workspace.source === "db" && Boolean(session?.user?.id) &&
+    (await resolveCraftManager(session!.user!.id!, workspace.id)).ok;
 
   return (
     <div className="page-stack">
@@ -44,6 +51,16 @@ export default async function AppTeamPage({ params }: Params) {
           </div>
         </div>
       </article>
+
+      {showCraftInvite ? (
+        <article className="card">
+          <h3 className="card-title">Invite someone to this app with Jongo Craft access</h3>
+          <p className="card-muted">
+            Add or invite a person to this app and, optionally, let them sign in to its Craft studio. To manage existing Craft access, use the Jongo Craft panel in the app&apos;s settings.
+          </p>
+          <SiteCollaboratorManager siteId={workspace.id} currentUserId={session!.user!.id!} craft={{ canGrant: true }} />
+        </article>
+      ) : null}
     </div>
   );
 }

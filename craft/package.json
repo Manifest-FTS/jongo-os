@@ -1,7 +1,7 @@
 {
   "name": "@jongo/craft",
-  "version": "0.1.0-preview.14",
-  "description": "Bounded Craft shell, neutral Sanity-style content studio, fictional Golf Lab review extension and a server-only Postgres persistence subpath; preview, not production-ready",
+  "version": "0.1.0-preview.15",
+  "description": "Bounded Craft shell, neutral Sanity-style content studio, fictional Golf Lab review extension, a server-only Postgres persistence subpath and server-only Sign in with Jongo relying-party helpers; preview, not production-ready",
   "type": "module",
   "license": "Apache-2.0",
   "files": [
@@ -30,6 +30,10 @@
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
     },
+    "./auth": {
+      "types": "./dist/auth/index.d.ts",
+      "import": "./dist/auth/index.js"
+    },
     "./styles.css": "./dist/styles.css",
     "./studio.css": "./dist/studio.css"
   },
@@ -43,13 +47,17 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
     "groq-js": "^2.0.1",
-    "pg": "^8.11.0"
+    "jose": "^6.2.15",
+    "pg": "^8.11.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "peerDependenciesMeta": {
     "groq-js": {
+      "optional": true
+    },
+    "jose": {
       "optional": true
     },
     "pg": {
@@ -62,12 +70,13 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "groq-js": "^2.0.1",
+    "jose": "^6.2.15",
     "pg": "^8.23.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "~5.9.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   }
 }

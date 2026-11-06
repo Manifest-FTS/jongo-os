@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { PlusIcon } from "@/components/JongoIcons";
 import { normalizeRole } from "@/lib/roles";
+import { CRAFT_INVITE_HELP, CRAFT_ROLE_OPTIONS, NO_CRAFT_ACCESS_LABEL, type CraftRoleName } from "@/lib/craft-admin/shared";
 
 type SiteCollaborator = {
   id: string;
@@ -23,14 +24,20 @@ type PendingInvite = {
   revokedAt?: string | null;
   delivery?: string;
   note?: string | null;
+  /** Present only when Jongo Craft sign-in is enabled. */
+  craftRole?: CraftRoleName | null;
 };
 
 type Props = {
   siteId: string;
   currentUserId: string;
+  /** Passed by the server only when Jongo Craft sign-in is enabled; omitted (flag off) means nothing new is rendered or sent. */
+  craft?: { canGrant: boolean };
 };
 
-export default function SiteCollaboratorManager({ siteId, currentUserId }: Props) {
+export default function SiteCollaboratorManager({ siteId, currentUserId, craft }: Props) {
+  const craftIds = useId();
+  const [craftRole, setCraftRole] = useState<"none" | CraftRoleName>("none");
   const [rows, setRows] = useState<SiteCollaborator[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [emailDeliveryConfigured, setEmailDeliveryConfigured] = useState(false);
@@ -89,7 +96,10 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
       const res = await fetch(`/api/sites/${siteId}/collaborators`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role, forceInvite })
+        body: JSON.stringify({
+          email: email.trim(), role, forceInvite,
+          ...(craft?.canGrant && craftRole !== "none" ? { craftRole } : {})
+        })
       });
       const data = await res.json();
 
@@ -103,12 +113,17 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
       }
 
       if (data.status === "active") {
-        setNotice("Team member added immediately.");
+        setNotice(
+          data.craftAccess
+            ? data.craftAccess.applied ? "Team member added immediately, with Jongo Craft access." : "Team member added immediately, but Jongo Craft access could not be applied."
+            : "Team member added immediately."
+        );
       } else {
         setInviteLink(typeof data.inviteUrl === "string" ? data.inviteUrl : null);
         setNotice(data.message ?? "Invitation created.");
       }
       setEmail("");
+      setCraftRole("none");
       await load();
     } catch {
       setError("Network error while creating collaboration invitation");
@@ -237,6 +252,26 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
             <option key={r} value={r}>{r}</option>
           ))}
         </select>
+        {craft?.canGrant ? (
+          <div style={{ flex: "1 1 100%" }}>
+            <label className="form-label" htmlFor={`${craftIds}-craft`}>Jongo Craft access</label>
+            <select
+              id={`${craftIds}-craft`}
+              className="form-select"
+              style={{ width: "auto", minWidth: "200px" }}
+              value={craftRole}
+              onChange={(e) => setCraftRole(e.target.value as "none" | CraftRoleName)}
+              disabled={busy}
+              aria-describedby={`${craftIds}-craft-help`}
+            >
+              <option value="none">{NO_CRAFT_ACCESS_LABEL}</option>
+              {CRAFT_ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <p id={`${craftIds}-craft-help`} className="form-help">{CRAFT_INVITE_HELP}</p>
+          </div>
+        ) : null}
         <button type="submit" className="btn" disabled={busy}>
           <PlusIcon className="btn-icon" />
           {busy ? "Saving…" : "Invite"}
@@ -285,6 +320,7 @@ export default function SiteCollaboratorManager({ siteId, currentUserId }: Props
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
                 <span className="tag">{normalizeRole(invite.role)}</span>
+                {invite.craftRole ? <span className="tag" title="Jongo Craft role, applied when the invite is accepted">Craft: {invite.craftRole}</span> : null}
                 <span className="status-chip unknown">{invite.status ?? "pending"}</span>
                 {invite.status === "pending" ? (
                   <>

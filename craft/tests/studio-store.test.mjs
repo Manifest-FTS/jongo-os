@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ContentStudio, MutationKeys, duplicateDocument, formatClock, formatStamp, historyLabel, initialsOf, newMutationKey, safeAvatarUrl, settle, stableJson, statusDetail, statusLabel, unavailableFailure } from '../dist/index.js';
+import { ContentStudio, MutationKeys, StudioIdentity, duplicateDocument, formatClock, formatStamp, historyLabel, initialsOf, newMutationKey, safeAvatarUrl, settle, stableJson, statusDetail, statusLabel, unavailableFailure } from '../dist/index.js';
 import * as content from '../dist/content.js';
 
 const schema = { name: 'article', title: 'Articles', type: 'document', schemaVersion: 1, fields: [
@@ -162,6 +162,38 @@ test('singleton types hide Duplicate and Delete even when the store offers them'
   assert.ok(hasItem(html, 'jongo-unpublish'));
   assert.throws(() => content.createContentRegistry([{ ...schema, singleton: 'yes' }]), /Invalid/);
   assert.equal(content.createContentRegistry([{ ...schema, singleton: true }]).get('article').singleton, true);
+});
+
+test('permissions: view-only hides every write action and disables the fields; editors lose only publish, unpublish and delete; the default is everything', () => {
+  const full = { ...base(), history: ok, duplicate: ok, delete: ok };
+  const draftOverPublished = record({ published: { nativeRev: 'r0', lockVersion: 2 }, publishedDiffers: true });
+  const all = open(full, draftOverPublished);
+  for (const id of ['jongo-save', 'jongo-publish', 'jongo-duplicate', 'jongo-delete', 'jongo-discard', 'jongo-unpublish']) assert.ok(all.includes(`id="${id}"`), `${id} by default`);
+  assert.ok(!all.includes('data-view-only') && !/<fieldset[^>]*disabled/.test(all));
+  assert.equal(open(full, draftOverPublished, undefined, { permissions: {} }), all, 'an empty permissions object changes nothing');
+
+  const reader = open(full, draftOverPublished, undefined, { permissions: { canWrite: false, canPublish: false } });
+  for (const id of ['jongo-save', 'jongo-publish', 'jongo-duplicate', 'jongo-delete', 'jongo-discard', 'jongo-unpublish', 'jongo-reset']) assert.ok(!reader.includes(`id="${id}"`), `${id} hidden for a reader`);
+  assert.ok(!reader.includes('id="jongo-more"'), 'no empty actions menu');
+  assert.ok(/<fieldset[^>]*class="jongo-fields"[^>]*disabled|<fieldset[^>]*disabled[^>]*class="jongo-fields"/.test(reader), 'fields are disabled');
+  assert.ok(reader.includes('data-view-only="true"') && reader.includes('view-only access'));
+  assert.ok(!reader.includes('Upload image'), 'no upload controls');
+  // canWrite false wins over canPublish true.
+  assert.ok(!open(full, draftOverPublished, undefined, { permissions: { canWrite: false, canPublish: true } }).includes('id="jongo-publish"'));
+
+  const editor = open(full, draftOverPublished, undefined, { permissions: { canWrite: true, canPublish: false } });
+  for (const id of ['jongo-save', 'jongo-duplicate', 'jongo-discard']) assert.ok(editor.includes(`id="${id}"`), `${id} stays for an editor`);
+  for (const id of ['jongo-publish', 'jongo-unpublish', 'jongo-delete']) assert.ok(!editor.includes(`id="${id}"`), `${id} hidden for an editor`);
+  assert.ok(!/<fieldset[^>]*disabled/.test(editor) && !editor.includes('data-view-only'));
+});
+
+test('StudioIdentity shows the person and the role, with a picture only for an https address', () => {
+  const html = renderToStaticMarkup(createElement(StudioIdentity, { person: { name: 'Ada Editor', email: 'ada@example.test', avatarUrl: 'https://cdn.example.test/a.png' }, roleLabel: 'Publisher' }));
+  assert.ok(html.includes('data-identity-name="true">Ada Editor<') && html.includes('data-role-badge="true">Publisher<') && html.includes('src="https://cdn.example.test/a.png"'));
+  assert.ok(!html.includes('jongo-role-elevated'));
+  const elevated = renderToStaticMarkup(createElement(StudioIdentity, { person: { email: 'root@example.test', avatarUrl: 'http://cdn.example.test/a.png' }, roleLabel: 'Jongo Super Admin', elevated: true }));
+  assert.ok(elevated.includes('>root@example.test<') && elevated.includes('jongo-role-elevated') && !elevated.includes('<img'), 'falls back to the email and to initials');
+  assert.ok(renderToStaticMarkup(createElement(StudioIdentity, { person: {}, roleLabel: 'Reader' })).includes('>Signed in<'));
 });
 
 test('icons are decorative and every icon button has an accessible name', () => {

@@ -9,6 +9,8 @@ import { middleware } from "@/middleware";
 const isPassThrough = (response: Response) => response.headers.get("x-middleware-next") === "1";
 const isLoginRedirect = (response: Response) =>
   response.status >= 300 && response.status < 400 && new URL(response.headers.get("location")!).pathname === "/auth/login";
+// Anonymous /api/ callers get a readable 401; pages get the login redirect.
+const isDenied = (response: Response, path: string) => (path.startsWith("/api/") ? response.status === 401 : isLoginRedirect(response));
 
 const run = (method: string, path: string) => middleware(new NextRequest(`https://jongo.app${path}`, { method }));
 
@@ -42,7 +44,7 @@ describe("middleware: the three public OIDC method+path pairs", () => {
     ["OPTIONS", "/api/oidc/token"],
     ["OPTIONS", "/api/oidc/jwks"]
   ])("keeps %s %s behind login (method restricted)", async (method, path) => {
-    expect(isLoginRedirect(await run(method, path))).toBe(true);
+    expect(isDenied(await run(method, path), path)).toBe(true);
   });
 
   it.each([
@@ -55,7 +57,7 @@ describe("middleware: the three public OIDC method+path pairs", () => {
     "/x/api/oidc/token", "/xapi/oidc/token", "/oidc", "/oidc/authorize", "/oidc/authorize/consent", "/oidc/error"
   ])("keeps %s behind login for every method", async (path) => {
     for (const method of ["GET", "POST", "HEAD", "PUT", "DELETE", "OPTIONS", "PATCH"]) {
-      expect(isLoginRedirect(await run(method, path)), `${method} ${path}`).toBe(true);
+      expect(isDenied(await run(method, path), path), `${method} ${path}`).toBe(true);
     }
   });
 
@@ -77,7 +79,7 @@ describe("middleware: the three public OIDC method+path pairs", () => {
     }
     for (const path of ["/dashboard", "/api/sites", "/api/oidc-lookalike", "/api/oidcx/token"]) {
       // "/api/oidc-lookalike" and "/api/oidcx/token" must not inherit any prefix exemption.
-      expect(isLoginRedirect(await run("GET", path)), path).toBe(true);
+      expect(isDenied(await run("GET", path), path), path).toBe(true);
     }
   });
 });
@@ -85,7 +87,9 @@ describe("middleware: the three public OIDC method+path pairs", () => {
 describe("middleware source guard", () => {
   it("does not add OIDC paths to the startsWith PUBLIC_PATHS list or under /api/auth", async () => {
     const source = (await import("node:fs")).readFileSync(new URL("./middleware.ts", import.meta.url), "utf8");
-    const list = /const PUBLIC_PATHS = \[([\s\S]*?)\];/.exec(source)![1]
+    // The public list now lives in lib/public-paths.ts (whole-segment matching).
+    const publicPathsSource = (await import("node:fs")).readFileSync(new URL("./lib/public-paths.ts", import.meta.url), "utf8");
+    const list = /export const PUBLIC_PATHS = \[([\s\S]*?)\];/.exec(publicPathsSource)![1]
       .split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
     expect(list).not.toMatch(/oidc|well-known|jwks|token/i);
     const occurrences = source.match(/\/api\/oidc\/|\/\.well-known\//g) ?? [];

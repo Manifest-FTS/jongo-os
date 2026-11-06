@@ -201,8 +201,8 @@ test('migration checksums ignore line endings and the shipped files load in orde
   assert.equal(migrationChecksum('a\nb\n'), migrationChecksum('a\r\nb\r\n'));
   assert.notEqual(migrationChecksum('a\nb\n'), migrationChecksum('a\nc\n'));
   const migrations = await loadMigrations();
-  assert.deepEqual(migrations.map(m => m.name), ['0001_init.sql']);
-  assert.match(migrations[0].checksum, /^[0-9a-f]{64}$/);
+  assert.deepEqual(migrations.map(m => m.name), ['0001_init.sql', '0002_sso_actors_revocations.sql']);
+  for (const migration of migrations) assert.match(migration.checksum, /^[0-9a-f]{64}$/);
   await assert.rejects(() => loadMigrations('/definitely/not/a/dir'), error => error.code === 'migration_invalid');
 });
 

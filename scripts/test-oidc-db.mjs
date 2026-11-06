@@ -23,8 +23,8 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const win = process.platform === "win32";
-const MIGRATION = "20261106120000_oidc_provider_site_craft_access";
-const NEW_TABLES = ["OidcClient", "OidcAuthCode", "OidcConsent", "SiteCraftAccess"];
+const MIGRATIONS = ["20261106120000_oidc_provider_site_craft_access", "20261107120000_invitation_craft_access"];
+const NEW_TABLES = ["OidcClient", "OidcAuthCode", "OidcConsent", "SiteCraftAccess", "InvitationCraftAccess"];
 const NEW_ENUMS = ["OidcClientStatus", "SiteCraftRole"];
 const candidates = process.env.PG_BIN ? [process.env.PG_BIN]
   : win ? ["C:/Program Files/PostgreSQL/17/bin", "C:/Program Files/PostgreSQL/16/bin"] : ["/usr/lib/postgresql/17/bin", "/usr/lib/postgresql/16/bin"];
@@ -95,7 +95,7 @@ UNION ALL SELECT 'trg|'||event_object_table||'|'||trigger_name||'|'||action_stat
 UNION ALL SELECT 'enum|'||t.typname||'|'||string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder)
   FROM pg_type t JOIN pg_enum e ON e.enumtypid=t.oid WHERE t.typname NOT IN (${quoted(NEW_ENUMS)}) GROUP BY t.typname
 UNION ALL SELECT 'rel|'||c.relname||'|'||c.relkind::text FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname NOT IN (${quoted(NEW_TABLES)})
-  AND c.relname NOT LIKE 'Oidc%' AND c.relname NOT LIKE 'SiteCraftAccess%' AND c.relname NOT LIKE '%Oidc%'
+  AND c.relname NOT LIKE 'Oidc%' AND c.relname NOT LIKE 'SiteCraftAccess%' AND c.relname NOT LIKE '%Oidc%' AND c.relname NOT LIKE 'InvitationCraftAccess%'
 ORDER BY 1`;
 
 let exitCode = 0;
@@ -126,8 +126,8 @@ try {
 
   // Stage 1: everything that existed before this change.
   const stage = join(temp, "stage", "prisma");
-  await cp(join(root, "prisma"), stage, { recursive: true, filter: source => !source.includes(MIGRATION) });
-  assert.equal(await exists(join(stage, "migrations", MIGRATION)), false, "stage excludes the OIDC migration");
+  await cp(join(root, "prisma"), stage, { recursive: true, filter: source => !MIGRATIONS.some(name => source.includes(name)) });
+  for (const name of MIGRATIONS) assert.equal(await exists(join(stage, "migrations", name)), false, `stage excludes ${name}`);
   const stage1 = await prisma(["migrate", "deploy", "--schema", join(stage, "schema.prisma")]);
   console.log(stage1.stdout.trim().split(/\r?\n/).slice(-2).join("\n"));
   const before = await snapshot();
@@ -136,7 +136,7 @@ try {
   // Stage 2: the real migrations directory, now including the OIDC migration.
   const stage2 = await prisma(["migrate", "deploy", "--schema", join(root, "prisma", "schema.prisma")]);
   console.log(stage2.stdout.trim().split(/\r?\n/).slice(-3).join("\n"));
-  assert.match(stage2.stdout, new RegExp(`${MIGRATION}`), "the OIDC migration was applied");
+  for (const name of MIGRATIONS) assert.match(stage2.stdout, new RegExp(name), `${name} was applied`);
   const after = await snapshot();
   assert.deepEqual(after, before, "pre-existing schema objects changed");
   console.log(`OK: ${before.length} facts about pre-existing tables/columns/constraints/indexes/triggers/enums are identical before and after the OIDC migration`);
@@ -149,7 +149,7 @@ try {
   // Drift: the new objects must match schema.prisma. Older drift on pre-existing tables is reported, not ours to fix here.
   const drift = await prisma(["migrate", "diff", "--from-url", databaseUrl, "--to-schema-datamodel", join(root, "prisma", "schema.prisma"), "--script"], { allowFail: true });
   const statements = drift.stdout.split(/\r?\n\r?\n/).map(part => part.trim()).filter(part => part && !part.startsWith("-- This is an empty migration"));
-  const ours = statements.filter(part => /Oidc|SiteCraftAccess/.test(part));
+  const ours = statements.filter(part => /Oidc|SiteCraftAccess|InvitationCraftAccess/.test(part));
   console.log(`schema.prisma drift: ${statements.length} statement(s) on pre-existing objects (informational, not touched by this change), ${ours.length} on the new objects`);
   assert.deepEqual(ours, [], "the new tables/enums/indexes match schema.prisma exactly");
   console.log("OK: migrated database matches schema.prisma for every new object (the partial unique index is invisible to Prisma, as intended)");

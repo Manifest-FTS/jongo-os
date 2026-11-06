@@ -28,7 +28,7 @@ function graph(entry) {
   }
   return { files, external };
 }
-const clientTargets = () => Object.entries(pkg.exports).filter(([name]) => !name.startsWith('./server') && name !== './styles.css' && name !== './studio.css')
+const clientTargets = () => Object.entries(pkg.exports).filter(([name]) => !name.startsWith('./server') && name !== './auth' && name !== './styles.css' && name !== './studio.css')
   .map(([name, target]) => [name, resolve(root, target.import)]);
 
 test('the build produced every export target', () => {
@@ -49,9 +49,9 @@ test('client entries (@jongo/craft, ./content, ./golf-lab, ./logic) never reach 
   assert.ok(graph(join(dist, 'server', 'query', 'groq.js')).files.size >= 2);
   for (const [name, entry] of entries) {
     const { files, external } = graph(entry);
-    for (const file of files) assert.ok(!file.startsWith(join(dist, 'server')), `${name} imports server file ${file}`);
+    for (const file of files) assert.ok(!file.startsWith(join(dist, 'server')) && !file.startsWith(join(dist, 'auth')), `${name} imports server file ${file}`);
     for (const specifier of external) assert.ok(!forbidden(specifier), `${name} imports ${specifier}`);
-    assert.ok(!external.has('@jongo/craft/server'));
+    assert.ok(!external.has('@jongo/craft/server') && !external.has('@jongo/craft/auth') && !external.has('jose'));
   }
 });
 
@@ -66,11 +66,13 @@ test('the server graph is where the Node-only imports live, and it never imports
   assert.ok(!external.has('pg'));
 });
 
-test('package.json: ./server export, optional peers, shipped migrations, preview.14', () => {
-  assert.equal(pkg.version, '0.1.0-preview.14');
+test('package.json: ./server and ./auth exports, optional peers, shipped migrations, preview.15', () => {
+  assert.equal(pkg.version, '0.1.0-preview.15');
+  assert.equal(pkg.engines.node, '>=22.12');
   assert.deepEqual(pkg.exports['./server'], { types: './dist/server/index.d.ts', import: './dist/server/index.js' });
+  assert.deepEqual(pkg.exports['./auth'], { types: './dist/auth/index.d.ts', import: './dist/auth/index.js' });
   assert.ok(pkg.files.includes('migrations') && pkg.files.includes('dist'));
-  for (const name of ['pg', 'groq-js']) {
+  for (const name of ['pg', 'groq-js', 'jose']) {
     assert.ok(pkg.peerDependencies[name], `${name} peer`);
     assert.equal(pkg.peerDependenciesMeta[name].optional, true, `${name} optional`);
     assert.ok(pkg.devDependencies[name], `${name} dev dependency`);
@@ -83,9 +85,31 @@ test('package.json: ./server export, optional peers, shipped migrations, preview
 
 test('migrations are real, ordered, numbered files next to the package root', () => {
   const names = readdirSync(join(root, 'migrations'));
-  assert.deepEqual(names, ['0001_init.sql']);
-  const sql = readFileSync(join(root, 'migrations', names[0]), 'utf8');
-  assert.ok(!/\b(BEGIN|COMMIT)\b\s*;/i.test(sql), 'the runner owns the transaction');
-  assert.ok(!/\b(organization|stripe|subscription|entitlement|tenant)\b/i.test(sql.replace(/--.*$/gm, '')), 'no SaaS concepts in the schema');
-  for (const statement of sql.match(/CREATE TABLE [^\s(]+/g)) assert.match(statement, /CREATE TABLE craft\./);
+  assert.deepEqual(names, ['0001_init.sql', '0002_sso_actors_revocations.sql']);
+  for (const name of names) {
+    const sql = readFileSync(join(root, 'migrations', name), 'utf8');
+    assert.ok(!/\b(BEGIN|COMMIT)\b\s*;/i.test(sql), 'the runner owns the transaction');
+    assert.ok(!/\b(organization|stripe|subscription|entitlement|tenant)\b/i.test(sql.replace(/--.*$/gm, '')), 'no SaaS concepts in the schema');
+    for (const statement of sql.match(/CREATE TABLE [^\s(]+/g)) assert.match(statement, /CREATE TABLE craft\./);
+  }
+  // 0002 is additive: it never alters or drops anything that 0001 created.
+  const second = readFileSync(join(root, 'migrations', names[1]), 'utf8').replace(/--.*$/gm, '');
+  assert.ok(!/\b(ALTER|DROP|TRUNCATE|DELETE|UPDATE)\b/i.test(second), '0002 only creates');
+});
+
+test('./auth is server-only: Node crypto and a lazily imported jose, no React, UI, database, server subpath or client entry', () => {
+  const entry = join(dist, 'auth', 'index.js');
+  const { files, external } = graph(entry);
+  assert.ok(external.has('node:crypto'), 'the scanner sees the crypto import');
+  assert.ok([...files].some(file => file.endsWith(join('auth', 'login.js'))));
+  for (const file of files) assert.ok(file.startsWith(join(dist, 'auth')), `unexpected module in the auth graph: ${file}`);
+  for (const specifier of external) assert.ok(/^node:/.test(specifier) || specifier === 'jose', `unexpected import in the auth graph: ${specifier}`);
+  // jose is an optional peer: imported dynamically inside the verifier only.
+  const login = readFileSync(join(dist, 'auth', 'login.js'), 'utf8');
+  assert.ok(/import\(\s*['"]jose['"]\s*\)/.test(login));
+  for (const file of files) assert.ok(!/\bimport\s+[^(]*from\s*["']jose["']/.test(readFileSync(file, 'utf8')), `static jose import in ${file}`);
+  // Nothing in the auth graph logs.
+  for (const file of files) assert.ok(!/\bconsole\./.test(readFileSync(file, 'utf8')), `console use in ${file}`);
+  // No client entry reaches it (also asserted per entry above).
+  for (const [name, target] of clientTargets()) assert.ok(![...graph(target).files].some(file => file.startsWith(join(dist, 'auth'))), name);
 });
