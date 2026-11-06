@@ -21,6 +21,9 @@ export type SiteOverview = {
   primaryDomain?: string;
   /** Every domain Coolify has, in its own order; primaryDomain is the first. */
   domains?: string[];
+  /** The repository Coolify deploys this app from, as Coolify stores it ("owner/repo" or a URL). */
+  gitRepository?: string;
+  gitBranch?: string;
 };
 
 export type CoolifyProjectRecord = {
