@@ -34,6 +34,10 @@ Preview.6 retains role-scoped RFC 5545 Golf calendar downloads and restores labe
 
 Full boundary, review scenarios, limitations and vendor-artifact deployment instructions: `jongo/docs/craft-preview.md` in the source repository. Browser demo changes are fictional and in-memory. Never use the role switch as real authorization.
 
+## Sign-in card (preview.17, `CraftLoginCard`)
+
+One presentational login for every site: `<CraftLoginCard siteName jongo password passwordAction notice emergencyOpen unavailable />`, exported from the package root with its styles in `studio.css` under `.jongo-login-*`. It has no server imports and reads no environment; the website decides which methods exist and which static message to show. "Sign in with Jongo" is the primary action. The shared password, when enabled next to it, sits in a collapsed "Use emergency access" disclosure. A rejected password reopens it (`emergencyOpen`). Errors, the rate-limit state and the "not available" state are alerts inside the same card.
+
 ## Server persistence (preview.8, `@jongo/craft/server`)
 
 A standalone, single-tenant PostgreSQL store for Craft documents. It is a **server-only subpath of this package**: never import it from client code or Studio components (a test checks that the client entries do not reach it). It has no Organization, User, Stripe, subscription or entitlement concepts; the host application supplies identity and authorization through callbacks. **Preview, not production-ready**: see "Not included" and "Known limits".
