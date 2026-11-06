@@ -19,10 +19,13 @@ const disabled = (html, id) => /disabled=""/.test(button(html, id));
 const hasItem = (html, id) => new RegExp(`<button[^>]*id="${id}"`).test(html);
 
 test('store mode is opt-in: without a store the Studio keeps its exact local-draft wording', () => {
-  const local = renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] } }));
+  const local = renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] }, debug: true }));
   for (const text of ['Save local draft', 'Revert to original snapshot', 'persistence and publishing are not connected', 'page memory only']) assert.ok(local.includes(text), text);
   assert.ok(!local.includes('data-studio-mode'));
   for (const text of ['Publish</button>', 'Unpublish', 'Discard draft', 'Reload latest']) assert.ok(!local.includes(text), text);
+  const plain = renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] } }));
+  assert.ok(plain.includes('Save local draft'), 'labels stay');
+  for (const text of ['persistence and publishing are not connected', 'page memory only', 'Local draft mode: nothing is stored', 'Checks run locally', 'Drafts are kept in page memory']) assert.ok(!plain.includes(text), `not without debug: ${text}`);
 });
 
 test('connected Studio drops the not-connected notice and shows saved + Published status with only valid actions', () => {
@@ -58,9 +61,11 @@ test('a never-published draft cannot be unpublished or discarded; an invalid dra
 });
 
 test('failed prefetch renders an unavailable state with retry, never the local fallback; no prefetch shows loading', () => {
-  const failed = render({ initial: { error: unavailableFailure('Storage is down.') }, initialType: 'article' });
-  for (const text of ['role="alert"', 'Storage unavailable', 'Storage is down.', 'Try again', 'Local drafts are not available while a store is connected']) assert.ok(failed.includes(text), text);
+  const failed = render({ initial: { error: unavailableFailure('Storage is down.') }, initialType: 'article', debug: true });
+  for (const text of ['role="alert"', 'Storage unavailable', 'Storage is down.', 'Try again', 'local drafts are not available while a store is connected']) assert.ok(failed.includes(text), text);
   assert.ok(!failed.includes('Save local draft'));
+  const quiet = render({ initial: { error: unavailableFailure('Storage is down.') }, initialType: 'article' });
+  assert.ok(quiet.includes('The document list could not be loaded.') && !quiet.includes('local drafts are not available'), 'the developer sentence needs debug');
   const denied = render({ initial: { error: { ok: false, code: 'denied', message: 'Session ended.' } }, signInHref: '/craft/login' });
   assert.ok(denied.includes('href="/craft/login"') && denied.includes('Sign in again'));
   const loading = render({});
@@ -122,10 +127,10 @@ const ok = async () => ({ ok: true });
 const base = () => ({ list: ok, load: ok, saveDraft: ok, publish: ok, unpublish: ok, discardDraft: ok });
 const published = record({ variant: 'published', published: { nativeRev: 'r1', lockVersion: 3 } });
 const open = (storeObject, rec = published, config = { schemas: [schema], documents: [] }, extra = {}) => renderToStaticMarkup(createElement(ContentStudio, { config, store: storeObject, initial: { documents: [summary({ variant: rec.variant, hasPublished: rec.variant === 'published' || !!rec.published })], record: rec }, initialType: 'article', initialDocument: 'welcome', ...extra }));
-const localHtml = () => renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] } }));
+const localHtml = (extra = {}) => renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [doc()] }, ...extra }));
 
 test('both modes drop the "Content workspace" label and render a sticky header and an action bar with accessible roles', () => {
-  for (const html of [open(base()), localHtml()]) {
+  for (const html of [open(base(), published, undefined, { debug: true }), localHtml({ debug: true })]) {
     assert.ok(!html.includes('Content workspace'));
     for (const text of ['class="jongo-doc-header"', 'aria-label="Document header"', 'class="jongo-doc-footer"', 'role="group" aria-label="Document actions"', 'aria-label="Document tools"', 'aria-label="More actions"', 'aria-haspopup="menu"', 'aria-expanded="false"', 'aria-controls="jongo-more-menu"', 'aria-controls="jongo-tools-menu"', 'role="menu"', 'role="menuitem"']) {
       assert.ok(html.includes(text), text);
@@ -134,13 +139,15 @@ test('both modes drop the "Content workspace" label and render a sticky header a
     assert.ok(html.indexOf('class="jongo-doc-header"') < html.indexOf('jongo-editor-body') && html.indexOf('jongo-editor-body') < html.indexOf('class="jongo-doc-footer"'), 'header, body, footer order');
   }
   assert.ok(!/<details/.test(open(base())), 'the schema block moved into Inspect');
+  // Inspect and Copy document (raw JSON, schema details) are developer tools: absent unless debug.
+  for (const html of [open(base()), localHtml()]) assert.ok(!html.includes('Inspect') && !html.includes('Copy document'));
 });
 
 test('footer menu items follow the document state and the capabilities the store implements', () => {
   const none = open(base());
   assert.ok(hasItem(none, 'jongo-unpublish'));
   for (const id of ['jongo-duplicate', 'jongo-delete', 'jongo-history']) assert.ok(!hasItem(none, id), `${id} only with the store method`);
-  const full = open({ ...base(), history: ok, duplicate: ok, delete: ok });
+  const full = open({ ...base(), history: ok, duplicate: ok, delete: ok }, published, undefined, { debug: true });
   for (const id of ['jongo-unpublish', 'jongo-duplicate', 'jongo-delete', 'jongo-history', 'jongo-inspect', 'jongo-copy-document']) assert.ok(hasItem(full, id), id);
   assert.ok(/<button[^>]*id="jongo-delete"[^>]*class="jongo-menu-item jongo-menu-danger"|<button[^>]*class="jongo-menu-item jongo-menu-danger"[^>]*id="jongo-delete"/.test(full), 'destructive styling');
   assert.ok(/role="separator"[^>]*><\/div><button[^>]*id="jongo-delete"/.test(full), 'Delete is separated');
@@ -158,7 +165,7 @@ test('singleton types hide Duplicate and Delete even when the store offers them'
 });
 
 test('icons are decorative and every icon button has an accessible name', () => {
-  for (const html of [open({ ...base(), history: ok, duplicate: ok, delete: ok }), localHtml()]) {
+  for (const html of [open({ ...base(), history: ok, duplicate: ok, delete: ok }, published, undefined, { debug: true }), localHtml({ debug: true })]) {
     const svgs = html.match(/<svg\b[^>]*>/g) ?? [];
     assert.ok(svgs.length >= 5);
     for (const svg of svgs) assert.ok(svg.includes('aria-hidden="true"') && svg.includes('focusable="false"'), svg);
@@ -167,7 +174,7 @@ test('icons are decorative and every icon button has an accessible name', () => 
 });
 
 test('local mode keeps its exact labels inside the menu and offers no store actions', () => {
-  const html = localHtml();
+  const html = localHtml({ debug: true });
   for (const text of ['Save local draft', 'Reset changes', 'Revert to original snapshot', 'id="jongo-reset"', 'id="jongo-revert"', 'role="menuitem"']) assert.ok(html.includes(text), text);
   for (const text of ['Unpublish', 'Discard draft', 'Duplicate', 'Delete', 'History', 'Publish</button>']) assert.ok(!html.includes(text), text);
   assert.ok(disabled(html, 'jongo-reset') && disabled(html, 'jongo-revert'), 'nothing to reset yet');

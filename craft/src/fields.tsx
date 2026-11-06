@@ -1,7 +1,10 @@
 "use client";
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { Dialog } from './shell.js';
 import { IMAGE_ASSET_TYPE, type Descriptor } from './schema.js';
+import { ALLOWED_IMAGE_TYPES, describeBytes } from './media-contract.js';
+import { formatStamp } from './studio-store.js';
+import type { MediaApi } from './studio-context.js';
 import { appendItem, canAddItem, documentTitle, isObject, memberFor, memberTitle, moveItem, newImage, newItem, newReference, removeItem, replaceItem, resolveReference, searchReferences, setField, slugify, type Candidate } from './content-ops.js';
 import { PortableTextEditor } from './portable-text-editor.js';
 import { Hint, Issues, LabelText, describedBy, fieldId, hasErrors, useIssues, useStudio } from './studio-context.js';
@@ -62,16 +65,57 @@ function ObjectField({ d, label, path, value, onChange }: Props<Extract<Descript
   </fieldset>;
 }
 
+function UploadPanel({ media }: { media: MediaApi }) {
+  const api = useStudio();
+  type State = { kind: 'idle' } | { kind: 'uploading'; name: string; fraction: number | null } | { kind: 'error'; code: string; message: string } | { kind: 'done'; name: string };
+  const [state, setState] = useState<State>({ kind: 'idle' });
+  const [dragging, setDragging] = useState(false);
+  const input = useRef<HTMLInputElement>(null), running = useRef<AbortController | null>(null);
+  useEffect(() => () => running.current?.abort(), []);
+  async function start(file: File) {
+    if (running.current) return;
+    const controller = new AbortController();
+    running.current = controller;
+    setState({ kind: 'uploading', name: file.name, fraction: 0 });
+    const result = await media.upload(file, { signal: controller.signal, onProgress: fraction => setState(previous => previous.kind === 'uploading' ? { ...previous, fraction } : previous) });
+    if (running.current !== controller) return;
+    running.current = null;
+    if (result.ok) { media.adopt(result.asset); setState({ kind: 'done', name: file.name }); api.announce(`Uploaded ${file.name}. Select it in the list to use it.`); }
+    else if (result.code === 'cancelled') { setState({ kind: 'idle' }); api.announce('Upload cancelled.'); }
+    else setState({ kind: 'error', code: result.code, message: result.message });
+  }
+  const pick = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void start(file); };
+  const drop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files?.[0]; if (file) void start(file); };
+  const busy = state.kind === 'uploading';
+  return <div className={`jongo-upload${dragging ? ' jongo-upload-drag' : ''}`} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={drop}>
+    <div className="jongo-actions">
+      <button type="button" id="jongo-upload" disabled={busy} onClick={() => input.current?.click()}>Upload image</button>
+      <input ref={input} type="file" className="jongo-sr" tabIndex={-1} aria-hidden="true" accept={ALLOWED_IMAGE_TYPES.join(',')} onChange={pick} />
+      <span className="jongo-hint">{`JPEG, PNG, WebP, AVIF or GIF, up to ${describeBytes(media.limits.maxImageBytes)}. You can also drop a file here.`}</span>
+    </div>
+    {state.kind === 'uploading' && <div className="jongo-upload-progress">
+      <progress aria-label={`Uploading ${state.name}`} max={100} value={state.fraction === null ? undefined : Math.round(state.fraction * 100)} />
+      <span aria-hidden="true">{state.fraction === null ? 'Uploading…' : `${Math.round(state.fraction * 100)}%`}</span>
+      <button type="button" onClick={() => running.current?.abort()}>Cancel upload</button>
+    </div>}
+    {state.kind === 'done' && <p role="status" className="jongo-upload-done" data-upload-state="done">Uploaded {state.name}. Select it in the list to use it.</p>}
+    {state.kind === 'error' && <p role="alert" className="jongo-error" data-upload-error={state.code}>{state.message}</p>}
+  </div>;
+}
+
 function PickerDialog({ title, to, kind, onPick, onClose }: { title: string; to: readonly string[]; kind: 'document' | 'image'; onPick: (candidate: Candidate) => void; onClose: () => void }) {
   const api = useStudio(), [query, setQuery] = useState(''), search = useRef<HTMLInputElement>(null);
   const results = searchReferences(api.index, to, query, api.schemas);
   // The native dialog is not open until its own effect runs, so focus the search box afterwards.
   useEffect(() => { const timer = setTimeout(() => search.current?.focus(), 0); return () => clearTimeout(timer); }, []);
+  const detail = !api.debug ? '' : kind === 'image' ? (api.media ? ' · Images come from the supplied asset library and from uploads.' : ' · Images come from the supplied asset library. Uploading is not available.') : ` · Allowed types: ${to.join(', ')}`;
   return <Dialog title={title} onClose={onClose}>
+    {kind === 'image' && api.media && <UploadPanel media={api.media} />}
     <label>Search {kind === 'image' ? 'images' : 'documents'}<input ref={search} type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Title, type or ID" /></label>
-    <p className="jongo-hint" role="status">{results.length} {results.length === 1 ? 'result' : 'results'} · {kind === 'image' ? 'Images come from the supplied asset library. Uploading is not available.' : `Allowed types: ${to.join(', ')}`}</p>
-    {results.length ? <ul className="jongo-picker">{results.map(candidate => { const thumb = kind === 'image' ? thumbUrl(candidate.entry.doc) : undefined;
-      return <li key={candidate.id}><button type="button" aria-label={`Select ${candidate.title} (${candidate.type})`} onClick={() => onPick(candidate)}>{thumb && <img src={thumb} alt="" width={44} height={44} loading="lazy" />}<span><strong>{candidate.title}</strong><small>{candidate.type} · {candidate.id}</small></span></button></li>; })}</ul>
+    <p className="jongo-hint" role="status">{results.length} {results.length === 1 ? 'result' : 'results'}{detail}</p>
+    {results.length ? <ul className="jongo-picker">{results.map(candidate => { const doc = candidate.entry.doc, thumb = kind === 'image' ? thumbUrl(doc) : undefined;
+      const uploaded = typeof doc.size === 'number', stamp = typeof doc.createdAt === 'string' ? formatStamp(doc.createdAt) : '';
+      return <li key={candidate.id}><button type="button" aria-label={`Select ${candidate.title} (${candidate.type})`} onClick={() => onPick(candidate)}>{thumb && <img src={thumb} alt="" width={44} height={44} loading="lazy" />}<span><strong>{candidate.title}</strong><small>{uploaded ? [describeBytes(doc.size as number), stamp].filter(Boolean).join(' · ') : `${candidate.type} · ${candidate.id}`}</small></span></button></li>; })}</ul>
       : <p>No matching {kind === 'image' ? 'images' : 'documents'}.</p>}
   </Dialog>;
 }
@@ -91,7 +135,7 @@ function ReferenceField({ d, label, path, value, onChange, member }: Props<Extra
   const chosen = isObject(value) && typeof value._ref === 'string' && value._ref !== '';
   return <fieldset className="jongo-group" aria-describedby={describedBy(id, !!d.description, issues)}>
     <legend><LabelText title={label} required={d.required} isPrivate={d.private} /></legend>
-    <Hint id={id}>{d.description ?? `Allowed types: ${d.to.join(', ')}${d.weak ? ' · weak reference' : ''}`}</Hint>
+    <Hint id={id}>{d.description ?? (api.debug ? `Allowed types: ${d.to.join(', ')}${d.weak ? ' · weak reference' : ''}` : undefined)}</Hint>
     <Target value={value} to={d.to} kind="document" />
     <div className="jongo-actions"><button type="button" id={id} aria-haspopup="dialog" onClick={() => setOpen(true)}>{chosen ? 'Change' : 'Choose'} {label}</button>
       {chosen && !member && <button type="button" onClick={() => { onChange(undefined); api.announce(`${label} cleared.`); api.focus(id); }}>Clear {label}</button>}</div>
@@ -130,7 +174,7 @@ function PortableTextField({ d, label, path, value, onChange }: Props) {
   const api = useStudio(), id = fieldId(api.docId, path), issues = useIssues(path);
   return <fieldset className="jongo-group" aria-describedby={describedBy(id, !!d.description, issues)}>
     <legend><LabelText title={label} required={d.required} isPrivate={d.private} /></legend>
-    <Hint id={id}>{d.description ?? 'Block content. Unsupported blocks, marks and annotations are preserved unchanged.'}</Hint>
+    <Hint id={id}>{d.description ?? (api.debug ? 'Block content. Unsupported blocks, marks and annotations are preserved unchanged.' : undefined)}</Hint>
     <PortableTextEditor id={id} label={label} path={path} value={value} onChange={onChange} />
     <Issues id={id} issues={issues} />
   </fieldset>;

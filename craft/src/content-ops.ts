@@ -128,10 +128,11 @@ export function duplicateDocument(doc: JsonObject, schema?: TypeDefinition): { _
   return copy;
 }
 export type Candidate = { id: string; type: string; title: string; entry: IndexEntry };
-/** Search references by title, type or ID over supplied documents of the allowed types only. */
+/** Search references by title, type or ID over supplied documents of the allowed types only. Assets with a `createdAt` (uploads) come first, newest first; the rest by title. */
 export function searchReferences(index: ReferenceIndex, to: readonly string[], query: string, schemas: ReadonlyMap<string, TypeDefinition>): Candidate[] {
   const needle = query.trim().toLowerCase();
+  const created = (item: Candidate) => typeof item.entry.doc.createdAt === 'string' ? item.entry.doc.createdAt : '';
   return Array.from(index.entries()).filter(([, entry]) => to.includes(entry._type)).map(([id, entry]) => ({ id, type: entry._type, title: documentTitle(entry.doc, schemas.get(entry._type)), entry }))
     .filter(item => !needle || `${item.title} ${item.type} ${item.id}`.toLowerCase().includes(needle))
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort((a, b) => (created(a) && created(b) ? (created(a) < created(b) ? 1 : created(a) > created(b) ? -1 : 0) : created(a) ? -1 : created(b) ? 1 : 0) || a.title.localeCompare(b.title));
 }

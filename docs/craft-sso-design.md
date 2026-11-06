@@ -1,6 +1,6 @@
 # Sign in with Jongo: SSO for Craft-enabled customer sites
 
-Status: **design proposal, 2026-11-05, branch `craft`. No code, migration or configuration is part of this document.** Nothing here has been run. Statements marked **(verified)** were read in the code on this branch; **(assumption)** means I could not verify it (for example anything that depends on production environment values, which were deliberately not read).
+Status: **design proposal, 2026-11-05, branch `craft`. Phase 1a (Jongo-side provider and per-app access model) was implemented on 2026-11-06: see section 10, "Implemented in Phase 1a", for what exists and where it deliberately differs from this proposal (owner decisions of 2026-11-06 override sections 1, 3.2, 3.4, 5 and 9 where they differ).** Nothing in this document has been run against production or any real database. Statements marked **(verified)** were read in the code on this branch; **(assumption)** means I could not verify it (for example anything that depends on production environment values, which were deliberately not read).
 
 ## 1. Goals, non-goals, threat model
 
@@ -171,7 +171,7 @@ The site keeps only glue: three route handlers, the cookie plumbing and its envi
 
 - **Becoming an editor of a site's dataset** uses Jongo's existing, unmodified rules (verified, `dataset-access.ts`, `docs/cms-persistence.md`): organization owner and live organization `admin` -> dataset admin; live organization `collaborator` -> reader, raised by an explicit `CmsDatasetGrant` role (`reader|editor|publisher|admin`); a site-only collaborator needs an explicit grant on that exact linked dataset; a grant never replaces tenant membership; editing and publishing also require the owner's active subscription. SSO adds no new role tables.
 - **Documentation conflict found:** the comment above `evaluateCmsEntitlement` in `lib/cms/entitlements.ts` says org admins stay read-only until explicit grants, while `dataset-access.ts` and `docs/cms-persistence.md` give org admins dataset admin. This design follows `dataset-access.ts`; the comment should be reconciled (not part of this change).
-- **Platform admins and support.** No automatic access (verified: no bypass). Support gets access only by being added by the customer (collaborator plus grant), or by an owner-approved, time-boxed grant; every grant and every sign-in is audited. Recommended default in section 9.
+- **Platform admins and support.** *Superseded by the owner decision of 2026-11-06 (section 10.2):* a Jongo platform admin has implicit `admin` access to every site's Craft, never `owner`; every issuance is audited (`reason: platform_admin`) and the ID token carries `craft.via: "platform_admin"`. The original proposal was no automatic access (`resolveDatasetCmsCapabilities` still gives none). Customers can also add support staff with an explicit per-app grant. Every grant and every sign-in is audited.
 - **Removal.** Remove a collaborator, soft-delete a user (`deletedAt`), revoke a grant or archive the dataset: the next authorization is denied (resolver reads live rows). An existing site session survives until its `exp` (2 h) unless revoked through the `sso_revocations` table. Accepted latency: **at most 2 h** by default; lower it or add a periodic re-authorization through the same redirect if the owner wants tighter control.
 - **Isolation.** `aud` = the site's `clientId`; the RP rejects any `craft.dataset` other than its configured one; the IdP issues `craft.dataset` only from the client's own `datasetId`, never from a request parameter; the redirect URI must exactly match that client's registered list. A token for site A is useless at site B (wrong `aud`).
 
@@ -231,10 +231,87 @@ Required before merge: lint/type-check, the existing `apps/web` suite, a middlew
 |---|---|---|
 | 1 | One client per site, or per organization? | **Per site** (own secret, redirect URIs and dataset; revocable independently) |
 | 2 | May plain collaborators publish? | **No.** Publishing needs an explicit `publisher` grant (current Jongo rule); org owner/admin publish |
-| 3 | Platform-admin/support access policy | **No implicit access**; support must be added by the customer with a time-boxed grant; all audited |
+| 3 | Platform-admin/support access policy | **Decided 2026-11-06 (owner): platform admin has implicit `admin` on every site's Craft**, audited on every token issuance and shown as `craft.via: "platform_admin"`. Customers can additionally grant individual users per app (`SiteCraftAccess`, section 10.2) |
 | 4 | Token and session lifetimes | Code 60 s; ID token 5 min; site session **2 h** absolute, no refresh; consent remembered until revoked |
 | 5 | Custom domains for sites | Each domain is an exact redirect URI and allowed origin; add/remove through client update (audited); no wildcards |
 | 6 | Later support Google/GitHub login via Jongo? | **Yes, as Jongo-side login methods only** (the `User` model already has `authProvider`/`authProviderId`, verified); sites stay unchanged because they only trust Jongo |
 | 7 | User removal without SCIM | Immediate at next authorization; existing sessions end at 2 h or via `sso_revocations`; an operator "revoke now" command |
-| 8 | Does a `CmsDataset` row exist (or will it be created) for the Golf Lab in Jongo, separate from the Golf Lab's own `craft` database dataset? | **Yes, create one**; Jongo's dataset is the access-policy anchor (`craft.dataset` claim), the site maps it to its local `JONGO_CRAFT_DATASET` by configuration (assumption: not verified that Jongo has it today) |
+| 8 | Does a `CmsDataset` row exist (or will it be created) for the Golf Lab in Jongo, separate from the Golf Lab's own `craft` database dataset? | **Superseded 2026-11-06 (owner):** no `CmsDataset` is needed. Each client stores the Craft dataset **name** the site uses (`OidcClient.datasetName`, default `production`) and `craft.dataset` carries that name; access is resolved per Site (section 10.2) |
 | 9 | Should readers be able to sign in at all? | Yes, to a view-only page; no studio access |
+
+## 10. Implemented in Phase 1a
+
+Status 2026-11-06, branch `craft`, **not committed, not deployed, not enabled anywhere**. Phase 1a is the Jongo side only (provider, data model, access resolution). UI (client/grant management, polished consent screen) is Phase 1b; the relying party in the site (`@jongo/craft/auth`, `v2` session, break-glass switch) is Phase 2. Everything is inert unless `JONGO_OIDC_ENABLED` is exactly `true`.
+
+### 10.1 What exists
+
+| Piece | Location (`jongo/apps/web/src` unless noted) |
+|---|---|
+| Schema + migration | `jongo/prisma/schema.prisma` (enums `OidcClientStatus`, `SiteCraftRole`; models `OidcClient`, `OidcAuthCode`, `OidcConsent`, `SiteCraftAccess`); `jongo/prisma/migrations/20261106120000_oidc_provider_site_craft_access/migration.sql` |
+| Config, keys, tokens | `lib/oidc/config.ts`, `keys.ts`, `tokens.ts` (also exports `verifyIdToken`, the reference verifier a relying party must mirror) |
+| Codes, PKCE, clients, consent | `lib/oidc/codes.ts`, `pkce.ts`, `clients.ts`, `consent.ts` |
+| Authorization request handling | `lib/oidc/authorize.ts` (validation, consent decision, code issue) |
+| Token endpoint logic | `lib/oidc/token-endpoint.ts`, `rate-limit.ts` (reuses `RateLimiter` from `contact-request.ts`), `audit.ts` |
+| Per-app access | `lib/craft-access.ts` (`resolveCraftAccess`, `grantCraftAccess`, `revokeCraftAccess`, `listCraftAccess`) |
+| Routes | `app/.well-known/openid-configuration/route.ts`, `app/api/oidc/jwks/route.ts`, `app/api/oidc/token/route.ts`, `app/oidc/authorize/page.tsx`, `app/oidc/authorize/consent/route.ts`, `app/oidc/error/page.tsx` |
+| Middleware | `middleware.ts`: three exact method+path pairs made public (below); nothing else changed |
+| Operator scripts | `jongo/scripts/oidc-generate-key.mjs`, `jongo/scripts/oidc-register-client.mjs` (`register`, `rotate`, `disable`) |
+| Verification | unit tests beside each module, `middleware-oidc.test.ts`, `lib/oidc/oidc-db.integration.test.ts`, `jongo/scripts/test-oidc-db.mjs` (temp PostgreSQL harness) |
+
+**Environment (names only; values live in the secret store, never in git or logs):**
+
+| Name | Meaning |
+|---|---|
+| `JONGO_OIDC_ENABLED` | Exact string `true` turns everything on. Anything else, including unset, `TRUE`, `1`: every new route answers 404 |
+| `JONGO_OIDC_ISSUER` | Public origin of Jongo, e.g. `https://jongo.app` (https required; loopback http only outside production; no path, query or userinfo). Endpoint URLs in discovery are built from it, never from the request `Host` |
+| `JONGO_OIDC_SIGNING_KEY` | Ed25519 private key as a JWK JSON (one line) or PKCS#8 PEM. Generated with `node scripts/oidc-generate-key.mjs` |
+| `JONGO_OIDC_PREVIOUS_PUBLIC_KEYS` | Optional. JWK array or `{"keys":[...]}` of retired **public** keys still published for rotation. A set containing private material (`d`) is refused |
+| `JONGO_CMS_ENABLED` | Existing flag. Access resolution uses `evaluateCmsEntitlement`, which requires it to be exactly `true` (see 10.2) |
+
+Enabled but misconfigured (missing/invalid variable, undecodable key, or `NODE_ENV=production` with a missing or default `NEXTAUTH_SECRET`) **fails closed**: discovery, JWKS and token answer `503`, and the log line names variables only.
+
+**Endpoints**
+
+- `GET /.well-known/openid-configuration`: `issuer`, `authorization_endpoint`, `token_endpoint`, `jwks_uri`, `response_types_supported: ["code"]`, `code_challenge_methods_supported: ["S256"]`, `id_token_signing_alg_values_supported: ["EdDSA"]`, `token_endpoint_auth_methods_supported: ["client_secret_basic","client_secret_post"]`, `grant_types_supported: ["authorization_code"]`. No userinfo, registration or refresh.
+- `GET /api/oidc/jwks`: public parameters only (`kty`, `crv`, `x`, `kid`, `use`, `alg`); `kid` is the RFC 7638 thumbprint.
+- `GET /oidc/authorize`: **not public**; the existing login redirect applies. Validates `client_id`, exact `redirect_uri`, `response_type=code`, mandatory `state`, `nonce` and `code_challenge` with `code_challenge_method=S256`, `scope` containing `openid` (optional `email profile craft`); rejects `prompt=none`, `request`, `request_uri` and non-`query` response modes. An unknown client or unregistered `redirect_uri` renders an error page and **never redirects**; after both are proven, protocol errors redirect to the registered URI with `error`, `state` and `iss` (RFC 9207). A user with no Craft role sees a "no access" page (not a redirect). First use shows an Allow/Cancel screen naming the app, dataset, email, name and role; the decision is posted to `POST /oidc/authorize/consent` with `Origin` check and an expiring HMAC token (key derived from the signing key) bound to the user and the exact request. Consent is remembered per user and client for the granted scopes.
+- `POST /api/oidc/token`: form body only (`application/x-www-form-urlencoded`, 8 KB cap, no `Origin` header, no repeated parameters), `client_secret_basic` or `client_secret_post` (not both) **and** PKCE `code_verifier`. Response is `{ id_token, token_type: "N_A", expires_in: 300 }`: no access or refresh token exists. Authority is **re-resolved at redemption**, so removal inside the 60 s code window is honoured.
+
+**Token and code facts.** Code: 256-bit random, only its SHA-256 stored, 60 s TTL, single use by one atomic `updateMany(consumedAt IS NULL AND expiresAt > now)`, bound to client, redirect URI, S256 challenge, nonce and user; once found it is consumed whatever later checks say (a stolen code cannot be retried with other parameters); replays are audited as `oidc.code.replay`. ID token: EdDSA, header `{alg, kid, typ: JWT}`, claims `iss`, `sub` (`User.id`), `aud` (the `client_id`), `iat`, `exp` (5 min), `jti`, `nonce`, `auth_time`, plus `email`/`email_verified` (scope `email`), `name` (scope `profile`) and always `craft: { dataset, role, siteId, via }`. `auth_time` is the moment Jongo verified the live session at code issue (NextAuth's `auth()` does not expose the original login time). `dataset` comes from the client registration only, never from the request.
+
+**Middleware.** Exactly `GET|HEAD /.well-known/openid-configuration`, `GET|HEAD /api/oidc/jwks` and `POST /api/oidc/token` are public, by exact equality placed after the parked-domain check. `PUBLIC_PATHS` and `/api/auth` are untouched. `/oidc/authorize`, `/oidc/authorize/consent`, `/oidc/error`, every other method on those paths, trailing-slash, case, prefix and suffix variants and any other `/api/oidc/*` or `/.well-known/*` path still require a session (`middleware-oidc.test.ts`, and confirmed against a production build).
+
+### 10.2 Owner decisions (2026-11-06) that override the proposal
+
+1. **Platform admin has implicit access.** `isPlatformAdminUser` (global role `admin`/`super_admin`, bootstrap email or a `PlatformAdmin` grant) yields role `admin` (never `owner`) on every site. Each token issuance for such access writes an `AuditLog` row (`oidc.token.issue`, `details.reason = "platform_admin"`) **before** the token is signed; if that write fails, no token is issued. The ID token carries `craft.via: "platform_admin"` so the site can show it. When a user would have the same role through the tenant (owner, org admin, grant), `via` reports the tenant reason, so `platform_admin` appears only when it was actually needed.
+2. **Granular per-app access.** New `SiteCraftAccess` (id, siteId, userId, role `reader|editor|publisher|admin`, grantedByUserId, createdAt, updatedAt, revokedAt) with a partial unique index (one active grant per site and user; revoked rows are history). Effective role is the maximum of: platform admin -> admin; organization owner -> admin; live organization admin (`Collaborator.role = admin`, the test `isClientAdmin` uses) -> admin; explicit active grant -> its role. **A collaborator without an explicit grant gets no Craft access.** Deleted users, deleted sites or organizations and a deleted organization owner deny everything. Entitlement follows `evaluateCmsEntitlement` exactly as `resolveDatasetCmsCapabilities` uses it: `cms.read` must hold (needs `JONGO_CMS_ENABLED=true`, live sponsor), and without an active owner Studio/Scale subscription (`cms.author`) every role is capped to `reader` (`capped: true`), which is how the existing code degrades authoring while keeping read. Granting, revoking and listing are limited to platform admins, the organization owner and organization admins; app-level collaborators (`SiteCollaborator`) cannot manage grants. Grants may be given to any live Jongo user (not only organization members) and every grant/revoke is audited.
+3. **One OIDC client per Site**, with `clientId` (`jc_` + 128 bits), salted secret hash (`v1$<salt>$<HMAC-SHA256(salt, secret)>`, constant-time compare, one previous secret accepted for 24 h after rotation), exact-match `redirectUris` (https; loopback http only outside production; no fragment, userinfo or wildcard), `allowedOrigins`, `status`, `createdAt`/`rotatedAt`/`disabledAt`, and `datasetName` (the Craft dataset **name**, default `production`).
+
+**Documented discrepancies and deviations**
+
+- `lib/cms/entitlements.ts` says org admins stay read-only until explicit grants; `dataset-access.ts` and `docs/cms-persistence.md` give them dataset admin. Craft access follows the owner decision (org admin -> `admin`) and the subscription cap above. The stale comment is not edited here.
+- Foreign keys from the new tables use `ON DELETE CASCADE` (client -> site, codes/consents -> client, grants -> site/user) and `SET NULL` for "created/granted by", instead of the `RESTRICT` this proposal suggested. Rationale: the new rows are derived state, and `RESTRICT` would newly block deleting a site or organization that has a client. `OidcClient(siteId, organizationId)` references `Site(id, organizationId)`, so a client can never point at a site of another organization.
+- Prisma needs the opposite side of each relation, so `User` and `Site` gained virtual relation fields (no columns, no SQL). No existing column, index, constraint or migration was changed (verified, 10.4).
+- The `token_type` is `N_A` because no access token is issued.
+
+### 10.3 Operating it
+
+1. **Generate the key.** `node scripts/oidc-generate-key.mjs` prints a one-line private JWK, its `kid` and the public JWK; `--out <file>` writes the private key to a new `0600` file instead (refuses to overwrite). Store the private line in the secret store as `JONGO_OIDC_SIGNING_KEY`; never commit it or paste it into chat or logs.
+2. **Apply the migration** with the normal procedure (`prisma migrate deploy`; confirm how production applies migrations, still **unverified**). It is safe with the flag off.
+3. **Set env**: `JONGO_OIDC_ISSUER`, `JONGO_OIDC_SIGNING_KEY` (optionally `JONGO_OIDC_PREVIOUS_PUBLIC_KEYS`), and make sure `JONGO_CMS_ENABLED=true`. Do not flip the flag yet.
+4. **Register the client** for the app: `node scripts/oidc-register-client.mjs register --site-id <Site uuid> --name "<app> Craft" --redirect-uri https://<site>/craft/auth/callback [--dataset production]` (uses `DATABASE_URL` from the process environment). The secret is printed once; put it in the site's secret store as `CRAFT_SSO_CLIENT_SECRET`. `rotate --client-id jc_...` keeps the old secret valid for 24 h; `disable --client-id jc_...` blocks the client.
+5. **Grant people access** (until the Phase 1b UI exists, through `grantCraftAccess` in a script or console), or rely on owner / org admin / platform admin.
+6. **Flip the flag**: `JONGO_OIDC_ENABLED=true`, redeploy, then check `GET /.well-known/openid-configuration` and `GET /api/oidc/jwks`.
+7. **Key rotation**: generate a new key; put the **old public JWK** into `JONGO_OIDC_PREVIOUS_PUBLIC_KEYS` together with the new `JONGO_OIDC_SIGNING_KEY` in one deploy; keep it at least as long as relying parties cache JWKS (10 min) plus the ID token lifetime (5 min), 24 h is ample; then remove it. Rollback of the whole feature: set the flag to anything other than `true`.
+
+**Limits to know about.** Rate limits are in-process (token: 10 per minute per client and IP, 60 per minute per IP; 5 failed client authentications lock one client for 15 minutes; authorize: 30 per minute per user), so they reset on deploy and are per instance; the client lock can be triggered by anyone who knows a `client_id`. The IP comes from `X-Forwarded-For`, which is only as trustworthy as the proxy in front. The consent token key is derived from the signing key, so rotating the key invalidates open consent pages.
+
+### 10.4 Verification performed (2026-11-06, local, no production access)
+
+Type-check, the whole `apps/web` vitest suite, `next build` with the CI placeholder environment, a production-build smoke test (flag off: new endpoints 404; flag on: discovery and JWKS served, everything else still redirects to login), and `node scripts/test-oidc-db.mjs`, which on a throwaway PostgreSQL cluster applies all migrations without and then with the new one, proves that all pre-existing tables, columns, constraints, indexes, triggers and enums are byte-identical before and after, checks there is no `schema.prisma` drift on the new objects, runs `prisma generate` and runs the DB integration test (atomic single-use under concurrency, unique-active constraint, CHECK constraints, composite foreign key, cascade, race-safe grants, end-to-end authorize, consent and token, platform-admin audit). Not verified: a real browser sign-in flow, behaviour behind the production proxy, the production migration procedure.
+
+### 10.5 What remains
+
+- **Phase 1b (Jongo UI):** client create/rotate/disable and per-app Craft access management screens (wrapping `grantCraftAccess`/`revokeCraftAccess`/`listCraftAccess` and the script functions), polished consent and error pages, surfacing `via: platform_admin` to customers in the team list ("who can see our stuff"), a consent-revocation screen, audit viewing.
+- **Phase 2 (relying party):** `@jongo/craft/auth` (login start/callback, JWKS cache, `verifyIdToken` rules from 4.2), `v2` session with `jongo:<sub>` actor ids, `sso_revocations`, role-to-action mapping, break-glass switch, Playwright end-to-end.
+- **Before enabling in production:** confirm `JONGO_CMS_ENABLED` and the migration procedure in production, review secret handling, consider a shared rate-limit store if Jongo runs more than one instance, decide on a `sub` revocation path for sessions that outlive a removal.

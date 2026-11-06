@@ -22,3 +22,10 @@ export { applyPerspective, QUERY_DEFAULT_LIMITS, runGroq, type Consumer, type Pe
 export { toPublicDocument } from './query/privacy.js';
 export { MAX_AUDIT_DETAIL_BYTES, isSecretKey, redact } from './redact.js';
 export { MAX_DOCUMENT_BYTES, canonicalJson, findJsonViolation, sha256Hex } from './json.js';
+export {
+  EMPTY_PAYLOAD_SHA256, MAX_SLUG_LENGTH, MEDIA_KEY_PATTERN, MEDIA_PREFIX_PATTERN, MediaStorageError, PRESIGN_EXPIRES_SECONDS, SNIFF_BYTES, UNSIGNED_PAYLOAD,
+  amzDate, assertObjectKey, buildMediaKey, checkStoredObject, createS3Client, inspectMedia, isLoopbackHost, isMediaKey, isMediaPrefix, normalizeEndpoint,
+  randomHex8, readImageDimensions, signRequest, slugifyFilename, sniffMediaType, uriEncode,
+  type BuildMediaKeyInput, type MediaDimensions, type MediaInspection, type MediaStorageErrorCode, type ObjectHead, type PresignedPut, type S3Client, type S3Config, type S3Deps,
+  type SignInput, type SignedRequest, type StoredObjectCheck
+} from './media.js';

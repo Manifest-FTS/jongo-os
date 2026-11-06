@@ -3,7 +3,19 @@ import { createContext, useContext, type ReactNode } from 'react';
 import type { TypeDefinition } from './schema.js';
 import type { KeyMaker, JsonObject } from './portable-text.js';
 import type { ReferenceIndex } from './content-ops.js';
+import type { MediaLimits, StudioAssetDocument } from './media-contract.js';
+import type { UploadHandlers, UploadSource } from './media-client.js';
+import type { UploadResult } from './studio-store.js';
 import { isUnder, pathKey, type Issue, type Path } from './validate.js';
+
+/** Present only when the host can take uploads. The image picker shows Upload exactly when this exists. */
+export type MediaApi = {
+  limits: MediaLimits;
+  /** Never rejects; failures are typed codes. */
+  upload: (file: UploadSource, handlers: UploadHandlers) => Promise<UploadResult<{ asset: StudioAssetDocument }>>;
+  /** Makes a just-uploaded asset listable and resolvable at once. */
+  adopt: (asset: StudioAssetDocument) => void;
+};
 
 export type StudioApi = {
   docId: string;
@@ -16,6 +28,9 @@ export type StudioApi = {
   announce: (message: string) => void;
   /** Move focus after the next render; optionally select a text range. */
   focus: (id: string, select?: readonly [number, number]) => void;
+  media?: MediaApi;
+  /** Developer-oriented explanations (allowed types, storage notes) are shown only when true. */
+  debug?: boolean;
 };
 export const StudioContext = createContext<StudioApi | null>(null);
 export function useStudio(): StudioApi {

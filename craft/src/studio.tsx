@@ -8,6 +8,8 @@ import { Field } from './fields.js';
 import { StudioContext, fieldId, type StudioApi } from './studio-context.js';
 import { ConnectedStudio, type StudioInitial } from './studio-connected.js';
 import { formatClock, type StudioStore } from './studio-store.js';
+import type { MediaLimits } from './media-contract.js';
+import type { PutFile } from './media-client.js';
 import { ActionMenu, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, type MenuEntry } from './studio-chrome.js';
 
 export type StudioConfig = { schemas: readonly TypeDefinition[]; documents: readonly ContentDocument[]; assets?: readonly ImageAssetDocument[] };
@@ -26,15 +28,21 @@ export type ContentStudioProps = {
   topbarSlot?: ReactNode;
   /** Store mode: where a `denied` result sends the editor to sign in again. */
   signInHref?: string;
+  /** Developer-oriented explanations (storage notes, check descriptions, field type hints) appear only when true. Default false. */
+  debug?: boolean;
+  /** Store mode: upload limits shown in the picker. The host enforces its own. */
+  mediaLimits?: Partial<MediaLimits>;
+  /** Store mode: replaces the browser upload transfer. For tests. */
+  putFile?: PutFile;
 };
 
 /** Framework-neutral content desk over Sanity-shaped documents. With a `store` it persists through that adapter; without one it keeps local drafts in page memory only. */
-export function ContentStudio({ store, initial, signInHref, brand = { name: 'Jongo', homeHref: '/craft' }, ...rest }: ContentStudioProps) {
-  if (store) return <ConnectedStudio {...rest} brand={brand} store={store} initial={initial} signInHref={signInHref} />;
+export function ContentStudio({ store, initial, signInHref, brand = { name: 'Jongo', homeHref: '/craft' }, mediaLimits, putFile, ...rest }: ContentStudioProps) {
+  if (store) return <ConnectedStudio {...rest} brand={brand} store={store} initial={initial} signInHref={signInHref} mediaLimits={mediaLimits} putFile={putFile} />;
   return <LocalStudio {...rest} brand={brand} />;
 }
 
-function LocalStudio({ config, initialType, initialDocument, basePath, brand, notice, topbarSlot }: Omit<ContentStudioProps, 'store' | 'initial' | 'signInHref' | 'brand'> & { brand: NonNullable<ContentStudioProps['brand']> }) {
+function LocalStudio({ config, initialType, initialDocument, basePath, brand, notice, topbarSlot, debug = false }: Omit<ContentStudioProps, 'store' | 'initial' | 'signInHref' | 'brand' | 'mediaLimits' | 'putFile'> & { brand: NonNullable<ContentStudioProps['brand']> }) {
   const registry = useMemo(() => createContentRegistry(config.schemas), [config.schemas]);
   // Original snapshot: supplied documents with any missing or duplicate keys filled in deterministically.
   const original = useMemo(() => config.documents.map(doc => { const schema = registry.get(doc._type); return schema ? ensureKeys(schema, doc) : doc; }), [config.documents, registry]);
@@ -80,7 +88,7 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
     return () => window.removeEventListener('popstate', restore);
   }, [basePath, config.schemas, documents]);
   function choose(nextType: string, id?: string) {
-    if (dirty && !window.confirm('Discard unsaved field changes? Saved local drafts also reset on reload.')) return;
+    if (dirty && !window.confirm(debug ? 'Discard unsaved field changes? Saved local drafts also reset on reload.' : 'Discard unsaved field changes?')) return;
     const doc = documents.find(item => item._type === nextType && (!id || item._id === id));
     open(nextType, doc);
     if (basePath) window.history.pushState(null, '', documentHref(nextType, doc?._id));
@@ -92,7 +100,7 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
       if (element) { element.scrollIntoView?.({ block: 'center' }); element.focus(); return; }
     }
   };
-  const api: StudioApi | null = working ? { docId: working._id, values: working, issues, index, schemas: registry, makeKey: randomKey, announce, focus } : null;
+  const api: StudioApi | null = working ? { docId: working._id, values: working, issues, index, schemas: registry, makeKey: randomKey, announce, focus, debug } : null;
   const visible = documents.filter(doc => doc._type === type && documentTitle(doc, schema).toLowerCase().includes(query.toLowerCase()));
   const chip = dirty ? 'Unsaved changes' : edited ? 'Local draft (edited)' : 'Original snapshot';
   const menu: MenuEntry[] = [
@@ -104,14 +112,14 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
       <section className="jongo-documents" aria-label="Document list"><h2>{schema?.title ?? schema?.name ?? 'Documents'}</h2><label>Search documents<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by title" /></label><div className="jongo-document-list">{visible.map(doc => <a className="jongo-nav-item" href={documentHref(doc._type, doc._id)} key={doc._id} aria-current={selectedId === doc._id ? 'page' : undefined} onClick={event => navigate(event, type, doc._id)}><strong>{documentTitle(doc, schema)}</strong><small>{deepEqual(doc, original.find(item => item._id === doc._id)) ? 'Original snapshot' : 'Local draft (edited)'} · {doc._type}</small></a>)}</div>{!visible.length && <p>No matching documents.</p>}</section>
       <main id="jongo-editor" className="jongo-editor" tabIndex={-1}>{schema && working && api ? <StudioContext.Provider value={api}>
         <EditorHeader eyebrow={schema.title ?? schema.name} title={documentTitle(working, schema)} pills={<span className={`jongo-state ${dirty ? 'jongo-dirty' : ''}`}>{chip}</span>}
-          tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} announce={announce} /></>} />
+          tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} announce={announce} debug={debug} /></>} />
         <div className="jongo-editor-body">
         {notice && <p className="jongo-notice" role="note">{notice}</p>}
-        <p className="jongo-help">Drafts are kept in page memory only. Reloading or leaving resets all changes. Saving does not publish to the website: persistence and publishing are not connected.</p>
+        {debug && <p className="jongo-help">Drafts are kept in page memory only. Reloading or leaving resets all changes. Saving does not publish to the website: persistence and publishing are not connected.</p>}
         <section className="jongo-summary" aria-labelledby="jongo-checks-title" data-publish-ready={state.ready ? 'true' : 'false'}>
           <h2 id="jongo-checks-title">Document checks</h2>
           <p><strong className={state.ready ? 'jongo-ready' : 'jongo-blocked'}>{state.ready ? 'Publish-ready checks passed' : `Not publish-ready: ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}`}</strong>{state.warnings > 0 && ` · ${state.warnings} ${state.warnings === 1 ? 'note' : 'notes'} about preserved content`}</p>
-          <p className="jongo-hint">Checks run locally against the schema. They do not publish anything, and a draft with issues can still be saved locally.</p>
+          {debug && <p className="jongo-hint">Checks run locally against the schema. They do not publish anything, and a draft with issues can still be saved locally.</p>}
           {issues.length > 0 && <ul className="jongo-summary-list">{issues.slice(0, 20).map((issue, i) => <li key={i}><button type="button" className="jongo-link" onClick={() => jump(issue.path)}><span className={issue.severity === 'error' ? 'jongo-error' : 'jongo-warning'}>{issue.severity === 'error' ? 'Error' : 'Note'}</span> {pathLabel(issue.path)}: {issue.message}</button></li>)}{issues.length > 20 && <li>…and {issues.length - 20} more.</li>}</ul>}
         </section>
         <form id="jongo-doc-form" noValidate onSubmit={event => {
@@ -119,13 +127,15 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
           if (!dirty) return;
           setDocuments(previous => previous.map(doc => doc._id === working._id ? working : doc));
           setSavedAt(new Date().toISOString());
-          announce(state.ready ? 'Draft saved in local page memory only. No website content was published.' : `Draft saved in local page memory only with ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}. It is not publish-ready and nothing was published.`);
+          announce(debug
+            ? state.ready ? 'Draft saved in local page memory only. No website content was published.' : `Draft saved in local page memory only with ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}. It is not publish-ready and nothing was published.`
+            : state.ready ? 'Changes kept for this session only. Nothing was published.' : `Changes kept for this session only, with ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}. Nothing was published.`);
         }}>
           {schema.fields.map(field => <Field key={field.name} d={field} label={field.title ?? field.name} path={[field.name]} value={working[field.name]} onChange={next => { setWorking(setField(working, field.name, next) as ContentDocument); announce(''); }} />)}
         </form>
         <div role="status" aria-live="polite" aria-atomic="true" className="jongo-live">{message.text}{message.count % 2 ? '\u200b' : ''}</div>
         </div>
-        <EditorFooter status={dirty ? 'Draft, unsaved changes' : savedAt ? `Saved ${formatClock(savedAt)} (page memory only)` : 'Local draft mode: nothing is stored'} actions={<>
+        <EditorFooter status={dirty ? 'Draft, unsaved changes' : savedAt ? (debug ? `Saved ${formatClock(savedAt)} (page memory only)` : `Kept for this session ${formatClock(savedAt)}`) : debug ? 'Local draft mode: nothing is stored' : null} actions={<>
           <button id="jongo-save" form="jongo-doc-form" className="jongo-primary" type="submit" disabled={!dirty}><Icon name="save" />Save local draft</button>
           <ActionMenu id="jongo-more" label="More actions" placement="up" entries={menu} />
         </>} />

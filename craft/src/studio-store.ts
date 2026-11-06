@@ -1,5 +1,6 @@
 /** Persistence contract of the Studio. Pure types and helpers: no React, no server code, no network. The host implements `StudioStore`. */
 import type { ContentDocument } from './content-ops.js';
+import { UPLOAD_MESSAGES, type StudioAssetDocument, type UploadErrorCode } from './media-contract.js';
 
 export type StudioFailureCode = 'conflict' | 'invalid' | 'denied' | 'unavailable';
 export type StudioFieldError = { path: readonly (string | number)[]; message: string };
@@ -41,6 +42,14 @@ export type StudioExpect = {
   mutationKey: string;
 };
 
+/** Upload failures carry a code the Studio can phrase; `missing` (settings NAMES only) is set when the host has no storage configured. */
+export type UploadFailure = { ok: false; code: UploadErrorCode; message: string; missing?: readonly string[] };
+export type UploadResult<T> = ({ ok: true } & T) | UploadFailure;
+/** Everything the browser needs to PUT one file straight to storage, plus the proof it must hand back to `completeUpload`. */
+export type UploadTicket = { uploadUrl: string; headers: Record<string, string>; key: string; token: string; expiresAt: string; contentType: string; size: number };
+export type UploadRequest = { filename: string; contentType: string; size: number };
+export type UploadCompletion = { key: string; token: string; contentType: string; size: number; /** The name the file had when the ticket was requested; the token covers it. */ filename: string };
+
 export interface StudioStore {
   list(): Promise<StudioResult<{ documents: StudioDocSummary[] }>>;
   load(id: string): Promise<StudioResult<StudioRecord>>;
@@ -54,6 +63,12 @@ export interface StudioStore {
   duplicate?(id: string, expect?: StudioExpect): Promise<StudioResult<StudioRecord>>;
   /** Removes the document (draft and published). The Studio offers Delete only when this exists. */
   delete?(id: string, expect: StudioExpect): Promise<StudioResult<{ id: string }>>;
+  /** Uploaded assets, newest first is decided by the Studio. The image picker lists them next to the host's own asset library. */
+  listAssets?(): Promise<StudioResult<{ assets: StudioAssetDocument[] }>>;
+  /** Asks the host for a one-file upload ticket. The host chooses the storage key; the browser never does. The Studio offers Upload only when both upload methods exist. */
+  requestUpload?(input: UploadRequest): Promise<UploadResult<UploadTicket>>;
+  /** After the browser's PUT: the host verifies the stored object and creates the asset document (idempotent per key). */
+  completeUpload?(input: UploadCompletion): Promise<UploadResult<{ asset: StudioAssetDocument }>>;
 }
 
 export const unavailableFailure = (message = 'Jongo Craft could not reach storage. Nothing was confirmed as saved; try again.'): StudioFailure => ({ ok: false, code: 'unavailable', message });
@@ -70,6 +85,21 @@ export async function settle<T>(call: () => Promise<StudioResult<T>>): Promise<S
     }
   } catch { /* falls through */ }
   return unavailableFailure();
+}
+
+const UPLOAD_CODES: ReadonlySet<string> = new Set(Object.keys(UPLOAD_MESSAGES));
+/** Never rejects: a thrown error or a malformed result becomes an `unavailable` upload failure. */
+export async function settleUpload<T>(call: () => Promise<UploadResult<T>>): Promise<UploadResult<T>> {
+  try {
+    const result = await call();
+    if (typeof result === 'object' && result !== null && typeof (result as { ok?: unknown }).ok === 'boolean') {
+      if (result.ok) return result;
+      const failure = result as UploadFailure;
+      const code = UPLOAD_CODES.has(failure.code) ? failure.code : 'unavailable';
+      return { ok: false, code, message: typeof failure.message === 'string' && failure.message ? failure.message : UPLOAD_MESSAGES[code], ...(Array.isArray(failure.missing) ? { missing: failure.missing } : {}) };
+    }
+  } catch { /* falls through */ }
+  return { ok: false, code: 'unavailable', message: UPLOAD_MESSAGES.unavailable };
 }
 
 /** JSON with sorted object keys, so equal content yields equal text. */

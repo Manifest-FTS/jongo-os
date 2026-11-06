@@ -148,13 +148,15 @@ export function InspectDialog({ doc, schema, revision, onClose }: { doc: Record<
   </Dialog>;
 }
 
-/** Header tools menu (History, Inspect, Copy document) plus the dialogs it opens. */
-export function DocumentTools({ doc, schema, revision, loadHistory, announce }: { doc: Record<string, unknown>; schema: TypeDefinition; revision?: string; loadHistory?: HistoryLoader; announce: (text: string) => void }) {
+/** Header tools menu: History for everyone; Inspect and Copy document (raw JSON, schema details) only when `debug`. Plus the dialogs they open. */
+export function DocumentTools({ doc, schema, revision, loadHistory, announce, debug = false }: { doc: Record<string, unknown>; schema: TypeDefinition; revision?: string; loadHistory?: HistoryLoader; announce: (text: string) => void; debug?: boolean }) {
   const [dialog, setDialog] = useState<'history' | 'inspect' | null>(null);
   const entries: MenuEntry[] = [
     ...(loadHistory ? [{ id: 'jongo-history', label: 'History', icon: 'history' as const, onSelect: () => setDialog('history') }] : []),
-    { id: 'jongo-inspect', label: 'Inspect', icon: 'inspect', onSelect: () => setDialog('inspect') },
-    { id: 'jongo-copy-document', label: 'Copy document', icon: 'copy', onSelect: () => { void copyText(JSON.stringify(doc, null, 2)).then(done => announce(done ? 'Document JSON copied to the clipboard.' : 'Could not copy to the clipboard.')); } }
+    ...(debug ? [
+      { id: 'jongo-inspect', label: 'Inspect', icon: 'inspect' as const, onSelect: () => setDialog('inspect') },
+      { id: 'jongo-copy-document', label: 'Copy document', icon: 'copy' as const, onSelect: () => { void copyText(JSON.stringify(doc, null, 2)).then(done => announce(done ? 'Document JSON copied to the clipboard.' : 'Could not copy to the clipboard.')); } }
+    ] : [])
   ];
   return <>
     <ActionMenu id="jongo-tools" label="Document tools" entries={entries} placement="down" />

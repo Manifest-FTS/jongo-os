@@ -165,12 +165,15 @@ const config = () => ({ schemas: [schema, { name: 'person', title: 'People', typ
   documents: [{ ...good(), related: [{ _type: 'reference', _key: 'r1', _ref: 'p1' }], tags: ['one'], body: [para('Hello world'), { _type: 'table', _key: 'tb', rows: [['x']] },
     { ...para('Odd'), _key: 'b3', style: 'h1', children: [{ _type: 'span', _key: 'sx', text: 'Odd', marks: ['strong', 'ghost'] }] }] }, { _id: 'p1', _type: 'person', name: 'Ada' }], assets });
 test('SSR renders each field type with labels, groups, controls and preserved blocks', () => {
-  const html = renderToStaticMarkup(createElement(ContentStudio, { config: config() }));
+  const html = renderToStaticMarkup(createElement(ContentStudio, { config: config(), debug: true }));
   for (const text of ['<fieldset', '<legend>', 'for="jongo-home-title"', 'id="jongo-home-title"', 'type="number"', 'type="checkbox"', 'type="date"', 'type="datetime-local"', 'Generate from title', 'Choose an option</option>',
     'Add Item', 'Add Reference', 'Move Item 1 down', 'Remove Item 1', 'Ada', 'Allowed types: person', 'Change hero', 'a.png', 'Alternative text',
     'Block 1 · Normal', 'Text of block 1', 'Bold for selected text in block 1', 'aria-pressed="false"', 'Add link to selected text in block 1', 'Formatted preview', 'Add paragraph',
     'Preserved block (table)', 'View preserved JSON', 'data-preserved-marks="ghost"', 'h1 (preserved)', '3 notes about preserved content', 'Document checks']) assert.ok(html.includes(text), text);
   assert.ok(!html.includes('contenteditable'));
+  const plain = renderToStaticMarkup(createElement(ContentStudio, { config: config() }));
+  assert.ok(!plain.includes('Allowed types:') && !plain.includes('Block content. Unsupported blocks'), 'field type hints are developer text');
+  assert.ok(plain.includes('Change hero') && plain.includes('Document checks'));
 });
 test('SSR marks every invalid control with aria-invalid and an aria-describedby error list, and lists a summary', () => {
   const doc = { ...good(), title: '', views: 99, link: 'nope', steps: [{ _key: 'a', label: '' }], hero: { _type: 'image', asset: { _type: 'reference', _ref: 'image-a' } }, tags: ['toolong'] };
