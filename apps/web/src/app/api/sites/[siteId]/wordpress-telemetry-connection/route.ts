@@ -476,7 +476,13 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid siteUrl" }, { status: 400 });
   }
 
-  const passwordCiphertext = encryptSecret(appPassword);
+  let passwordCiphertext: string;
+  try {
+    passwordCiphertext = encryptSecret(appPassword);
+  } catch (error) {
+    console.error("[telemetry] could not encrypt the application password", error);
+    return NextResponse.json({ error: "Credentials can't be saved right now. Try again later." }, { status: 503 });
+  }
 
   const saved = await resolved.db.wordPressTelemetryConfig.upsert({
     where: { siteId: resolved.siteId },

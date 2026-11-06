@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { safeEqual } from "@/lib/safe-equal";
 
 export const runtime = "nodejs";
 
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
   const configuredToken = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
   const providedToken = readBearerToken(request);
 
-  if (!configuredToken || !providedToken || providedToken !== configuredToken) {
+  if (!configuredToken || !providedToken || !safeEqual(providedToken, configuredToken)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

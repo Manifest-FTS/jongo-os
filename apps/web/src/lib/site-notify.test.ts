@@ -208,8 +208,10 @@ describe("buildBackupEventEmail — HTML part", () => {
   });
 
   it("carries no remote images, which most clients block by default", () => {
+    // The logo is embedded in the message (cid:), so it shows without
+    // "load images"; nothing may be fetched from a server.
     for (const event of events) {
-      expect(buildBackupEventEmail({ ...base, event }).html).not.toMatch(/<img/i);
+      expect(buildBackupEventEmail({ ...base, event }).html).not.toMatch(/<img[^>]+src="https?:/i);
     }
   });
 

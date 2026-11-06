@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { isPlatformAdminUser } from "@/lib/rbac";
 import { ensureCoolifyAppBackupSchedules, getCoolifyOverview } from "@/lib/coolify";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
+import { safeEqual } from "@/lib/safe-equal";
 
 function normalized(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   const syncToken = process.env.OWNERSHIP_SYNC_TOKEN;
   const authHeader = request.headers.get("authorization") ?? undefined;
   const providedToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
-  const tokenAuthorized = Boolean(syncToken && providedToken && providedToken === syncToken);
+  const tokenAuthorized = Boolean(syncToken && providedToken && safeEqual(providedToken, syncToken));
   const adminSession = await isPlatformAdminUser(session?.user?.id);
 
   if (!adminSession && !tokenAuthorized) {

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getCoolifyConnectionStatus } from "@/lib/coolify";
 import { auth } from "@/lib/auth.config";
 import { isPlatformAdminUser } from "@/lib/rbac";
+import { safeEqual } from "@/lib/safe-equal";
+import { opsTokenOriginAllowed } from "@/lib/ops-request";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -9,7 +11,9 @@ export async function GET(request: Request) {
   const syncToken = process.env.OWNERSHIP_SYNC_TOKEN;
   const authHeader = request.headers.get("authorization") ?? undefined;
   const providedToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
-  const tokenAuthorized = Boolean(syncToken && providedToken && providedToken === syncToken);
+  const tokenAuthorized = Boolean(
+    syncToken && providedToken && opsTokenOriginAllowed(request.headers) && safeEqual(providedToken, syncToken)
+  );
   const adminSession = await isPlatformAdminUser(session?.user?.id);
 
   if (!adminSession && !tokenAuthorized) {

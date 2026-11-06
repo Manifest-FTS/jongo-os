@@ -1,110 +1,160 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
-import { triggerCoolifyDeploy } from "@/lib/coolify";
+import { auth } from "@/lib/auth.config";
+import { publicDeployView, requestSiteDeploy, SITE_DEPLOY_KIND } from "@/lib/deploy-operation";
+import { enqueueOperationRun } from "@/lib/job-queue";
+import { failOperation } from "@/lib/operations";
+import { getPermissions } from "@/lib/permissions";
+import { resolveSiteAccess } from "@/lib/tenant-route-access";
 
+export const runtime = "nodejs";
+
+/**
+ * Redeploy an app the caller has access to.
+ *
+ * Returns 202 with an operation to follow (GET /api/operations/{id}); the
+ * worker does the deploy. A second request while one is queued or running
+ * returns that same operation instead of deploying twice.
+ *
+ * The caller names a Jongo site, never a hosting resource: the resource to
+ * deploy is read from that site's own record after the tenant check. This route
+ * used to accept any `serviceUuid` from the browser and deploy it unchecked, so
+ * one client could redeploy another client's app — or anything else on the
+ * hosting server — by sending its id.
+ */
 export async function POST(req: NextRequest) {
-  // Auth check (skipped in no-auth dev mode)
-  const secret = process.env.NEXTAUTH_SECRET;
-  let triggeredById: string | null = null;
-
-  if (secret && secret !== "dev-secret-change-in-production") {
-    const token = await getToken({ req, secret });
-    if (!token?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    triggeredById = token.id as string;
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   }
 
-  let body: { serviceUuid?: string; siteId?: string; environment?: string };
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const { serviceUuid, siteId, environment } = body;
+  const input = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+  const siteId = typeof input.siteId === "string" ? input.siteId.trim() : "";
+  if (!siteId) {
+    return NextResponse.json({ error: "Choose an app to deploy." }, { status: 400 });
+  }
+  const environment = input.environment === "staging" ? "staging" : "production";
 
-  if (!serviceUuid && !siteId) {
-    return NextResponse.json({ error: "Provide serviceUuid or siteId" }, { status: 400 });
+  const access = await resolveSiteAccess(siteId, userId);
+  if (!access) {
+    // Same answer whether the app does not exist or belongs to someone else.
+    return NextResponse.json({ error: "App not found." }, { status: 404 });
   }
 
-  const env = environment === "staging" ? "staging" : "production";
-  const targetUuid = serviceUuid ?? siteId ?? "";
+  const permissions = getPermissions(access.isAdmin ? "admin" : "collaborator", access.isPlatformAdmin);
+  if (!permissions.canDeployFromGithub) {
+    return NextResponse.json({ error: "You don't have permission to deploy this app." }, { status: 403 });
+  }
 
-  let result;
+  const { db } = await import("@/lib/db");
+  const site = await db.site.findUnique({
+    where: { id: access.site.id },
+    select: { id: true, organizationId: true, coolifyServiceUuid: true, stagingTargetUuid: true }
+  });
+
+  const targetUuid = (environment === "staging" ? site?.stagingTargetUuid : site?.coolifyServiceUuid)?.trim() ?? "";
+  if (!site || !targetUuid) {
+    return NextResponse.json(
+      {
+        error:
+          environment === "staging"
+            ? "This app has no staging copy to deploy."
+            : "This app isn't connected to hosting yet, so it can't be deployed."
+      },
+      { status: 409 }
+    );
+  }
+
+  // Queue the deploy (or join the one already running) and return at once.
+  // The worker starts it in hosting and follows it; see lib/deploy-operation.ts.
+  let operation;
+  let created = false;
   try {
-    result = await triggerCoolifyDeploy(targetUuid, env);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Deploy trigger failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    ({ operation, created } = await requestSiteDeploy({
+      siteId: site.id,
+      organizationId: site.organizationId,
+      environment,
+      actorId: userId
+    }));
+  } catch (error) {
+    console.error("[deploy] could not create operation", { siteId: site.id, environment, error });
+    return NextResponse.json({ error: "The deploy couldn't be started. Try again shortly." }, { status: 503 });
   }
 
-  // Record deployment to DB and write audit log
-  try {
-    const { getDb } = await import("@/lib/db");
-    const db = await getDb();
-    if (db) {
-      // Resolve the Site by its Coolify service UUID, then find/create the Environment
-      const site = await db.site.findFirst({
-        where: {
-          deletedAt: null,
-          OR: [
-            { coolifyServiceUuid: targetUuid },
-            { coolifyServiceId: targetUuid }
-          ]
-        },
-        select: { id: true }
-      });
+  if (created) {
+    try {
+      await enqueueOperationRun(operation.id);
+    } catch (error) {
+      console.error("[deploy] could not queue operation", { operationId: operation.id, error });
+      await failOperation(operation.id, "The deploy couldn't be started. Try again shortly.").catch(() => undefined);
+      return NextResponse.json({ error: "The deploy couldn't be started. Try again shortly." }, { status: 503 });
+    }
 
-      let environmentId: string | null = null;
-
-      if (site) {
-        // Find or create the environment record for this site + deploy target
-        const existingEnv = await db.environment.findFirst({
-          where: { siteId: site.id, name: env },
-          select: { id: true }
-        });
-
-        if (existingEnv) {
-          environmentId = existingEnv.id;
-        } else {
-          const newEnv = await db.environment.create({
-            data: {
-              siteId: site.id,
-              name: env,
-              isProductionLike: env === "production"
-            },
-            select: { id: true }
-          });
-          environmentId = newEnv.id;
-        }
-      }
-
-      if (environmentId) {
-        await db.deployment.create({
-          data: {
-            environmentId,
-            coolifyDeploymentId: result.deploymentId ?? null,
-            status: "in_progress",
-            triggeredAt: new Date(),
-            ...(triggeredById ? { triggeredById } : {})
-          }
-        });
-      }
-
+    // Best-effort: the deploy is queued and must not be reported as failed
+    // because an audit row could not be written.
+    try {
       await db.auditLog.create({
         data: {
+          organizationId: site.organizationId,
+          actorId: userId,
           action: "deploy_triggered",
-          resourceType: "deployment",
-          resourceId: result.deploymentId,
-          metadata: JSON.stringify({ serviceUuid: targetUuid, environment: env, mode: result.mode }),
-          ipAddress: req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "unknown"
+          resourceType: "site",
+          resourceId: site.id,
+          details: { environment, operationId: operation.id },
+          ipAddress: req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for") ?? null,
+          userAgent: req.headers.get("user-agent") ?? null
         }
       });
+    } catch (error) {
+      console.error("[deploy] could not write audit log", { siteId: site.id, error });
     }
-  } catch {
-    // DB write failure is non-fatal — deploy was already triggered
   }
 
-  return NextResponse.json(result);
+  return NextResponse.json(
+    {
+      operation: publicDeployView(operation),
+      alreadyRunning: !created,
+      message: created ? "Deploy queued." : "A deploy of this app is already in progress."
+    },
+    { status: 202 }
+  );
+}
+
+/**
+ * GET /api/coolify/deploy?siteId=…&environment=… — the latest deploy of this
+ * app (running, or finished in the last 10 minutes), so the button can show
+ * progress again after a page reload.
+ */
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  }
+  const siteId = req.nextUrl.searchParams.get("siteId")?.trim() ?? "";
+  const environment = req.nextUrl.searchParams.get("environment") === "staging" ? "staging" : "production";
+  const access = siteId ? await resolveSiteAccess(siteId, userId) : null;
+  if (!access) {
+    return NextResponse.json({ error: "App not found." }, { status: 404 });
+  }
+
+  const { db } = await import("@/lib/db");
+  const latest = await db.operation.findFirst({
+    where: {
+      kind: SITE_DEPLOY_KIND,
+      resourceType: "site",
+      resourceId: access.site.id,
+      input: { path: ["environment"], equals: environment },
+      OR: [{ status: { in: ["queued", "running"] } }, { finishedAt: { gte: new Date(Date.now() - 10 * 60 * 1000) } }]
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  return NextResponse.json({ operation: latest ? publicDeployView(latest) : null });
 }

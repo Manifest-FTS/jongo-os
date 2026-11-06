@@ -46,6 +46,7 @@
   display: none;
 }
 .drawer[open] { display: flex; flex-direction: column; }
+.wide { width: min(46rem, 100%); }
 .drawer::backdrop { background: rgb(0 0 0 / 50%); backdrop-filter: blur(4px); }
 .header {
   display: flex;

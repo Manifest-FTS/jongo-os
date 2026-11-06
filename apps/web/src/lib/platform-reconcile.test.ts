@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findRepairTarget, type LiveResourceIndex, type SiteForReconcile } from "./platform-reconcile-match";
+import { findRepairTarget, type LiveResourceIndex, type SiteForReconcile, resolveScheduledBackupEligibility } from "./platform-reconcile-match";
 
 function index(resources: Array<{ uuid: string; kind: "service" | "application" | "database"; name: string; projectId: string }>): LiveResourceIndex {
   return { byUuid: new Set(resources.map((r) => r.uuid)), all: resources };
@@ -191,5 +191,37 @@ describe("archiveMissingSitesDefaultEnabled", () => {
 
   it("stays on for an explicit true", () => {
     expect(archiveMissingSitesDefaultEnabled("true")).toBe(true);
+  });
+});
+
+describe("resolveScheduledBackupEligibility (2026-11-04: ~10 sites silently stopped backing up)", () => {
+  it("uses and saves a definite answer, with its reason", () => {
+    expect(resolveScheduledBackupEligibility({ cached: null, cachedReason: null, probe: { backupable: true, reason: "service_containers" } })).toEqual({
+      eligible: true,
+      persist: { eligible: true, reason: "service_containers" }
+    });
+    expect(resolveScheduledBackupEligibility({ cached: true, cachedReason: "service_containers", probe: { backupable: false, reason: "stateless" } })).toEqual({
+      eligible: false,
+      persist: { eligible: false, reason: "stateless" }
+    });
+  });
+
+  it("never turns a failed check (rate limit) into 'nothing to back up'", () => {
+    const unknown = { backupable: false, reason: "unknown" as const };
+    expect(resolveScheduledBackupEligibility({ cached: true, cachedReason: "service_containers", probe: unknown })).toEqual({ eligible: true, persist: null });
+    expect(resolveScheduledBackupEligibility({ cached: null, cachedReason: null, probe: unknown })).toEqual({ eligible: null, persist: null });
+    expect(resolveScheduledBackupEligibility({ cached: false, cachedReason: "stateless", probe: unknown })).toEqual({ eligible: false, persist: null });
+  });
+
+  it("recovers sites already caught: 'not eligible' saved next to a backupable reason counts as eligible", () => {
+    for (const reason of ["service_containers", "standalone_database", "persistent_volumes", "linked_database"]) {
+      expect(resolveScheduledBackupEligibility({ cached: false, cachedReason: reason, probe: null })).toEqual({ eligible: true, persist: null });
+      expect(resolveScheduledBackupEligibility({ cached: false, cachedReason: reason, probe: { backupable: false, reason: "unknown" } }).eligible).toBe(true);
+    }
+  });
+
+  it("uses the cached answer when no check ran", () => {
+    expect(resolveScheduledBackupEligibility({ cached: true, cachedReason: null, probe: null })).toEqual({ eligible: true, persist: null });
+    expect(resolveScheduledBackupEligibility({ cached: false, cachedReason: "stateless", probe: null })).toEqual({ eligible: false, persist: null });
   });
 });

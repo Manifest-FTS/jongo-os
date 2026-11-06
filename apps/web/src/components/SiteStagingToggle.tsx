@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toClientFacingStagingMessage } from "@/lib/staging-client-copy";
 import RemedyButton from "@/components/RemedyButton";
 import { remedy as buildRemedy, type Remedy } from "@/lib/remedies";
+import CreationProgress, { applyStep, postWithProgress, type CreationStep } from "@/components/CreationProgress";
 
 type Props = {
   siteId: string;
@@ -29,7 +30,11 @@ type StagingToggleResponse = {
   remedy?: Remedy | null;
   /** Several servers and none known: the admin picks where staging runs. */
   serverChoices?: Array<{ uuid: string; name: string }> | null;
+  /** Another change to this app's staging is already running. */
+  inProgress?: boolean;
 };
+
+type ToggleInProgress = { operationId: string; enabled: boolean; startedAt: string } | null;
 
 type StagingStatusResponse = {
   stagingEnabled?: boolean;
@@ -39,10 +44,19 @@ type StagingStatusResponse = {
     applicationUuid?: string;
     pinned?: boolean;
   };
+  toggleInProgress?: ToggleInProgress;
 };
 
 const STAGING_OPERATION_POLL_DELAY_MS = 1500;
 const STAGING_OPERATION_MAX_POLLS = 20;
+const IN_PROGRESS_POLL_MS = 4000;
+
+/** What the checklist shows before the server reports its first step. */
+function initialSteps(nextEnabled: boolean): CreationStep[] {
+  return nextEnabled
+    ? [{ id: "check", label: "Checking for an existing staging copy", status: "active" }]
+    : [{ id: "disable", label: "Turning staging off", status: "active" }];
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,17 +88,27 @@ export default function SiteStagingToggle({
   const [serverChoices, setServerChoices] = useState<Array<{ uuid: string; name: string }>>([]);
   const [chosenServer, setChosenServer] = useState("");
   const [choosingServer, setChoosingServer] = useState(false);
+  const [steps, setSteps] = useState<CreationStep[]>([]);
+  const [startedAt, setStartedAt] = useState(0);
+  const [runningAction, setRunningAction] = useState<PendingAction>(null);
+  /** A change started elsewhere (another tab, a reload mid-change). */
+  const [elsewhere, setElsewhere] = useState<ToggleInProgress>(null);
 
   async function enableOnServer() {
     if (!chosenServer) return;
     setChoosingServer(true);
+    setSteps(initialSteps(true));
+    setStartedAt(Date.now());
+    setRunningAction("enable");
     try {
-      const response = await fetch(`/api/sites/${siteId}/staging`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: true, stagingServerUuid: chosenServer })
-      });
-      const payload = ((await response.json().catch(() => ({}))) ?? {}) as StagingToggleResponse;
+      const response = await postWithProgress(
+        `/api/sites/${siteId}/staging`,
+        { enabled: true, stagingServerUuid: chosenServer },
+        (step) => setSteps((current) => applyStep(current, step))
+      );
+      const payload = (response.body ?? {}) as StagingToggleResponse;
+      if (response.status >= 200 && response.status < 300) setEnabled(true);
+      else setError(visibleMessage(payload?.error) ?? "Staging couldn't be set up on that server.");
       setMessage(visibleMessage(payload?.message ?? payload?.error) ?? "Staging setup started.");
       setActionHint(visibleMessage(payload?.actionHint));
       setServerChoices(payload?.serverChoices ?? []);
@@ -95,6 +119,7 @@ export default function SiteStagingToggle({
       setError("Network error while updating staging.");
     } finally {
       setChoosingServer(false);
+      setRunningAction(null);
     }
   }
   const visibleMessage = (value?: string | null) =>
@@ -118,18 +143,31 @@ export default function SiteStagingToggle({
       const status = (await response.json()) as StagingStatusResponse;
       setDetectedStagingTarget(Boolean(status?.stagingCapability?.applicationUuid));
       setOwnStagingTarget(Boolean(status?.stagingCapability?.pinned));
+      setElsewhere(status?.toggleInProgress ?? null);
+      return status;
     } catch {
       // Ignore best-effort status refresh failures.
     }
+    return null;
   }
 
   useEffect(() => {
-    if (enabled) {
-      return;
-    }
-
     void refreshStagingTargetStatus();
   }, [enabled, siteId]);
+
+  // While a change started elsewhere runs, keep the switch locked and check
+  // back until it finishes, then show the result.
+  useEffect(() => {
+    if (!elsewhere || loading) return;
+    const timer = setTimeout(async () => {
+      const status = await refreshStagingTargetStatus();
+      if (status && !status.toggleInProgress) {
+        setEnabled(Boolean(status.stagingEnabled));
+        router.refresh();
+      }
+    }, IN_PROGRESS_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [elsewhere, loading, siteId]);
 
   async function waitForLifecycleCompletion(nextEnabled: boolean, burnExisting: boolean, manualRequired: boolean) {
     // If manual provisioning is required, Jongo has completed what it can server-side.
@@ -169,7 +207,7 @@ export default function SiteStagingToggle({
     return { completed: false };
   }
 
-  async function submitToggle(nextEnabled: boolean, burnExisting: boolean) {
+  async function submitToggle(nextEnabled: boolean, burnExisting: boolean, replaceExisting = false) {
     if (loading) {
       return;
     }
@@ -182,28 +220,37 @@ export default function SiteStagingToggle({
     setLoading(true);
     setFinalizing(false);
     setFinalizeAttempt(0);
+    setSteps(initialSteps(nextEnabled));
+    setStartedAt(Date.now());
+    setRunningAction(nextEnabled ? "enable" : "disable");
+    setModalMode("result");
+    setModalOpen(true);
 
     try {
-      const response = await fetch(`/api/sites/${siteId}/staging`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: nextEnabled,
-          burnExisting
-        })
-      });
-
-      let payload: StagingToggleResponse = {};
-      try {
-        payload = (await response.json()) as StagingToggleResponse;
-      } catch {
-        if (!response.ok) {
-          payload = { error: `Unable to update staging state (HTTP ${response.status}).` };
-        }
+      const streamed = await postWithProgress(
+        `/api/sites/${siteId}/staging`,
+        { enabled: nextEnabled, burnExisting, ...(replaceExisting ? { replaceExisting: true } : {}) },
+        (step) => setSteps((current) => applyStep(current, step))
+      );
+      const response = { ok: streamed.status >= 200 && streamed.status < 300, status: streamed.status };
+      const payload: StagingToggleResponse = (streamed.body ?? {}) as StagingToggleResponse;
+      if (!response.ok && !payload.error && !payload.message) {
+        payload.error = `Unable to update staging state (HTTP ${response.status}).`;
       }
+      // Close the checklist off: the first step is a placeholder the server
+      // may not report when it took another path.
+      setSteps((current) => current.map((step) => (step.status === "active" ? { ...step, status: response.ok ? "done" : "failed" } : step)));
 
       setResultRemedy(payload?.remedy ?? null);
       setServerChoices(payload?.serverChoices ?? []);
+      if (response.status === 409 && payload?.inProgress) {
+        // Someone else's change is running: watch it instead of starting another.
+        setPendingAction(null);
+        setModalOpen(false);
+        setModalMode("confirm");
+        await refreshStagingTargetStatus();
+        return;
+      }
       if (!response.ok) {
         setError(visibleMessage(payload?.error) ?? "Unable to update staging state.");
         setActionHint(visibleMessage(payload?.actionHint));
@@ -232,7 +279,7 @@ export default function SiteStagingToggle({
         setFinalizing(true);
         const settleResult = await waitForLifecycleCompletion(nextEnabled, burnExisting, Boolean(payload?.manualProvisionRequired));
         if (!settleResult.completed) {
-          setActionHint((previous) => previous ?? "Background staging operation is still settling. Wait a moment before running another toggle.");
+          setActionHint((previous) => previous ?? "Staging is still starting up. It shows on this page in a minute or two.");
         }
         setFinalizing(false);
       }
@@ -251,6 +298,7 @@ export default function SiteStagingToggle({
     } finally {
       setLoading(false);
       setFinalizeAttempt(0);
+      setRunningAction(null);
     }
   }
 
@@ -280,6 +328,8 @@ export default function SiteStagingToggle({
 
   function closeResultModal() {
     if (loading) {
+      // The change keeps running; the switch shows "Updating…" until it ends.
+      setModalOpen(false);
       return;
     }
     setModalOpen(false);
@@ -291,12 +341,12 @@ export default function SiteStagingToggle({
     setFinalizeAttempt(0);
   }
 
-  const interactionLocked = loading || finalizing;
-  // Locked only for a copy Jongo did not record. The app's own recorded copy
-  // is re-attached by enabling, so it must never lock the switch.
-  const enableBlockedByResidualStaging = !enabled && detectedStagingTarget && !ownStagingTarget;
+  const interactionLocked = loading || finalizing || Boolean(elsewhere);
+  // A copy Jongo did not record: turning staging on replaces it with a fresh
+  // one (removing it first). The app's own recorded copy is reconnected.
+  const leftoverCopy = !enabled && detectedStagingTarget && !ownStagingTarget;
   const canReattachOwnStaging = !enabled && detectedStagingTarget && ownStagingTarget;
-  const toggleDisabled = interactionLocked || enableBlockedByResidualStaging;
+  const toggleDisabled = interactionLocked;
   const isDisableAction = pendingAction === "disable";
   const isEnableAction = pendingAction === "enable";
   const waitingForManualStagingSetup = enabled && !detectedStagingTarget;
@@ -332,9 +382,9 @@ export default function SiteStagingToggle({
             display: "flex",
             alignItems: "center",
             justifyContent: enabled ? "flex-start" : "flex-end",
-            padding: "0 9px",
-            color: "#fff",
-            fontSize: "0.75rem",
+            padding: "0 7px",
+            color: enabled ? "#fff" : "var(--muted)",
+            fontSize: "0.66rem",
             fontWeight: 700,
             letterSpacing: "0.02em"
           }}
@@ -357,13 +407,15 @@ export default function SiteStagingToggle({
         />
       </button>
 
-      {interactionLocked ? (
-        <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Updating...</p>
+      {elsewhere && !loading ? (
+        <p className="m-0 max-w-[320px] text-right text-[0.78rem] text-muted" aria-live="polite">
+          <span className="loader__spinner" style={{ width: 11, height: 11, display: "inline-block", marginRight: 6, verticalAlign: "-1px" }} aria-hidden="true" />
+          {elsewhere.enabled ? "Staging is being set up…" : "Staging is being turned off…"}
+        </p>
+      ) : interactionLocked ? (
+        <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Updating…</p>
       ) : null}
 
-      {!interactionLocked && enableBlockedByResidualStaging ? (
-        <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Locked until staging is fully deleted</p>
-      ) : null}
 
       {!interactionLocked && canReattachOwnStaging ? (
         <p className="m-0 max-w-[320px] text-right text-[0.78rem] text-muted">
@@ -371,23 +423,10 @@ export default function SiteStagingToggle({
         </p>
       ) : null}
 
-      {enableBlockedByResidualStaging ? (
-        <div className="flex flex-col items-end gap-1.5 max-w-[320px] text-right">
-          <p style={{ margin: 0, fontSize: "0.78rem", color: "#a15c00" }}>
-            An old staging copy still exists and has to be removed before staging can be turned on.
-          </p>
-          <RemedyButton
-            remedy={buildRemedy("retry_staging_cleanup")}
-            endpoint={`/api/sites/${siteId}/remedies`}
-            confirmText="Remove the old staging copy of this app? Production is not touched."
-            onDone={(ok) => {
-              if (ok) {
-                void refreshStagingTargetStatus();
-                router.refresh();
-              }
-            }}
-          />
-        </div>
+      {!interactionLocked && leftoverCopy ? (
+        <p className="m-0 max-w-[320px] text-right text-[0.78rem] text-muted">
+          An earlier staging copy is still on the server. Turning staging on replaces it with a fresh one.
+        </p>
       ) : null}
 
       {modalOpen ? (
@@ -418,15 +457,39 @@ export default function SiteStagingToggle({
           >
             <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>
               {modalMode === "confirm"
-                ? (isEnableAction ? "Enable staging" : "Disable staging")
-                : "Staging update"}
+                ? (isEnableAction ? "Turn on staging" : "Turn off staging")
+                : runningAction
+                  ? (runningAction === "enable" ? "Setting up staging" : "Turning staging off")
+                  : "Staging update"}
             </p>
+
+            {modalMode === "result" && steps.length > 0 ? (
+              <div style={{ marginTop: "0.75rem" }}>
+                <CreationProgress
+                  title={runningAction ? "Progress" : error ? "What happened" : "Done"}
+                  steps={steps}
+                  startedAt={startedAt}
+                  running={Boolean(runningAction)}
+                  note={
+                    runningAction === "enable"
+                      ? "This takes a few minutes. You can close this page; staging keeps being set up and shows here when it's ready."
+                      : runningAction === "disable"
+                        ? "You can close this page; this keeps running."
+                        : ""
+                  }
+                />
+              </div>
+            ) : null}
 
             {modalMode === "confirm" ? (
               <>
                 <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
                   {isEnableAction
-                    ? "Jongo creates the staging copy now. It appears on this page in a few minutes."
+                    ? leftoverCopy
+                      ? "An earlier staging copy is still on the server. Jongo removes it and builds a fresh copy from production. Your live site isn't touched."
+                      : canReattachOwnStaging
+                        ? "Jongo reconnects your existing staging copy. It's ready in a minute or two."
+                        : "Jongo builds a staging copy from production. It's ready in a few minutes; your live site isn't touched."
                     : "Disable staging in Jongo. By default, existing staging resources are removed."}
                 </p>
 
@@ -453,15 +516,15 @@ export default function SiteStagingToggle({
                   </button>
                   <button
                     type="button"
-                    className="button"
-                    onClick={() => submitToggle(isEnableAction, isDisableAction ? burnOnDisable : false)}
+                    className="btn"
+                    onClick={() => submitToggle(isEnableAction, isDisableAction ? burnOnDisable : false, isEnableAction && leftoverCopy)}
                     disabled={interactionLocked}
                   >
                     {interactionLocked
-                      ? "Please wait..."
+                      ? "Please wait…"
                       : isEnableAction
-                        ? "Accept and enable"
-                        : "Accept and disable"}
+                        ? "Turn on staging"
+                        : "Turn off staging"}
                   </button>
                 </div>
               </>
@@ -540,11 +603,11 @@ export default function SiteStagingToggle({
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
                   <button
                     type="button"
-                    className="button"
+                    className="btn"
                     onClick={closeResultModal}
-                    disabled={interactionLocked}
+                    disabled={finalizing && !loading}
                   >
-                    Close
+                    {loading ? "Hide" : "Close"}
                   </button>
                 </div>
               </>

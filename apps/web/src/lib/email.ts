@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { renderTransactionalEmail } from "./email-layout";
+import { inlineImagesFor } from "@/lib/email-logo";
 
 export type EmailProviderMode = "disabled" | "smtp" | "smtp2go_api";
 
@@ -62,6 +63,7 @@ export async function sendTransactionalEmail(input: {
   html?: string;
 }): Promise<EmailResult> {
   const mode = getEmailProviderMode();
+  const inlines = inlineImagesFor(input.html);
   if (mode === "disabled") {
     return { sent: false, provider: "none", error: "SMTP not configured" };
   }
@@ -81,7 +83,9 @@ export async function sendTransactionalEmail(input: {
           sender: formatFromAddress(from, fromName),
           subject: input.subject,
           text_body: input.text,
-          html_body: input.html ?? `<p>${escapeHtml(input.text)}</p>`
+          html_body: input.html ?? `<p>${escapeHtml(input.text)}</p>`,
+          // Embedded images (the logo), referenced from the HTML as cid:<filename>.
+          ...(inlines.length ? { inlines: inlines.map((image) => ({ filename: image.filename, fileblob: image.base64, mimetype: image.contentType })) } : {})
         })
       });
 
@@ -134,7 +138,8 @@ export async function sendTransactionalEmail(input: {
       to: input.to,
       subject: input.subject,
       text: input.text,
-      html: input.html
+      html: input.html,
+      attachments: inlines.map((image) => ({ filename: image.filename, content: Buffer.from(image.base64, "base64"), contentType: image.contentType, cid: image.cid }))
     });
 
     return {

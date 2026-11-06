@@ -7,7 +7,8 @@ describe("transactional email shell", () => {
     expect(html).toContain("Manifest FTS");
     expect(html).toContain("Jongo by Manifest FTS");
     expect(html).toContain("https://jongo.app/?utm_source=transactional_email");
-    expect(html).toContain("jongo-logomark-color.png");
+    // Embedded in the message (cid), not fetched from jongo.app.
+    expect(html).toContain("cid:jongo-logomark.png");
   });
 
   it("renders a trusted rich body slot and omits the access disclaimer when no footnote is passed", () => {

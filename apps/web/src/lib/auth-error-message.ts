@@ -3,6 +3,10 @@ export function getCredentialSignInErrorMessage(errorCode?: string | null): stri
     return "Invalid email or password.";
   }
 
+  if (errorCode === "AUTH_RATE_LIMITED") {
+    return "Too many sign-in attempts. Wait 15 minutes, then try again.";
+  }
+
   if (errorCode === "AUTH_DB_UNAVAILABLE") {
     return "Sign-in is temporarily unavailable. Please try again in a few moments.";
   }

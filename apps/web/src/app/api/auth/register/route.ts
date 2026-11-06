@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { randomBytes } from "node:crypto";
+import { AUTH_RATE_LIMITS, clientIp, hitRateLimit, tooManyAttemptsMessage } from "@/lib/auth-rate-limit";
 
 function workspaceSlug(base: string): string {
   const stem = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "workspace";
@@ -26,6 +27,14 @@ export async function POST(req: Request) {
 
     if (!db) {
       return NextResponse.json({ error: "Database not available" }, { status: 503 });
+    }
+
+    const limited = await hitRateLimit(AUTH_RATE_LIMITS.registerPerIp, clientIp(req.headers));
+    if (!limited.allowed) {
+      return NextResponse.json(
+        { error: tooManyAttemptsMessage(limited.retryAfterSeconds) },
+        { status: 429, headers: { "Retry-After": String(limited.retryAfterSeconds) } }
+      );
     }
 
     const body = await req.json();

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { safeEqual } from "@/lib/safe-equal";
 
 function hasOpsToken(req: Request): boolean {
   const configured = process.env.OWNERSHIP_SYNC_TOKEN?.trim() || "";
   const authHeader = req.headers.get("authorization") ?? "";
   const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
-  return Boolean(configured && provided && configured === provided);
+  return Boolean(configured && provided && safeEqual(configured, provided));
 }
 
 type Scope = "linked" | "all" | "staging-enabled";

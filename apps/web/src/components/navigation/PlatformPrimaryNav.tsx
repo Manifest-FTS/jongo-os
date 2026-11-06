@@ -27,6 +27,8 @@ const navItems: NavItem[] = [
   { href: "/settings", label: "Settings", icon: SettingsIcon, match: "prefix", children: [
     { href: "/settings", label: "Profile", icon: SettingsIcon, match: "prefix" },
     { href: "/notifications", label: "Notifications", icon: BellIcon, match: "prefix" },
+    // Your own plan (every customer); "Client billing" below is the agency's receivables.
+    { href: "/billing", label: "Plan & billing", icon: ChartBarIcon, match: "prefix" },
     { href: "/client-billing", label: "Client billing", icon: ChartBarIcon, match: "prefix", billingOnly: true },
     { href: "/super-admin/access", label: "Users & access", icon: BuildingOfficeIcon, match: "prefix", billingOnly: true }
   ] }

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
-import { financialAccessDenial } from "@/lib/rbac";
 import { ensureStripePrice, findPlan, getStripeClient, type BillingInterval } from "@/lib/stripe";
 
 function baseUrl(): string {
@@ -11,16 +10,15 @@ function baseUrl(): string {
 /**
  * POST /api/billing/checkout
  *
- * Starts (or restarts) a subscription checkout for the signed-in user. The
- * subscription is per-account (see the User model comment): one Stripe
- * customer/subscription per user, no matter how many client organizations
- * they run under it.
+ * Starts a subscription checkout for the signed-in user, for their own
+ * account (see the User model comment): one Stripe customer/subscription per
+ * user, covering every client they own. Any signed-in customer may buy a plan
+ * for themselves; someone who already has an active plan is sent to Billing
+ * to change it instead of starting a second subscription.
  */
 export async function POST(req: Request) {
   const session = await auth();
-  const denial = await financialAccessDenial(session?.user?.id);
-  if (denial) return denial;
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json({ error: "Sign in to choose a plan." }, { status: 401 });
 
   let body: { planId?: string; interval?: string };
   try {
@@ -41,11 +39,23 @@ export async function POST(req: Request) {
     const { db } = await import("@/lib/db");
     const user = await db.user.findUnique({
       where: { id: session.user.id },
-      select: { id: true, email: true, stripeCustomerId: true }
+      select: {
+        id: true, email: true, deletedAt: true, stripeCustomerId: true, stripeSubscriptionId: true,
+        subscriptionStatus: true, subscriptionCurrentPeriodEnd: true
+      }
     });
 
-    if (!user) {
+    if (!user || user.deletedAt) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // One subscription per account: an active plan is changed, not doubled.
+    const { subscriptionIsPaid } = await import("@/lib/hosting-entitlement");
+    if (user.stripeSubscriptionId && (subscriptionIsPaid(user) || user.subscriptionStatus === "past_due")) {
+      return NextResponse.json(
+        { error: "You already have a plan. Change it or update payment from Billing.", url: "/billing", alreadySubscribed: true },
+        { status: 409 }
+      );
     }
 
     const stripe = getStripeClient();
@@ -66,8 +76,9 @@ export async function POST(req: Request) {
       mode: "subscription",
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${baseUrl()}/dashboard?checkout=success`,
+      success_url: `${baseUrl()}/billing?checkout=success`,
       cancel_url: `${baseUrl()}/pricing?checkout=cancelled`,
+      allow_promotion_codes: true,
       client_reference_id: user.id,
       subscription_data: {
         metadata: { jongoUserId: user.id, jongoPlanId: plan.id, jongoBillingInterval: interval }
@@ -81,8 +92,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: checkoutSession.url });
   } catch (error) {
+    // Stripe's own message can name keys or ids; log it, show plain words.
     console.error("[billing/checkout] error:", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Checkout couldn't be started right now. Try again in a minute." }, { status: 500 });
   }
 }

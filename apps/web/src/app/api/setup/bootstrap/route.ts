@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
+import { safeEqual } from "@/lib/safe-equal";
 
 function isPrismaInitializationError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     if (setupToken) {
       const authHeader = req.headers.get("authorization") ?? "";
       const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
-      if (!provided || provided !== setupToken) {
+      if (!provided || !safeEqual(provided, setupToken)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
     }

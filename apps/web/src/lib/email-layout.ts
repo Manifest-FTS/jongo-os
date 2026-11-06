@@ -1,3 +1,4 @@
+import { EMAIL_LOGO_SRC } from "./email-logo";
 /**
  * The HTML shell for Jongo's transactional email.
  *
@@ -160,7 +161,7 @@ export function renderTransactionalEmail(content: TransactionalEmailContent): st
   <tr><td class="jg-header jg-pad" bgcolor="${BRAND.headerTint}" style="padding:18px 28px;background:${BRAND.headerTint};background-image:linear-gradient(120deg,#eef8e6 0%,#fff6f0 55%,#f3f9ff 100%);border-bottom:1px solid ${BRAND.divider};">
     <div style="font-family:${FONT};font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:${BRAND.eyebrow};font-weight:700;">Manifest FTS</div>
     <a href="${JONGO_EMAIL_URL}" style="display:inline-flex;align-items:center;gap:8px;margin-top:5px;color:${BRAND.heading};font-family:${FONT};font-size:20px;line-height:1.2;font-weight:800;text-decoration:none;">
-      <img src="https://jongo.app/assets/images/jongo-logomark-color.png" width="28" height="28" alt="Jongo" style="display:block;width:28px;height:28px;border:0;">
+      <img src="${EMAIL_LOGO_SRC}" width="28" height="28" alt="Jongo" style="display:block;width:28px;height:28px;border:0;">
       <span>Jongo</span>
     </a>
   </td></tr>
@@ -185,7 +186,7 @@ export function renderTransactionalEmail(content: TransactionalEmailContent): st
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px auto 0;">
   <tr><td align="center" style="font-family:${FONT};font-size:12px;line-height:1.5;color:${BRAND.muted};">
     <a href="${JONGO_EMAIL_URL}" style="display:inline-flex;align-items:center;gap:6px;color:${BRAND.muted};text-decoration:none;">
-      <img src="https://jongo.app/assets/images/jongo-logomark-color.png" width="20" height="20" alt="" style="display:block;width:20px;height:20px;border:0;">
+      <img src="${EMAIL_LOGO_SRC}" width="20" height="20" alt="" style="display:block;width:20px;height:20px;border:0;">
       <span>Jongo by Manifest FTS</span>
     </a>
   </td></tr>

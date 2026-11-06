@@ -1,4 +1,4 @@
-import DeployButton from "@/components/DeployButton";
+import Link from "next/link";
 import { getCoolifyOverview, getCoolifyAppBackupInventory, getCoolifyAppStagingCapability } from "@/lib/coolify";
 import { getBackupReadiness } from "@/lib/deploy-guards";
 import { getSiteWorkspace, listSiteDeployments, isClientAdmin } from "@/lib/repositories";
@@ -121,9 +121,6 @@ export default async function DeploymentsPage({ params }: Params) {
     ? await getCoolifyAppBackupInventory(workspace.coolifyServiceUuid)
     : null;
   const backupReadiness = getBackupReadiness(backupInventory, workspace?.coolifyServiceUuid);
-  const deployLockReason = backupReadiness.locked
-    ? `${backupReadiness.reason ?? "Action locked."} ${backupReadiness.nextStep ?? ""}`.trim()
-    : "Dry-run mode: execution remains disabled in this interface.";
   const workflowModel = getResourceWorkflowModel(workspace?.siteType);
   const latestDeployment = deployments[0];
 
@@ -171,7 +168,7 @@ export default async function DeploymentsPage({ params }: Params) {
           <p className="card-muted" style={{ margin: 0 }}>
             {backupReadiness.locked
               ? backupReadiness.reason ?? "Backup checks are currently blocking deploy actions."
-              : "Backup checks are passing, but actions stay in dry-run mode in this phase."}
+              : "Backup checks are passing."}
           </p>
         </article>
 
@@ -179,27 +176,12 @@ export default async function DeploymentsPage({ params }: Params) {
           <h3 className="card-title">Quick Actions</h3>
           {stagingConfigured ? (
             <>
-              <div style={{ display: "grid", gap: "0.65rem", marginTop: "0.75rem" }}>
-                <DeployButton
-                  siteId={siteId}
-                  deployTargetId={site?.deployTargetId}
-                  environment="production"
-                  label="Deploy to Production"
-                  disabled
-                  disabledReason={deployLockReason}
-                />
-                <DeployButton
-                  siteId={siteId}
-                  deployTargetId={site?.deployTargetId}
-                  environment="staging"
-                  label="Sync to Staging"
-                  disabled
-                  disabledReason={deployLockReason}
-                />
-              </div>
-              <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-                Actions are intentionally dry-run only in this interface.
+              <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: "0.5rem" }}>
+                Redeploy production with the button at the top of this page. To ship staging to production, use the publishing workflow.
               </p>
+              <Link href={`/apps/${siteId}/staging`} className="action-link">
+                Open publishing workflow
+              </Link>
             </>
           ) : (
             <p className="card-muted" style={{ marginTop: "0.75rem", marginBottom: 0 }}>

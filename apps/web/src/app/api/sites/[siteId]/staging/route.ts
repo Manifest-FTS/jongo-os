@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { progressResponse, wantsProgress, withStep } from "@/lib/progress";
 import { remedy } from "@/lib/remedies";
 import { auth } from "@/lib/auth.config";
 import { isPlatformAdminUser } from "@/lib/rbac";
@@ -24,6 +25,7 @@ import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import { retryOnceAfterRateLimitError } from "@/lib/rate-limit-retry";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { StagingProvisioningPipeline } from "@/orchestration/staging";
+import { safeEqual } from "@/lib/safe-equal";
 
 /**
  * One matching rule for the whole staging lifecycle.
@@ -118,11 +120,17 @@ async function notifyStagingCreated(params: {
 }): Promise<void> {
   try {
     const { notifyBackupEvent } = await import("@/lib/site-notify");
+    // The client's own verified domain is THE staging link when there is one;
+    // the .mfts.link address is only the fallback.
+    const { primaryStagingUrl } = await import("@/lib/staging-domains");
+    const stagingUrl = (await primaryStagingUrl(params.siteDbId, params.stagingUrl).catch(() => undefined)) ?? params.stagingUrl ?? null;
+    const { primaryProductionUrl } = await import("@/lib/production-domains");
+    const productionUrl = (await primaryProductionUrl(params.siteDbId)) ?? params.productionUrl ?? null;
     await notifyBackupEvent({
       siteId: params.siteDbId,
       event: "staging_created",
-      stagingUrl: params.stagingUrl ?? null,
-      productionUrl: params.productionUrl ?? null,
+      stagingUrl,
+      productionUrl,
       contentSynced: params.contentSynced,
       actorEmail: params.actorEmail ?? null
     });
@@ -149,7 +157,11 @@ async function runAutoContentSync(params: {
   requestBaseUrl?: string;
   direction?: "production-to-staging" | "staging-to-production";
 }): Promise<AutoContentSyncResult> {
-  const automationUrl = (process.env.STAGING_SYNC_AUTOMATION_URL || "").trim();
+  // Opt-in stays as before (the setting must exist); the call itself goes to
+  // this app locally when the setting names this app's own endpoint.
+  const automationConfigured = Boolean((process.env.STAGING_SYNC_AUTOMATION_URL || "").trim());
+  const { stagingSyncAutomationUrl } = await import("@/lib/local-app-url");
+  const automationUrl = automationConfigured ? stagingSyncAutomationUrl() : "";
   const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
 
   if (!automationUrl) {
@@ -241,7 +253,7 @@ function hasOpsToken(req: Request): boolean {
   const configured = process.env.OWNERSHIP_SYNC_TOKEN?.trim() || "";
   const authHeader = req.headers.get("authorization") ?? "";
   const provided = authHeader.replace(/^Bearer\s+/i, "").trim();
-  return Boolean(configured && provided && configured === provided);
+  return Boolean(configured && provided && safeEqual(configured, provided));
 }
 
 async function runCoolifyDomainSyncAttempt(attempt: CoolifyDomainSyncAttempt): Promise<CoolifyDomainSyncResult> {
@@ -1043,21 +1055,53 @@ export async function GET(_req: Request, { params }: Params) {
     },
     stagingCapability,
     stagingContentProbe,
-    dryRunPlan
+    dryRunPlan,
+    toggleInProgress: await findActiveStagingToggle(site.id)
   });
 }
 
-export async function POST(req: Request, { params }: Params) {
+const STAGING_TOGGLE_KIND = "site.staging.toggle";
+/** A toggle that has run this long died with its server; it no longer blocks. */
+const STAGING_TOGGLE_STALE_MS = 30 * 60 * 1000;
+
+type ActiveStagingToggle = { operationId: string; enabled: boolean; startedAt: string };
+
+async function findActiveStagingToggle(siteId: string): Promise<ActiveStagingToggle | null> {
+  try {
+    const { db } = await import("@/lib/db");
+    const active = await db.operation.findFirst({
+      where: { kind: STAGING_TOGGLE_KIND, resourceType: "site", resourceId: siteId, status: { in: ["queued", "running"] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, input: true, createdAt: true, startedAt: true }
+    });
+    if (!active) return null;
+    const since = active.startedAt ?? active.createdAt;
+    if (Date.now() - since.getTime() > STAGING_TOGGLE_STALE_MS) return null;
+    return { operationId: active.id, enabled: Boolean((active.input as { enabled?: unknown } | null)?.enabled), startedAt: since.toISOString() };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Turn staging on or off. One change per app at a time: a second click, tab
+ * or person gets "already in progress" instead of building a second copy.
+ * With Accept: application/x-ndjson each step streams to the browser as it
+ * happens (the work carries on if the browser leaves).
+ */
+export async function POST(req: Request, context: Params) {
+  const run = () => toggleStagingOnce(req, context);
+  return wantsProgress(req) ? progressResponse(run) : run();
+}
+
+async function toggleStagingOnce(req: Request, context: Params): Promise<Response> {
   const authorizedByToken = hasOpsToken(req);
   const session = await auth();
-  const bootstrapGlobalAccess = await hasBootstrapGlobalAccess(session);
   if (!session?.user?.id && !authorizedByToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
   const actorId = session?.user?.id;
-
-  const { siteId } = await params;
+  const { siteId } = await context.params;
 
   // Creating or destroying a staging environment (burnExisting throws the
   // current copy away) is an admin action. This checked only for a session.
@@ -1081,7 +1125,80 @@ export async function POST(req: Request, { params }: Params) {
     }
   }
 
-  let body: { enabled?: boolean; burnExisting?: boolean; stagingServerUuid?: string };
+  const body = (await req.clone().json().catch(() => null)) as { enabled?: unknown } | null;
+  const { db } = await import("@/lib/db");
+  const site = typeof body?.enabled === "boolean"
+    ? await db.site.findFirst({ where: buildSiteIdentityWhere(siteId), select: { id: true, organizationId: true } })
+    : null;
+  // Bad input, or an app the main handler imports on first use: no lock to take.
+  if (!site) return runStagingToggle(req, context);
+
+  const { createOrJoinActiveOperation, failOperation, startOperation, succeedOperation } = await import("@/lib/operations");
+  const lock = () => createOrJoinActiveOperation(
+    {
+      kind: STAGING_TOGGLE_KIND,
+      organizationId: site.organizationId,
+      actorId: actorId ?? null,
+      resourceType: "site",
+      resourceId: site.id,
+      input: { enabled: body!.enabled }
+    },
+    { lockKey: `${STAGING_TOGGLE_KIND}:${site.id}` }
+  );
+  let { operation, created } = await lock();
+  if (!created) {
+    const since = (operation.startedAt ?? operation.createdAt) as Date;
+    if (Date.now() - new Date(since).getTime() > STAGING_TOGGLE_STALE_MS) {
+      await failOperation(operation.id, "This staging change stopped before it finished.");
+      ({ operation, created } = await lock());
+    }
+  }
+  if (!created) {
+    const turningOn = Boolean((operation.input as { enabled?: unknown } | null)?.enabled);
+    return NextResponse.json(
+      {
+        error: turningOn
+          ? "Staging is already being set up for this app. It shows here as soon as it's ready."
+          : "Staging is already being turned off for this app.",
+        inProgress: true,
+        toggleInProgress: { operationId: operation.id, enabled: turningOn, startedAt: new Date((operation.startedAt ?? operation.createdAt) as Date).toISOString() }
+      },
+      { status: 409 }
+    );
+  }
+
+  await startOperation(operation.id);
+  try {
+    const response = await runStagingToggle(req, context);
+    const payload = (await response.clone().json().catch(() => ({}))) as { error?: unknown; message?: unknown };
+    if (response.ok) {
+      await succeedOperation(operation.id, { status: response.status });
+    } else {
+      const reason = typeof payload.error === "string" ? payload.error : typeof payload.message === "string" ? payload.message : "";
+      await failOperation(operation.id, reason || `Staging change didn't finish (HTTP ${response.status}).`);
+    }
+    return response;
+  } catch (error) {
+    await failOperation(operation.id, "Staging change didn't finish.").catch(() => false);
+    throw error;
+  }
+}
+
+async function runStagingToggle(req: Request, { params }: Params) {
+  const authorizedByToken = hasOpsToken(req);
+  const session = await auth();
+  const bootstrapGlobalAccess = await hasBootstrapGlobalAccess(session);
+  if (!session?.user?.id && !authorizedByToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const actorId = session?.user?.id;
+
+  const { siteId } = await params;
+
+  // replaceExisting (enable only): remove a leftover staging copy of this app
+  // first, instead of refusing, so one click both cleans up and turns on.
+  let body: { enabled?: boolean; burnExisting?: boolean; replaceExisting?: boolean; stagingServerUuid?: string };
   try {
     body = await req.json();
   } catch {
@@ -1223,12 +1340,39 @@ export async function POST(req: Request, { params }: Params) {
       // This app's own recorded copy is not residue: turning staging back on
       // re-attaches it (the existing-target path below). The lock is only for a
       // copy Jongo did not record, typically one whose removal is still running.
-      const firstLook = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
-      const residualCapability = firstLook.pinned
+      const firstLook = await withStep("check", "Checking for an existing staging copy", () => getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH));
+      let residualCapability = firstLook.pinned
         ? null
         : await waitForStagingCapabilityToClear(async () => {
             return await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
           }, 6, 1500);
+      // Strict match only (STAGING_IDENTITY_MATCH): the same rule that picks
+      // what disabling deletes, so this never removes another app's copy.
+      if (residualCapability?.applicationUuid && body.replaceExisting) {
+        const leftoverUuid = residualCapability.applicationUuid;
+        const leftoverKind = residualCapability.resourceKind;
+        const removed = await withStep(
+          "remove",
+          "Removing the old staging copy",
+          () => destroyCoolifyApplication(leftoverUuid, leftoverKind),
+          (result) => result.ok
+        );
+        await tryRecordStagingAuditLog({
+          organizationId: site.organizationId,
+          actorId,
+          actionType: removed.ok ? "staging_leftover_removed" : "staging_leftover_remove_failed",
+          resourceId: site.id,
+          details: { stagingUuid: leftoverUuid, message: removed.message ?? null },
+          req
+        });
+        if (removed.ok) {
+          residualCapability = await withStep("cleared", "Waiting for the old copy to disappear", () =>
+            waitForStagingCapabilityToClear(async () => {
+              return await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
+            }, 12, 2500)
+          , (left) => !left.applicationUuid);
+        }
+      }
       if (residualCapability?.applicationUuid) {
         const targetLabel = stagingTargetLabel(residualCapability.resourceKind);
         return NextResponse.json({
@@ -1282,7 +1426,7 @@ export async function POST(req: Request, { params }: Params) {
         const hasOwn = await (db as any).stagingDatabase.count({ where: { siteId: site.id, status: { not: "removed" } } }).catch(() => 1);
         if (hasOwn === 0) {
           const { ensureStagingDatabases } = await import("@/lib/staging-databases");
-          await ensureStagingDatabases(site.id).catch((error) => console.error("[staging] staging databases failed", error));
+          await withStep("databases", "Copying databases to staging", () => ensureStagingDatabases(site.id).catch((error) => console.error("[staging] staging databases failed", error)));
         }
       }
       let capabilityAfterExistingCheck = currentCapability;
@@ -1312,16 +1456,16 @@ export async function POST(req: Request, { params }: Params) {
         stagingDomainApplied = result.success;
         stagingDeployTriggered = result.success;
       } else if (capabilityAfterExistingCheck.resourceKind === "application" && capabilityAfterExistingCheck.applicationUuid && preferredStagingDomain) {
-        stagingDomainApplied = await applyCoolifyApplicationDomain(capabilityAfterExistingCheck.applicationUuid, preferredStagingDomain);
+        stagingDomainApplied = await withStep("address", "Setting the staging address", () => applyCoolifyApplicationDomain(capabilityAfterExistingCheck.applicationUuid!, preferredStagingDomain), (applied) => Boolean(applied));
         try {
-          await triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid, "staging");
+          await withStep("deploy", "Deploying staging", () => triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid!, "staging"));
           stagingDeployTriggered = true;
         } catch { }
       }
 
       if (capabilityAfterExistingCheck.applicationUuid && !currentStagingRunning && !stagingDeployTriggered) {
         try {
-          await triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid, "staging");
+          await withStep("deploy", "Deploying staging", () => triggerCoolifyDeploy(capabilityAfterExistingCheck.applicationUuid!, "staging"));
           stagingDeployTriggered = true;
           const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
           capabilityAfterExistingCheck = refreshedCapability;
@@ -1350,7 +1494,7 @@ export async function POST(req: Request, { params }: Params) {
         stagingUrl: capabilityAfterExistingCheck.stagingUrl,
         fqdn: capabilityAfterExistingCheck.fqdn
       });
-      const stagingProbeResult = await probeStagingContentAcrossCandidates(probeCandidates);
+      const stagingProbeResult = await withStep("probe", "Checking staging responds", () => probeStagingContentAcrossCandidates(probeCandidates));
       const freshInstallDetected = stagingProbeResult.probe.freshInstallDetected;
       const probeUnavailable = !stagingProbeResult.probe.checked;
       const requiresContentSync = freshInstallDetected || probeUnavailable;
@@ -1370,14 +1514,14 @@ export async function POST(req: Request, { params }: Params) {
       };
 
       if (requiresContentSync && capabilityAfterExistingCheck.applicationUuid) {
-        autoContentSync = await runAutoContentSync({
+        autoContentSync = await withStep("content", "Copying content to staging", () => runAutoContentSync({
           siteId: site.id,
           productionServiceUuid: appUuid,
-          stagingServiceUuid: capabilityAfterExistingCheck.applicationUuid,
+          stagingServiceUuid: capabilityAfterExistingCheck.applicationUuid!,
           stagingUrl: autoSyncStagingUrl,
           requestBaseUrl,
           direction: "production-to-staging"
-        });
+        }));
       }
 
       await notifyStagingCreated({
@@ -1455,9 +1599,9 @@ export async function POST(req: Request, { params }: Params) {
       // See the note on the other call site: the production suffix must not
       // leak into staging URLs.
     });
-    const provisionResult = await provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId, {
+    const provisionResult = await withStep("create", "Creating the staging copy", () => provisionCoolifyStagingFromProduction(appUuid, preferredStagingDomain, projectId, {
       serverUuid: typeof body.stagingServerUuid === "string" ? body.stagingServerUuid.trim() : null
-    });
+    }), (result) => result.ok !== false);
 
     // Record the new copy before looking anything up, so the lookups below find
     // it by uuid instead of by name.
@@ -1470,10 +1614,10 @@ export async function POST(req: Request, { params }: Params) {
     let stagingDatabases: Awaited<ReturnType<typeof import("@/lib/staging-databases").ensureStagingDatabases>> | null = null;
     if (provisionResult.resourceUuid && provisionResult.resourceKind === "application") {
       const { ensureStagingDatabases } = await import("@/lib/staging-databases");
-      stagingDatabases = await ensureStagingDatabases(site.id).catch((error) => {
+      stagingDatabases = await withStep("databases", "Copying databases to staging", () => ensureStagingDatabases(site.id).catch((error) => {
         console.error("[staging] staging databases failed", error);
         return { ok: false, message: "Staging's own database couldn't be set up yet. Use Try again.", databases: 0, copying: 0, shared: [] };
-      });
+      }));
     }
 
     let capabilityAfterProvision: Awaited<ReturnType<typeof getCoolifyAppStagingCapability>>;
@@ -1548,12 +1692,12 @@ export async function POST(req: Request, { params }: Params) {
         stagingDomainApplied = result.success;
         stagingDeployTriggered = result.success;
       } else if (capabilityAfterProvision.resourceKind === "application") {
-        stagingDomainApplied = await applyCoolifyApplicationDomain(
-          capabilityAfterProvision.applicationUuid,
+        stagingDomainApplied = await withStep("address", "Setting the staging address", () => applyCoolifyApplicationDomain(
+          capabilityAfterProvision.applicationUuid!,
           preferredStagingDomain
-        );
+        ), (applied) => Boolean(applied));
         try {
-          await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
+          await withStep("deploy", "Deploying staging", () => triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid!, "staging"));
           stagingDeployTriggered = true;
         } catch (error) {
           stagingDeployError = error instanceof Error ? error.message : "Coolify rejected the staging deploy.";
@@ -1563,7 +1707,7 @@ export async function POST(req: Request, { params }: Params) {
 
     if (capabilityAfterProvision.applicationUuid && capabilityAfterProvision.status !== "healthy" && !stagingDeployTriggered) {
       try {
-        await triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid, "staging");
+        await withStep("deploy", "Deploying staging", () => triggerCoolifyDeploy(capabilityAfterProvision.applicationUuid!, "staging"));
         stagingDeployTriggered = true;
         stagingDeployError = null;
         const refreshedCapability = await getCoolifyAppStagingCapability(appUuid, projectId, STAGING_IDENTITY_MATCH);
@@ -1608,7 +1752,7 @@ export async function POST(req: Request, { params }: Params) {
       stagingUrl: capabilityAfterProvision.stagingUrl,
       fqdn: capabilityAfterProvision.fqdn
     });
-    const stagingProbeResult = await probeStagingContentAcrossCandidates(probeCandidates);
+    const stagingProbeResult = await withStep("probe", "Checking staging responds", () => probeStagingContentAcrossCandidates(probeCandidates));
     const freshInstallDetected = stagingProbeResult.probe.freshInstallDetected;
     const probeUnavailable = !stagingProbeResult.probe.checked;
     const requiresContentSync = createdNewService || freshInstallDetected || probeUnavailable;
@@ -1636,14 +1780,14 @@ export async function POST(req: Request, { params }: Params) {
     };
 
     if (requiresContentSync && capabilityAfterProvision.applicationUuid) {
-      autoContentSync = await runAutoContentSync({
+      autoContentSync = await withStep("content", "Copying content to staging", () => runAutoContentSync({
         siteId: site.id,
         productionServiceUuid: appUuid,
-        stagingServiceUuid: capabilityAfterProvision.applicationUuid,
+        stagingServiceUuid: capabilityAfterProvision.applicationUuid!,
         stagingUrl: autoSyncStagingUrl,
         requestBaseUrl,
         direction: "production-to-staging"
-      });
+      }));
     }
 
     await notifyStagingCreated({
@@ -1783,8 +1927,10 @@ export async function POST(req: Request, { params }: Params) {
     }
     const shouldDestroy = Boolean(body.burnExisting) && Boolean(capability?.detected && capability?.applicationUuid);
     if (shouldDestroy && capability?.applicationUuid) {
+      const removeUuid = capability.applicationUuid;
+      const removeKind = capability.resourceKind;
       try {
-        const result = await destroyCoolifyApplication(capability.applicationUuid, capability.resourceKind);
+        const result = await withStep("remove", "Removing the staging copy", () => destroyCoolifyApplication(removeUuid, removeKind), (result) => result.ok);
         const lastDestroyMessage = result.message;
 
         if (result.ok) {
