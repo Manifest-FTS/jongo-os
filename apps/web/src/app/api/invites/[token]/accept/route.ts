@@ -6,6 +6,7 @@ import { hashInviteToken, isInviteExpired, parseInvitationIdFromToken } from "@/
 import { normalizeRole } from "@/lib/roles";
 import { isOidcEnabled } from "@/lib/oidc/config";
 import { applyInviteCraftAccess } from "@/lib/craft-admin/access";
+import { AUTH_RATE_LIMITS, clientIp, hitRateLimit, tooManyAttemptsMessage } from "@/lib/auth-rate-limit";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -61,6 +62,16 @@ async function findInvitationByToken(db: any, token: string) {
 
 export async function POST(req: Request, { params }: Params) {
   const { token } = await params;
+
+  // Accepting can create an account and set its password.
+  const limited = await hitRateLimit(AUTH_RATE_LIMITS.inviteAcceptPerIp, clientIp(req.headers));
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { error: tooManyAttemptsMessage(limited.retryAfterSeconds) },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSeconds) } }
+    );
+  }
+
   const session = await auth();
 
   let body: Body;

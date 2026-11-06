@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSiteEvents } from "@/components/useSiteEvents";
 import { useRouter } from "next/navigation";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { ToastStack, useToasts } from "@/components/Toasts";
@@ -160,12 +161,15 @@ export default function SiteBackupsPanel({
   }, [openMenu]);
 
   // Poll while anything is in flight so rows fill in without a manual refresh.
+  // Live: a finished backup or restore refreshes the list as soon as it is
+  // recorded. The timer is only a safety net (slow while live updates work).
   const inFlight = backups.some((b) => b.status === "running" || b.restoreStatus === "running");
+  const { connected: live } = useSiteEvents(siteId, () => router.refresh(), ["backup", "restore"]);
   useEffect(() => {
     if (!inFlight) return;
-    const timer = setInterval(() => router.refresh(), 10000);
+    const timer = setInterval(() => router.refresh(), live ? 60_000 : 10_000);
     return () => clearInterval(timer);
-  }, [inFlight, router]);
+  }, [inFlight, live, router]);
 
   // Announce transitions: a backup or restore that WAS running and now isn't.
   const prevRef = useRef<Map<string, { status: string; restoreStatus: string | null }>>(new Map());

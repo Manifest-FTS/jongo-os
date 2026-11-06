@@ -1452,7 +1452,7 @@ export default function StagingAuditHistory({ siteId, items, initialAttemptId }:
               {canShowMore ? (
                 <button
                   type="button"
-                  className="button"
+                  className="btn"
                   onClick={() => setVisibleCount((current) => Math.min(current + SHOW_MORE_STEP, filteredItems.length))}
                 >
                   Show more

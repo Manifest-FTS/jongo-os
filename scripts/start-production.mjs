@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { pinSshHostKey } from "./ssh-host-key.mjs";
 
 const npmCommand = "npm";
 let activeChild = null;
@@ -9,6 +10,7 @@ function log(message) {
 }
 
 function forwardSignal(signal) {
+  shuttingDown = true;
   if (activeChild && !activeChild.killed) {
     activeChild.kill(signal);
   }
@@ -95,8 +97,36 @@ async function runStep(label, args, extraEnv = {}) {
   });
 }
 
+let shuttingDown = false;
+
+// The worker is restarted if it dies, so a lost database connection does not
+// silently stop backups and metering until the next deploy.
+function startWorker(extraEnv = {}) {
+  log("Starting background worker...");
+  const child = spawn("node", ["./scripts/worker.mjs"], { stdio: "inherit", env: { ...process.env, ...extraEnv } });
+  backgroundChildren.push(child);
+  child.on("exit", (code, signal) => {
+    backgroundChildren = backgroundChildren.filter((c) => c !== child);
+    if (shuttingDown) return;
+    console.error(`[startup] Background worker exited (${signal || `code ${code}`}); restarting in 30s.`);
+    setTimeout(() => {
+      if (!shuttingDown) startWorker(extraEnv);
+    }, 30_000).unref();
+  });
+}
+
 process.on("SIGINT", () => forwardSignal("SIGINT"));
 process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+
+// Pin the hosting server's SSH host key for every SSH call made from this
+// container (the app, the worker and the backup/restore jobs all inherit
+// process.env). Without it, each new container trusts whatever answers first.
+const pinned = pinSshHostKey(process.env);
+if (pinned.status === "pinned") log(`SSH host key pinned (${pinned.lines} key line(s)).`);
+else if (pinned.status === "invalid") console.error(`[startup] STAGING_SYNC_SSH_KNOWN_HOSTS ignored: ${pinned.reason}`);
+else if (pinned.status === "missing" && pinned.sshConfigured) {
+  console.warn("[startup] WARNING: STAGING_SYNC_SSH_KNOWN_HOSTS is not set, so the hosting server's SSH identity is not verified.");
+}
 
 try {
   await runStep("Generating Prisma client", ["run", "prisma:generate"]);
@@ -107,32 +137,45 @@ try {
     process.exit(0);
   }
 
-  const backupSchedulerEnabled = (process.env.BACKUP_RECONCILE_SCHEDULE_ENABLED || "false").trim().toLowerCase() === "true";
-  if (backupSchedulerEnabled) {
-    startBackgroundProcess("Starting backup reconcile scheduler", ["run", "ops:backup-reconcile:scheduler"]);
-  }
+  // Background jobs. "embedded" (default): the pg-boss worker runs in this
+  // container. "external": another container runs `npm run worker`, so start
+  // nothing here. "legacy": the old setInterval loops, kept for one release as
+  // a way back, plus the worker for deploys only. "off": no background jobs
+  // (deploys will stay queued).
+  const workerMode = (process.env.JONGO_WORKER_MODE || "embedded").trim().toLowerCase();
+  if (workerMode === "embedded") {
+    startWorker();
+  } else if (workerMode === "legacy") {
+    startWorker({ JONGO_WORKER_OPERATIONS_ONLY: "1" });
+    const backupSchedulerEnabled = (process.env.BACKUP_RECONCILE_SCHEDULE_ENABLED || "false").trim().toLowerCase() === "true";
+    if (backupSchedulerEnabled) {
+      startBackgroundProcess("Starting backup reconcile scheduler", ["run", "ops:backup-reconcile:scheduler"]);
+    }
 
-  const namecheapSyncEnabled = (process.env.NAMECHEAP_SYNC_SCHEDULE_ENABLED || "false").trim().toLowerCase() === "true";
-  if (namecheapSyncEnabled) {
-    startBackgroundProcess("Starting daily Namecheap domain sync", ["./scripts/namecheap-domain-sync-scheduler.mjs"], {}, "node");
-  }
+    const namecheapSyncEnabled = (process.env.NAMECHEAP_SYNC_SCHEDULE_ENABLED || "false").trim().toLowerCase() === "true";
+    if (namecheapSyncEnabled) {
+      startBackgroundProcess("Starting daily Namecheap domain sync", ["./scripts/namecheap-domain-sync-scheduler.mjs"], {}, "node");
+    }
 
-  // Fast deletion sync. On by default: without it, deleting an app in Coolify
-  // takes the reconciler's seven-day path to disappear from Jongo, which is the
-  // behaviour this was added to fix. Set COOLIFY_DELETION_WATCH_ENABLED=false to
-  // opt out. The watcher exits on its own if its ops token is missing.
-  const deletionWatchEnabled =
-    (process.env.COOLIFY_DELETION_WATCH_ENABLED || "true").trim().toLowerCase() !== "false";
-  if (deletionWatchEnabled) {
-    startBackgroundProcess("Starting Coolify deletion watcher", ["run", "ops:coolify-deletion:watcher"]);
-  }
+    // Fast deletion sync. On by default: without it, deleting an app in Coolify
+    // takes the reconciler's seven-day path to disappear from Jongo, which is the
+    // behaviour this was added to fix. Set COOLIFY_DELETION_WATCH_ENABLED=false to
+    // opt out. The watcher exits on its own if its ops token is missing.
+    const deletionWatchEnabled =
+      (process.env.COOLIFY_DELETION_WATCH_ENABLED || "true").trim().toLowerCase() !== "false";
+    if (deletionWatchEnabled) {
+      startBackgroundProcess("Starting Coolify deletion watcher", ["run", "ops:coolify-deletion:watcher"]);
+    }
 
-  // Resource usage metering. On by default: usage history only exists from the
-  // moment collection starts, so every day it is off is a day the 30/60/90-day
-  // views can never show. Set USAGE_COLLECT_ENABLED=false to opt out.
-  const usageCollectEnabled = (process.env.USAGE_COLLECT_ENABLED || "true").trim().toLowerCase() !== "false";
-  if (usageCollectEnabled) {
-    startBackgroundProcess("Starting usage collector", ["run", "ops:usage-collect:scheduler"]);
+    // Resource usage metering. On by default: usage history only exists from the
+    // moment collection starts, so every day it is off is a day the 30/60/90-day
+    // views can never show. Set USAGE_COLLECT_ENABLED=false to opt out.
+    const usageCollectEnabled = (process.env.USAGE_COLLECT_ENABLED || "true").trim().toLowerCase() !== "false";
+    if (usageCollectEnabled) {
+      startBackgroundProcess("Starting usage collector", ["run", "ops:usage-collect:scheduler"]);
+    }
+  } else {
+    log(`Background worker not started here (JONGO_WORKER_MODE=${workerMode}).`);
   }
 
   await runStep("Starting web application", ["run", "start:web"], {

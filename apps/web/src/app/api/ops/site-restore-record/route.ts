@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeEqual } from "@/lib/safe-equal";
 
 export const runtime = "nodejs";
 
@@ -9,7 +10,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const opsToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-  if (!opsToken || !provided || provided !== opsToken) {
+  if (!opsToken || !provided || !safeEqual(provided, opsToken)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -43,6 +44,8 @@ export async function POST(request: Request) {
         safetySnapshotId: str(body.safetySnapshot)
       }
     });
+    const { publishSiteEvent } = await import("@/lib/live-events");
+    await publishSiteEvent(updated.siteId, "restore");
     return NextResponse.json({ ok: true, backupId: updated.id, restoreStatus: updated.restoreStatus });
   } catch (error) {
     return NextResponse.json(

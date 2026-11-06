@@ -9,6 +9,7 @@ import {
 } from "@/lib/wordpress-telemetry-bridge-providers";
 import { getDb } from "@/lib/db";
 import { decryptSecret } from "@/lib/wordpress-telemetry-secrets";
+import { safeEqual } from "@/lib/safe-equal";
 
 type CollectorRequest = {
   workspaceId?: string;
@@ -79,6 +80,11 @@ type CollectorMockRecord = {
 };
 
 function parseMockMap(): Record<string, CollectorMockRecord> {
+  // Test fixtures only. In production a stray value would present invented
+  // plugin counts and security findings as real site telemetry.
+  if (process.env.NODE_ENV === "production") {
+    return {};
+  }
   const raw = process.env.WORDPRESS_TELEMETRY_COLLECTOR_MOCK_DATA?.trim();
   if (!raw) {
     return {};
@@ -195,7 +201,7 @@ export async function POST(request: Request) {
 
   const auth = request.headers.get("authorization") ?? "";
   const actualToken = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-  if (actualToken !== expectedToken) {
+  if (!safeEqual(actualToken, expectedToken)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

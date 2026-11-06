@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+
 function normalizeBaseUrl(value) {
   if (!value) {
     return "";
@@ -20,11 +22,11 @@ function resolveReconcileUrl() {
   if (directUrl) {
     return directUrl;
   }
-
+  // Inside the container (the default), call the app directly: machine tokens
+  // are only honoured on local requests. A separate worker container uses the
+  // public address, which also needs OPS_TOKEN_ALLOW_REMOTE=true on the app.
   const nextAuthBase = normalizeBaseUrl(process.env.NEXTAUTH_URL);
-  if (nextAuthBase) {
-    return `${nextAuthBase}/api/ops/backup-reconcile`;
-  }
+  if (nextAuthBase && (process.env.JONGO_WORKER_MODE || "").trim().toLowerCase() === "external") return `${nextAuthBase}/api/ops/backup-reconcile`;
 
   const port = (process.env.PORT || "3000").trim() || "3000";
   return `http://127.0.0.1:${port}/api/ops/backup-reconcile`;
@@ -59,7 +61,7 @@ async function heartbeat(status, message) {
   }
 }
 
-async function runReconcileOnce() {
+export async function runReconcileOnce() {
   const url = resolveReconcileUrl();
   const token = (process.env.BACKUP_RECONCILE_TOKEN || "").trim();
   const limit = toPositiveInt(process.env.BACKUP_RECONCILE_LIMIT, 200);
@@ -196,15 +198,17 @@ async function runWithSchedule() {
   }, intervalMs);
 }
 
-const once = process.argv.includes("--once");
-if (once) {
-  try {
-    await runReconcileOnce();
-    process.exit(0);
-  } catch (error) {
-    console.error(`[backup-reconcile] ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
+// Run only when executed directly; the worker imports runReconcileOnce.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes("--once")) {
+    try {
+      await runReconcileOnce();
+      process.exit(0);
+    } catch (error) {
+      console.error(`[backup-reconcile] ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    }
+  } else {
+    await runWithSchedule();
   }
-} else {
-  await runWithSchedule();
 }

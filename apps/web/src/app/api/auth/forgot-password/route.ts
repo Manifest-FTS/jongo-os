@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { sendPasswordResetEmail } from "@/lib/email";
+import { AUTH_RATE_LIMITS, clientIp, hitRateLimit, tooManyAttemptsMessage } from "@/lib/auth-rate-limit";
 
 const TOKEN_TTL_MINUTES = 60;
 
@@ -23,6 +24,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     { ok: true, message: "If an account with that email exists, a reset link has been sent." },
     { status: 200 }
   );
+
+  // Per address: a 429 says nothing about whether the account exists.
+  const byIp = await hitRateLimit(AUTH_RATE_LIMITS.forgotPerIp, clientIp(req.headers));
+  if (!byIp.allowed) {
+    return NextResponse.json(
+      { error: tooManyAttemptsMessage(byIp.retryAfterSeconds) },
+      { status: 429, headers: { "Retry-After": String(byIp.retryAfterSeconds) } }
+    );
+  }
+  // Per email: answer exactly as if a link was sent, but send nothing, so the
+  // limit can't be used to flood an inbox or to probe for accounts.
+  const byEmail = await hitRateLimit(AUTH_RATE_LIMITS.forgotPerEmail, email);
+  if (!byEmail.allowed) {
+    return successResponse;
+  }
 
   const user = await db.user.findUnique({ where: { email } });
   if (!user || !user.passwordHash) {

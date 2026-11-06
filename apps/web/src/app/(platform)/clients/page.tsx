@@ -2,7 +2,6 @@ import { auth } from "@/lib/auth.config";
 import { listClientWorkspaces, listSiteDirectory } from "@/lib/repositories";
 import { isPlatformAdminEmail } from "@/lib/permissions";
 import { describeForViewer } from "@/lib/site-description";
-import Link from "next/link";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import ClientDirectoryView from "@/components/ClientDirectoryView";
 import UnmappedCoolifyProjectsBanner from "@/components/UnmappedCoolifyProjectsBanner";
@@ -22,8 +21,6 @@ export default async function ClientsPage() {
     siteCountsByClientId.set(site.clientId, (siteCountsByClientId.get(site.clientId) ?? 0) + 1);
   }
 
-  const isMock = clients.length > 0 && clients[0].dataSource === "mock";
-
   return (
     <div className="page-stack">
       <div className="page-head">
@@ -35,15 +32,6 @@ export default async function ClientsPage() {
           <CreateOrganizationForm />
         </div>
       </div>
-
-      {isMock && (
-        <div className="diagnostic-banner">
-          <strong>Demo client list active.</strong> Live client data is currently unavailable, so sample clients are shown.
-          <span> Verify database and provider connectivity in </span>
-          <Link href="/settings#runtime-diagnostics" className="action-link">Platform Settings</Link>
-          <span>.</span>
-        </div>
-      )}
 
       {isPlatformAdmin ? <UnmappedCoolifyProjectsBanner /> : null}
 

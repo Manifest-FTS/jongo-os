@@ -15,8 +15,16 @@ const authBody = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"
 
 /** Where to land after signup, e.g. back on the domain order the visitor started. */
 function postSignupPath(): string {
-  const raw = new URLSearchParams(window.location.search).get("callbackUrl");
-  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/dashboard";
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("callbackUrl");
+  if (raw && raw.startsWith("/") && !raw.startsWith("//")) return raw;
+  // Came from a plan on the pricing page: continue to payment.
+  const plan = params.get("plan");
+  if (plan && /^[a-z0-9-]{1,40}$/.test(plan)) {
+    const interval = params.get("interval") === "annual" ? "annual" : "monthly";
+    return `/billing/start?plan=${plan}&interval=${interval}`;
+  }
+  return "/dashboard";
 }
 
 export default function RegisterPage() {

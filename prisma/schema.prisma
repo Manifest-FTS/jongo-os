@@ -90,6 +90,7 @@ model User {
   siteCollaborations   SiteCollaborator[]
   apiTokens            ApiToken[]
   auditLogs            AuditLog[]
+  operations           Operation[]
   favoriteApps         UserFavoriteApp[]
   deploymentsTriggered Deployment[]         @relation("TriggeredBy")
   collaboratorsGranted Collaborator[]       @relation("GrantedBy")
@@ -182,6 +183,8 @@ model Organization {
   invitations         Invitation[]
   apiTokens           ApiToken[]
   auditLogs           AuditLog[]
+  operations          Operation[]
+  gitDeployKeys       GitDeployKey[]
   notifications       Notification[]
   domains             Domain[]
   githubInstallations GithubInstallation[]
@@ -242,6 +245,13 @@ model Site {
   stagingSharedServices String?
   temporaryDomainSlug   String?
   temporaryDomainSuffix String?
+  // The production address WordPress saves and every link uses (lib/production-domains.ts).
+  // Other attached hosts (the .manifest-fts.com address) stay as fallbacks.
+  // primaryDomainDnsStatus: ok | dns_lost | unknown, from the hourly check.
+  primaryDomain          String?
+  primaryDomainDnsStatus String?
+  primaryDomainCheckedAt DateTime?
+  primaryDomainError     String?
 
   // Deploy from the customer's own GitHub (lib/github-deploys.ts). gitRepoId
   // survives renames; gitStatus: linked | repo_access_lost | install_removed |
@@ -257,6 +267,14 @@ model Site {
   pendingCommitSha     String?
   pendingCommitMessage String?
   lastDeployedSha      String?
+  // Private repo on any Git host via a deploy key (lib/deploy-keys.ts).
+  // gitProvider: github | gitlab | bitbucket | gitea | other. The webhook
+  // secret (encrypted, lib/secret-box.ts) verifies push events to
+  // /api/webhooks/git/<site id>.
+  gitDeployKeyId       String?             @db.Uuid
+  gitDeployKey         GitDeployKey?       @relation(fields: [gitDeployKeyId], references: [id], onDelete: SetNull)
+  gitProvider          String?
+  gitWebhookSecretEnc  String?             @db.Text
 
   // Maintained by the hourly reconciler (see lib/platform-reconcile.ts).
   // isStagingResource: this Site's Coolify resource lives in a staging
@@ -768,7 +786,12 @@ model SftpAccount {
   id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   siteId   String @db.Uuid
   username String @unique
+  // Encrypted with lib/secret-box (v2:...). Rows from before encryption hold
+  // plain text until they are next read or scripts/reencrypt-secrets.mjs runs.
   password String
+  // OpenSSH public keys allowed to log in, besides the password. Private keys
+  // Jongo generates are handed over once and never stored.
+  publicKeys String[] @default([])
   // Absolute path inside the SFTP service that this account is confined to.
   homePath String
 
@@ -1725,4 +1748,79 @@ model InvitationCraftAccess {
   createdAt    DateTime      @default(now())
 
   invitation Invitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// Rate limiting
+// ============================================================
+
+// Fixed-window counters for sign-in, registration and password reset
+// (lib/auth-rate-limit.ts). In Postgres rather than memory so limits survive
+// restarts and hold across replicas. `key` is a sha256 of the scope and
+// identifier (email or IP), so no email or address is stored here.
+model RateLimitBucket {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+
+  @@index([windowStart])
+}
+
+enum OperationStatus {
+  queued
+  running
+  succeeded
+  failed
+  cancelled
+}
+
+// A long-running task (deploy, provision, backup, restore, migration) and its
+// progress. Rows are the record users and support see; the pg-boss job that
+// executes one is transient. `idempotencyKey` makes a retried request return
+// the existing operation instead of starting a second one.
+model Operation {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?         @db.Uuid
+  actorId        String?         @db.Uuid
+  kind           String // 'site.deploy', 'wordpress.provision', ...
+  resourceType   String?
+  resourceId     String?
+  status         OperationStatus @default(queued)
+  idempotencyKey String?         @unique
+  input          Json?
+  steps          Json? // [{ name, status, at, detail? }]
+  result         Json?
+  error          String?         @db.Text
+  attempts       Int             @default(0)
+  jobId          String?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  @@index([organizationId, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([status])
+}
+
+// A read-only deploy key for a client's private repositories on any Git host.
+// Hosting holds the private half (coolifyKeyUuid); Jongo keeps only the public
+// line the client pastes into their repository's deploy keys.
+model GitDeployKey {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @db.Uuid
+  coolifyKeyUuid String   @unique
+  publicKey      String   @db.Text
+  label          String
+  createdById    String?  @db.Uuid
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sites        Site[]
+
+  @@index([organizationId])
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
+import { isPlatformAdminUser } from "@/lib/rbac";
 
 function normalize(value?: string | null): string {
   return value?.trim().toLowerCase() ?? "";
@@ -126,6 +127,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
+  // Each client creates a hosting project, so creation is rate-limited per user.
+  const { AUTH_RATE_LIMITS, hitRateLimit, tooManyAttemptsMessage } = await import("@/lib/auth-rate-limit");
+  const limited = await hitRateLimit(AUTH_RATE_LIMITS.createClientPerUser, session.user.id);
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { error: tooManyAttemptsMessage(limited.retryAfterSeconds) },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSeconds) } }
+    );
+  }
+
+  // Linking a hosting project imports every app in it into the new client, so
+  // it is platform-admin only — the same rule PUT /api/organizations/[id]
+  // applies. Without it any signed-up user could claim an unlinked project.
+  if ((body.coolifyProjectId?.trim() || body.coolifyProjectName?.trim()) && !(await isPlatformAdminUser(session.user.id))) {
+    return NextResponse.json({ error: "Only platform admins can change infrastructure bindings" }, { status: 403 });
+  }
+
   // Derive a URL-safe slug from the name
   const slug = name
     .toLowerCase()
@@ -206,6 +224,26 @@ export async function POST(req: Request) {
       }
     }
 
+    // Every new client gets its own hosting project, so its first app can be
+    // created straight away. If hosting is briefly unreachable the client is
+    // still created; the project is made when its first app is created.
+    let hosting: { ready: boolean; message: string | null } = { ready: Boolean(org.coolifyProjectId), message: null };
+    if (!org.coolifyProjectId) {
+      // Hosting is made only for a paid plan; without one the client exists
+      // and its hosting is set up once a plan is chosen.
+      const { checkHostingEntitlement } = await import("@/lib/hosting-entitlement");
+      const entitlement = await checkHostingEntitlement({ organizationId: org.id, actorUserId: session.user.id });
+      if (!entitlement.ok) {
+        hosting = { ready: false, message: "Client created. Choose a plan to start hosting its apps." };
+      } else {
+        const { ensureOrganizationHostingProject } = await import("@/lib/organization-hosting");
+        const ensured = await ensureOrganizationHostingProject(org.id);
+        hosting = ensured.ok
+          ? { ready: true, message: null }
+          : { ready: false, message: "Client created. Its hosting is set up automatically when you add its first app." };
+      }
+    }
+
     if (org.coolifyProjectId) {
       try {
         await importLinkedCoolifyProjectSites(org.id);
@@ -219,6 +257,7 @@ export async function POST(req: Request) {
         id: org.id,
         slug: org.slug,
         name: org.name,
+        hosting,
         description: org.description,
         coolifyProjectId: org.coolifyProjectId,
         coolifyProjectName: org.coolifyProjectName,

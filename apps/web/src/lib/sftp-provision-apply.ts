@@ -113,6 +113,7 @@ export async function upsertSftpUser(input: {
   username: string;
   password: string;
   homePath: string;
+  publicKeys?: string[];
 }): Promise<SftpApplyResult<{ created: boolean }>> {
   const config = readSftpConfig();
   if (!config) return NOT_CONFIGURED;

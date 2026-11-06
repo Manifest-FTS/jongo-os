@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const m = vi.hoisted(() => ({
   auth: vi.fn(), getDb: vi.fn(), user: vi.fn(), grant: vi.fn(),
-  organization: { findFirst: vi.fn(), update: vi.fn() },
-  site: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+  organization: { findFirst: vi.fn(), findUnique: vi.fn(async () => ({ coolifyProjectId: null })), update: vi.fn() },
+  site: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), count: vi.fn(async () => 0) },
   siteCollaborator: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
   collaborator: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   invitation: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },

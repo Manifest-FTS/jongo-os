@@ -4,8 +4,7 @@ import { auth } from "@/lib/auth.config";
 import { buildSiteIdentityWhere } from "@/lib/site-identity";
 import {
   getCoolifyAppBackupInventory,
-  getCoolifyAppStagingCapability,
-  triggerCoolifyDeploy
+  getCoolifyAppStagingCapability
 } from "@/lib/coolify";
 import { getBackupReadiness, getPathPreflight, shouldAutoBackupBeforePromote } from "@/lib/deploy-guards";
 import { rateLimitCooldownRemaining } from "@/lib/coolify-rate-limit";
@@ -66,8 +65,8 @@ async function runPromoteContentSync(params: {
   stagingUrl: string;
   productionUrl: string;
 }) {
-  const configuredAutomationUrl = (process.env.STAGING_SYNC_AUTOMATION_URL || "").trim();
-  const automationUrl = configuredAutomationUrl || new URL("/api/ops/staging-sync-automation", params.req.url).toString();
+  const { stagingSyncAutomationUrl } = await import("@/lib/local-app-url");
+  const automationUrl = stagingSyncAutomationUrl();
   const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
@@ -393,7 +392,7 @@ export async function POST(req: Request, { params }: Params) {
   const appUuid = site.coolifyServiceUuid?.trim() || "";
   const projectId = site.coolifyProjectId?.trim() || undefined;
   if (!appUuid) {
-    return NextResponse.json({ error: "Coolify service UUID is not linked." }, { status: 409 });
+    return NextResponse.json({ error: "This app isn't connected to hosting yet, so it can't be promoted." }, { status: 409 });
   }
 
   if (idempotencyKey) {
@@ -605,7 +604,10 @@ export async function POST(req: Request, { params }: Params) {
     : normalizePublicUrl(stagingCapability.stagingUrl ?? stagingCapability.fqdn);
   const stagingUrl = normalizePublicUrl(await primaryStagingUrl(site.id, fallbackStagingUrl)) ?? fallbackStagingUrl;
   const stagingRewriteUrls = await stagingUrlsForRewrite(site.id, fallbackStagingUrl);
-  const productionUrl = normalizePublicUrl(site.name) ?? normalizePublicUrl(site.slug);
+  // The site's chosen main address (lib/production-domains.ts); the app name
+  // is only a guess for sites that never chose one.
+  const { primaryProductionUrl } = await import("@/lib/production-domains");
+  const productionUrl = (await primaryProductionUrl(site.id)) ?? normalizePublicUrl(site.name) ?? normalizePublicUrl(site.slug);
 
   // Never backed up, but otherwise ready to promote: take the backup instead of
   // sending the operator to another tab to press a different button. The guard
@@ -819,25 +821,32 @@ export async function POST(req: Request, { params }: Params) {
       console.error(`[jongo] promote ${promoteAttemptId}: URL rewrite threw`, error);
     }
 
-    // By here staging's files and database ARE production. A failed restart
-    // must not report the promote as failed: that is what sent people back to
-    // press Promote again on a site that had already changed.
-    let result: Awaited<ReturnType<typeof triggerCoolifyDeploy>>;
+    // By here staging's files and database ARE production. The final deploy
+    // (a restart for WordPress) runs as a background operation, like Redeploy:
+    // retried if hosting turns it away, followed to the end, and never doubled
+    // if one is already running. If it cannot even be queued, the promote is
+    // still reported as done — the content has changed — with a way to restart.
+    let operationId: string | null = null;
     let deployWarning: string | null = null;
     try {
-      result = await triggerCoolifyDeploy(appUuid, "production");
+      const { requestSiteDeploy } = await import("@/lib/deploy-operation");
+      const { enqueueOperationRun } = await import("@/lib/job-queue");
+      const { operation, created } = await requestSiteDeploy({
+        siteId: site.id,
+        organizationId: site.organizationId,
+        environment: "production",
+        actorId: actorId!
+      });
+      if (created) await enqueueOperationRun(operation.id);
+      operationId = operation.id;
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "Coolify did not accept the restart.";
-      console.error(`[jongo] promote ${promoteAttemptId}: production restart failed after content sync: ${reason}`);
-      deployWarning = `Staging's content is live on production, but the final restart did not go through (${reason}). The site keeps running; use Restart site if a change does not show.`;
-      result = { mode: "live", deploymentId: "", message: "Content promoted; restart not confirmed." };
+      console.error(`[jongo] promote ${promoteAttemptId}: production deploy could not be queued`, error);
+      deployWarning =
+        "Staging's content is live on production, but the final restart couldn't be started. The site keeps running; use Restart site if a change does not show.";
     }
-
-    // A restart (WordPress) finishes the promote: there is no deployment to
-    // wait for, and its placeholder id would only show as an unmatched
-    // "deployment" that never reports progress.
-    const restarted = !deployWarning && result.action === "restart";
-    const deploymentId = restarted || !result.deploymentId ? undefined : result.deploymentId;
+    const result = { mode: "live" as const };
+    const restarted = false;
+    const deploymentId: string | undefined = undefined;
     const rewriteNote = urlRewrite && !urlRewrite.ok
       ? " Links in the content could not all be updated to the production address; check pages for staging links."
       : "";
@@ -845,9 +854,7 @@ export async function POST(req: Request, { params }: Params) {
       (deployWarning ??
         (codeOnly
           ? "Promoted. Production is redeploying from its branch; its database was not changed."
-          : restarted
-            ? "Promoted. Staging's content is live on production and the site was restarted."
-            : "Promoted. Staging's content is live on production and a production deployment has started.")) + rewriteNote;
+          : "Promoted. Staging's content is live on production, and production is restarting to pick it up.")) + rewriteNote;
 
     await recordStagingAuditLog({
       organizationId: site.organizationId,
@@ -859,6 +866,7 @@ export async function POST(req: Request, { params }: Params) {
         idempotencyKey,
         appUuid,
         deploymentId,
+        operationId,
         restarted,
         mode: result.mode,
         preflight,
@@ -894,6 +902,7 @@ export async function POST(req: Request, { params }: Params) {
       promoteAttemptId,
       idempotencyKey,
       deploymentId,
+      operationId,
       restarted,
       mode: result.mode,
       message: promoteMessage,

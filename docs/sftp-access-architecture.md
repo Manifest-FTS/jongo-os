@@ -105,3 +105,16 @@ work.
   "download key" option later is additive; passwords cover the stated need.
 - No reconciliation job. If someone deletes a user in SFTPGo directly, Jongo's
   row goes stale until the next provision or revoke.
+
+## Credentials (updated 2026-11-05)
+
+- **Passwords are encrypted** with `lib/secret-box` (`SECRETS_ENCRYPTION_KEY`), like
+  other stored secrets. Rows from before this were plain text: each is encrypted the
+  next time its card is opened, or all at once with
+  `node scripts/reencrypt-secrets.mjs --apply`. Without the key in production, no new
+  password is handed out (fail closed).
+- **SSH keys:** an account can allow up to 5 public keys besides the password
+  (SFTPGo `public_keys`). A client can paste their own, or have Jongo generate an
+  ed25519 pair; the private key is returned once for download and never stored.
+- **WordPress only:** the account opens `<uuid>_wordpress-files/_data`, so the card
+  and the API are limited to WordPress apps.

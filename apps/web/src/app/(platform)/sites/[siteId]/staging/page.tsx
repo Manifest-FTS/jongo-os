@@ -9,7 +9,7 @@ import { getBackupReadiness, getPathPreflight } from "@/lib/deploy-guards";
 import PromoteToProductionCard from "@/components/PromoteToProductionCard";
 import StagingActionsPanel from "@/components/StagingActionsPanel";
 import StagingSiteFacts from "@/components/StagingSiteFacts";
-import PageAutoRefresh from "@/components/PageAutoRefresh";
+import LiveRefresh from "@/components/LiveRefresh";
 import StagingDomainsPanel from "@/components/StagingDomainsPanel";
 import StagingDatabasesSummary from "@/components/StagingDatabasesSummary";
 import { stagingDatabaseView } from "@/lib/staging-databases";
@@ -319,12 +319,23 @@ export default async function StagingPage({ params, searchParams }: Params) {
       const { getDb } = await import("@/lib/db");
       const prisma = await getDb();
       if (!prisma || !("siteBackup" in prisma)) return null;
-      const last = await (prisma as any).siteBackup.findFirst({
-        where: { siteId: workspace.id, status: "success" },
-        orderBy: { completedAt: "desc" },
-        select: { completedAt: true }
-      });
-      return { lastSuccessAt: last?.completedAt ?? null };
+      const [last, latest] = await Promise.all([
+        (prisma as any).siteBackup.findFirst({
+          where: { siteId: workspace.id, status: "success" },
+          orderBy: { completedAt: "desc" },
+          select: { completedAt: true }
+        }),
+        (prisma as any).siteBackup.findFirst({
+          where: { siteId: workspace.id },
+          orderBy: { startedAt: "desc" },
+          select: { status: true, startedAt: true }
+        })
+      ]);
+      return {
+        lastSuccessAt: last?.completedAt ?? null,
+        latestStatus: (latest?.status as string | undefined) ?? null,
+        latestStartedAt: latest?.startedAt ? new Date(latest.startedAt).toISOString() : null
+      };
     } catch {
       // Unknown is not "never": fall back to the Coolify rule rather than
       // locking on a database hiccup.
@@ -400,6 +411,10 @@ export default async function StagingPage({ params, searchParams }: Params) {
     const domains = Array.isArray(details?.domains)
       ? details.domains.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       : [];
+    // Custom staging domain events record the one hostname they acted on.
+    if (typeof details?.hostname === "string" && details.hostname.trim() && !domains.includes(details.hostname)) {
+      domains.push(details.hostname);
+    }
     const preferredStagingDomain = typeof details?.preferredStagingDomain === "string" && details.preferredStagingDomain
       ? details.preferredStagingDomain
       : undefined;
@@ -435,7 +450,7 @@ export default async function StagingPage({ params, searchParams }: Params) {
       {/* Was 12s. Each render re-probes Coolify, and at 5 sequences a
           minute per open tab this page was a major consumer of the 200/min
           budget — rate-limiting itself into reporting staging as missing. */}
-      <PageAutoRefresh intervalMs={60000} />
+      <LiveRefresh siteId={siteId} connectedIntervalMs={300_000} fallbackIntervalMs={60000} />
 
       {stagingConfigured ? (
         <article className="card">
@@ -447,6 +462,19 @@ export default async function StagingPage({ params, searchParams }: Params) {
             siteId={siteId}
             disabled={Boolean(promoteLockedReason)}
             disabledReason={promoteLockedReason}
+            backupStep={
+              permissionSnapshot.canPromoteStaging &&
+              stagingConfigured &&
+              (backupReadiness.code === "no_successful_backup" || backupReadiness.code === "backup_stale")
+                ? {
+                    canBackUp: Boolean(permissionSnapshot.canCreateBackup),
+                    stale: backupReadiness.code === "backup_stale",
+                    running: jongoBackupState?.latestStatus === "running",
+                    lastFailed: jongoBackupState?.latestStatus === "failed",
+                    runningSince: jongoBackupState?.latestStatus === "running" ? jongoBackupState.latestStartedAt : null
+                  }
+                : null
+            }
             preflightLabel={stagingToProdPreflight.label}
             preflightTone={stagingToProdPreflight.tone}
           />

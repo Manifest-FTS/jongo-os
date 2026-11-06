@@ -1,46 +1,12 @@
 import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { isPublicPath } from "@/lib/public-paths";
+import { isDevAuthBypassEnabled, resolveAuthSecret } from "@/lib/auth-secret";
+import { safeEqual } from "@/lib/safe-equal";
+import { opsTokenOriginAllowed } from "@/lib/ops-request";
 
-const PUBLIC_PATHS = [
-  // Crawler and AI-assistant files (app/robots.ts, sitemap.ts, llms*.txt,
-  // opengraph-image). They redirected to the sign-in page before, so search
-  // engines and assistants saw a login form instead of the site map.
-  "/robots.txt",
-  "/sitemap.xml",
-  "/llms.txt",
-  "/llms-full.txt",
-  "/opengraph-image",
-  "/parked",
-  // The public hosting signup page: the one surface someone with no account is
-  // meant to land on, so it must never redirect to /auth/login.
-  "/hosting",
-  "/contact",
-  "/api/contact",
-  // GitHub's webhook deliveries carry no session; the route checks the
-  // signature before doing anything.
-  "/api/github/webhook",
-  "/pricing",
-  // Domain registration and transfer. The search endpoints have to answer an
-  // anonymous visitor on the homepage, so they cannot sit behind auth.
-  "/domains",
-  "/api/domains",
-  "/auth/login",
-  "/auth/register",
-  "/auth/error",
-  "/auth/invite",
-  "/auth/forgot-password",
-  "/auth/reset-password",
-  "/api/auth",
-  "/api/auth/forgot-password",
-  "/api/auth/reset-password",
-  "/api/invites",
-  "/api/health",
-  "/api/coolify/connection",
-  "/api/setup",
-  // Internal collector route is secured by bearer token in its route handler.
-  "/api/internal/wordpress-collector"
-];
+
 
 const PARKING_SUFFIX = ".mfts.link";
 
@@ -84,18 +50,23 @@ export async function middleware(req: NextRequest) {
   const ownershipSyncToken = process.env.OWNERSHIP_SYNC_TOKEN;
   const backupReconcileToken = process.env.BACKUP_RECONCILE_TOKEN;
   const authHeader = req.headers.get("authorization") ?? "";
-  const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  // Machine tokens count only on direct requests from inside the container
+  // (see lib/ops-request.ts). Through the public proxy they are ignored, so a
+  // leaked token cannot be used from the internet.
+  const providedToken = opsTokenOriginAllowed(req.headers)
+    ? authHeader.replace(/^Bearer\s+/i, "").trim()
+    : "";
   const hasOwnershipOpsToken = Boolean(
-    ownershipSyncToken && providedToken && providedToken === ownershipSyncToken
+    ownershipSyncToken && providedToken && safeEqual(providedToken, ownershipSyncToken)
   );
   const hasBackupReconcileToken = Boolean(
-    backupReconcileToken && providedToken && providedToken === backupReconcileToken
+    backupReconcileToken && providedToken && safeEqual(providedToken, backupReconcileToken)
   );
   const hasOpsToken = hasOwnershipOpsToken || hasBackupReconcileToken;
 
   // Allow public paths and static assets through
   if (
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
+    isPublicPath(pathname) ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/assets") ||
     pathname.startsWith("/favicon") ||
@@ -114,9 +85,19 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow unauthenticated access when NEXTAUTH_SECRET is not set (dev / no-auth mode)
-  if (!process.env.NEXTAUTH_SECRET || process.env.NEXTAUTH_SECRET === "dev-secret-change-in-production") {
+  // Local development only, with no real secret configured. Never true in
+  // production: a missing or placeholder secret there fails closed below.
+  if (isDevAuthBypassEnabled()) {
     return NextResponse.next();
+  }
+
+  const authSecret = resolveAuthSecret();
+  if (!authSecret) {
+    console.error("[auth] NEXTAUTH_SECRET is missing or a placeholder in production; refusing all signed-in routes.");
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ ok: false, message: "Sign-in is temporarily unavailable." }, { status: 503 });
+    }
+    return new NextResponse("Sign-in is temporarily unavailable.", { status: 503 });
   }
 
   if (pathname === "/api/coolify/ownership/sync" && hasOpsToken) {
@@ -147,6 +128,12 @@ export async function middleware(req: NextRequest) {
   // method intact, so the watcher saw "HTTP 405" from the login page and no
   // deletion was ever synced.
   if (pathname === "/api/ops/coolify-deletion-watch" && hasBackupReconcileToken) {
+    return NextResponse.next();
+  }
+
+  // One step of a background operation, called by scripts/worker.mjs with the
+  // machine token. The route re-checks the token.
+  if (pathname === "/api/internal/operations/run" && hasOpsToken) {
     return NextResponse.next();
   }
 
@@ -191,9 +178,13 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const token = await getToken({ req, secret: authSecret });
 
   if (!token) {
+    // API callers get a 401 they can read, not a login page in place of JSON.
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 });
+    }
     const loginUrl = new URL("/auth/login", req.url);
     loginUrl.searchParams.set("callbackUrl", `${pathname}${req.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);

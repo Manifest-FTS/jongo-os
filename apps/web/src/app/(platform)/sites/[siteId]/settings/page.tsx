@@ -1,12 +1,14 @@
 type Params = { params: Promise<{ siteId: string }> };
 
+import ProductionDomainsCard from "@/components/ProductionDomainsCard";
 import SiteInfoForm from "@/components/SiteInfoForm";
 import SiteStagingToggle from "@/components/SiteStagingToggle";
 import WordPressAdvancedControls from "@/components/WordPressAdvancedControls";
 import SiteDangerZone from "@/components/SiteDangerZone";
 import SiteSourceCard from "@/components/SiteSourceCard";
+import GitWebhookCard from "@/components/GitWebhookCard";
 import { loadSiteSource } from "@/lib/site-source";
-import PageAutoRefresh from "@/components/PageAutoRefresh";
+import LiveRefresh from "@/components/LiveRefresh";
 import Link from "next/link";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { getCoolifyAppStagingCapability, getCoolifyOverview } from "@/lib/coolify";
@@ -65,9 +67,19 @@ export default async function SiteSettingsPage({ params }: Params) {
     (await resolveCraftManager(session!.user!.id!, workspace.id)).ok;
   const githubSource = await loadSiteSource(workspace.id);
   const isWordPress = workspace.siteType === "wordpress" || workspace.resourceType === "WordPress";
-  const stagingCapability = workspace?.coolifyServiceUuid
-    ? await getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
-    : null;
+  const loadStagingCapability = () => workspace?.coolifyServiceUuid
+    ? getCoolifyAppStagingCapability(workspace.coolifyServiceUuid, workspace.coolifyProjectId ?? undefined, /* Relaxed: must match the API route, or the UI hides staging the platform did provision. */ { relaxedTargetMatch: true })
+    : Promise.resolve(null);
+  let stagingCapability = await loadStagingCapability();
+  // A copy found but not yet recorded is usually this app's own (a setup that
+  // was cut off, or staging turned off without removing it). Record it now,
+  // the same check enabling does, so the page offers "reconnect" instead of
+  // locking the switch over the app's own copy.
+  if (stagingCapability?.applicationUuid && !stagingCapability.pinned) {
+    const { claimStagingCopyForSite } = await import("@/lib/staging-target-reconcile");
+    const claimDb = await (await import("@/lib/db")).getDb();
+    if (claimDb && (await claimStagingCopyForSite(claimDb, workspace.id))) stagingCapability = await loadStagingCapability();
+  }
   const stagingEnvironmentReady = Boolean(stagingCapability?.detected);
   const stagingTargetAttached = Boolean(stagingCapability?.applicationUuid);
   const stagingConfigured = Boolean(workspace.stagingEnabled && stagingEnvironmentReady && stagingTargetAttached);
@@ -105,7 +117,7 @@ export default async function SiteSettingsPage({ params }: Params) {
 
   return (
     <div>
-      <PageAutoRefresh intervalMs={12000} />
+      <LiveRefresh siteId={siteId} fallbackIntervalMs={12000} />
 
       {isWordPress ? (
         <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)", alignItems: "start" }}>
@@ -148,6 +160,8 @@ export default async function SiteSettingsPage({ params }: Params) {
         </div>
       ) : null}
 
+      {workspace?.coolifyServiceUuid && !isStagingResource ? <ProductionDomainsCard siteId={siteId} /> : null}
+
       {githubSource ? (
         <SiteSourceCard
           siteId={siteId}
@@ -156,6 +170,9 @@ export default async function SiteSettingsPage({ params }: Params) {
           canDeploy={permissionSnapshot.canPromoteStaging}
         />
       ) : null}
+
+      {/* Apps from a deploy-key repo (GitLab, Bitbucket, any Git): shows nothing otherwise. */}
+      {!isWordPress ? <GitWebhookCard siteId={siteId} canRotate={permissionSnapshot.role === "admin"} /> : null}
 
       {/* Site Record (non-WordPress DB-backed sites) */}
       {!isWordPress && workspace?.source === "db" && (

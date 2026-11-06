@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeEqual } from "@/lib/safe-equal";
 
 export const runtime = "nodejs";
 
@@ -7,7 +8,7 @@ export async function POST(request: Request) {
   const opsToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   const alt = process.env.OWNERSHIP_SYNC_TOKEN?.trim();
-  if (!provided || (provided !== opsToken && provided !== alt)) {
+  if (!provided || (!safeEqual(provided, opsToken) && !safeEqual(provided, alt))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body: any = await request.json().catch(() => null);

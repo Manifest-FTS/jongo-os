@@ -71,7 +71,7 @@ describe("nested primary navigation", () => {
   it("retains every original raw href and only links implemented routes", () => {
     const html = renderToStaticMarkup(<PlatformPrimaryNav canViewBilling />);
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
-    const original = ["/dashboard", "/clients", "/apps", "/my-domains", "/managed-domains", "/client-billing", "/super-admin/access", "/usage", "/settings", "/notifications"];
+    const original = ["/dashboard", "/clients", "/apps", "/my-domains", "/managed-domains", "/client-billing", "/super-admin/access", "/usage", "/settings", "/notifications", "/billing"];
     expect([...new Set(hrefs)].sort()).toEqual(original.sort());
     for (const href of hrefs) {
       expect(existsSync(new URL(`../app/(platform)${href}/page.tsx`, import.meta.url))).toBe(true);

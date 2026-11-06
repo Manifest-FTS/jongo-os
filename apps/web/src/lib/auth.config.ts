@@ -2,8 +2,10 @@ import NextAuth from "next-auth";
 import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
+import { isDevAuthBypassEnabled, resolveAuthSecret } from "./auth-secret";
 
 const AUTH_DB_UNAVAILABLE_CODE = "AUTH_DB_UNAVAILABLE";
+const AUTH_RATE_LIMITED_CODE = "AUTH_RATE_LIMITED";
 const DEV_AUTH_FALLBACK_USER_ID = "00000000-0000-4000-8000-000000000001";
 
 function isUuid(value?: string | null): boolean {
@@ -87,12 +89,23 @@ export const authConfig = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" }
       },
-      async authorize(credentials: any) {
+      async authorize(credentials: any, req: any) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
 
         const normalizedEmail = normalizeEmail(String(credentials.email));
+
+        // Per account and per address, counted before the password is checked
+        // so guessing is throttled whether or not a guess is right.
+        const { AUTH_RATE_LIMITS, clientIp, hitRateLimits } = await import("./auth-rate-limit");
+        const limited = await hitRateLimits([
+          [AUTH_RATE_LIMITS.loginPerEmail, normalizedEmail],
+          [AUTH_RATE_LIMITS.loginPerIp, clientIp(req?.headers)]
+        ]);
+        if (!limited.allowed) {
+          throw new Error(AUTH_RATE_LIMITED_CODE);
+        }
 
         const devAuthEmail = process.env.DEV_AUTH_EMAIL?.trim().toLowerCase();
         const devAuthPassword = process.env.DEV_AUTH_PASSWORD;
@@ -219,7 +232,9 @@ export const authConfig = {
       return session;
     }
   },
-  secret: process.env.NEXTAUTH_SECRET || "dev-secret-change-in-production"
+  // Undefined in production when unconfigured: NextAuth then refuses to sign
+  // or verify anything, instead of using a secret that is public in this repo.
+  secret: resolveAuthSecret() ?? undefined
 };
 
 export type AuthSession = {
@@ -253,11 +268,7 @@ export async function auth(): Promise<AuthSession> {
     }
   }
 
-  const isDev = process.env.NODE_ENV !== "production";
-  const secret = process.env.NEXTAUTH_SECRET;
-  const devAuthBypass = !secret || secret === "dev-secret-change-in-production";
-
-  if (isDev && devAuthBypass) {
+  if (isDevAuthBypassEnabled()) {
     try {
       const { db } = await import("./db");
       const preferredEmail = process.env.DEV_AUTH_EMAIL?.trim().toLowerCase();

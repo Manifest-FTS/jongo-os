@@ -26,8 +26,13 @@ export function buildSiteIdentityWhere(siteId?: string | null): Record<string, u
     };
   }
 
+  // Not a UUID: a slug, or a hosting resource id (Coolify's are not UUIDs, like
+  // dt0v391xre5rgtp50062tunm). Matching only the slug sent apps reached by
+  // their hosting id — including every app renamed in hosting, which the
+  // directory links to through that id — to "not found". Callers always add
+  // their own access check, so this widens nothing.
   return {
-    slug: normalizedSiteId,
+    OR: [{ slug: normalizedSiteId }, { coolifyServiceUuid: normalizedSiteId }, { coolifyServiceId: normalizedSiteId }],
     deletedAt: null
   };
 }

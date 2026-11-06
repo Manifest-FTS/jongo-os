@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { isPlatformAdminUser } from "@/lib/rbac";
-import { ensureCoolifyAppBackupSchedules, hasCoolifyBackupableState, describeCoolifyBackupCapability } from "@/lib/coolify";
+import { ensureCoolifyAppBackupSchedules, describeCoolifyBackupCapability } from "@/lib/coolify";
 import { buildLiveResourceIndex, reconcileSite } from "@/lib/platform-reconcile";
 import { reconcileStagingTargets, type StagingTargetReconcileResult } from "@/lib/staging-target-reconcile";
 import { reconcileDomains, type DomainReconcileResult } from "@/lib/domain-orders";
 import { reconcileStagingDomains, type StagingDomainReconcileResult } from "@/lib/staging-domains";
-import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups } from "@/lib/platform-reconcile-match";
+import { archiveMissingSitesDefaultEnabled, decideSiteArchive, shouldAbortArchiveBatch, orderDueBackups, resolveScheduledBackupEligibility } from "@/lib/platform-reconcile-match";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -18,12 +18,13 @@ import { scheduledBackupsDefaultEnabled } from "@/lib/backup-schedule";
 import { notifyBackupEvent } from "@/lib/site-notify";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { syncCoolifyProjectsToOrganizations } from "@/lib/organization-reconcile";
+import { safeEqual } from "@/lib/safe-equal";
 
 async function isAuthorized(session: Awaited<ReturnType<typeof auth>>, request: Request): Promise<boolean> {
   const reconcileToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const authHeader = request.headers.get("authorization") ?? "";
   const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-  const tokenAuthorized = Boolean(reconcileToken && providedToken && providedToken === reconcileToken);
+  const tokenAuthorized = Boolean(reconcileToken && providedToken && safeEqual(providedToken, reconcileToken));
 
   return tokenAuthorized || await isPlatformAdminUser(session?.user?.id);
 }
@@ -259,6 +260,16 @@ export async function POST(request: Request) {
       stagingDomains = await reconcileStagingDomains();
     } catch (error) {
       console.error("[jongo] backup-reconcile: staging domain reconcile failed:", error);
+    }
+
+    // Live sites' main address: warn when the client's domain stops pointing
+    // here (the backup address keeps the site reachable meanwhile).
+    let primaryDomains: import("@/lib/production-domains").PrimaryDomainWatchResult | null = null;
+    try {
+      const { watchPrimaryDomains } = await import("@/lib/production-domains");
+      primaryDomains = await watchPrimaryDomains();
+    } catch (error) {
+      console.error("[jongo] backup-reconcile: primary domain watch failed:", error);
     }
 
     // A staging copy whose removal failed is retried here, so it clears without
@@ -527,7 +538,7 @@ export async function POST(request: Request) {
         select: {
           id: true, slug: true, name: true, coolifyServiceUuid: true,
           backupScheduleEnabled: true, backupFrequencyHours: true, lastScheduledBackupAt: true,
-          backupEligible: true, backupEligibleAt: true
+          backupEligible: true, backupEligibleAt: true, backupCapabilityReason: true
         }
       });
       // Uncapped and ordered: ineligible sites are filtered inside the loop, so
@@ -550,17 +561,26 @@ export async function POST(request: Request) {
 
         // A stateless app has nothing to snapshot. Without this the scheduler
         // would manufacture a failed backup for it every single day, silently.
+        // A failed check ("unknown") keeps the last known answer and is never
+        // saved: see resolveScheduledBackupEligibility for why.
         const checkedAt = row.backupEligibleAt ? new Date(row.backupEligibleAt).getTime() : 0;
-        let eligible = row.backupEligible;
-        if (eligible === null || eligible === undefined || Date.now() - checkedAt > ELIGIBILITY_TTL_MS) {
+        const stale = row.backupEligible === null || row.backupEligible === undefined || Date.now() - checkedAt > ELIGIBILITY_TTL_MS;
+        let probe: { backupable: boolean; reason: string } | null = null;
+        if (stale) {
           try {
-            eligible = await hasCoolifyBackupableState(uuid);
+            probe = await describeCoolifyBackupCapability(uuid);
           } catch {
-            // Unknown, not ineligible: skip this pass rather than cache a guess.
-            scheduleSkipped.push(`${row.slug}:eligibility_unknown`);
-            continue;
+            probe = { backupable: false, reason: "unknown" };
           }
-          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${eligible}, "backupEligibleAt" = now() WHERE id = ${site.id}::uuid`;
+        }
+        const decision = resolveScheduledBackupEligibility({ cached: row.backupEligible, cachedReason: row.backupCapabilityReason, probe });
+        if (decision.persist) {
+          await db.$executeRaw`UPDATE "Site" SET "backupEligible" = ${decision.persist.eligible}, "backupCapabilityReason" = ${decision.persist.reason}, "backupEligibleAt" = now() WHERE id = ${site.id}::uuid`;
+        }
+        const eligible = decision.eligible;
+        if (eligible === null) {
+          scheduleSkipped.push(`${row.slug}:eligibility_unknown`);
+          continue;
         }
         if (!eligible) {
           scheduleSkipped.push(`${row.slug}:no_state_to_back_up`);
@@ -847,6 +867,7 @@ export async function POST(request: Request) {
         stagingTargets,
         domains,
         stagingDomains,
+        primaryDomains,
         stagingCleanup,
         github
       },

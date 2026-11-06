@@ -211,3 +211,31 @@ export async function getAppInfo(app: Pick<GithubAppSecrets, "appId" | "privateK
   const raw: any = await github("/app", { bearer: appJwt(app) });
   return { slug: String(raw.slug ?? ""), name: String(raw.name ?? ""), htmlUrl: String(raw.html_url ?? ""), owner: String(raw.owner?.login ?? "") };
 }
+
+export type RepoFolder = { files: string[]; packageJson: string | null; dockerfile: string | null };
+
+/**
+ * Names in one folder of a repo, plus package.json and Dockerfile if present,
+ * for framework detection. Read through the client's own install token.
+ */
+export async function readRepoFolder(installationId: number, fullName: string, ref: string, dir: string): Promise<RepoFolder> {
+  const token = await installationToken(installationId);
+  const folder = dir.replace(/^\/+|\/+$/g, "");
+  const encodedFolder = folder.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  const list = await github<Array<{ name: string; type: string }> | { name: string }>(
+    `/repos/${fullName}/contents/${encodedFolder}?ref=${encodeURIComponent(ref)}`,
+    { token }
+  );
+  const files = Array.isArray(list) ? list.map((entry) => entry.name) : [];
+  const read = async (name: string) => {
+    if (!files.includes(name)) return null;
+    const path = [encodedFolder, encodeURIComponent(name)].filter(Boolean).join("/");
+    const file = await github<{ content?: string; encoding?: string; size?: number }>(
+      `/repos/${fullName}/contents/${path}?ref=${encodeURIComponent(ref)}`,
+      { token }
+    ).catch(() => null);
+    if (!file?.content || file.encoding !== "base64" || (file.size ?? 0) > 256_000) return null;
+    return Buffer.from(file.content, "base64").toString("utf8");
+  };
+  return { files, packageJson: await read("package.json"), dockerfile: await read("Dockerfile") };
+}

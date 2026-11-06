@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import { buildSiteIdentityWhere, isUuid } from "./site-identity";
 
 describe("site identity guards", () => {
-  it("treats a slug-like identifier as a slug, not a UUID id", () => {
+  it("matches a non-UUID identifier as a slug or a hosting resource id, never a database id", () => {
     expect(isUuid("gardenstateequality-org")).toBe(false);
     expect(buildSiteIdentityWhere("gardenstateequality-org")).toEqual({
-      slug: "gardenstateequality-org",
+      OR: [{ slug: "gardenstateequality-org" }, { coolifyServiceUuid: "gardenstateequality-org" }, { coolifyServiceId: "gardenstateequality-org" }],
       deletedAt: null
     });
+  });
+
+  it("finds an app by its hosting id (Coolify ids are not UUIDs)", () => {
+    const where = buildSiteIdentityWhere("dt0v391xre5rgtp50062tunm") as { OR: unknown[] };
+    expect(where.OR).toContainEqual({ coolifyServiceUuid: "dt0v391xre5rgtp50062tunm" });
+    expect(where.OR).not.toContainEqual({ id: "dt0v391xre5rgtp50062tunm" });
   });
 
   it("keeps UUID lookups compatible with database UUID IDs", () => {

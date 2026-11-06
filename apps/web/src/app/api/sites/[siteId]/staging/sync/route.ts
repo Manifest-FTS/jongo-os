@@ -130,7 +130,8 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  const automationUrl = (process.env.STAGING_SYNC_AUTOMATION_URL || "").trim();
+  const { stagingSyncAutomationUrl } = await import("@/lib/local-app-url");
+  const automationUrl = (process.env.STAGING_SYNC_AUTOMATION_URL || "").trim() ? stagingSyncAutomationUrl() : "";
   const token = (process.env.OWNERSHIP_SYNC_TOKEN || "").trim();
   if (!automationUrl) {
     return NextResponse.json(

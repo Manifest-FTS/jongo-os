@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Loaded from node_modules at runtime, not bundled: pg has optional native
+  // bindings the bundler cannot resolve. Used by lib/job-queue.ts.
+  serverExternalPackages: ['pg-boss', 'pg'],
   experimental: {
     optimizePackageImports: []
   },

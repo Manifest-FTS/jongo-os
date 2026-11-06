@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { collectUsage } from "@/lib/usage-store";
+import { safeEqual } from "@/lib/safe-equal";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const opsToken = process.env.BACKUP_RECONCILE_TOKEN?.trim() || process.env.OWNERSHIP_SYNC_TOKEN?.trim();
   const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-  if (!opsToken || provided !== opsToken) {
+  if (!opsToken || !safeEqual(provided, opsToken)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

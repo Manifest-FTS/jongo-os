@@ -6,7 +6,6 @@ vi.mock("@/lib/db", () => ({ getDb: m.getDb }));
 vi.mock("@/lib/domain-access", () => ({ getDomainViewer: m.viewer }));
 vi.mock("@/lib/domain-orders", () => ({ quoteOrder: m.quote, startDomainCheckout: m.checkout, retryDomainCharge: m.retry, retryDomainRefund: m.refund }));
 vi.mock("@/lib/stripe", () => ({ getStripeClient: m.stripe, findPlan: vi.fn(), ensureStripePrice: vi.fn() }));
-import { POST as subscription } from "../app/api/billing/checkout/route";
 import { POST as checkout } from "../app/api/domains/checkout/route";
 import { GET as quote } from "../app/api/domains/quote/route";
 import { POST as remedy } from "../app/api/domains/charges/[chargeId]/remedies/route";
@@ -27,8 +26,9 @@ describe("financial route denials before parsing/provider calls", () => {
     m.user.mockResolvedValue({ id: "u", email: "seed@example.com", role: "admin", deletedAt: null });
   });
 
+  // Subscription checkout is not here: every customer may buy their own plan
+  // (see billing-checkout.test.ts). Domain money stays super-admin only.
   const routes = [
-    () => subscription(request({ planId: "any" })),
     () => checkout(request({ operation: "register", domain: "example.com", organizationId: "client" })),
     () => quote(request()),
     () => remedy(request({ action: "refund_domain_order" }), { params: Promise.resolve({ chargeId: "charge" }) })
@@ -68,7 +68,7 @@ describe("financial route denials before parsing/provider calls", () => {
     expect(response.status).toBe(200);
     expect((await response.json()).admin.wholesaleCents).toBe(1000);
     m.refund.mockResolvedValue({ ok: true, message: "refunded" });
-    expect((await routes[3]()).status).toBe(200);
+    expect((await routes[2]()).status).toBe(200);
     expect(m.refund).toHaveBeenCalledWith("charge");
   });
 });

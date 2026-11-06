@@ -225,3 +225,34 @@ export function selectDueBackups(
 ): ScheduleCandidate[] {
   return orderDueBackups(sites, opts).slice(0, Math.max(0, opts.maxPerRun ?? 1));
 }
+
+/** Capability reasons that mean "this resource has data to back up". */
+const BACKUPABLE_REASONS = new Set(["service_containers", "standalone_database", "persistent_volumes", "linked_database"]);
+
+/**
+ * The nightly scheduler's "does this site have anything to back up?".
+ *
+ * A definite probe answer is used and saved together with its reason. A
+ * failed probe ("unknown": Coolify rate limiting or unreachable) must never
+ * become "nothing to back up": it keeps the last known answer and saves
+ * nothing. Treating unknown as false is what silently dropped ~10 sites
+ * (gardenstateequality-org, teach-lgbt, production Postgres databases…) out
+ * of nightly backups in Nov 2026, each saved as "not eligible" next to a
+ * reason that said it was. Such a contradictory saved state counts as eligible.
+ *
+ * eligible null = not known yet: skip this pass without saving anything.
+ */
+export function resolveScheduledBackupEligibility(input: {
+  cached: boolean | null | undefined;
+  cachedReason: string | null | undefined;
+  probe: { backupable: boolean; reason: string } | null;
+}): { eligible: boolean | null; persist: { eligible: boolean; reason: string } | null } {
+  if (input.probe && input.probe.reason !== "unknown") {
+    return { eligible: input.probe.backupable, persist: { eligible: input.probe.backupable, reason: input.probe.reason } };
+  }
+  if (input.cached === true || (input.cachedReason && BACKUPABLE_REASONS.has(input.cachedReason))) {
+    return { eligible: true, persist: null };
+  }
+  if (input.cached === false) return { eligible: false, persist: null };
+  return { eligible: null, persist: null };
+}
