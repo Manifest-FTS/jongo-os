@@ -6,7 +6,7 @@ import { validateDocument, publishState, type Path } from './validate.js';
 import { randomKey } from './portable-text.js';
 import { Field } from './fields.js';
 import { StudioContext, fieldId, type MediaApi, type StudioApi } from './studio-context.js';
-import { MutationKeys, formatClock, planPublish, saveThenPublish, settle, statusDetail, statusLabel, type StudioDocSummary, type StudioFailure, type StudioPermissions, type StudioRecord, type StudioResult, type StudioStamp, type StudioStore } from './studio-store.js';
+import { MutationKeys, SESSION_ENDED_MESSAGE, formatClock, isSessionEnded, planPublish, saveThenPublish, settle, statusDetail, statusLabel, type StudioDocSummary, type StudioFailure, type StudioPermissions, type StudioRecord, type StudioResult, type StudioStamp, type StudioStore } from './studio-store.js';
 import { mediaLimits, type MediaLimits, type StudioAssetDocument } from './media-contract.js';
 import { uploadAsset, type PutFile } from './media-client.js';
 import { ActionMenu, Avatar, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, Stamp, type MenuEntry } from './studio-chrome.js';
@@ -37,7 +37,19 @@ export type ConnectedStudioProps = {
 };
 type Operation = 'loading' | 'saving' | 'publishing' | 'unpublishing' | 'discarding' | 'duplicating' | 'deleting';
 const BUSY_LABEL: Record<Operation, string> = { loading: 'Loading…', saving: 'Saving…', publishing: 'Publishing…', unpublishing: 'Unpublishing…', discarding: 'Discarding…', duplicating: 'Duplicating…', deleting: 'Deleting…' };
-const PROBLEM_TITLE: Record<StudioFailure['code'], string> = { conflict: 'Conflict: this document changed elsewhere', invalid: 'The server did not accept this document', denied: 'Not allowed', unavailable: 'Storage unavailable' };
+const CONFLICT_MESSAGE = 'This document changed elsewhere.';
+const EDIT_ONLY_NOTE = 'You can edit and save drafts. Publishing needs publisher access.';
+const CONFLICT_DIRTY_MESSAGE = 'This document changed elsewhere. Your edits were not saved and are still here.';
+
+/** One short message and at most one action. A session that ended gets a Sign in link that opens in a new tab, so this page and any unsaved edits stay exactly as they are. */
+function ProblemBanner({ problem, message, signInUrl, action, children }: { problem: StudioFailure; message?: string; signInUrl?: string; action?: ReactNode; children?: ReactNode }) {
+  const ended = isSessionEnded(problem);
+  return <div role="alert" className={`jongo-problem jongo-problem-${problem.code}`} data-problem={problem.code} data-session-ended={ended ? 'true' : undefined}>
+    <p>{ended ? SESSION_ENDED_MESSAGE : message ?? problem.message}</p>
+    {children}
+    {ended ? signInUrl && <a className="jongo-problem-action" href={signInUrl} target="_blank" rel="noopener">Sign in</a> : action}
+  </div>;
+}
 const ENVELOPE = ['_rev', '_createdAt', '_updatedAt'];
 const pathLabel = (path: Path) => path.map(part => typeof part === 'number' ? `item ${part + 1}` : part).join(' › ');
 const stripEnvelope = (doc: ContentDocument): ContentDocument => { const next = { ...doc }; for (const key of ENVELOPE) delete next[key]; return next; };
@@ -125,12 +137,16 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   const maxImageBytes = limitOverrides?.maxImageBytes, maxVideoBytes = limitOverrides?.maxVideoBytes;
   const limits = useMemo(() => mediaLimits({ maxImageBytes, maxVideoBytes }), [maxImageBytes, maxVideoBytes]);
   const canUpload = canWrite && !!store.requestUpload && !!store.completeUpload;
+  const documentHref = (nextType: string, id?: string) => basePath ? `${basePath}/${encodeURIComponent(nextType)}${id ? '/' + encodeURIComponent(id) : ''}` : '#jongo-editor';
+  // The sign-in opens in a new tab and comes back to this document (the host validates `next`), so this page and its unsaved edits stay put.
+  const signInUrl = signInHref ? `${signInHref}${basePath ? `${signInHref.includes('?') ? '&' : '?'}next=${encodeURIComponent(documentHref(type, selectedId || undefined))}` : ''}` : undefined;
   // Upload appears only when the host store can take it; the picker still lists existing assets either way.
   const media = useMemo<MediaApi | undefined>(() => canUpload ? {
     limits,
     upload: (file, handlers) => uploadAsset(store, file, handlers, { limits, put: putFile }),
-    adopt: asset => setUploaded(previous => [asset, ...previous.filter(item => item._id !== asset._id)])
-  } : undefined, [canUpload, store, limits, putFile]);
+    adopt: asset => setUploaded(previous => [asset, ...previous.filter(item => item._id !== asset._id)]),
+    signInUrl
+  } : undefined, [canUpload, store, limits, putFile, signInUrl]);
   useEffect(() => {
     if (initial?.assets || !store.listAssets) return;
     let current = true;
@@ -146,7 +162,6 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
   // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount
   }, []);
 
-  const documentHref = (nextType: string, id?: string) => basePath ? `${basePath}/${encodeURIComponent(nextType)}${id ? '/' + encodeURIComponent(id) : ''}` : '#jongo-editor';
   const confirmLeave = () => !dirty || window.confirm('Discard unsaved field changes? They have not been saved.');
   const open = useCallback((nextType: string, id?: string) => {
     setType(nextType); setSelectedId(id ?? ''); setRecord(undefined); setWorking(undefined); setProblem(null); announce('');
@@ -256,27 +271,22 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     : <><Avatar by={stamp?.by} /><span>{stamp ? `${prefix} ` : record.variant === 'published' ? 'Published' : 'Draft'}{stamp && <Stamp iso={stamp.at} />}{stamp?.by?.name ? ` \u00b7 ${stamp.by.name}` : ''}</span></>;
   const editorBody = schema && working && record && api ? <StudioContext.Provider value={api}>
     <EditorHeader eyebrow={schema.title ?? schema.name} title={documentTitle(working, schema)}
-      pills={<><span className={`jongo-state jongo-status jongo-status-${statusLabel(record).toLowerCase()}`} data-doc-status={statusLabel(record).toLowerCase()}><span className="jongo-dot" aria-hidden="true" />{statusLabel(record)}</span><span className={`jongo-state ${saveState === 'dirty' || saveState === 'conflict' ? 'jongo-dirty' : saveState === 'error' ? 'jongo-state-error' : ''}`} data-save-state={saveState}>{chip}</span></>}
+      pills={<><span className={`jongo-state jongo-status jongo-status-${statusLabel(record).toLowerCase()}`} data-doc-status={statusLabel(record).toLowerCase()}><span className="jongo-dot" aria-hidden="true" />{statusLabel(record)}</span>{canWrite ? <span className={`jongo-state ${saveState === 'dirty' || saveState === 'conflict' ? 'jongo-dirty' : saveState === 'error' ? 'jongo-state-error' : ''}`} data-save-state={saveState}>{chip}</span> : <span className="jongo-state jongo-viewonly" data-view-only="true">View only</span>}</>}
       tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} revision={record.nativeRev} announce={announce} debug={debug} loadHistory={store.history ? () => store.history!(working._id) : undefined} /></>} />
-    <div className="jongo-editor-body">
+    <div className="jongo-editor-body" data-publish-ready={state.ready ? 'true' : 'false'}>
     {noticeEl}
-    {!canWrite && <p className="jongo-notice jongo-viewonly" role="note" data-view-only="true">You have view-only access. You can read content here but not change or publish it.</p>}
-    {canWrite && !canPublishDocs && <p className="jongo-notice jongo-editonly" role="note" data-edit-only="true">You can edit and save drafts. Publishing, unpublishing and deleting need publisher access.</p>}
-    <p className="jongo-help">{statusDetail(record)}{debug && ' Changes are saved as drafts in the connected store; publishing is a separate, explicit step.'}</p>
-    {problem && <div role="alert" className={`jongo-problem jongo-problem-${problem.code}`} data-problem={problem.code}>
-      <h2>{PROBLEM_TITLE[problem.code]}</h2>
-      <p>{problem.message}</p>
-      {problem.code === 'conflict' && <><p>{dirty ? 'Your edits are still on this page and were not saved. Reload latest loads the newest saved version and discards your unsaved edits here.' : 'Reload latest loads the newest version of this document.'}</p><button type="button" onClick={() => { if (!busyRef.current) void loadDocument(working._id, 'Reloaded the latest saved version. Your unsaved edits were discarded.'); }} disabled={!!busy}>Reload latest</button></>}
+    {debug && <p className="jongo-help">{statusDetail(record)} Changes are saved as drafts in the connected store; publishing is a separate, explicit step.</p>}
+    {problem && <ProblemBanner problem={problem} signInUrl={signInUrl} message={problem.code === 'conflict' ? (dirty ? CONFLICT_DIRTY_MESSAGE : CONFLICT_MESSAGE) : undefined}
+      action={problem.code === 'conflict' ? <button type="button" onClick={() => { if (!busyRef.current) void loadDocument(working._id, 'Reloaded the latest saved version. Your unsaved edits were discarded.'); }} disabled={!!busy}>Reload latest</button> : undefined}>
       {problem.fieldErrors?.length ? <ul className="jongo-summary-list">{problem.fieldErrors.slice(0, 20).map((item, i) => <li key={i}>{item.path.length ? `${pathLabel(item.path)}: ` : ''}{item.message}</li>)}</ul> : null}
-      {problem.code === 'denied' && signInHref && <p><a className="jongo-link" href={signInHref}>Sign in again</a></p>}
       {problem.code === 'unavailable' && debug && <p className="jongo-hint">Pressing the same button again retries the same request safely.</p>}
-    </div>}
-    <section className="jongo-summary" aria-labelledby="jongo-checks-title" data-publish-ready={state.ready ? 'true' : 'false'}>
+    </ProblemBanner>}
+    {issues.length > 0 && <section className="jongo-summary" aria-labelledby="jongo-checks-title">
       <h2 id="jongo-checks-title">Document checks</h2>
       <p><strong className={state.ready ? 'jongo-ready' : 'jongo-blocked'}>{state.ready ? 'Publish-ready checks passed' : `Not publish-ready: ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}`}</strong>{state.warnings > 0 && ` · ${state.warnings} ${state.warnings === 1 ? 'note' : 'notes'} about preserved content`}</p>
       {debug && <p className="jongo-hint">Checks run in the browser against the schema; the server repeats them and decides. Publishing needs the document to be saved and pass every check.</p>}
-      {issues.length > 0 && <ul className="jongo-summary-list">{issues.slice(0, 20).map((issue, i) => <li key={i}><button type="button" className="jongo-link" onClick={() => jump(issue.path)}><span className={issue.severity === 'error' ? 'jongo-error' : 'jongo-warning'}>{issue.severity === 'error' ? 'Error' : 'Note'}</span> {pathLabel(issue.path)}: {issue.message}</button></li>)}{issues.length > 20 && <li>…and {issues.length - 20} more.</li>}</ul>}
-    </section>
+      <ul className="jongo-summary-list">{issues.slice(0, 20).map((issue, i) => <li key={i}><button type="button" className="jongo-link" onClick={() => jump(issue.path)}><span className={issue.severity === 'error' ? 'jongo-error' : 'jongo-warning'}>{issue.severity === 'error' ? 'Error' : 'Note'}</span> {pathLabel(issue.path)}: {issue.message}</button></li>)}{issues.length > 20 && <li>…and {issues.length - 20} more.</li>}</ul>
+    </section>}
     <form id="jongo-doc-form" noValidate onSubmit={event => { event.preventDefault(); save(); }}>
       <div inert={busy ? true : undefined} aria-busy={busy ? 'true' : undefined}>
         <fieldset className="jongo-fields" disabled={!canWrite}>
@@ -288,14 +298,15 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     </div>
     <EditorFooter status={footerStatus} note={canPublishDocs && plan && !plan.can && plan.text ? (plan.reason === 'blocked' && firstError
       ? <button id="jongo-publish-reason" type="button" className="jongo-link jongo-footer-reason" data-publish-reason="blocked" onClick={() => jump(firstError.path)}>{plan.text}</button>
-      : <span id="jongo-publish-reason" className="jongo-footer-reason" data-publish-reason={plan.reason}>{plan.text}</span>) : undefined} actions={<>
+      : <span id="jongo-publish-reason" className="jongo-footer-reason" data-publish-reason={plan.reason}>{plan.text}</span>)
+      : canWrite && !canPublishDocs ? <span className="jongo-footer-quiet" data-edit-only="true">{EDIT_ONLY_NOTE}</span> : undefined} actions={<>
       {canWrite && <button id="jongo-save" form="jongo-doc-form" type="submit" disabled={!dirty || !!busy || stale}><Icon name="save" />{busy === 'saving' ? 'Saving…' : 'Save draft'}</button>}
       {canPublishDocs && <span className="jongo-tip" title={publishHint || undefined}><button id="jongo-publish" className="jongo-primary" type="button" onClick={() => { void publish(); }} disabled={!canPublish} aria-describedby={publishHint ? 'jongo-publish-reason' : undefined}><Icon name="publish" />{busy === 'publishing' ? 'Publishing…' : 'Publish'}</button></span>}
       <ActionMenu id="jongo-more" label="More actions" entries={footerEntries} placement="up" />
     </>} />
   </StudioContext.Provider>
-    : unavailable ? <div role="alert" className="jongo-problem jongo-problem-unavailable" data-problem={unavailable.code}><h2>{PROBLEM_TITLE[unavailable.code]}</h2><p>{unavailable.message}</p><p className="jongo-hint">The document list could not be loaded.{debug && ' Nothing is shown here, and local drafts are not available while a store is connected.'}</p><button type="button" disabled={listing} onClick={() => { void refreshList(); }}>Try again</button>{unavailable.code === 'denied' && signInHref && <p><a className="jongo-link" href={signInHref}>Sign in again</a></p>}</div>
-    : problem ? <div role="alert" className={`jongo-problem jongo-problem-${problem.code}`} data-problem={problem.code}><h2>{PROBLEM_TITLE[problem.code]}</h2><p>{problem.message}</p>{selectedId && <button type="button" onClick={() => { void loadDocument(selectedId); }}>Try again</button>}{problem.code === 'denied' && signInHref && <p><a className="jongo-link" href={signInHref}>Sign in again</a></p>}</div>
+    : unavailable ? <ProblemBanner problem={unavailable} signInUrl={signInUrl} action={<button type="button" disabled={listing} onClick={() => { void refreshList(); }}>Try again</button>}>{debug && <p className="jongo-hint">The document list could not be loaded. Nothing is shown here, and local drafts are not available while a store is connected.</p>}</ProblemBanner>
+    : problem ? <ProblemBanner problem={problem} signInUrl={signInUrl} action={selectedId ? <button type="button" onClick={() => { void loadDocument(selectedId); }}>Try again</button> : undefined} />
     : busy === 'loading' || listing ? <p role="status">Loading…</p>
     : <p>Select a document to begin.</p>;
   return <div className="jongo-studio" data-studio-mode="store"><a className="jongo-skip" href="#jongo-editor">Skip to editor</a><header className="jongo-topbar"><a className="jongo-brand" href={brand.homeHref}>{brand.logoSrc && <img src={brand.logoSrc} alt="" />}{brand.name}<span>Craft</span></a>{brand.designSystemHref && <a href={brand.designSystemHref}>Design system ↗</a>}{topbarSlot && <div className="jongo-topbar-slot">{topbarSlot}</div>}</header>

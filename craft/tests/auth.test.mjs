@@ -369,6 +369,63 @@ test('every failure is a CraftAuthError with a fixed message; nothing is written
   assert.deepEqual(logged, []);
 });
 
+test('a single hiccup on discovery or the key set is retried once and the sign-in goes through; two in a row fail with the right step; the one-time code exchange is never repeated', async () => {
+  const w = await world();
+  w.idp.failNext.discovery = 1;
+  assert.equal((await login(w)).role, 'publisher');
+  assert.equal(w.idp.stats.discovery, 2, 'one failed read and one repeat');
+
+  const keys = await world();
+  keys.idp.failNext.jwks = 1;
+  assert.equal((await login(keys)).role, 'publisher');
+  assert.equal(keys.idp.stats.jwks, 2);
+
+  const twice = await world();
+  twice.idp.failNext.discovery = 2;
+  const discoveryError = await rejects(twice, begin(twice), 'discovery_failed');
+  assert.equal(discoveryError.step, 'discover');
+  assert.equal(twice.idp.stats.discovery, 2, 'exactly one repeat, never a loop');
+  assert.equal((await login(twice)).role, 'publisher', 'and a fresh attempt works once the provider is back');
+
+  const noKeys = await world();
+  noKeys.idp.failNext.jwks = 2;
+  const jwksError = await rejects(noKeys, login(noKeys), 'jwks_unavailable');
+  assert.equal(jwksError.step, 'jwks');
+  assert.equal(noKeys.idp.stats.jwks, 2);
+
+  const token = await world();
+  token.idp.tokenMode = 'status500';
+  const tokenError = await rejects(token, login(token), 'token_exchange_failed');
+  assert.equal(tokenError.step, 'token');
+  assert.equal(token.idp.stats.token, 1, 'a code is single use: the exchange is sent once');
+
+  const redirecting = await world();
+  let reads = 0;
+  const redirect = async () => { reads++; return new Response(null, { status: 302, headers: { location: 'https://evil.example/' } }); };
+  await rejects(redirecting, createLoginTransaction({ config: redirecting.config, caches: createAuthCaches(), fetch: redirect }), 'discovery_failed');
+  assert.equal(reads, 1, 'a redirect is refused, not retried');
+});
+
+test('a discovery document that passed every check keeps serving while the provider is unreachable; one that fails the checks is never replaced by it', async () => {
+  const w = await world();
+  const caches = createAuthCaches({ discoveryTtlMs: 1000 });
+  let clock = 9_000_000;
+  const first = await discover(w.idp.issuer, { caches, now: () => clock });
+  w.idp.failNext.discovery = 2;
+  assert.deepEqual(await discover(w.idp.issuer, { caches, now: () => clock + 5000 }), first, 'refresh failed, the earlier document is used');
+  w.idp.discoveryOverrides = { response_types_supported: ['token'] };
+  await rejects(w, discover(w.idp.issuer, { caches, now: () => clock + 9000 }), 'discovery_invalid');
+  w.idp.discoveryOverrides = {};
+  const empty = await world();
+  empty.idp.failNext.discovery = 2;
+  await rejects(empty, discover(empty.idp.issuer, { caches: createAuthCaches() }), 'discovery_failed');
+});
+
+test('error steps: each code says where the sign-in failed, for log lines', () => {
+  const steps = { invalid_config: 'verify', transaction_invalid: 'verify', transaction_expired: 'verify', state_mismatch: 'verify', provider_error: 'verify', issuer_mismatch: 'verify', invalid_callback: 'verify', discovery_failed: 'discover', discovery_invalid: 'discover', token_exchange_failed: 'token', jwks_unavailable: 'jwks', token_invalid: 'verify', claims_invalid: 'verify', email_unverified: 'verify', dataset_mismatch: 'verify', role_unknown: 'verify' };
+  for (const [code, step] of Object.entries(steps)) assert.equal(new CraftAuthError(code).step, step, code);
+});
+
 test('role mapping matrix: exactly the documented actions, never import, export-private or admin', () => {
   assert.deepEqual(mapRoleToActions('reader'), ['read']);
   assert.deepEqual(mapRoleToActions('editor'), ['read', 'read-drafts', 'write']);

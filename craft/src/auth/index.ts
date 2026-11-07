@@ -3,7 +3,7 @@
  * Needs Node crypto and, for ID token verification, the optional peer `jose`. Never import this from client code: a test
  * enforces that no client entry reaches it. Nothing here logs; errors carry fixed messages, never tokens or secrets.
  */
-export { CraftAuthError, type AuthErrorCode } from './errors.js';
+export { CraftAuthError, type AuthErrorCode, type AuthStep } from './errors.js';
 export { CRAFT_ROLES, isCraftRole, mapRoleToActions, type CraftRole } from './roles.js';
 export {
   createAuthCaches, defaultCaches, DEFAULT_CLOCK_SKEW_SECONDS, DEFAULT_TIMEOUT_MS, MIN_SECRET_LENGTH, TRANSACTION_TTL_SECONDS,

@@ -34,6 +34,8 @@ export async function startMockIdp(options = {}) {
     slowMs: 3000,
     /** 'ok' | 'down' | 'status500' | 'empty' | 'garbage' */
     jwksMode: 'ok',
+    /** The next N requests to discovery / the key set fail (discovery: connection reset, JWKS: 500), then the provider answers normally again. */
+    failNext: { discovery: 0, jwks: 0 },
     discoveryMode: 'ok',
     discoveryOverrides: {},
     /** Claims merged over (or, with undefined values, removed from) the default ID token payload. */
@@ -102,6 +104,7 @@ export async function startMockIdp(options = {}) {
       const url = new URL(req.url, idp.origin);
       if (url.pathname === '/.well-known/openid-configuration') {
         idp.stats.discovery++;
+        if (idp.failNext.discovery > 0) { idp.failNext.discovery--; return void req.socket.destroy(); }
         if (idp.discoveryMode === 'status500') return send(res, 500, { error: 'boom' });
         const doc = {
           issuer: idp.issuer, authorization_endpoint: `${idp.origin}/oidc/authorize`, token_endpoint: `${idp.origin}/api/oidc/token`, jwks_uri: `${idp.origin}/api/oidc/jwks`,
@@ -114,6 +117,7 @@ export async function startMockIdp(options = {}) {
       }
       if (url.pathname === '/api/oidc/jwks') {
         idp.stats.jwks++;
+        if (idp.failNext.jwks > 0) { idp.failNext.jwks--; return send(res, 500, { error: 'boom' }); }
         if (idp.jwksMode === 'down') return void req.socket.destroy();
         if (idp.jwksMode === 'status500') return send(res, 500, { error: 'boom' });
         if (idp.jwksMode === 'empty') return send(res, 200, { keys: [] });

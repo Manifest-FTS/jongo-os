@@ -120,15 +120,15 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
       <main id="jongo-editor" className="jongo-editor" tabIndex={-1}>{schema && working && api ? <StudioContext.Provider value={api}>
         <EditorHeader eyebrow={schema.title ?? schema.name} title={documentTitle(working, schema)} pills={<span className={`jongo-state ${dirty ? 'jongo-dirty' : ''}`}>{chip}</span>}
           tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} announce={announce} debug={debug} /></>} />
-        <div className="jongo-editor-body">
+        <div className="jongo-editor-body" data-publish-ready={state.ready ? 'true' : 'false'}>
         {notice && <p className="jongo-notice" role="note">{notice}</p>}
         {debug && <p className="jongo-help">Drafts are kept in page memory only. Reloading or leaving resets all changes. Saving does not publish to the website: persistence and publishing are not connected.</p>}
-        <section className="jongo-summary" aria-labelledby="jongo-checks-title" data-publish-ready={state.ready ? 'true' : 'false'}>
+        {issues.length > 0 && <section className="jongo-summary" aria-labelledby="jongo-checks-title">
           <h2 id="jongo-checks-title">Document checks</h2>
           <p><strong className={state.ready ? 'jongo-ready' : 'jongo-blocked'}>{state.ready ? 'Publish-ready checks passed' : `Not publish-ready: ${state.errors} blocking ${state.errors === 1 ? 'issue' : 'issues'}`}</strong>{state.warnings > 0 && ` · ${state.warnings} ${state.warnings === 1 ? 'note' : 'notes'} about preserved content`}</p>
           {debug && <p className="jongo-hint">Checks run locally against the schema. They do not publish anything, and a draft with issues can still be saved locally.</p>}
-          {issues.length > 0 && <ul className="jongo-summary-list">{issues.slice(0, 20).map((issue, i) => <li key={i}><button type="button" className="jongo-link" onClick={() => jump(issue.path)}><span className={issue.severity === 'error' ? 'jongo-error' : 'jongo-warning'}>{issue.severity === 'error' ? 'Error' : 'Note'}</span> {pathLabel(issue.path)}: {issue.message}</button></li>)}{issues.length > 20 && <li>…and {issues.length - 20} more.</li>}</ul>}
-        </section>
+          <ul className="jongo-summary-list">{issues.slice(0, 20).map((issue, i) => <li key={i}><button type="button" className="jongo-link" onClick={() => jump(issue.path)}><span className={issue.severity === 'error' ? 'jongo-error' : 'jongo-warning'}>{issue.severity === 'error' ? 'Error' : 'Note'}</span> {pathLabel(issue.path)}: {issue.message}</button></li>)}{issues.length > 20 && <li>…and {issues.length - 20} more.</li>}</ul>
+        </section>}
         <form id="jongo-doc-form" noValidate onSubmit={event => {
           event.preventDefault();
           if (!dirty) return;

@@ -5,6 +5,14 @@ export type AuthErrorCode =
   | 'token_exchange_failed' | 'jwks_unavailable' | 'token_invalid' | 'claims_invalid'
   | 'email_unverified' | 'dataset_mismatch' | 'role_unknown';
 
+/** Where in the sign-in an error arose. `verify` covers the checks of the sign-in attempt and of the provider's response, including the ID token. */
+export type AuthStep = 'discover' | 'token' | 'jwks' | 'verify';
+const STEPS: Record<AuthErrorCode, AuthStep> = {
+  invalid_config: 'verify', transaction_invalid: 'verify', transaction_expired: 'verify', state_mismatch: 'verify', provider_error: 'verify', issuer_mismatch: 'verify', invalid_callback: 'verify',
+  discovery_failed: 'discover', discovery_invalid: 'discover', token_exchange_failed: 'token', jwks_unavailable: 'jwks',
+  token_invalid: 'verify', claims_invalid: 'verify', email_unverified: 'verify', dataset_mismatch: 'verify', role_unknown: 'verify'
+};
+
 const MESSAGES: Record<AuthErrorCode, string> = {
   invalid_config: 'Sign-in settings are invalid.',
   discovery_failed: 'The sign-in provider could not be reached.',
@@ -26,10 +34,13 @@ const MESSAGES: Record<AuthErrorCode, string> = {
 
 export class CraftAuthError extends Error {
   readonly code: AuthErrorCode;
+  /** Which part of the sign-in failed, for log lines. */
+  readonly step: AuthStep;
   constructor(code: AuthErrorCode) {
     super(MESSAGES[code]);
     this.name = 'CraftAuthError';
     this.code = code;
+    this.step = STEPS[code];
   }
 }
 

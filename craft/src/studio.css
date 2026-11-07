@@ -170,11 +170,15 @@
 .jongo-studio .jongo-status-published { background:#e6f4ea; color:#1f6a3b; border-color:#b9dcc4; }
 .jongo-studio .jongo-status-draft { background:#f0f0f4; color:#202126; border-color:#d5d6dd; }
 .jongo-studio .jongo-notice { border:1px solid #d9d4f2; background:#f5f3fc; border-radius:8px; padding:.7rem .9rem; font-size:.8rem; max-width:780px; }
-.jongo-studio .jongo-problem { border:1px solid #e3b4ba; background:#fdf3f4; border-radius:8px; padding:1rem; margin:1.2rem 0; max-width:780px; }
-.jongo-studio .jongo-problem h2 { color:#a32e3d; margin-bottom:.4rem; }
-.jongo-studio .jongo-problem p { margin:0 0 .6rem; }
+.jongo-studio .jongo-problem { border:1px solid #e3b4ba; background:#fdf3f4; border-radius:8px; padding:.7rem .9rem; margin:1rem 0; max-width:780px; display:flex; flex-wrap:wrap; align-items:center; gap:.5rem .9rem; }
+.jongo-studio .jongo-problem p { margin:0; flex:1 1 260px; font-size:.88rem; }
+.jongo-studio .jongo-problem .jongo-summary-list { flex:1 1 100%; }
+.jongo-studio .jongo-problem .jongo-hint { flex:1 1 100%; }
 .jongo-studio .jongo-problem-conflict { border-color:#e5cf9a; background:#fffaf0; }
-.jongo-studio .jongo-problem-conflict h2 { color:#76520d; }
+.jongo-studio .jongo-problem[data-session-ended] { border-color:#e5cf9a; background:#fffaf0; }
+.jongo-studio a.jongo-problem-action { display:inline-flex; align-items:center; justify-content:center; min-height:32px; padding:.3rem .8rem; border:1px solid #201d3a; border-radius:6px; background:#201d3a; color:#fff; font-weight:600; font-size:.85rem; text-decoration:none; }
+.jongo-studio a.jongo-problem-action:focus-visible { outline:2px solid #201d3a; outline-offset:2px; }
+.jongo-studio .jongo-footer-quiet { font-size:.78rem; color:#62636d; }
 .jongo-studio .jongo-link { text-decoration:underline; }
 .jongo-studio [inert] { opacity:.65; }
 /* Native dialog pickers reuse the shared Dialog; only neutral studio styling is applied here. */

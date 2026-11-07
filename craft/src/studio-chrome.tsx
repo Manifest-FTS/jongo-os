@@ -128,7 +128,7 @@ export async function copyText(text: string): Promise<boolean> {
 }
 
 export type HistoryLoader = () => Promise<StudioResult<{ entries: StudioHistoryEntry[] }>>;
-export function HistoryDialog({ load, onClose }: { load: HistoryLoader; onClose: () => void }) {
+export function HistoryDialog({ load, onClose, debug = false }: { load: HistoryLoader; onClose: () => void; debug?: boolean }) {
   const [state, setState] = useState<{ kind: 'loading' } | { kind: 'ok'; entries: StudioHistoryEntry[] } | { kind: 'error'; message: string }>({ kind: 'loading' });
   useEffect(() => {
     let current = true;
@@ -142,7 +142,7 @@ export function HistoryDialog({ load, onClose }: { load: HistoryLoader; onClose:
     {state.kind === 'ok' && (state.entries.length
       ? <ol className="jongo-history" aria-label="Revisions, newest first">{state.entries.map((entry, i) => <li key={i}><span className="jongo-history-action">{historyLabel(entry.action)}</span><span className="jongo-history-meta"><Avatar by={entry.by} /><Stamp iso={entry.at} />{entry.by?.name ? ` · ${entry.by.name}` : ''}</span></li>)}</ol>
       : <p>No recorded activity yet.</p>)}
-    <p className="jongo-hint">Read-only list of changes to this document. Earlier versions cannot be restored from here.</p>
+    {debug && <p className="jongo-hint">Read-only list of changes to this document. Earlier versions cannot be restored from here.</p>}
   </Dialog>;
 }
 
@@ -175,7 +175,7 @@ export function DocumentTools({ doc, schema, revision, loadHistory, announce, de
   ];
   return <>
     <ActionMenu id="jongo-tools" label="Document tools" entries={entries} note={schema.singleton ? FIXED_CONTENT_NOTE : undefined} placement="down" />
-    {dialog === 'history' && loadHistory && <HistoryDialog load={loadHistory} onClose={() => setDialog(null)} />}
+    {dialog === 'history' && loadHistory && <HistoryDialog load={loadHistory} debug={debug} onClose={() => setDialog(null)} />}
     {dialog === 'inspect' && <InspectDialog doc={doc} schema={schema} revision={revision} onClose={() => setDialog(null)} />}
   </>;
 }
