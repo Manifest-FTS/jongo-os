@@ -66,12 +66,13 @@ test('action matrix, connected, by role: reader sees nothing to change, editor c
   const reader = connected(draftOverPublished, { permissions: { canWrite: false, canPublish: false } });
   assert.deepEqual(matrixOf(reader), { save: 'hidden', publish: 'hidden', unpublish: 'hidden', discard: 'hidden', duplicate: 'hidden', delete: 'hidden' });
   assert.equal(reasonOf(reader), null);
-  assert.ok(reader.includes('data-view-only="true"') && !reader.includes('data-edit-only') && !reader.includes('id="jongo-more"'));
+  assert.ok(reader.includes('data-view-only="true"') && reader.includes('>View only<') && !reader.includes('view-only access') && !reader.includes('role="note"') && !reader.includes('data-edit-only') && !reader.includes('id="jongo-more"'), 'a reader sees one "View only" pill in the header, no paragraph');
 
   const editor = connected(draftOverPublished, { permissions: { canWrite: true, canPublish: false } });
   assert.deepEqual(matrixOf(editor), { save: 'disabled', publish: 'hidden', unpublish: 'hidden', discard: 'enabled', duplicate: 'enabled', delete: 'hidden' });
   assert.equal(reasonOf(editor), null, 'no Publish button, so no Publish reason');
-  assert.ok(editor.includes('data-edit-only="true"') && editor.includes('Publishing, unpublishing and deleting need publisher access.') && !editor.includes('data-view-only'));
+  assert.match(editor, /<div class="jongo-footer-note"><span class="jongo-footer-quiet" data-edit-only="true">You can edit and save drafts\. Publishing needs publisher access\.<\/span><\/div>/, 'an editor gets one quiet line in the footer');
+  assert.ok(!editor.includes('data-view-only') && !editor.includes('role="note"') && !editor.includes('Publishing, unpublishing and deleting'), 'and no banner');
 
   const publisher = connected(draftOverPublished, { permissions: { canWrite: true, canPublish: true } });
   assert.deepEqual(matrixOf(publisher), { save: 'disabled', publish: 'enabled', unpublish: 'enabled', discard: 'enabled', duplicate: 'enabled', delete: 'enabled' });

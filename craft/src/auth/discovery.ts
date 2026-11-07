@@ -1,6 +1,6 @@
 import { assertIssuer, defaultCaches, parseSecureUrl, type AuthDeps, type ClientAuthMethod, type DiscoveryDocument } from './config.js';
-import { authFail } from './errors.js';
-import { request } from './http.js';
+import { authFail, CraftAuthError } from './errors.js';
+import { request, type HttpResult } from './http.js';
 
 const list = (value: unknown): string[] | null => Array.isArray(value) && value.every(item => typeof item === 'string') ? value as string[] : null;
 
@@ -21,8 +21,16 @@ export async function discover(issuer: string, deps: AuthDeps & { clientAuth?: C
   const cached = caches.discovery.get(issuer);
   if (cached && now - cached.at < caches.discoveryTtlMs) return cached.doc;
 
-  const { status, json } = await request(deps, `${issuer}/.well-known/openid-configuration`, { method: 'GET', headers: { accept: 'application/json' } }, 'discovery_failed');
-  if (status !== 200) return authFail('discovery_failed');
+  let reply: HttpResult;
+  try {
+    reply = await request(deps, `${issuer}/.well-known/openid-configuration`, { method: 'GET', headers: { accept: 'application/json' } }, 'discovery_failed', { retry: true });
+    if (reply.status !== 200) return authFail('discovery_failed');
+  } catch (error) {
+    // A document that passed every check before keeps serving while the provider is briefly unreachable; a document that fails the checks is never replaced by it.
+    if (cached && error instanceof CraftAuthError && error.code === 'discovery_failed') return cached.doc;
+    throw error;
+  }
+  const { json } = reply;
   const raw = json as Record<string, unknown> | null;
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return authFail('discovery_invalid');
   if (raw.issuer !== issuer) return authFail('discovery_invalid');

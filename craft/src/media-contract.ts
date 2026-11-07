@@ -58,7 +58,7 @@ export const UPLOAD_MESSAGES: Readonly<Record<UploadErrorCode, string>> = {
   verify_failed: 'The file was uploaded but could not be verified, so it was not added. Check that it is a real image of an allowed type and try again.',
   rate_limited: 'Too many uploads in a short time. Wait a moment and try again.',
   unavailable: 'Uploading is not available right now.',
-  denied: 'You are not signed in to Jongo Craft, or your session has ended. Sign in again.',
+  denied: 'Your session ended. Sign in to continue.',
   cancelled: 'The upload was cancelled.'
 };
 export function tooLargeMessage(contentType: AllowedMediaType, limits: MediaLimits = DEFAULT_MEDIA_LIMITS): string {

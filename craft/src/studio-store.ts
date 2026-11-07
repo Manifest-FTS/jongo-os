@@ -4,8 +4,14 @@ import { UPLOAD_MESSAGES, type StudioAssetDocument, type UploadErrorCode } from 
 
 export type StudioFailureCode = 'conflict' | 'invalid' | 'denied' | 'unavailable';
 export type StudioFieldError = { path: readonly (string | number)[]; message: string };
+/** Why a `denied` result happened: the sign-in ended (`session`) or the person is signed in but may not do that (`permission`). Hosts that send neither are treated as `session`. */
+export type StudioFailureReason = 'session' | 'permission';
 /** Typed failure. `message` is shown to the editor, so it must not contain SQL, driver text or other internals. */
-export type StudioFailure = { ok: false; code: StudioFailureCode; message: string; fieldErrors?: readonly StudioFieldError[] };
+export type StudioFailure = { ok: false; code: StudioFailureCode; message: string; reason?: StudioFailureReason; fieldErrors?: readonly StudioFieldError[] };
+/** The one sentence the Studio shows when the sign-in ended; the host's own text is not used for it. */
+export const SESSION_ENDED_MESSAGE = 'Your session ended. Sign in to continue.';
+/** `denied` because the sign-in ended (not because of a missing permission). */
+export const isSessionEnded = (failure: Pick<StudioFailure, 'code' | 'reason'>): boolean => failure.code === 'denied' && failure.reason !== 'permission';
 export type StudioResult<T> = ({ ok: true } & T) | StudioFailure;
 
 /** What the signed-in person may do. A hint for the interface only: the host's store must refuse the same actions itself. Both default to true. */
@@ -50,7 +56,7 @@ export type StudioExpect = {
 };
 
 /** Upload failures carry a code the Studio can phrase; `missing` (settings NAMES only) is set when the host has no storage configured. */
-export type UploadFailure = { ok: false; code: UploadErrorCode; message: string; missing?: readonly string[] };
+export type UploadFailure = { ok: false; code: UploadErrorCode; message: string; reason?: StudioFailureReason; missing?: readonly string[] };
 export type UploadResult<T> = ({ ok: true } & T) | UploadFailure;
 /** Everything the browser needs to PUT one file straight to storage, plus the proof it must hand back to `completeUpload`. */
 export type UploadTicket = { uploadUrl: string; headers: Record<string, string>; key: string; token: string; expiresAt: string; contentType: string; size: number };
@@ -88,7 +94,8 @@ export async function settle<T>(call: () => Promise<StudioResult<T>>): Promise<S
       if (result.ok) return result;
       const failure = result as StudioFailure;
       const code: StudioFailureCode = failure.code === 'conflict' || failure.code === 'invalid' || failure.code === 'denied' ? failure.code : 'unavailable';
-      return { ok: false, code, message: typeof failure.message === 'string' && failure.message ? failure.message : unavailableFailure().message, ...(Array.isArray(failure.fieldErrors) ? { fieldErrors: failure.fieldErrors } : {}) };
+      const reason = code === 'denied' && (failure.reason === 'session' || failure.reason === 'permission') ? failure.reason : undefined;
+      return { ok: false, code, message: typeof failure.message === 'string' && failure.message ? failure.message : unavailableFailure().message, ...(reason ? { reason } : {}), ...(Array.isArray(failure.fieldErrors) ? { fieldErrors: failure.fieldErrors } : {}) };
     }
   } catch { /* falls through */ }
   return unavailableFailure();
@@ -103,7 +110,8 @@ export async function settleUpload<T>(call: () => Promise<UploadResult<T>>): Pro
       if (result.ok) return result;
       const failure = result as UploadFailure;
       const code = UPLOAD_CODES.has(failure.code) ? failure.code : 'unavailable';
-      return { ok: false, code, message: typeof failure.message === 'string' && failure.message ? failure.message : UPLOAD_MESSAGES[code], ...(Array.isArray(failure.missing) ? { missing: failure.missing } : {}) };
+      const reason = code === 'denied' && (failure.reason === 'session' || failure.reason === 'permission') ? failure.reason : undefined;
+      return { ok: false, code, message: typeof failure.message === 'string' && failure.message ? failure.message : UPLOAD_MESSAGES[code], ...(reason ? { reason } : {}), ...(Array.isArray(failure.missing) ? { missing: failure.missing } : {}) };
     }
   } catch { /* falls through */ }
   return { ok: false, code: 'unavailable', message: UPLOAD_MESSAGES.unavailable };

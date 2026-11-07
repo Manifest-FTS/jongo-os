@@ -67,7 +67,7 @@ function ObjectField({ d, label, path, value, onChange }: Props<Extract<Descript
 
 function UploadPanel({ media }: { media: MediaApi }) {
   const api = useStudio();
-  type State = { kind: 'idle' } | { kind: 'uploading'; name: string; fraction: number | null } | { kind: 'error'; code: string; message: string } | { kind: 'done'; name: string };
+  type State = { kind: 'idle' } | { kind: 'uploading'; name: string; fraction: number | null } | { kind: 'error'; code: string; message: string; ended: boolean } | { kind: 'done'; name: string };
   const [state, setState] = useState<State>({ kind: 'idle' });
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null), running = useRef<AbortController | null>(null);
@@ -82,7 +82,7 @@ function UploadPanel({ media }: { media: MediaApi }) {
     running.current = null;
     if (result.ok) { media.adopt(result.asset); setState({ kind: 'done', name: file.name }); api.announce(`Uploaded ${file.name}. Select it in the list to use it.`); }
     else if (result.code === 'cancelled') { setState({ kind: 'idle' }); api.announce('Upload cancelled.'); }
-    else setState({ kind: 'error', code: result.code, message: result.message });
+    else setState({ kind: 'error', code: result.code, message: result.message, ended: result.code === 'denied' && result.reason !== 'permission' });
   }
   const pick = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void start(file); };
   const drop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files?.[0]; if (file) void start(file); };
@@ -99,7 +99,7 @@ function UploadPanel({ media }: { media: MediaApi }) {
       <button type="button" onClick={() => running.current?.abort()}>Cancel upload</button>
     </div>}
     {state.kind === 'done' && <p role="status" className="jongo-upload-done" data-upload-state="done">Uploaded {state.name}. Select it in the list to use it.</p>}
-    {state.kind === 'error' && <p role="alert" className="jongo-error" data-upload-error={state.code}>{state.message}</p>}
+    {state.kind === 'error' && <p role="alert" className="jongo-error" data-upload-error={state.code}>{state.message}{state.ended && media.signInUrl && <> <a className="jongo-link" href={media.signInUrl} target="_blank" rel="noopener">Sign in</a></>}</p>}
   </div>;
 }
 

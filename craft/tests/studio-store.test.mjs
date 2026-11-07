@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ContentStudio, MutationKeys, StudioIdentity, duplicateDocument, formatClock, formatStamp, historyLabel, initialsOf, newMutationKey, safeAvatarUrl, settle, stableJson, statusDetail, statusLabel, unavailableFailure } from '../dist/index.js';
+import { ContentStudio, MutationKeys, SESSION_ENDED_MESSAGE, StudioIdentity, duplicateDocument, formatClock, formatStamp, historyLabel, initialsOf, isSessionEnded, newMutationKey, safeAvatarUrl, settle, stableJson, statusDetail, statusLabel, unavailableFailure } from '../dist/index.js';
 import * as content from '../dist/content.js';
 
 const schema = { name: 'article', title: 'Articles', type: 'document', schemaVersion: 1, fields: [
@@ -31,8 +31,10 @@ test('store mode is opt-in: without a store the Studio keeps its exact local-dra
 
 test('connected Studio drops the not-connected notice and shows saved + Published status with only valid actions', () => {
   const html = render({ initial: { documents: [summary({ variant: 'published', hasPublished: true })], record: record({ variant: 'published', published: { nativeRev: 'r1', lockVersion: 3 } }) }, initialType: 'article', initialDocument: 'welcome' });
-  for (const text of ['data-studio-mode="store"', 'data-save-state="saved"', 'data-doc-status="published"', 'Save draft', 'Unpublish', 'aria-live="polite"', 'Published and up to date', 'Published · article']) assert.ok(html.includes(text), text);
-  for (const text of ['persistence and publishing are not connected', 'Save local draft', 'page memory only', 'Revert to original snapshot']) assert.ok(!html.includes(text), text);
+  for (const text of ['data-studio-mode="store"', 'data-save-state="saved"', 'data-doc-status="published"', 'Save draft', 'Unpublish', 'aria-live="polite"', 'Published · article']) assert.ok(html.includes(text), text);
+  for (const text of ['persistence and publishing are not connected', 'Save local draft', 'page memory only', 'Revert to original snapshot', 'Published and up to date. Editing creates a draft.', 'Document checks', 'Publish-ready checks passed']) assert.ok(!html.includes(text), `quiet by default: ${text}`);
+  const debugHtml = render({ debug: true, initial: { documents: [summary({ variant: 'published', hasPublished: true })], record: record({ variant: 'published', published: { nativeRev: 'r1', lockVersion: 3 } }) }, initialType: 'article', initialDocument: 'welcome' });
+  assert.ok(debugHtml.includes('Published and up to date. Editing creates a draft.'), 'the status explanation is a debug line');
   assert.ok(disabled(html, 'jongo-save'), 'nothing to save yet');
   assert.ok(disabled(html, 'jongo-publish'), 'a published document has nothing to publish');
   assert.ok(hasItem(html, 'jongo-unpublish') && !disabled(html, 'jongo-unpublish'));
@@ -43,7 +45,7 @@ test('a draft over a published version offers publish (when valid) and discard, 
   const html = render({ initial: { documents: [summary({ hasPublished: true })], record: record({ published: { nativeRev: 'r0', lockVersion: 2 } }) }, initialType: 'article', initialDocument: 'welcome' });
   assert.ok(html.includes('data-doc-status="draft"'));
   assert.ok(html.includes('Draft changes · article'));
-  assert.ok(html.includes('this draft has changes that are not published'));
+  assert.ok(!html.includes('this draft has changes that are not published'), 'the explanation is a debug line');
   assert.ok(!disabled(html, 'jongo-publish'));
   assert.ok(hasItem(html, 'jongo-discard') && !disabled(html, 'jongo-discard'));
   assert.ok(hasItem(html, 'jongo-unpublish') && !disabled(html, 'jongo-unpublish'));
@@ -53,8 +55,8 @@ test('a draft over a published version offers publish (when valid) and discard, 
 
 test('a never-published draft cannot be unpublished or discarded; an invalid draft cannot be published and says why', () => {
   const html = render({ initial: { documents: [summary()], record: record({ doc: doc({ summary: undefined }) }) }, initialType: 'article', initialDocument: 'welcome' });
-  assert.ok(html.includes('Never published'));
-  assert.ok(html.includes('data-publish-ready="false"'));
+  assert.ok(!html.includes('Never published'), 'the explanation is a debug line');
+  assert.ok(html.includes('data-publish-ready="false"') && html.includes('Document checks') && html.includes('Not publish-ready: 1 blocking issue'), 'the checks section appears because there is an issue');
   assert.ok(disabled(html, 'jongo-publish'));
   assert.ok(html.includes('Fix 1 issue to publish') && html.includes('data-publish-reason="blocked"'), 'the reason is visible text, not only a tooltip');
   assert.ok(!hasItem(html, 'jongo-unpublish'));
@@ -63,12 +65,17 @@ test('a never-published draft cannot be unpublished or discarded; an invalid dra
 
 test('failed prefetch renders an unavailable state with retry, never the local fallback; no prefetch shows loading', () => {
   const failed = render({ initial: { error: unavailableFailure('Storage is down.') }, initialType: 'article', debug: true });
-  for (const text of ['role="alert"', 'Storage unavailable', 'Storage is down.', 'Try again', 'local drafts are not available while a store is connected']) assert.ok(failed.includes(text), text);
+  for (const text of ['role="alert"', 'Storage is down.', 'Try again', 'local drafts are not available while a store is connected']) assert.ok(failed.includes(text), text);
+  assert.ok(!failed.includes('Storage unavailable'), 'no title above the one sentence');
   assert.ok(!failed.includes('Save local draft'));
   const quiet = render({ initial: { error: unavailableFailure('Storage is down.') }, initialType: 'article' });
-  assert.ok(quiet.includes('The document list could not be loaded.') && !quiet.includes('local drafts are not available'), 'the developer sentence needs debug');
-  const denied = render({ initial: { error: { ok: false, code: 'denied', message: 'Session ended.' } }, signInHref: '/craft/login' });
-  assert.ok(denied.includes('href="/craft/login"') && denied.includes('Sign in again'));
+  assert.ok(quiet.includes('Storage is down.') && quiet.includes('Try again') && !quiet.includes('The document list could not be loaded.') && !quiet.includes('local drafts are not available'), 'one sentence and one action; the developer sentence needs debug');
+  const ended = render({ initial: { error: { ok: false, code: 'denied', reason: 'session', message: 'Session ended.' } }, signInHref: '/craft/login', basePath: '/craft' });
+  assert.ok(ended.includes('data-session-ended="true"') && ended.includes('Your session ended. Sign in to continue.') && !ended.includes('Session ended.'), 'the Studio\'s own sentence replaces the host text');
+  assert.match(ended, /<a class="jongo-problem-action" href="\/craft\/login\?next=%2Fcraft%2Farticle" target="_blank" rel="noopener">Sign in<\/a>/, 'Sign in opens in a new tab and carries the current path as `next`');
+  assert.ok(!ended.includes('Try again'), 'one action only');
+  const permission = render({ initial: { error: { ok: false, code: 'denied', reason: 'permission', message: "You don't have permission to do that." } }, signInHref: '/craft/login', basePath: '/craft' });
+  assert.ok(permission.includes('have permission to do that') && !permission.includes('data-session-ended') && !permission.includes('>Sign in<'), 'a missing permission is not a sign-in problem');
   const loading = render({});
   assert.ok(loading.includes('Loading…'));
 });
@@ -121,6 +128,20 @@ test('settle turns throws, rejections and malformed results into typed unavailab
   const ok = await settle(async () => ({ ok: true, documents: [] }));
   assert.deepEqual(ok, { ok: true, documents: [] });
   assert.ok(!JSON.stringify(await settle(async () => { throw new Error('SELECT secret'); })).includes('secret'));
+});
+
+test('denied results keep their reason (session ended vs missing permission); the reason is dropped for every other code; no reason means the session ended', async () => {
+  const session = await settle(async () => ({ ok: false, code: 'denied', reason: 'session', message: 'x' }));
+  assert.deepEqual(session, { ok: false, code: 'denied', message: 'x', reason: 'session' });
+  const permission = await settle(async () => ({ ok: false, code: 'denied', reason: 'permission', message: 'x' }));
+  assert.equal(permission.reason, 'permission');
+  assert.equal((await settle(async () => ({ ok: false, code: 'denied', reason: 'bogus', message: 'x' }))).reason, undefined);
+  assert.equal((await settle(async () => ({ ok: false, code: 'conflict', reason: 'session', message: 'x' }))).reason, undefined);
+  assert.equal(isSessionEnded(session), true);
+  assert.equal(isSessionEnded({ code: 'denied' }), true, 'a host that sends no reason is treated as "session ended"');
+  assert.equal(isSessionEnded(permission), false);
+  assert.equal(isSessionEnded({ code: 'unavailable', reason: 'session' }), false);
+  assert.equal(SESSION_ENDED_MESSAGE, 'Your session ended. Sign in to continue.');
 });
 
 // --- Editor panel: sticky header/footer, action menus, capabilities ---
@@ -177,7 +198,7 @@ test('permissions: view-only hides every write action and disables the fields; e
   for (const id of ['jongo-save', 'jongo-publish', 'jongo-duplicate', 'jongo-delete', 'jongo-discard', 'jongo-unpublish', 'jongo-reset']) assert.ok(!reader.includes(`id="${id}"`), `${id} hidden for a reader`);
   assert.ok(!reader.includes('id="jongo-more"'), 'no empty actions menu');
   assert.ok(/<fieldset[^>]*class="jongo-fields"[^>]*disabled|<fieldset[^>]*disabled[^>]*class="jongo-fields"/.test(reader), 'fields are disabled');
-  assert.ok(reader.includes('data-view-only="true"') && reader.includes('view-only access'));
+  assert.ok(reader.includes('data-view-only="true"') && reader.includes('>View only<') && !reader.includes('view-only access') && !reader.includes('role="note"'), 'one pill in the header, no paragraph');
   assert.ok(!reader.includes('Upload image'), 'no upload controls');
   // canWrite false wins over canPublish true.
   assert.ok(!open(full, draftOverPublished, undefined, { permissions: { canWrite: false, canPublish: true } }).includes('id="jongo-publish"'));

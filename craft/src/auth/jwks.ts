@@ -21,7 +21,7 @@ function parseKeys(json: unknown): Map<string, JsonWebKeyLike> {
 async function load(state: JwksState, doc: DiscoveryDocument, deps: AuthDeps, now: number): Promise<void> {
   if (!state.inflight) {
     state.inflight = (async () => {
-      const { status, json } = await request(deps, doc.jwksUri, { method: 'GET', headers: { accept: 'application/json' } }, 'jwks_unavailable');
+      const { status, json } = await request(deps, doc.jwksUri, { method: 'GET', headers: { accept: 'application/json' } }, 'jwks_unavailable', { retry: true });
       const keys = status === 200 ? parseKeys(json) : new Map<string, JsonWebKeyLike>();
       if (keys.size === 0) return authFail('jwks_unavailable');
       state.keys = keys;

@@ -15,6 +15,8 @@ export type MediaApi = {
   upload: (file: UploadSource, handlers: UploadHandlers) => Promise<UploadResult<{ asset: StudioAssetDocument }>>;
   /** Makes a just-uploaded asset listable and resolvable at once. */
   adopt: (asset: StudioAssetDocument) => void;
+  /** Where "Sign in" goes (opened in a new tab) when an upload is refused because the session ended. */
+  signInUrl?: string;
 };
 
 export type StudioApi = {

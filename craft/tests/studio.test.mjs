@@ -28,7 +28,8 @@ test('flat envelope validation covers required, length and enum errors at field 
 });
 test('generic studio renders a non-Golf content desk with local-draft limitations only', () => {
   const html = renderToStaticMarkup(createElement(ContentStudio, { config: { schemas: [schema], documents: [article] }, debug: true }));
-  for (const text of ['jongo-studio', 'Structure', 'Search documents', 'Hello', 'Save local draft', 'Reset changes', 'Revert to original snapshot', 'page memory only', 'persistence and publishing are not connected', 'Publish-ready checks passed', 'role="status"', 'aria-live="polite"']) assert.ok(html.includes(text), text);
+  for (const text of ['jongo-studio', 'Structure', 'Search documents', 'Hello', 'Save local draft', 'Reset changes', 'Revert to original snapshot', 'page memory only', 'persistence and publishing are not connected', 'data-publish-ready="true"', 'role="status"', 'aria-live="polite"']) assert.ok(html.includes(text), text);
+  assert.ok(!html.includes('Document checks') && !html.includes('Publish-ready checks passed'), 'a clean document shows no checks section (the header chip stays)');
   for (const text of ['craft-root', 'GOLF LAB', 'Booking', 'PROPOSED', 'FICTIONAL DEMO', 'Chicago']) assert.ok(!html.includes(text), text);
   assert.ok(html.includes('value="Hello"'));
 });
