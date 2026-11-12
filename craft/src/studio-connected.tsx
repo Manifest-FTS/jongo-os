@@ -9,7 +9,8 @@ import { StudioContext, fieldId, type MediaApi, type StudioApi } from './studio-
 import { MutationKeys, SESSION_ENDED_MESSAGE, formatClock, isSessionEnded, planPublish, saveThenPublish, settle, statusDetail, statusLabel, type StudioDocSummary, type StudioFailure, type StudioPermissions, type StudioRecord, type StudioResult, type StudioStamp, type StudioStore } from './studio-store.js';
 import { mediaLimits, type MediaLimits, type StudioAssetDocument } from './media-contract.js';
 import { uploadAsset, type PutFile } from './media-client.js';
-import { ActionMenu, Avatar, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, Stamp, type MenuEntry } from './studio-chrome.js';
+import { ActionMenu, Avatar, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, Stamp, StructureNav, type MenuEntry } from './studio-chrome.js';
+import { showsDocumentList } from './studio-structure.js';
 import type { StudioConfig } from './studio.js';
 
 export type StudioInitial = {
@@ -247,6 +248,7 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
 
   const api: StudioApi | null = working ? { docId: working._id, values: working, issues, index, schemas: registry, makeKey: randomKey, announce, focus, media, debug } : null;
   const visible = summaries.filter(item => item.type === type && item.title.toLowerCase().includes(query.toLowerCase()));
+  const showList = showsDocumentList(config.structure, type, selectedId || undefined);
   const saveState = busy ?? (problem?.code === 'conflict' ? 'conflict' : problem ? 'error' : dirty ? 'dirty' : 'saved');
   const chip = busy ? BUSY_LABEL[busy] : problem?.code === 'conflict' ? 'Conflict' : problem ? 'Error' : dirty ? 'Unsaved changes' : 'Saved';
   const canPublish = plan?.can === true;
@@ -310,8 +312,8 @@ export function ConnectedStudio({ config, store, initial, initialType, initialDo
     : busy === 'loading' || listing ? <p role="status">Loading…</p>
     : <p>Select a document to begin.</p>;
   return <div className="jongo-studio" data-studio-mode="store"><a className="jongo-skip" href="#jongo-editor">Skip to editor</a><header className="jongo-topbar"><a className="jongo-brand" href={brand.homeHref}>{brand.logoSrc && <img src={brand.logoSrc} alt="" />}{brand.name}<span>Craft</span></a>{brand.designSystemHref && <a href={brand.designSystemHref}>Design system ↗</a>}{topbarSlot && <div className="jongo-topbar-slot">{topbarSlot}</div>}</header>
-    <div className="jongo-desk"><aside className="jongo-structure"><p className="jongo-eyebrow">Structure</p><h2>Content</h2><nav aria-label="Content structure">{config.schemas.map(item => <a className="jongo-nav-item" href={documentHref(item.name)} key={item.name} aria-current={type === item.name ? 'page' : undefined} onClick={event => navigate(event, item.name)}>{item.title ?? item.name}<span>›</span></a>)}</nav></aside>
-      <section className="jongo-documents" aria-label="Document list"><h2>{schema?.title ?? schema?.name ?? 'Documents'}</h2><label>Search documents<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by title" /></label><div className="jongo-document-list">{visible.map(item => <a className="jongo-nav-item" href={documentHref(item.type, item.id)} key={item.id} aria-current={selectedId === item.id ? 'page' : undefined} onClick={event => navigate(event, item.type, item.id)}><strong>{item.title}</strong><small>{stateOf(item)} · {item.type}</small></a>)}</div>{!visible.length && !listing && !unavailable && <p>{summaries.some(item => item.type === type) ? 'No matching documents.' : 'No documents of this type are stored yet.'}</p>}</section>
+    <div className="jongo-desk" data-list={showList ? undefined : 'false'}><aside className="jongo-structure"><p className="jongo-eyebrow">Structure</p><h2>{config.structure?.title ?? 'Content'}</h2><StructureNav structure={config.structure} schemas={config.schemas} type={type} selectedId={selectedId} href={documentHref} onNavigate={navigate} /></aside>
+      {showList && <section className="jongo-documents" aria-label="Document list"><h2>{schema?.title ?? schema?.name ?? 'Documents'}</h2><label>Search documents<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by title" /></label><div className="jongo-document-list">{visible.map(item => <a className="jongo-nav-item" href={documentHref(item.type, item.id)} key={item.id} aria-current={selectedId === item.id ? 'page' : undefined} onClick={event => navigate(event, item.type, item.id)}><strong>{item.title}</strong><small>{stateOf(item)} · {item.type}</small></a>)}</div>{!visible.length && !listing && !unavailable && <p>{summaries.some(item => item.type === type) ? 'No matching documents.' : 'No documents of this type are stored yet.'}</p>}</section>}
       <main id="jongo-editor" className="jongo-editor" tabIndex={-1}>{schema && working && record && api ? editorBody : <div className="jongo-editor-body">{noticeEl}{editorBody}{liveEl}</div>}</main>
     </div></div>;
 }

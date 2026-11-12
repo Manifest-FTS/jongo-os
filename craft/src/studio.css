@@ -21,6 +21,10 @@
 .jongo-studio .jongo-structure nav { display:grid; gap:.35rem; }
 .jongo-studio .jongo-structure .jongo-nav-item { display:flex; justify-content:space-between; text-align:left; background:transparent; border-color:transparent; }
 .jongo-studio .jongo-structure .jongo-nav-item[aria-current] { background:#e9e7f2; color:#413b6a; }
+.jongo-studio .jongo-structure .jongo-nav-group { display:grid; gap:.2rem; margin-top:.9rem; }
+.jongo-studio .jongo-structure .jongo-nav-group-title { margin:0 0 .1rem .7rem; text-transform:uppercase; font-size:.67rem; letter-spacing:.12em; color:#70717d; font-weight:650; }
+.jongo-studio .jongo-structure .jongo-nav-divider { width:100%; margin:.6rem 0; border:0; border-top:1px solid var(--studio-line); }
+.jongo-studio .jongo-desk[data-list="false"] { grid-template-columns:240px minmax(0,1fr); }
 .jongo-studio .jongo-documents { padding:2rem 1.2rem; border-right:1px solid var(--studio-line); }
 .jongo-studio label { display:grid; gap:.5rem; font-size:.8rem; font-weight:600; }
 .jongo-studio :is(input,textarea,select) { width:100%; min-width:0; padding:.55rem .7rem; border:1px solid #cfcfd8; border-radius:6px; min-height:40px; background:white; }
@@ -186,7 +190,7 @@
 .jongo-studio dialog.craft-dialog::backdrop { background:#202126aa; }
 .jongo-studio .craft-dialog .craft-toolbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:.8rem; }
 .jongo-studio .craft-dialog .craft-toolbar h2 { margin:0; }
-@media(max-width:1100px) { .jongo-studio .jongo-desk { grid-template-columns:180px 230px minmax(0,1fr); } }
+@media(max-width:1100px) { .jongo-studio .jongo-desk { grid-template-columns:180px 230px minmax(0,1fr); } .jongo-studio .jongo-desk[data-list="false"] { grid-template-columns:200px minmax(0,1fr); } }
 @media(max-width:800px) { .jongo-studio .jongo-desk { display:block; } .jongo-studio .jongo-topbar { padding:0 1rem; gap:.8rem; } .jongo-studio .jongo-structure { padding:1rem; } .jongo-studio .jongo-structure nav { display:flex; overflow:auto; } .jongo-studio .jongo-structure .jongo-nav-item { flex-shrink:0; gap:1rem; } .jongo-studio .jongo-structure > h2, .jongo-studio .jongo-structure > p { display:none; } .jongo-studio .jongo-documents { padding:1.2rem; border-bottom:1px solid var(--studio-line); } .jongo-studio .jongo-document-list { display:flex; overflow:auto; } .jongo-studio .jongo-document-list .jongo-nav-item { min-width:180px; } .jongo-studio .jongo-editor-body { padding:1.2rem 1rem 1.5rem; } .jongo-studio .jongo-doc-header, .jongo-studio .jongo-doc-footer { padding-left:1rem; padding-right:1rem; } .jongo-studio .jongo-editor { min-height:0; } }
 @media(max-width:520px) { .jongo-studio .jongo-footer-status { flex-basis:100%; } .jongo-studio .jongo-footer-note { flex-basis:100%; } .jongo-studio .jongo-footer-actions { width:100%; } .jongo-studio .jongo-footer-actions .jongo-menu-wrap { margin-left:auto; } }
 /* Short viewports (landscape phones): keep the header in flow so the fields keep room. */

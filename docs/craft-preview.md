@@ -1,5 +1,15 @@
 # Craft / Golf Lab initial preview
 
+## Whole-site content and CraftStructure — preview.19
+
+Every section of the one-page Golf Lab site is now a fixed (singleton) Craft document the public page reads by id: hero, the facility, membership (plans, prices, benefits), technology (copy, slideshow images, data highlights), how it works, instructors (people, photos, profile text, lesson links), booking, FAQ (answers keep their links), find us (map listing, directions link), partners (names, links, logos), site settings (logo, menu, tagline, contact, address, social, membership and booking links) and search and sharing (page title, descriptions, keywords). Images are chosen from the shipped library or uploads; delivery resolves a chosen image to its address (shipped file, or an https address inside the configured media store) and falls back per field to the built-in copy. The studio seed documents are the built-in copy, narrowed by the same rules as published ones.
+
+`craftStructure` (exported from `@jongo/craft`) is the menu, the counterpart of Sanity's Desk Structure: `craftStructure.define([...], schemas)` with `group`, `document` (a fixed document, opened directly with no list beside it), `documents` (the list of a type) and `divider`. Without one the studio lists each type, as before. The Golf Lab menu is "Homepage" (the sections in page order) and "Site". `/craft` opens the first entry.
+
+Existing databases: `npm run craft:seed -- --fill --publish` creates the new documents and fills fields a stored document lacks (never changes a value that is there); `--publish` publishes what it created and what it filled when that document was already published. The earlier `homepage` document (`home`) is no longer part of the content model and is ignored.
+
+No Jongo role changes were needed: Jongo super admins and admins already enter every app's Craft as admin (editing and publishing); other team members need an editor or publisher grant on the app.
+
 ## Studio persistence adapter and Golf Lab wiring — preview.9, 2026-11-04
 
 **Status: implemented and tested locally; a preview, not production-ready.** Nothing in this change was run against the real Coolify database (the website's local `.env.local` points `JONGO_CRAFT_DATABASE_URL` at a Coolify-internal host that is unreachable from the development machine; no test or script used it). No commits, pushes, deployments, provider or network calls.

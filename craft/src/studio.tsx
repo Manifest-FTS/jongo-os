@@ -10,9 +10,10 @@ import { ConnectedStudio, type StudioInitial } from './studio-connected.js';
 import { formatClock, type StudioPermissions, type StudioStore } from './studio-store.js';
 import type { MediaLimits } from './media-contract.js';
 import type { PutFile } from './media-client.js';
-import { ActionMenu, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, NEEDS_DATABASE, type MenuEntry } from './studio-chrome.js';
+import { ActionMenu, DocumentTools, EditorFooter, EditorHeader, Icon, IssueChip, NEEDS_DATABASE, StructureNav, type MenuEntry } from './studio-chrome.js';
+import { showsDocumentList, structureTarget, type CraftStructure } from './studio-structure.js';
 
-export type StudioConfig = { schemas: readonly TypeDefinition[]; documents: readonly ContentDocument[]; assets?: readonly ImageAssetDocument[] };
+export type StudioConfig = { schemas: readonly TypeDefinition[]; documents: readonly ContentDocument[]; assets?: readonly ImageAssetDocument[]; /** The menu. Absent: one list per document type. Build it with `craftStructure`. */ structure?: CraftStructure };
 const pathLabel = (path: Path) => path.map(part => typeof part === 'number' ? `item ${part + 1}` : part).join(' › ');
 
 export type ContentStudioProps = {
@@ -39,7 +40,10 @@ export type ContentStudioProps = {
 };
 
 /** Framework-neutral content desk over Sanity-shaped documents. With a `store` it persists through that adapter; without one it keeps local drafts in page memory only. */
-export function ContentStudio({ store, initial, signInHref, permissions, brand = { name: 'Jongo', homeHref: '/craft' }, mediaLimits, putFile, ...rest }: ContentStudioProps) {
+export function ContentStudio({ store, initial, signInHref, permissions, brand = { name: 'Jongo', homeHref: '/craft' }, mediaLimits, putFile, ...props }: ContentStudioProps) {
+  // With a structure and no address, open its first entry.
+  const start = props.initialType ? undefined : structureTarget(props.config.structure);
+  const rest = start ? { ...props, initialType: start.type, initialDocument: start.id } : props;
   if (store) return <ConnectedStudio {...rest} brand={brand} store={store} initial={initial} signInHref={signInHref} permissions={permissions} mediaLimits={mediaLimits} putFile={putFile} />;
   return <LocalStudio {...rest} brand={brand} />;
 }
@@ -104,6 +108,7 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
   };
   const api: StudioApi | null = working ? { docId: working._id, values: working, issues, index, schemas: registry, makeKey: randomKey, announce, focus, debug } : null;
   const visible = documents.filter(doc => doc._type === type && documentTitle(doc, schema).toLowerCase().includes(query.toLowerCase()));
+  const showList = showsDocumentList(config.structure, type, selectedId || undefined);
   const chip = dirty ? 'Unsaved changes' : edited ? 'Local draft (edited)' : 'Original snapshot';
   const menu: MenuEntry[] = [
     { id: 'jongo-reset', label: 'Reset changes', icon: 'reset', disabled: !dirty, onSelect: () => { setWorking(selected); announce('Unsaved changes reset to the last local draft.'); } },
@@ -115,8 +120,8 @@ function LocalStudio({ config, initialType, initialDocument, basePath, brand, no
     ])
   ];
   return <div className="jongo-studio"><a className="jongo-skip" href="#jongo-editor">Skip to editor</a><header className="jongo-topbar"><a className="jongo-brand" href={brand.homeHref}>{brand.logoSrc && <img src={brand.logoSrc} alt="" />}{brand.name}<span>Craft</span></a>{brand.designSystemHref && <a href={brand.designSystemHref}>Design system ↗</a>}{topbarSlot && <div className="jongo-topbar-slot">{topbarSlot}</div>}</header>
-    <div className="jongo-desk"><aside className="jongo-structure"><p className="jongo-eyebrow">Structure</p><h2>Content</h2><nav aria-label="Content structure">{config.schemas.map(item => <a className="jongo-nav-item" href={documentHref(item.name)} key={item.name} aria-current={type === item.name ? 'page' : undefined} onClick={event => navigate(event, item.name)}>{item.title ?? item.name}<span>›</span></a>)}</nav></aside>
-      <section className="jongo-documents" aria-label="Document list"><h2>{schema?.title ?? schema?.name ?? 'Documents'}</h2><label>Search documents<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by title" /></label><div className="jongo-document-list">{visible.map(doc => <a className="jongo-nav-item" href={documentHref(doc._type, doc._id)} key={doc._id} aria-current={selectedId === doc._id ? 'page' : undefined} onClick={event => navigate(event, type, doc._id)}><strong>{documentTitle(doc, schema)}</strong><small>{deepEqual(doc, original.find(item => item._id === doc._id)) ? 'Original snapshot' : 'Local draft (edited)'} · {doc._type}</small></a>)}</div>{!visible.length && <p>No matching documents.</p>}</section>
+    <div className="jongo-desk" data-list={showList ? undefined : 'false'}><aside className="jongo-structure"><p className="jongo-eyebrow">Structure</p><h2>{config.structure?.title ?? 'Content'}</h2><StructureNav structure={config.structure} schemas={config.schemas} type={type} selectedId={selectedId} href={documentHref} onNavigate={navigate} /></aside>
+      {showList && <section className="jongo-documents" aria-label="Document list"><h2>{schema?.title ?? schema?.name ?? 'Documents'}</h2><label>Search documents<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by title" /></label><div className="jongo-document-list">{visible.map(doc => <a className="jongo-nav-item" href={documentHref(doc._type, doc._id)} key={doc._id} aria-current={selectedId === doc._id ? 'page' : undefined} onClick={event => navigate(event, type, doc._id)}><strong>{documentTitle(doc, schema)}</strong><small>{deepEqual(doc, original.find(item => item._id === doc._id)) ? 'Original snapshot' : 'Local draft (edited)'} · {doc._type}</small></a>)}</div>{!visible.length && <p>No matching documents.</p>}</section>}
       <main id="jongo-editor" className="jongo-editor" tabIndex={-1}>{schema && working && api ? <StudioContext.Provider value={api}>
         <EditorHeader eyebrow={schema.title ?? schema.name} title={documentTitle(working, schema)} pills={<span className={`jongo-state ${dirty ? 'jongo-dirty' : ''}`}>{chip}</span>}
           tools={<><IssueChip issues={issues} onJump={jump} /><DocumentTools doc={working} schema={schema} announce={announce} debug={debug} /></>} />

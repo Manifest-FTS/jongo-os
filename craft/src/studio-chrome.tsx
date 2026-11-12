@@ -1,9 +1,10 @@
 "use client";
 /** Shared chrome of the document panel: tiny icon set, action menu, avatar chip, timestamps, issue chip, History and Inspect dialogs. */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { Dialog } from './shell.js';
 import type { TypeDefinition } from './schema.js';
 import type { Issue, Path } from './validate.js';
+import { defaultStructure, structureMatch, type CraftStructure, type StructureItem } from './studio-structure.js';
 import { formatStamp, historyLabel, initialsOf, safeAvatarUrl, settle, type StudioActor, type StudioHistoryEntry, type StudioResult } from './studio-store.js';
 
 export type IconName = 'save' | 'publish' | 'unpublish' | 'duplicate' | 'delete' | 'history' | 'inspect' | 'copy' | 'more' | 'reset';
@@ -178,6 +179,23 @@ export function DocumentTools({ doc, schema, revision, loadHistory, announce, de
     {dialog === 'history' && loadHistory && <HistoryDialog load={loadHistory} debug={debug} onClose={() => setDialog(null)} />}
     {dialog === 'inspect' && <InspectDialog doc={doc} schema={schema} revision={revision} onClose={() => setDialog(null)} />}
   </>;
+}
+
+/** The left menu: the host's structure (groups, fixed documents, lists), or one list per type when there is none. */
+export function StructureNav({ structure, schemas, type, selectedId, href, onNavigate }: {
+  structure?: CraftStructure; schemas: readonly TypeDefinition[]; type: string; selectedId: string;
+  href: (type: string, id?: string) => string; onNavigate: (event: MouseEvent<HTMLAnchorElement>, type: string, id?: string) => void;
+}) {
+  const menu = structure ?? defaultStructure(schemas);
+  const active = structureMatch(menu, type, selectedId || undefined);
+  const titleOf = (name: string) => { const schema = schemas.find(item => item.name === name); return schema?.title ?? name; };
+  const render = (item: StructureItem, key: number): ReactNode => {
+    if (item.kind === 'divider') return <hr className="jongo-nav-divider" key={key} />;
+    if (item.kind === 'group') return <div className="jongo-nav-group" role="group" aria-label={item.title} key={key}><p className="jongo-nav-group-title" aria-hidden="true">{item.title}</p>{item.items.map(render)}</div>;
+    const id = item.kind === 'document' ? item.documentId : undefined;
+    return <a className="jongo-nav-item" href={href(item.type, id)} key={key} aria-current={active === item ? 'page' : undefined} onClick={event => onNavigate(event, item.type, id)}>{item.title ?? titleOf(item.type)}<span>›</span></a>;
+  };
+  return <nav aria-label="Content structure">{menu.items.map(render)}</nav>;
 }
 
 export function EditorHeader({ eyebrow, title, pills, tools }: { eyebrow: string; title: string; pills: ReactNode; tools: ReactNode }) {
