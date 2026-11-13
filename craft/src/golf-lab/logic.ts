@@ -21,6 +21,10 @@ export const TIME_ZONE = 'America/Chicago';
 /** Configurable fixture bounds, not approved production instructor policy. */
 export const INSTRUCTOR_MAX_HOURS = 12;
 export const INSTRUCTOR_HORIZON_DAYS = 90;
+export const MEMBER_WINDOW_DAYS = 7;
+export const JUNIOR_WINDOW_DAYS = 3;
+/** How many days ahead this account may book. */
+export const bookingWindowDays = (tier: Member['tier']): number => tier === 'instructor' ? INSTRUCTOR_HORIZON_DAYS : tier === 'junior' ? JUNIOR_WINDOW_DAYS : MEMBER_WINDOW_DAYS;
 export function validDate(date: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date + 'T12:00:00Z')) && new Date(date + 'T12:00:00Z').toISOString().slice(0, 10) === date;
 }
@@ -61,7 +65,7 @@ export function validateBooking(candidate: Booking, bookings: readonly Booking[]
   if (member.tier === 'junior' && !member.approved) errors.push('Junior membership requires approval.');
   if (member.tier === 'family' && !member.individualSponsor) errors.push('Family add-on requires an Individual membership.');
   const instructor = member.tier === 'instructor';
-  const window = instructor ? INSTRUCTOR_HORIZON_DAYS : member.tier === 'junior' ? 1 : 7;
+  const window = bookingWindowDays(member.tier);
   if (dayDifference(candidate.date, today) < 0 || dayDifference(candidate.date, today) > window) errors.push(`Advance booking limit: ${window} days.${instructor ? ' Proposed instructor policy.' : ''}`);
   const live = bookings.filter(row => row.status !== 'cancelled' && row.id !== candidate.id);
   if (live.some(row => row.date === candidate.date && row.bay === candidate.bay && row.start < candidate.start + candidate.hours && candidate.start < row.start + row.hours)) errors.push('Bay conflict. Choose another bay or time; existing bookings are never displaced.');
@@ -223,7 +227,7 @@ export const PLANS = [
   { id: 'annual', label: 'Individual · annual', price: '$2,199 / year', terms: 'Paid upfront annually. Renewal terms require final agreement.' },
   { id: 'flexible', label: 'Individual · flexible', price: '$289 / month', terms: 'No annual commitment. Cancellation effective date requires final policy.' },
   { id: 'family', label: 'Family add-on', price: '$85 / month', terms: 'Requires an active Individual membership. Separate bookings.' },
-  { id: 'junior', label: 'Junior · approval required', price: '$1,800 / year', terms: 'Annual upfront payment after approval. 1-day advance booking; guardian agreement.' }
+  { id: 'junior', label: 'Junior · approval required', price: '$1,800 / year', terms: 'Annual upfront payment after approval. 3-day advance booking; guardian agreement.' }
 ] as const;
 export function checkoutErrors(plan: string, waiver: boolean, individual: boolean, juniorApproval: boolean): string[] {
   return [...(!PLANS.some(item => item.id === plan) ? ['Select a registered plan.'] : []), ...(!waiver ? ['Review the illustrative waiver and terms.'] : []), ...(plan === 'family' && !individual ? ['Family add-on requires an active Individual membership.'] : []), ...(plan === 'junior' && !juniorApproval ? ['Junior approval and guardian review are required.'] : [])];

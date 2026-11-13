@@ -52,12 +52,12 @@ test('summer allows two hours while winter rejects two, without admin bypass', (
   assert.ok(validate({ hours: 2 }).some(error => error.includes('Daily limit')));
   assert.ok(validateBooking(draft({ hours: 2 }), [], member, { id: 'a1', role: 'admin' }).some(error => error.includes('Daily limit')));
 });
-test('individual 7-day window is inclusive; junior only 1 day', () => {
+test('individual 7-day window is inclusive; junior only 3 days', () => {
   assert.deepEqual(validate({ date: '2026-11-09' }), []);
   assert.ok(validate({ date: '2026-11-10' }).some(error => error.includes('7 days')));
   const junior = fixtures.members[2], juniorActor = { id: junior.id, role: 'member' };
-  assert.deepEqual(validateBooking(draft({ memberId: junior.id, date: '2026-11-03' }), [], junior, juniorActor), []);
-  assert.ok(validateBooking(draft({ memberId: junior.id, date: '2026-11-04' }), [], junior, juniorActor).some(error => error.includes('1 days')));
+  assert.deepEqual(validateBooking(draft({ memberId: junior.id, date: '2026-11-05' }), [], junior, juniorActor), []);
+  assert.ok(validateBooking(draft({ memberId: junior.id, date: '2026-11-06' }), [], junior, juniorActor).some(error => error.includes('3 days')));
 });
 test('future start required at fixed clock; inactive/waiver/junior/family prerequisites enforced', () => {
   assert.ok(validate({ start: 8 }).some(error => error.includes('future')));

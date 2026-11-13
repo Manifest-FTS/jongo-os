@@ -44,7 +44,7 @@ test('inclusive horizon allows boundary, rejects beyond even non-occurrence end 
   assert.ok(validate(draft({ date: addDays(DEMO_TODAY, 91) })).some(error => error.includes('90 days')));
   const junior = fixtures.members.find(row => row.tier === 'junior');
   assert.ok(validate(draft({ memberId: member.id, hours: 1, date: addDays(DEMO_TODAY, 8) }), member, actor).some(error => error.includes('7 days')));
-  assert.ok(validate(draft({ memberId: junior.id, hours: 1, date: addDays(DEMO_TODAY, 2) }), junior, { id: junior.id, role: 'member' }).some(error => error.includes('1 days')));
+  assert.ok(validate(draft({ memberId: junior.id, hours: 1, date: addDays(DEMO_TODAY, 4) }), junior, { id: junior.id, role: 'member' }).some(error => error.includes('3 days')));
 });
 test('DST gaps/repeated hours and internal transitions cannot be scheduled or skipped', () => {
   assert.equal(chicagoInstant('2027-03-14', 2), null);

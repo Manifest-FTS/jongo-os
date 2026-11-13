@@ -11,7 +11,7 @@ import { BayCards, BayManagement } from './bays.js';
 import { CalendarDownload } from './calendar-download.js';
 import { LiveProvider, type LiveConfig, type LiveSnapshot } from './live.js';
 import { LiveBillingView } from './live-billing.js';
-export type { LiveActions, LiveCommit, LiveConfig, LiveDetail, LiveResult, LiveSnapshot } from './live.js';
+export type { LiveAccessInput, LiveActions, LiveCommit, LiveConfig, LiveDetail, LiveHold, LiveInvite, LiveResult, LiveSnapshot } from './live.js';
 export { CalendarDownload } from './calendar-download.js';
 export { BayCard, BayCards, BayManagement, BayNameForm } from './bays.js';
 export { BillingView, CheckoutReviewDrawer, billingSections } from './billing.js';
@@ -26,6 +26,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
   // One clock for server and browser: the moment the snapshot was taken (or the frozen fixture day).
   setLiveClock(live ? live.snapshot.now : null);
   const [adapter, setAdapter] = useState(() => live ? { members: live.snapshot.members, bookings: live.snapshot.bookings, bays: live.snapshot.bays } : createFixtureAdapter());
+  const [details, setDetails] = useState(live ? live.snapshot.details : {});
   const [activeView, setActiveView] = useState(initialView);
   useEffect(() => {
     const back = () => setActiveView(location.pathname.split('/')[2] || (initialRole === 'member' ? 'member' : 'overview'));
@@ -33,7 +34,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
     return () => window.removeEventListener('popstate', back);
   }, [initialRole]);
   const role = initialRole;
-  const apply = (snapshot: LiveSnapshot) => { setLiveClock(snapshot.now); setAdapter({ members: snapshot.members, bookings: snapshot.bookings, bays: snapshot.bays }); };
+  const apply = (snapshot: LiveSnapshot) => { setLiveClock(snapshot.now); setAdapter({ members: snapshot.members, bookings: snapshot.bookings, bays: snapshot.bays }); setDetails(snapshot.details); };
   const commit = async (next: Booking[]): Promise<void | string[]> => {
     if (!live) { setAdapter({ ...adapter, bookings: next }); return; }
     const before = new Map(adapter.bookings.map(row => [row.id, row]));
@@ -59,7 +60,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
         case 'overview': return <AdminOverview bays={adapter.bays} bookings={adapter.bookings} onSchedule={() => navigate('booking')} />;
         case 'bays': return <BayManagement actor={actor} bays={adapter.bays} bookings={adapter.bookings} onUpdate={bays => setAdapter({ ...adapter, bays })} />;
         case 'booking': return <BookingCalendar actor={actor} members={adapter.members} bays={adapter.bays} bookings={adapter.bookings} onUpdate={commit} />;
-        case 'members': return <MembersView members={adapter.members.filter(row => row.tier !== 'instructor')} bookings={adapter.bookings} />;
+        case 'members': return <MembersView team={!!live && role === 'admin'} members={adapter.members.filter(row => row.tier !== 'instructor')} bookings={adapter.bookings} />;
         case 'instructors': return <MembersView instructors members={adapter.members.filter(row => row.tier === 'instructor')} bookings={adapter.bookings} />;
         case 'reports': return <ReportsView members={adapter.members} bookings={adapter.bookings} />;
         case 'billing': return live ? <LiveBillingView role={role} member={role === 'member' ? member : undefined} members={adapter.members.filter(row => row.tier !== 'instructor')} /> : <BillingView role={role} member={role === 'member' ? member : undefined} membershipSelector={membershipSelector} />;
@@ -72,7 +73,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
   if (role === 'member' && view === 'booking' && !canBook(member)) {
     plugin.views = plugin.views.map(item => item.id === 'member' ? { ...item, render: () => <Onboarding member={member} membershipSelector={membershipSelector} /> } : item);
   }
-  return <LiveProvider value={live ? { ...live, apply } : null}><CraftShell plugin={plugin} context={{ identity: { ...actor, label: role === 'admin' ? 'Golf Lab team' : adapter.members.find(row => row.id === actor.id)?.name ?? 'Member' }, adapter }} activeView={view} clientNavigation onNavigate={navigate}
+  return <LiveProvider value={live ? { ...live, details, apply } : null}><CraftShell plugin={plugin} context={{ identity: { ...actor, label: role === 'admin' ? 'Golf Lab team' : adapter.members.find(row => row.id === actor.id)?.name ?? 'Member' }, adapter }} activeView={view} clientNavigation onNavigate={navigate}
     brand={{ name: 'THE GOLF LAB', tagline: 'Practice. With purpose.', homeHref: base + query, sidebarNote: live ? undefined : <a href="/style-guide#platform-member">Design system ↗</a> }}
     controls={live ? <div className="craft-preview-controls"><Button onClick={() => { void live.actions.signOut().then(() => location.assign('/login?out=1')); }}>Sign out</Button></div> : <div className="craft-preview-controls"><label>Account<select aria-label="Account" value={actor.id} onChange={event => {
       const id = event.target.value;

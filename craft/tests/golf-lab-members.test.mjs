@@ -47,7 +47,7 @@ test('a member sees a Profile page with their details and terms, and nobody else
   const profile = renderToStaticMarkup(createElement(GolfLabDemo, { initialView: 'profile' }));
   for (const text of ['Your profile', 'Alex Morgan', 'alex@example.invalid', 'Membership terms', '7 days in advance', 'Winter (Nov', 'Membership &amp; billing', 'href="/portal/profile?account=m1"']) assert.ok(profile.includes(text), text);
   assert.ok(!profile.includes('Export emails'));
-  assert.ok(renderToStaticMarkup(createElement(ProfileView, { member: members.find(member => member.id === 'm3') })).includes('1 day in advance'));
+  assert.ok(renderToStaticMarkup(createElement(ProfileView, { member: members.find(member => member.id === 'm3') })).includes('3 days in advance'));
   assert.ok(renderToStaticMarkup(createElement(ProfileView, { member: members.find(member => member.id === 'm5') })).includes('Required before booking'));
   for (const role of ['admin', 'instructor']) assert.ok(!renderToStaticMarkup(createElement(GolfLabDemo, { initialRole: role, initialView: 'profile' })).includes('Your profile'), role);
 });
