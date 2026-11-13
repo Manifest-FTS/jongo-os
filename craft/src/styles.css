@@ -113,6 +113,8 @@
 .craft-root .craft-avatar { width:40px; height:40px; background:#e8eddf; border-radius:50%; display:grid; place-items:center; color:var(--craft-green); font-size:.8rem; font-weight:700; }
 .craft-root .craft-search { max-width:470px; margin-bottom:1.4rem; }
 .craft-root .craft-filters { align-items:flex-end; justify-content:flex-start; gap:1rem; }
+.craft-root .craft-filters > label { margin:0; } .craft-root .craft-filters > .craft-search { flex:1 1 16rem; max-width:470px; }
+.craft-root .craft-filters > :is(button,.craft-button) { align-self:flex-end; min-height:44px; }
 .craft-root .craft-table-scroll { overflow-x:auto; }
 .craft-root .craft-table { width:100%; border-collapse:collapse; text-align:left; font-size:.83rem; }
 .craft-root .craft-table caption { text-align:left; color:var(--craft-muted); padding-bottom:.8rem; }
