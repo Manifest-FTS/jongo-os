@@ -49,6 +49,9 @@
 .craft-root .craft-stats h2 { margin:.85rem 0; text-transform:capitalize; }
 .craft-root .craft-stats p { font-size:.85rem; color:var(--craft-muted); }
 .craft-root .craft-two-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.2rem; align-items:start; }
+.craft-root .craft-details { display:grid; gap:.7rem; margin:0 0 1rem; }
+.craft-root .craft-details > div { display:grid; grid-template-columns:minmax(6rem,9rem) minmax(0,1fr); gap:.8rem; border-bottom:1px solid #e5eae3; padding-bottom:.6rem; }
+.craft-root .craft-details dt { color:#647268; font-size:.8rem; } .craft-root .craft-details dd { margin:0; font-weight:600; overflow-wrap:anywhere; text-transform:none; }
 .craft-root .craft-hero { position:relative; overflow:hidden; background:var(--craft-green); color:#fff; border-radius:18px; padding:clamp(1.5rem,3vw,3rem); display:grid; grid-template-columns:1.6fr 1fr; min-height:320px; gap:1rem; }
 .craft-root .craft-hero h1 { font-size:clamp(2.5rem,4.4vw,4.4rem); line-height:1.03; }
 .craft-root .craft-hero em { font-style:normal; color:var(--craft-lime); }

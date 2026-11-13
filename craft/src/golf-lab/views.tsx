@@ -1,13 +1,30 @@
 "use client";
 import { useState } from 'react';
 import { Badge, Button, Card, Dialog } from '../shell.js';
-import { bookingStatus, canBook, csv, DEMO_TODAY, needsOnboarding, overviewStats, report, reportingRange, type Actor, type Booking, type Member } from './logic.js';
+import { bookingStatus, canBook, csv, DEMO_TODAY, filterMembers, hoursByAccount, memberEmailsCsv, memberStatusLabel, needsOnboarding, overviewStats, report, reportingRange, type Actor, type Booking, type Member, type MemberFilter } from './logic.js';
 import { hourLabel } from './booking.js';
 import { BillingView, type MembershipSelector } from './billing.js';
 import { BayCards } from './bays.js';
 import { bayLabel, createBayFixtures, resolveBay, type Bay } from './inventory.js';
 import { CalendarDownload } from './calendar-download.js';
 import { editableBooking, validDate } from './logic.js';
+
+/** Hands a text file to the browser; the address is released after the download has had time to start. */
+function downloadText(filename: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url; link.download = filename; link.hidden = true;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const BOOKING_WINDOW: Record<Member['tier'], string> = { individual: '7 days in advance', family: '7 days in advance', junior: '1 day in advance', instructor: 'Set by the instructor agreement' };
+/** What a member sees of their own account: details and the terms they joined under. Editing details needs a real account system. */
+export function ProfileView({ member, onBilling }: { member: Member; onBilling?: () => void }) {
+  const rows: [string, string][] = [['Name', member.name], ['Email', member.email], ['Membership', member.tier], ['Status', memberStatusLabel(member)], ['Waiver', member.waiver ? 'On file' : 'Required before booking']];
+  return <><div className="craft-page-heading"><div><p className="craft-overline">Your profile</p><h1>{member.name}</h1><p>Your details and the terms of your membership.</p></div><Badge tone={canBook(member) ? 'green' : 'amber'}>{canBook(member) ? 'Active access' : 'Access suspended'}</Badge></div>
+    <div className="craft-two-columns"><Card title="Your details"><dl className="craft-details">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p className="craft-muted">To change your name or email, contact the team.</p></Card>
+      <Card title="Membership terms"><dl className="craft-details"><div><dt>Plan</dt><dd>{member.billing}</dd></div><div><dt>Booking window</dt><dd>{BOOKING_WINDOW[member.tier]}</dd></div><div><dt>Daily limit</dt><dd>Winter (Nov–Apr) 1 hour · Summer (May–Oct) 2 hours</dd></div></dl>{onBilling ? <Button onClick={onBilling}>Membership & billing ↗</Button> : <a className="craft-button" href={`/portal/billing?account=${member.id}`}>Membership & billing ↗</a>}</Card></div></>;
+}
 
 export function OverviewCards({ stats }: { stats: ReturnType<typeof overviewStats> }) {
   return <div className="craft-stats craft-overview-stats">{Object.entries(stats).map(([label, count]) => <Card title={label} key={label}><h2>{count}</h2>{label === 'Practicing Now' && <span className="craft-muted" title="Current reservations, not verified attendance. Start inclusive, end exclusive.">Scheduled sessions ⓘ</span>}</Card>)}</div>;
@@ -29,10 +46,14 @@ export function MemberHome({ actor, members, bookings, bays = createBayFixtures(
   </>;
 }
 export function MembersView({ members, bookings, instructors = false }: { members: Member[]; bookings: Booking[]; instructors?: boolean }) {
-  const [query, setQuery] = useState(''), [selected, setSelected] = useState<Member | null>(null);
+  const [query, setQuery] = useState(''), [selected, setSelected] = useState<Member | null>(null), [group, setGroup] = useState<MemberFilter>('all'), [exported, setExported] = useState('');
+  const shown = filterMembers(members, group).filter(member => `${member.name} ${member.tier}`.toLowerCase().includes(query.toLowerCase()));
+  const noun = instructors ? 'instructors' : 'members';
+  const exportEmails = () => { const rows = filterMembers(members, group).length; downloadText(`golf-lab-${noun}-emails-${group}.csv`, memberEmailsCsv(members, group)); setExported(`${rows} ${rows === 1 ? 'address' : 'addresses'} exported.`); };
   return <><div className="craft-page-heading"><div><p className="craft-overline">{instructors ? 'Instructors' : 'Members'}</p><h1>{instructors ? 'The people behind progress.' : 'Know your community.'}</h1><p>{instructors ? 'Instructor agreements and assigned reservations.' : 'Membership, access and account details.'}</p></div><Badge>{members.length} accounts</Badge></div>
-    <label className="craft-search">Search {instructors ? 'instructors' : 'members'}<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name or membership" /></label>
-    <Card><div className="craft-list">{members.filter(member => `${member.name} ${member.tier}`.toLowerCase().includes(query.toLowerCase())).map(member => <div key={member.id} className="craft-member-row"><span className="craft-avatar" aria-hidden="true">{member.name.split(' ').map(word => word[0]).slice(0, 2).join('')}</span><div><strong>{member.name}</strong><p>{member.tier} · {member.email}</p></div><Badge tone={member.active && member.waiver ? 'green' : 'amber'}>{!member.active ? 'Inactive' : !member.waiver ? 'Waiver needed' : 'Active'}</Badge><Button onClick={() => setSelected(member)}>View details ↗</Button></div>)}{!members.some(member => `${member.name} ${member.tier}`.toLowerCase().includes(query.toLowerCase())) && <p>No matching accounts. Try another name.</p>}</div></Card>
+    <div className="craft-toolbar craft-filters"><label className="craft-search">Search {noun}<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name or membership" /></label><label>Show<select value={group} onChange={event => { setGroup(event.target.value as MemberFilter); setExported(''); }}><option value="all">Everyone</option><option value="current">Current (paid, access on)</option><option value="not-current">Not current</option></select></label><Button onClick={exportEmails}>Export emails (CSV) ↓</Button></div>
+    <p role="status" className="craft-muted">{exported}</p>
+    <Card><div className="craft-list">{shown.map(member => <div key={member.id} className="craft-member-row"><span className="craft-avatar" aria-hidden="true">{member.name.split(' ').map(word => word[0]).slice(0, 2).join('')}</span><div><strong>{member.name}</strong><p>{member.tier} · {member.email}</p></div><Badge tone={member.active && member.waiver ? 'green' : 'amber'}>{memberStatusLabel(member)}</Badge><Button onClick={() => setSelected(member)}>View details ↗</Button></div>)}{!shown.length && <p>No matching accounts. Try another name or group.</p>}</div></Card>
     {selected && <Dialog title={selected.name} onClose={() => setSelected(null)}><p>{selected.email}</p><Badge>{selected.tier}</Badge><h3>Membership & billing</h3><p>{selected.billing}</p><p>Billing: {selected.billingStatus} · Access: {selected.active ? 'active' : 'suspended'} · Waiver: {selected.waiver ? 'accepted' : 'not accepted'}</p><p>No real contract, payment or waiver record exists.</p><h3>Reservations / activity</h3>{bookings.filter(row => row.memberId === selected.id).map(row => <p key={row.id}>{row.date} · Bay {row.bay} · {row.hours}h · {bookingStatus(row)}</p>)}<p className="craft-callout">No attendance, manual hour overrides or automated instructor charges.</p></Dialog>}
   </>;
 }
@@ -41,12 +62,7 @@ export function ReportsView({ bookings, members }: { bookings: Booking[]; member
   const [downloadNotice, setDownloadNotice] = useState('');
   const range = reportingRange(date, period), result = report(bookings, range.from, range.to, member);
   function download() {
-    const url = URL.createObjectURL(new Blob([csv(result.rows)], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url; link.download = `golf-lab-reservations-${range.from}-${period}.csv`; link.hidden = true;
-    document.body.appendChild(link); link.click(); link.remove();
-    // Let browsers consume the blob before releasing it (immediate revocation can race downloads).
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadText(`golf-lab-reservations-${range.from}-${period}.csv`, csv(result.rows));
     setDownloadNotice(`CSV prepared: ${result.rows.length} reservations. Browser download requested.`);
   }
   return <><div className="craft-page-heading"><div><p className="craft-overline">A clear picture, not an invoice</p><h1>Time, thoughtfully tracked.</h1><p>Reservation hours only. Completed is not attendance. No rates or automated charges.</p></div><Button className="craft-primary" onClick={download}>Download CSV ↓</Button></div>
@@ -54,6 +70,7 @@ export function ReportsView({ bookings, members }: { bookings: Booking[]; member
     <p>{range.from} inclusive → {range.to} exclusive · America/Chicago booking dates.</p>
     <p role="status" className="craft-muted">{downloadNotice}</p>
     <div className="craft-stats">{(['booked', 'completed', 'cancelled'] as const).map(status => <Card title={`${status} hours`} key={status}><h2>{result.totals[status]}<small> h</small></h2><p>{status === 'booked' ? 'Future or in-progress reservations.' : status === 'completed' ? 'Scheduled end passed. Not actual usage.' : 'Retained history; excluded from completed.'}</p></Card>)}</div>
+    {!member && <Card title="Hours by account">{result.rows.length ? <div className="craft-table-scroll"><table className="craft-table"><caption>Hours per account in this period · same statuses as above</caption><thead><tr><th>Account</th><th>Booked</th><th>Completed</th><th>Cancelled</th></tr></thead><tbody>{hoursByAccount(result.rows).sort((a, b) => (members.find(item => item.id === a.memberId)?.name ?? '').localeCompare(members.find(item => item.id === b.memberId)?.name ?? '')).map(row => <tr key={row.memberId}><td>{members.find(item => item.id === row.memberId)?.name}</td><td>{row.booked}</td><td>{row.completed}</td><td>{row.cancelled}</td></tr>)}</tbody></table></div> : <p>No reservations in this period.</p>}</Card>}
     <Card title="Reservation ledger">{result.rows.length ? <div className="craft-table-scroll"><table className="craft-table"><caption>Reservation hours · mutually exclusive statuses</caption><thead><tr><th>Date</th><th>Account</th><th>Bay</th><th>Hours</th><th>Status</th></tr></thead><tbody>{result.rows.map(row => <tr key={row.id}><td>{row.date}</td><td>{members.find(item => item.id === row.memberId)?.name}</td><td>{row.bay}</td><td>{row.hours}</td><td><Badge>{bookingStatus(row)}</Badge></td></tr>)}</tbody></table></div> : <p>No reservations in this period. CSV still includes the header.</p>}</Card>
   </>;
 }

@@ -5,7 +5,7 @@ import { BookingCalendar, BookingDateControls, BookingEditor } from './booking.j
 import { BillingView, type MembershipSelector } from './billing.js';
 export type { MembershipSelector, MembershipSelectorProps } from './billing.js';
 import { createFixtureAdapter } from './fixtures.js';
-import { AdminOverview, MemberHome, MembersView, ReportsView, Onboarding, OverviewCards } from './views.js';
+import { AdminOverview, MemberHome, MembersView, ProfileView, ReportsView, Onboarding, OverviewCards } from './views.js';
 import { canBook, needsOnboarding, overviewStats, validDate, type Actor, type Role } from './logic.js';
 import { BayCards, BayManagement } from './bays.js';
 import { CalendarDownload } from './calendar-download.js';
@@ -15,7 +15,7 @@ export { BillingView, CheckoutReviewDrawer, billingSections } from './billing.js
 export { createFixtureAdapter } from './fixtures.js';
 export type { GolfLabFixtureAdapter } from './fixtures.js';
 export { golfLabContentSchemas } from './schemas.js';
-export { OverviewCards, Onboarding } from './views.js';
+export { OverviewCards, Onboarding, ProfileView } from './views.js';
 export { BookingCalendar, BookingDateControls, BookingEditor } from './booking.js';
 
 /** Local fixture identity only; the mounting server must keep the preview gate default-off. */
@@ -33,7 +33,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
   const base = role === 'member' ? '/portal' : '/admin';
   const query = `?account=${role === 'instructor' ? 'i1' : role === 'admin' ? 'a1' : member.id}`;
   const href = (id: string) => `${base}${id === 'overview' || id === 'member' ? '' : '/' + id}${query}`;
-  const titles = role === 'admin' ? [['overview', 'Overview'], ['booking', 'Bay schedule'], ['bays', 'Bay Management'], ['members', 'Members'], ['instructors', 'Instructors'], ['reports', 'Reports'], ['billing', 'Billing & overrides']] : role === 'instructor' ? [['booking', 'My schedule']] : [['member', 'Overview'], ...(canBook(member) ? [['booking', 'Book a bay']] : []), ['billing', 'Membership & billing']];
+  const titles = role === 'admin' ? [['overview', 'Overview'], ['booking', 'Bay schedule'], ['bays', 'Bay Management'], ['members', 'Members'], ['instructors', 'Instructors'], ['reports', 'Reports'], ['billing', 'Billing & overrides']] : role === 'instructor' ? [['booking', 'My schedule']] : [['member', 'Overview'], ...(canBook(member) ? [['booking', 'Book a bay']] : []), ['profile', 'Profile'], ['billing', 'Membership & billing']];
   const view = role === 'instructor' ? 'booking' : activeView;
   const navigate = (id: string) => { if (!titles.some(([key]) => key === id)) return; setActiveView(id); history.pushState(null, '', href(id)); document.getElementById('craft-content')?.focus(); };
   const plugin: CraftPlugin<typeof adapter> = {
@@ -47,6 +47,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
         case 'instructors': return <MembersView instructors members={adapter.members.filter(row => row.tier === 'instructor')} bookings={adapter.bookings} />;
         case 'reports': return <ReportsView members={adapter.members} bookings={adapter.bookings} />;
         case 'billing': return <BillingView role={role} member={role === 'member' ? member : undefined} membershipSelector={membershipSelector} />;
+        case 'profile': return <ProfileView member={member} onBilling={() => navigate('billing')} />;
         default: return needsOnboarding(member) ? <Onboarding member={member} membershipSelector={membershipSelector} /> : <MemberHome actor={actor} members={adapter.members} bookings={adapter.bookings} bays={adapter.bays} onBook={() => navigate('booking')} />;
       }
     } }))
