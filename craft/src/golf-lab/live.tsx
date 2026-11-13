@@ -27,6 +27,7 @@ export type LiveActions = {
   extendCommitment: (memberId: string, input: { until: string; note: string }) => Promise<LiveResult>;
   /** Team only. Approve a Junior or Family member by emailing them a link to finish and pay. */
   inviteMember: (input: LiveInvite) => Promise<LiveResult>;
+  addInstructor: (input: { name: string; email: string }) => Promise<LiveResult>;
   billingPortal: () => Promise<{ url?: string; error?: string }>;
   signOut: () => Promise<void>;
 };

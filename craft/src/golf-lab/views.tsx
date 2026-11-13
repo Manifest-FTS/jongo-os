@@ -9,7 +9,7 @@ import { bayLabel, createBayFixtures, resolveBay, type Bay } from './inventory.j
 import { CalendarDownload } from './calendar-download.js';
 import { editableBooking, validDate } from './logic.js';
 import { useLive } from './live.js';
-import { InviteDialog, MemberControls } from './team-controls.js';
+import { InstructorDialog, InviteDialog, MemberControls } from './team-controls.js';
 
 /** Hands a text file to the browser; the address is released after the download has had time to start. */
 function downloadText(filename: string, text: string) {
@@ -68,19 +68,21 @@ export function MemberHome({ actor, members, bookings, bays = createBayFixtures(
   </>;
 }
 export function MembersView({ members, bookings, instructors = false, team = false }: { members: Member[]; bookings: Booking[]; instructors?: boolean; team?: boolean }) {
-  const [query, setQuery] = useState(''), [selected, setSelected] = useState<Member | null>(null), [group, setGroup] = useState<MemberFilter>('all'), [exported, setExported] = useState(''), [inviting, setInviting] = useState(false);
+  const [query, setQuery] = useState(''), [selected, setSelected] = useState<Member | null>(null), [group, setGroup] = useState<MemberFilter>('all'), [exported, setExported] = useState(''), [inviting, setInviting] = useState(false), [addingInstructor, setAddingInstructor] = useState(false);
   const live = useLive(), chosen = selected ? live?.details[selected.id] : undefined;
   const current = selected ? members.find(item => item.id === selected.id) ?? selected : null;
   const shown = filterMembers(members, group).filter(member => `${member.name} ${member.tier}`.toLowerCase().includes(query.toLowerCase()));
   const noun = instructors ? 'instructors' : 'members';
   const exportEmails = () => { const rows = filterMembers(members, group).length; downloadText(`golf-lab-${noun}-emails-${group}.csv`, memberEmailsCsv(members, group)); setExported(`${rows} ${rows === 1 ? 'address' : 'addresses'} exported.`); };
   return <><div className="craft-page-heading"><div><p className="craft-overline">{instructors ? 'Instructors' : 'Members'}</p><h1>{instructors ? 'The people behind progress.' : 'Know your community.'}</h1><p>{instructors ? 'Instructor agreements and assigned reservations.' : 'Membership, access and account details.'}</p></div><Badge>{members.length} accounts</Badge></div>
+    {team && instructors && <div className="craft-actions"><Button className="craft-primary" onClick={() => setAddingInstructor(true)}>+ Add instructor</Button></div>}
     {team && !instructors && <div className="craft-actions"><Button className="craft-primary" onClick={() => setInviting(true)}>＋ Invite Junior or Family member</Button></div>}
     <div className="craft-toolbar craft-filters"><label className="craft-search">Search {noun}<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name or membership" /></label><label>Show<select value={group} onChange={event => { setGroup(event.target.value as MemberFilter); setExported(''); }}><option value="all">Everyone</option><option value="current">Current (paid, access on)</option><option value="not-current">Not current</option></select></label><Button onClick={exportEmails}>Export emails (CSV) ↓</Button></div>
     <p role="status" className="craft-muted">{exported}</p>
     <Card><div className="craft-list">{shown.map(member => <div key={member.id} className="craft-member-row"><span className="craft-avatar" aria-hidden="true">{member.name.split(' ').map(word => word[0]).slice(0, 2).join('')}</span><div><strong>{member.name}</strong><p>{member.tier} · {member.email}</p></div><Badge tone={member.active && member.waiver ? 'green' : 'amber'}>{live?.details[member.id]?.statusLabel ?? memberStatusLabel(member)}</Badge><Button onClick={() => setSelected(member)}>View details ↗</Button></div>)}{!shown.length && <p>No matching accounts. Try another name or group.</p>}</div></Card>
     {selected && <Dialog title={selected.name} onClose={() => setSelected(null)}><p>{selected.email}</p><Badge>{selected.tier}</Badge><h3>Membership & billing</h3><p>{current!.billing}</p><p>Billing: {current!.billingStatus} · Access: {current!.active ? 'active' : 'suspended'} · Waiver: {current!.waiver ? 'accepted' : 'not accepted'}</p>{chosen ? <dl className="craft-details">{([['Phone', chosen.phone ?? 'Not given'], ['Plan', chosen.planLabel ?? 'None'], ['Price', chosen.price ?? '—'], ['Started', chosen.started ?? '—'], ['Commitment ends', chosen.commitmentEnd ?? '—'], ['Waiver accepted', chosen.waiverAccepted ?? 'Never']] as [string, string][]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : <p>No real contract, payment or waiver record exists.</p>}{chosen?.stripeUrl && <p><a href={chosen.stripeUrl} target="_blank" rel="noopener noreferrer">Open in Stripe ↗</a></p>}{team && chosen && current && <MemberControls member={current} detail={chosen} />}<h3>Reservations / activity</h3>{bookings.filter(row => row.memberId === selected.id).map(row => <p key={row.id}>{row.date} · Bay {row.bay} · {row.hours}h · {bookingStatus(row)}</p>)}<p className="craft-callout">No attendance, manual hour overrides or automated instructor charges.</p></Dialog>}
     {inviting && <InviteDialog members={members} onClose={() => setInviting(false)} />}
+    {addingInstructor && <InstructorDialog onClose={() => setAddingInstructor(false)} />}
   </>;
 }
 export function ReportsView({ bookings, members }: { bookings: Booking[]; members: Member[] }) {

@@ -73,3 +73,28 @@ export function InviteDialog({ members, onClose }: { members: Member[]; onClose:
     </form>
   </Dialog>;
 }
+
+/** The team adds an instructor: no payment or invitation, they just sign in with an emailed link. Instructors see only their own schedule. */
+export function InstructorDialog({ onClose }: { onClose: () => void }) {
+  const live = useLive();
+  const [name, setName] = useState(''), [email, setEmail] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [added, setAdded] = useState(false);
+  if (!live) return null;
+  async function add() {
+    setBusy(true); setMessage('');
+    try {
+      const result = await live!.actions.addInstructor({ name, email });
+      if (result.ok) { live!.apply(result.snapshot); setAdded(true); setMessage(`${name} can now sign in at the member login with ${email}. We emailed them how.`); setName(''); setEmail(''); }
+      else setMessage(result.errors.join(' '));
+    } catch { setMessage('Unable to add. Try again.'); }
+    setBusy(false);
+  }
+  return <Dialog title="Add an instructor" onClose={onClose}>
+    <form className="craft-form" onSubmit={event => { event.preventDefault(); void add(); }}>
+      <p>Instructors sign in with their email, book their own sessions and weekly blocks, and see their own schedule. They cannot see members, billing or reports.</p>
+      <label>Name<input value={name} maxLength={120} required onChange={event => { setName(event.target.value); setAdded(false); }} /></label>
+      <label>Email (their sign-in)<input type="email" value={email} maxLength={254} required onChange={event => { setEmail(event.target.value); setAdded(false); }} /></label>
+      <p role="status">{message}</p>
+      <div className="craft-actions"><Button onClick={onClose}>{added ? 'Done' : 'Cancel'}</Button><Button type="submit" className="craft-primary" disabled={busy}>{busy ? 'Adding\u2026' : 'Add instructor'}</Button></div>
+    </form>
+  </Dialog>;
+}
