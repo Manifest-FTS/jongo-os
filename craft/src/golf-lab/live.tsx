@@ -15,6 +15,8 @@ export type LiveActions = {
   commitBookings: (change: LiveCommit) => Promise<LiveResult>;
   saveBay: (input: { number?: number; name: string }) => Promise<LiveResult>;
   saveProfile: (input: { name: string; phone: string }) => Promise<LiveResult>;
+  /** Starts a confirmed change of the sign-in email: the host emails a link to the current address first. */
+  requestEmailChange: (email: string) => Promise<{ ok: true } | { ok: false; errors: string[] }>;
   billingPortal: () => Promise<{ url?: string; error?: string }>;
   signOut: () => Promise<void>;
 };
