@@ -186,9 +186,31 @@ export function overviewStats(bookings: readonly Booking[], today = DEMO_TODAY, 
     'YTD Bookings': count(today.slice(0, 4) + '-01-01', addDays(today, 1))
   };
 }
+/** Quoted CSV cell; a leading = + - @ tab or CR is neutralised so a spreadsheet never runs it as a formula. */
+export const csvCell = (value: string | number): string => `"${String(value).replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`;
 export function csv(bookings: readonly Booking[], now = DEMO_NOW): string {
-  const escape = (value: string | number) => `"${String(value).replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`;
-  return [['Booking ID', 'Account ID', 'Chicago date', 'Start hour', 'Bay', 'Hours', 'Status'], ...bookings.map(row => [row.id, row.memberId, row.date, row.start, row.bay, row.hours, bookingStatus(row, now)])].map(row => row.map(escape).join(',')).join('\r\n');
+  return [['Booking ID', 'Account ID', 'Chicago date', 'Start hour', 'Bay', 'Hours', 'Status'], ...bookings.map(row => [row.id, row.memberId, row.date, row.start, row.bay, row.hours, bookingStatus(row, now)])].map(row => row.map(csvCell).join(',')).join('\r\n');
+}
+/** Hours per account for a set of reservations, split by the same mutually exclusive statuses as the report totals. */
+export function hoursByAccount(bookings: readonly Booking[], now = DEMO_NOW): { memberId: string; booked: number; completed: number; cancelled: number }[] {
+  const rows = new Map<string, { memberId: string; booked: number; completed: number; cancelled: number }>();
+  for (const row of bookings) {
+    const entry = rows.get(row.memberId) ?? { memberId: row.memberId, booked: 0, completed: 0, cancelled: 0 };
+    entry[bookingStatus(row, now)] += row.hours;
+    rows.set(row.memberId, entry);
+  }
+  return [...rows.values()];
+}
+export type MemberFilter = 'all' | 'current' | 'not-current';
+/** Current = access on and paid; everything else (suspended, unpaid, overdue, left) is not current. */
+export const isCurrentMember = (member: Member): boolean => member.active && member.billingStatus === 'active';
+export const memberStatusLabel = (member: Member): string => !member.active ? 'Inactive' : !member.waiver ? 'Waiver needed' : 'Active';
+export function filterMembers<T extends Member>(members: readonly T[], filter: MemberFilter): T[] {
+  return members.filter(member => filter === 'all' || (filter === 'current') === isCurrentMember(member));
+}
+/** Name, email, membership and status for the chosen group: the list to paste into an email program. */
+export function memberEmailsCsv(members: readonly Member[], filter: MemberFilter = 'all'): string {
+  return [['Name', 'Email', 'Membership', 'Status', 'Billing'], ...filterMembers(members, filter).map(member => [member.name, member.email, member.tier, memberStatusLabel(member), member.billingStatus])].map(row => row.map(csvCell).join(',')).join('\r\n');
 }
 export const PLANS = [
   { id: 'monthly', label: 'Individual · committed', price: '$199 / month', terms: '12-month commitment. Monthly collection; not cancel-anytime.' },
