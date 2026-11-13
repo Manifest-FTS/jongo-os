@@ -1,4 +1,4 @@
-import { chicagoInstant, DEMO_NOW, editableBooking, validDate, type Actor, type Booking, type Member } from './logic.js';
+import { chicagoInstant, clockNow, editableBooking, validDate, type Actor, type Booking, type Member } from './logic.js';
 import { bayLabel, resolveBay, type Bay } from './inventory.js';
 
 export type CalendarSelection = { from?: string; to?: string; bookingId?: string; seriesId?: string };
@@ -18,7 +18,7 @@ export function icsFold(line: string): string {
 const timestamp = (instant: number) => new Date(instant).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
 /** Local download snapshot, never a subscription/sync/invitation. Personal exports are own future only.
  * Admin range exports include noncancelled past/in-progress reservations and are labeled as history. */
-export function calendarExport(bookings: readonly Booking[], members: readonly Member[], bays: readonly Bay[], actor: Actor, selection: CalendarSelection, now = DEMO_NOW, stamp = Date.now()): { content: string; count: number } {
+export function calendarExport(bookings: readonly Booking[], members: readonly Member[], bays: readonly Bay[], actor: Actor, selection: CalendarSelection, now = clockNow(), stamp = Date.now()): { content: string; count: number } {
   if (!['admin', 'member', 'instructor'].includes(actor.role) || (actor.role !== 'admin' && !members.some(member => member.id === actor.id && (actor.role === 'instructor' ? member.tier === 'instructor' : member.tier !== 'instructor')))) throw new Error('Unauthorized calendar export.');
   const range = selection.from !== undefined || selection.to !== undefined;
   if (range && (!selection.from || !selection.to || !validDate(selection.from) || !validDate(selection.to) || selection.from >= selection.to)) throw new Error('Choose a valid exclusive calendar range.');
