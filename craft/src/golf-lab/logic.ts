@@ -11,6 +11,12 @@ export type Booking = { id: string; memberId: string; date: string; start: numbe
 export type Actor = { id: string; role: Role };
 export const DEMO_TODAY = '2026-11-02';
 export const DEMO_NOW = Date.parse('2026-11-02T14:00:00Z');
+// The preview runs on a frozen fixture clock. A live deployment sets the real moment once per snapshot, so server and browser agree on what "now" is.
+let liveNow: number | null = null;
+export function setLiveClock(now: number | null): void { liveNow = now; }
+export const clockNow = (): number => liveNow ?? DEMO_NOW;
+const chicagoDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' });
+export const clockToday = (): string => liveNow === null ? DEMO_TODAY : chicagoDay.format(liveNow);
 export const TIME_ZONE = 'America/Chicago';
 /** Configurable fixture bounds, not approved production instructor policy. */
 export const INSTRUCTOR_MAX_HOURS = 12;
@@ -39,7 +45,7 @@ export function dailyLimit(date: string): number { const month = Number(date.sli
 export function canManage(actor: Actor, booking: Booking): boolean { return actor.role === 'admin' || (actor.id === booking.memberId && ['member', 'instructor'].includes(actor.role)); }
 export function needsOnboarding(member: Member): boolean { return member.billingStatus === 'unpaid' || member.billingStatus === 'pending'; }
 export function canBook(member: Member): boolean { return member.active && member.billingStatus === 'active'; }
-export function validateBooking(candidate: Booking, bookings: readonly Booking[], member: Member, actor: Actor, now = DEMO_NOW, today = DEMO_TODAY, bays: readonly Bay[] = createBayFixtures()): string[] {
+export function validateBooking(candidate: Booking, bookings: readonly Booking[], member: Member, actor: Actor, now = clockNow(), today = clockToday(), bays: readonly Bay[] = createBayFixtures()): string[] {
   const errors: string[] = [];
   try { assertInventory(bays); } catch { return ['Invalid bay inventory. Contact admin.']; }
   if (!['member', 'admin', 'instructor'].includes(actor.role) || !canManage(actor, candidate) || candidate.memberId !== member.id || (actor.role === 'instructor' && member.tier !== 'instructor') || (actor.role === 'member' && member.tier === 'instructor')) errors.push('This role cannot book for that account.');
@@ -69,7 +75,7 @@ export function previewSeries(candidate: Booking, count: number, bookings: reado
   const staged = [...bookings];
   return Array.from({ length: count }, (_, index) => {
     const booking = { ...candidate, id: `${candidate.id}-${index}`, date: addDays(candidate.date, index * 7), seriesId: candidate.id };
-    const errors = actor.role === 'member' || member.tier !== 'instructor' ? ['Only instructors/admin may create instructor series.'] : validateBooking(booking, staged, member, actor, DEMO_NOW, DEMO_TODAY, bays);
+    const errors = actor.role === 'member' || member.tier !== 'instructor' ? ['Only instructors/admin may create instructor series.'] : validateBooking(booking, staged, member, actor, clockNow(), clockToday(), bays);
     if (!errors.length) staged.push(booking);
     return { booking, errors };
   });
@@ -77,14 +83,14 @@ export function previewSeries(candidate: Booking, count: number, bookings: reado
 export type ChangeScope = 'one' | 'following';
 export type ScheduleCandidate = { booking: Booking; before?: Booking; errors: string[] };
 export type ScheduleStage = { candidates: ScheduleCandidate[]; errors: string[]; action: 'save' | 'cancel' };
-export function editableBooking(row: Booking, now = DEMO_NOW): boolean {
+export function editableBooking(row: Booking, now = clockNow()): boolean {
   const start = chicagoInstant(row.date, row.start);
   return row.status === 'booked' && start !== null && start > now;
 }
 /** Inclusive end date. Reject invalid bounds, never silently truncate an out-of-range request. */
 export function previewWeekly(candidate: Booking, until: string, bookings: readonly Booking[], member: Member, actor: Actor, bays: readonly Bay[] = createBayFixtures()): ScheduleStage {
   if (!validDate(candidate.date) || !validDate(until) || until < candidate.date) return { action: 'save', candidates: [], errors: ['Choose a valid end date on or after the start date (inclusive).'] };
-  if (dayDifference(candidate.date, DEMO_TODAY) < 0 || dayDifference(until, DEMO_TODAY) > INSTRUCTOR_HORIZON_DAYS) return { action: 'save', candidates: [], errors: ['The entire series must be within the proposed 90-day instructor preview horizon.'] };
+  if (dayDifference(candidate.date, clockToday()) < 0 || dayDifference(until, clockToday()) > INSTRUCTOR_HORIZON_DAYS) return { action: 'save', candidates: [], errors: ['The entire series must be within the proposed 90-day instructor preview horizon.'] };
   if (actor.role === 'member' || member.tier !== 'instructor') return { action: 'save', candidates: [], errors: ['Only instructors/admin may create instructor series.'] };
   const rows = Array.from({ length: Math.floor(dayDifference(until, candidate.date) / 7) + 1 }, (_, index) => ({ ...candidate, id: `${candidate.id}-${index}`, seriesId: candidate.id, date: addDays(candidate.date, index * 7) }));
   return stageCandidates(rows, bookings, member, actor, bays);
@@ -94,7 +100,7 @@ function stageCandidates(rows: Booking[], bookings: readonly Booking[], member: 
   let working = [...bookings];
   const candidates = rows.map(booking => {
     const original = before.find(row => row.id === booking.id);
-    const errors = validateBooking(booking, working, member, actor, DEMO_NOW, DEMO_TODAY, bays);
+    const errors = validateBooking(booking, working, member, actor, clockNow(), clockToday(), bays);
     if (!original && working.some(row => row.id === booking.id)) errors.push('Reservation identity already exists.');
     if (!errors.length) working = [...working.filter(row => row.id !== booking.id), booking];
     return { booking, before: original, errors };
@@ -145,7 +151,7 @@ export function applyScheduleStage(bookings: readonly Booking[], stage: Schedule
       if (!before || booking.status !== 'cancelled' || booking.date !== before.date || booking.start !== before.start || booking.hours !== before.hours || booking.bay !== before.bay) throw new Error('Invalid cancellation.');
     } else {
       if (!before && booking.seriesId && (actor.role === 'member' || member.tier !== 'instructor')) throw new Error('Only instructors/admin may create instructor series.');
-      const errors = validateBooking(booking, working, member, actor, DEMO_NOW, DEMO_TODAY, bays);
+      const errors = validateBooking(booking, working, member, actor, clockNow(), clockToday(), bays);
       if (errors.length) {
         if (skipConflicts && errors.every(isConflict)) continue;
         throw new Error(errors.join(' '));
@@ -157,7 +163,7 @@ export function applyScheduleStage(bookings: readonly Booking[], stage: Schedule
   if (stage.action === 'save' && stage.candidates.length && !changed) throw new Error('No available changes. Nothing was saved.');
   return working;
 }
-export function bookingStatus(booking: Booking, now = DEMO_NOW): 'booked' | 'completed' | 'cancelled' {
+export function bookingStatus(booking: Booking, now = clockNow()): 'booked' | 'completed' | 'cancelled' {
   if (booking.status === 'cancelled') return 'cancelled';
   const end = chicagoInstant(booking.date, booking.start + booking.hours);
   return end !== null && end <= now ? 'completed' : 'booked';
@@ -167,14 +173,14 @@ export function reportingRange(date: string, period: 'week' | 'month'): { from: 
   if (period === 'week') { const weekday = new Date(date + 'T12:00:00Z').getUTCDay(); const from = addDays(date, -((weekday + 6) % 7)); return { from, to: addDays(from, 7) }; }
   const from = date.slice(0, 7) + '-01'; const d = new Date(from + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); return { from, to: d.toISOString().slice(0, 10) };
 }
-export function report(bookings: readonly Booking[], from: string, to: string, memberId = '', now = DEMO_NOW) {
+export function report(bookings: readonly Booking[], from: string, to: string, memberId = '', now = clockNow()) {
   const rows = bookings.filter(row => row.date >= from && row.date < to && (!memberId || row.memberId === memberId));
   const totals = { booked: 0, completed: 0, cancelled: 0 };
   rows.forEach(row => { totals[bookingStatus(row, now)] += row.hours; });
   return { rows, totals };
 }
 /** Counts reservations, not duration or verified attendance. Date periods are half-open in Chicago. */
-export function overviewStats(bookings: readonly Booking[], today = DEMO_TODAY, now = DEMO_NOW) {
+export function overviewStats(bookings: readonly Booking[], today = clockToday(), now = clockNow()) {
   const live = bookings.filter(row => row.status !== 'cancelled');
   const week = reportingRange(today, 'week'), month = reportingRange(today, 'month');
   const count = (from: string, to: string) => live.filter(row => row.date >= from && row.date < to).length;
@@ -188,11 +194,11 @@ export function overviewStats(bookings: readonly Booking[], today = DEMO_TODAY, 
 }
 /** Quoted CSV cell; a leading = + - @ tab or CR is neutralised so a spreadsheet never runs it as a formula. */
 export const csvCell = (value: string | number): string => `"${String(value).replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`;
-export function csv(bookings: readonly Booking[], now = DEMO_NOW): string {
+export function csv(bookings: readonly Booking[], now = clockNow()): string {
   return [['Booking ID', 'Account ID', 'Chicago date', 'Start hour', 'Bay', 'Hours', 'Status'], ...bookings.map(row => [row.id, row.memberId, row.date, row.start, row.bay, row.hours, bookingStatus(row, now)])].map(row => row.map(csvCell).join(',')).join('\r\n');
 }
 /** Hours per account for a set of reservations, split by the same mutually exclusive statuses as the report totals. */
-export function hoursByAccount(bookings: readonly Booking[], now = DEMO_NOW): { memberId: string; booked: number; completed: number; cancelled: number }[] {
+export function hoursByAccount(bookings: readonly Booking[], now = clockNow()): { memberId: string; booked: number; completed: number; cancelled: number }[] {
   const rows = new Map<string, { memberId: string; booked: number; completed: number; cancelled: number }>();
   for (const row of bookings) {
     const entry = rows.get(row.memberId) ?? { memberId: row.memberId, booked: 0, completed: 0, cancelled: 0 };

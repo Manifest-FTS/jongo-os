@@ -6,9 +6,12 @@ import { BillingView, type MembershipSelector } from './billing.js';
 export type { MembershipSelector, MembershipSelectorProps } from './billing.js';
 import { createFixtureAdapter } from './fixtures.js';
 import { AdminOverview, MemberHome, MembersView, ProfileView, ReportsView, Onboarding, OverviewCards } from './views.js';
-import { canBook, needsOnboarding, overviewStats, validDate, type Actor, type Role } from './logic.js';
+import { canBook, needsOnboarding, overviewStats, setLiveClock, validDate, type Actor, type Booking, type Role } from './logic.js';
 import { BayCards, BayManagement } from './bays.js';
 import { CalendarDownload } from './calendar-download.js';
+import { LiveProvider, type LiveConfig, type LiveSnapshot } from './live.js';
+import { LiveBillingView } from './live-billing.js';
+export type { LiveActions, LiveCommit, LiveConfig, LiveDetail, LiveResult, LiveSnapshot } from './live.js';
 export { CalendarDownload } from './calendar-download.js';
 export { BayCard, BayCards, BayManagement, BayNameForm } from './bays.js';
 export { BillingView, CheckoutReviewDrawer, billingSections } from './billing.js';
@@ -18,9 +21,11 @@ export { golfLabContentSchemas } from './schemas.js';
 export { OverviewCards, Onboarding, ProfileView } from './views.js';
 export { BookingCalendar, BookingDateControls, BookingEditor } from './booking.js';
 
-/** Local fixture identity only; the mounting server must keep the preview gate default-off. */
-export function GolfLabDemo({ initialView = 'member', initialRole = 'member', accountId = 'm1', membershipSelector }: { initialView?: string; initialRole?: Role; accountId?: string; membershipSelector?: MembershipSelector }) {
-  const [adapter, setAdapter] = useState(createFixtureAdapter);
+/** Local fixture identity only unless `live` is given; the mounting server must keep the preview gate default-off. With `live`, the screens run on the host's real data and every change goes to the host first. */
+export function GolfLabDemo({ initialView = 'member', initialRole = 'member', accountId = 'm1', membershipSelector, live }: { initialView?: string; initialRole?: Role; accountId?: string; membershipSelector?: MembershipSelector; live?: LiveConfig }) {
+  // One clock for server and browser: the moment the snapshot was taken (or the frozen fixture day).
+  setLiveClock(live ? live.snapshot.now : null);
+  const [adapter, setAdapter] = useState(() => live ? { members: live.snapshot.members, bookings: live.snapshot.bookings, bays: live.snapshot.bays } : createFixtureAdapter());
   const [activeView, setActiveView] = useState(initialView);
   useEffect(() => {
     const back = () => setActiveView(location.pathname.split('/')[2] || (initialRole === 'member' ? 'member' : 'overview'));
@@ -28,10 +33,21 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
     return () => window.removeEventListener('popstate', back);
   }, [initialRole]);
   const role = initialRole;
-  const member = adapter.members.find(row => row.id === accountId && row.tier !== 'instructor') ?? adapter.members[0];
-  const actor: Actor = { role, id: role === 'admin' ? 'a1' : role === 'instructor' ? 'i1' : member.id };
+  const apply = (snapshot: LiveSnapshot) => { setLiveClock(snapshot.now); setAdapter({ members: snapshot.members, bookings: snapshot.bookings, bays: snapshot.bays }); };
+  const commit = async (next: Booking[]): Promise<void | string[]> => {
+    if (!live) { setAdapter({ ...adapter, bookings: next }); return; }
+    const before = new Map(adapter.bookings.map(row => [row.id, row]));
+    const created = next.filter(row => !before.has(row.id));
+    const modified = next.filter(row => { const old = before.get(row.id); return !!old && (old.date !== row.date || old.start !== row.start || old.hours !== row.hours || old.bay !== row.bay || old.status !== row.status); });
+    if (!created.length && !modified.length) return;
+    const result = await live.actions.commitBookings({ created, modified });
+    if (!result.ok) return result.errors;
+    apply(result.snapshot);
+  };
+  const member = adapter.members.find(row => row.id === (live ? live.selfId : accountId) && row.tier !== 'instructor') ?? adapter.members.find(row => row.tier !== 'instructor') ?? adapter.members[0];
+  const actor: Actor = { role, id: role === 'admin' ? 'a1' : role === 'instructor' ? (live ? live.selfId : 'i1') : member.id };
   const base = role === 'member' ? '/portal' : '/admin';
-  const query = `?account=${role === 'instructor' ? 'i1' : role === 'admin' ? 'a1' : member.id}`;
+  const query = live ? '' : `?account=${role === 'instructor' ? 'i1' : role === 'admin' ? 'a1' : member.id}`;
   const href = (id: string) => `${base}${id === 'overview' || id === 'member' ? '' : '/' + id}${query}`;
   const titles = role === 'admin' ? [['overview', 'Overview'], ['booking', 'Bay schedule'], ['bays', 'Bay Management'], ['members', 'Members'], ['instructors', 'Instructors'], ['reports', 'Reports'], ['billing', 'Billing & overrides']] : role === 'instructor' ? [['booking', 'My schedule']] : [['member', 'Overview'], ...(canBook(member) ? [['booking', 'Book a bay']] : []), ['profile', 'Profile'], ['billing', 'Membership & billing']];
   const view = role === 'instructor' ? 'booking' : activeView;
@@ -42,13 +58,13 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
       switch (id) {
         case 'overview': return <AdminOverview bays={adapter.bays} bookings={adapter.bookings} onSchedule={() => navigate('booking')} />;
         case 'bays': return <BayManagement actor={actor} bays={adapter.bays} bookings={adapter.bookings} onUpdate={bays => setAdapter({ ...adapter, bays })} />;
-        case 'booking': return <BookingCalendar actor={actor} members={adapter.members} bays={adapter.bays} bookings={adapter.bookings} onUpdate={bookings => setAdapter({ ...adapter, bookings })} />;
+        case 'booking': return <BookingCalendar actor={actor} members={adapter.members} bays={adapter.bays} bookings={adapter.bookings} onUpdate={commit} />;
         case 'members': return <MembersView members={adapter.members.filter(row => row.tier !== 'instructor')} bookings={adapter.bookings} />;
         case 'instructors': return <MembersView instructors members={adapter.members.filter(row => row.tier === 'instructor')} bookings={adapter.bookings} />;
         case 'reports': return <ReportsView members={adapter.members} bookings={adapter.bookings} />;
-        case 'billing': return <BillingView role={role} member={role === 'member' ? member : undefined} membershipSelector={membershipSelector} />;
+        case 'billing': return live ? <LiveBillingView role={role} member={role === 'member' ? member : undefined} members={adapter.members.filter(row => row.tier !== 'instructor')} /> : <BillingView role={role} member={role === 'member' ? member : undefined} membershipSelector={membershipSelector} />;
         case 'profile': return <ProfileView member={member} onBilling={() => navigate('billing')} />;
-        default: return needsOnboarding(member) ? <Onboarding member={member} membershipSelector={membershipSelector} /> : <MemberHome actor={actor} members={adapter.members} bookings={adapter.bookings} bays={adapter.bays} onBook={() => navigate('booking')} />;
+        default: return needsOnboarding(member) ? <Onboarding member={member} membershipSelector={membershipSelector} /> : <>{live?.notice && <p className="craft-callout" role="status">{live.notice}</p>}<MemberHome actor={actor} members={adapter.members} bookings={adapter.bookings} bays={adapter.bays} onBook={() => navigate('booking')} /></>;
       }
     } }))
   };
@@ -56,12 +72,12 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
   if (role === 'member' && view === 'booking' && !canBook(member)) {
     plugin.views = plugin.views.map(item => item.id === 'member' ? { ...item, render: () => <Onboarding member={member} membershipSelector={membershipSelector} /> } : item);
   }
-  return <CraftShell plugin={plugin} context={{ identity: { ...actor, label: role === 'admin' ? 'Golf Lab team' : adapter.members.find(row => row.id === actor.id)!.name }, adapter }} activeView={view} clientNavigation onNavigate={navigate}
-    brand={{ name: 'THE GOLF LAB', tagline: 'Practice. With purpose.', homeHref: base + query, sidebarNote: <a href="/style-guide#platform-member">Design system ↗</a> }}
-    controls={<div className="craft-preview-controls"><label>Account<select aria-label="Account" value={actor.id} onChange={event => {
+  return <LiveProvider value={live ? { ...live, apply } : null}><CraftShell plugin={plugin} context={{ identity: { ...actor, label: role === 'admin' ? 'Golf Lab team' : adapter.members.find(row => row.id === actor.id)?.name ?? 'Member' }, adapter }} activeView={view} clientNavigation onNavigate={navigate}
+    brand={{ name: 'THE GOLF LAB', tagline: 'Practice. With purpose.', homeHref: base + query, sidebarNote: live ? undefined : <a href="/style-guide#platform-member">Design system ↗</a> }}
+    controls={live ? <div className="craft-preview-controls"><Button onClick={() => { void live.actions.signOut().then(() => location.assign('/login?out=1')); }}>Sign out</Button></div> : <div className="craft-preview-controls"><label>Account<select aria-label="Account" value={actor.id} onChange={event => {
       const id = event.target.value;
       location.assign(id === 'a1' ? '/admin?account=a1' : id === 'i1' ? '/admin/booking?account=i1' : `/portal?account=${id}`);
-    }}>{role === 'member' ? adapter.members.filter(row => row.tier !== 'instructor').map(row => <option key={row.id} value={row.id}>{row.name}</option>) : <>{role === 'admin' && <option value="a1">Golf Lab team</option>}{adapter.members.filter(row => row.tier === 'instructor').map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</>}</select></label></div>} />;
+    }}>{role === 'member' ? adapter.members.filter(row => row.tier !== 'instructor').map(row => <option key={row.id} value={row.id}>{row.name}</option>) : <>{role === 'admin' && <option value="a1">Golf Lab team</option>}{adapter.members.filter(row => row.tier === 'instructor').map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</>}</select></label></div>} /></LiveProvider>;
 }
 
 /** Shared live components and tokens, not parallel mock implementations. */

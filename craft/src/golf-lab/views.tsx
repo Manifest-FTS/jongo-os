@@ -1,13 +1,14 @@
 "use client";
 import { useState } from 'react';
 import { Badge, Button, Card, Dialog } from '../shell.js';
-import { bookingStatus, canBook, csv, DEMO_TODAY, filterMembers, hoursByAccount, memberEmailsCsv, memberStatusLabel, needsOnboarding, overviewStats, report, reportingRange, type Actor, type Booking, type Member, type MemberFilter } from './logic.js';
+import { bookingStatus, canBook, csv, clockToday, filterMembers, hoursByAccount, memberEmailsCsv, memberStatusLabel, needsOnboarding, overviewStats, report, reportingRange, type Actor, type Booking, type Member, type MemberFilter } from './logic.js';
 import { hourLabel } from './booking.js';
 import { BillingView, type MembershipSelector } from './billing.js';
 import { BayCards } from './bays.js';
 import { bayLabel, createBayFixtures, resolveBay, type Bay } from './inventory.js';
 import { CalendarDownload } from './calendar-download.js';
 import { editableBooking, validDate } from './logic.js';
+import { useLive } from './live.js';
 
 /** Hands a text file to the browser; the address is released after the download has had time to start. */
 function downloadText(filename: string, text: string) {
@@ -20,9 +21,18 @@ function downloadText(filename: string, text: string) {
 const BOOKING_WINDOW: Record<Member['tier'], string> = { individual: '7 days in advance', family: '7 days in advance', junior: '1 day in advance', instructor: 'Set by the instructor agreement' };
 /** What a member sees of their own account: details and the terms they joined under. Editing details needs a real account system. */
 export function ProfileView({ member, onBilling }: { member: Member; onBilling?: () => void }) {
+  const live = useLive(), detail = live?.details[member.id];
+  const [name, setName] = useState(member.name), [phone, setPhone] = useState(detail?.phone ?? ''), [message, setMessage] = useState(''), [saving, setSaving] = useState(false);
   const rows: [string, string][] = [['Name', member.name], ['Email', member.email], ['Membership', member.tier], ['Status', memberStatusLabel(member)], ['Waiver', member.waiver ? 'On file' : 'Required before booking']];
+  async function save() {
+    if (!live) return;
+    setSaving(true); setMessage('');
+    try { const result = await live.actions.saveProfile({ name, phone }); if (result.ok) { live.apply(result.snapshot); setMessage('Your details were saved.'); } else setMessage(result.errors.join(' ')); }
+    catch { setMessage('Unable to save. Try again.'); }
+    setSaving(false);
+  }
   return <><div className="craft-page-heading"><div><p className="craft-overline">Your profile</p><h1>{member.name}</h1><p>Your details and the terms of your membership.</p></div><Badge tone={canBook(member) ? 'green' : 'amber'}>{canBook(member) ? 'Active access' : 'Access suspended'}</Badge></div>
-    <div className="craft-two-columns"><Card title="Your details"><dl className="craft-details">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p className="craft-muted">To change your name or email, contact the team.</p></Card>
+    <div className="craft-two-columns">{live ? <Card title="Your details"><form className="craft-form" onSubmit={event => { event.preventDefault(); void save(); }}><label>Name<input value={name} maxLength={120} required onChange={event => setName(event.target.value)} /></label><label>Phone<input type="tel" value={phone} maxLength={40} onChange={event => setPhone(event.target.value)} /></label><label>Email (your sign-in)<input value={member.email} disabled readOnly /></label><Button type="submit" className="craft-primary" disabled={saving}>{saving ? 'Saving…' : 'Save details'}</Button><p role="status">{message}</p></form><p className="craft-muted">To change your email address, contact the team.</p></Card> : <Card title="Your details"><dl className="craft-details">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p className="craft-muted">To change your name or email, contact the team.</p></Card>}
       <Card title="Membership terms"><dl className="craft-details"><div><dt>Plan</dt><dd>{member.billing}</dd></div><div><dt>Booking window</dt><dd>{BOOKING_WINDOW[member.tier]}</dd></div><div><dt>Daily limit</dt><dd>Winter (Nov–Apr) 1 hour · Summer (May–Oct) 2 hours</dd></div></dl>{onBilling ? <Button onClick={onBilling}>Membership & billing ↗</Button> : <a className="craft-button" href={`/portal/billing?account=${member.id}`}>Membership & billing ↗</a>}</Card></div></>;
 }
 
@@ -47,6 +57,7 @@ export function MemberHome({ actor, members, bookings, bays = createBayFixtures(
 }
 export function MembersView({ members, bookings, instructors = false }: { members: Member[]; bookings: Booking[]; instructors?: boolean }) {
   const [query, setQuery] = useState(''), [selected, setSelected] = useState<Member | null>(null), [group, setGroup] = useState<MemberFilter>('all'), [exported, setExported] = useState('');
+  const live = useLive(), chosen = selected ? live?.details[selected.id] : undefined;
   const shown = filterMembers(members, group).filter(member => `${member.name} ${member.tier}`.toLowerCase().includes(query.toLowerCase()));
   const noun = instructors ? 'instructors' : 'members';
   const exportEmails = () => { const rows = filterMembers(members, group).length; downloadText(`golf-lab-${noun}-emails-${group}.csv`, memberEmailsCsv(members, group)); setExported(`${rows} ${rows === 1 ? 'address' : 'addresses'} exported.`); };
@@ -54,11 +65,11 @@ export function MembersView({ members, bookings, instructors = false }: { member
     <div className="craft-toolbar craft-filters"><label className="craft-search">Search {noun}<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name or membership" /></label><label>Show<select value={group} onChange={event => { setGroup(event.target.value as MemberFilter); setExported(''); }}><option value="all">Everyone</option><option value="current">Current (paid, access on)</option><option value="not-current">Not current</option></select></label><Button onClick={exportEmails}>Export emails (CSV) ↓</Button></div>
     <p role="status" className="craft-muted">{exported}</p>
     <Card><div className="craft-list">{shown.map(member => <div key={member.id} className="craft-member-row"><span className="craft-avatar" aria-hidden="true">{member.name.split(' ').map(word => word[0]).slice(0, 2).join('')}</span><div><strong>{member.name}</strong><p>{member.tier} · {member.email}</p></div><Badge tone={member.active && member.waiver ? 'green' : 'amber'}>{memberStatusLabel(member)}</Badge><Button onClick={() => setSelected(member)}>View details ↗</Button></div>)}{!shown.length && <p>No matching accounts. Try another name or group.</p>}</div></Card>
-    {selected && <Dialog title={selected.name} onClose={() => setSelected(null)}><p>{selected.email}</p><Badge>{selected.tier}</Badge><h3>Membership & billing</h3><p>{selected.billing}</p><p>Billing: {selected.billingStatus} · Access: {selected.active ? 'active' : 'suspended'} · Waiver: {selected.waiver ? 'accepted' : 'not accepted'}</p><p>No real contract, payment or waiver record exists.</p><h3>Reservations / activity</h3>{bookings.filter(row => row.memberId === selected.id).map(row => <p key={row.id}>{row.date} · Bay {row.bay} · {row.hours}h · {bookingStatus(row)}</p>)}<p className="craft-callout">No attendance, manual hour overrides or automated instructor charges.</p></Dialog>}
+    {selected && <Dialog title={selected.name} onClose={() => setSelected(null)}><p>{selected.email}</p><Badge>{selected.tier}</Badge><h3>Membership & billing</h3><p>{selected.billing}</p><p>Billing: {selected.billingStatus} · Access: {selected.active ? 'active' : 'suspended'} · Waiver: {selected.waiver ? 'accepted' : 'not accepted'}</p>{chosen ? <dl className="craft-details">{([['Phone', chosen.phone ?? 'Not given'], ['Plan', chosen.planLabel ?? 'None'], ['Price', chosen.price ?? '—'], ['Started', chosen.started ?? '—'], ['Commitment ends', chosen.commitmentEnd ?? '—'], ['Waiver accepted', chosen.waiverAccepted ?? 'Never']] as [string, string][]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : <p>No real contract, payment or waiver record exists.</p>}{chosen?.stripeUrl && <p><a href={chosen.stripeUrl} target="_blank" rel="noopener noreferrer">Open in Stripe ↗</a></p>}<h3>Reservations / activity</h3>{bookings.filter(row => row.memberId === selected.id).map(row => <p key={row.id}>{row.date} · Bay {row.bay} · {row.hours}h · {bookingStatus(row)}</p>)}<p className="craft-callout">No attendance, manual hour overrides or automated instructor charges.</p></Dialog>}
   </>;
 }
 export function ReportsView({ bookings, members }: { bookings: Booking[]; members: Member[] }) {
-  const [period, setPeriod] = useState<'week' | 'month'>('week'), [date, setDate] = useState(DEMO_TODAY), [member, setMember] = useState('');
+  const [period, setPeriod] = useState<'week' | 'month'>('week'), [date, setDate] = useState(clockToday()), [member, setMember] = useState('');
   const [downloadNotice, setDownloadNotice] = useState('');
   const range = reportingRange(date, period), result = report(bookings, range.from, range.to, member);
   function download() {
