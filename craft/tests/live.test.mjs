@@ -8,7 +8,7 @@ import { DEMO_NOW, bookingStatus, clockNow, clockToday, editableBooking, overvie
 const NOW = Date.parse('2027-03-04T20:00:00Z'); // 14:00 Chicago, Thursday 4 March 2027 (winter)
 const member = { id: 'u1', name: 'Grace Hopper', email: 'grace@example.test', tier: 'individual', active: true, waiver: true, approved: true, billingStatus: 'active', billing: '$199/month \u00b7 1-year commitment' };
 const bays = [{ id: 'golf-lab-bay-1', displayNumber: 1, name: 'The Fairway' }, { id: 'golf-lab-bay-2', displayNumber: 2, name: 'The Approach' }];
-const actions = { commitBookings: async () => ({ ok: true }), saveBay: async () => ({ ok: true }), saveProfile: async () => ({ ok: true }), billingPortal: async () => ({}), signOut: async () => {} };
+const actions = { commitBookings: async () => ({ ok: true }), saveBay: async () => ({ ok: true }), saveProfile: async () => ({ ok: true }), requestEmailChange: async () => ({ ok: true }), billingPortal: async () => ({}), signOut: async () => {} };
 const live = (extra = {}) => ({ snapshot: { now: NOW, members: [member], bookings: [{ id: 'b1', memberId: 'u1', date: '2027-03-05', start: 18, hours: 1, bay: 2, status: 'booked' }], bays }, actions, selfId: 'u1', contactEmail: 'team@example.test', details: { u1: { phone: '847-555-0100', planLabel: 'Individual \u2013 Monthly', price: '$199 / month', statusLabel: 'Active', started: 'Nov 13, 2026', commitmentEnd: 'Nov 13, 2027', waiverAccepted: 'Nov 13, 2026' } }, ...extra });
 
 test('the live clock replaces the frozen fixture day for every default, and switching it off restores the fixture day', () => {
@@ -34,7 +34,7 @@ test('live mode shows the real account, never the fixture people, and says nothi
   assert.ok(!html.includes('Alex Morgan') && !html.includes('example.invalid') && !html.includes('Design system'));
   assert.ok(html.includes('2027-03-05') && html.includes('The Approach'), 'own upcoming session is listed with its real bay');
   const profile = renderToStaticMarkup(createElement(GolfLabDemo, { initialRole: 'member', initialView: 'profile', live: live() }));
-  assert.ok(profile.includes('value="Grace Hopper"') && profile.includes('value="847-555-0100"') && profile.includes('Save details') && profile.includes('disabled'));
+  assert.ok(profile.includes('value="Grace Hopper"') && profile.includes('value="847-555-0100"') && profile.includes('Save details') && profile.includes('disabled') && profile.includes('Change your email address') && profile.includes('Send confirmation'));
   const booking = renderToStaticMarkup(createElement(GolfLabDemo, { initialRole: 'member', initialView: 'booking', live: live() }));
   assert.ok(!/local memory|simulated|reset on reload/i.test(booking), 'no simulation wording on the live booking screen');
   assert.ok(booking.includes('2027-03-04') && booking.includes('The Fairway'));

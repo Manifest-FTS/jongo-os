@@ -23,6 +23,17 @@ const BOOKING_WINDOW: Record<Member['tier'], string> = { individual: '7 days in 
 export function ProfileView({ member, onBilling }: { member: Member; onBilling?: () => void }) {
   const live = useLive(), detail = live?.details[member.id];
   const [name, setName] = useState(member.name), [phone, setPhone] = useState(detail?.phone ?? ''), [message, setMessage] = useState(''), [saving, setSaving] = useState(false);
+  const [newEmail, setNewEmail] = useState(''), [emailMessage, setEmailMessage] = useState(''), [emailBusy, setEmailBusy] = useState(false);
+  async function changeEmail() {
+    if (!live) return;
+    setEmailBusy(true); setEmailMessage('');
+    try {
+      const result = await live.actions.requestEmailChange(newEmail);
+      if (result.ok) { setEmailMessage(`We sent a confirmation link to ${member.email}. Open it to approve the change, then confirm the new address from the second email.`); setNewEmail(''); }
+      else setEmailMessage(result.errors.join(' '));
+    } catch { setEmailMessage('Unable to send. Try again.'); }
+    setEmailBusy(false);
+  }
   const rows: [string, string][] = [['Name', member.name], ['Email', member.email], ['Membership', member.tier], ['Status', memberStatusLabel(member)], ['Waiver', member.waiver ? 'On file' : 'Required before booking']];
   async function save() {
     if (!live) return;
@@ -32,7 +43,7 @@ export function ProfileView({ member, onBilling }: { member: Member; onBilling?:
     setSaving(false);
   }
   return <><div className="craft-page-heading"><div><p className="craft-overline">Your profile</p><h1>{member.name}</h1><p>Your details and the terms of your membership.</p></div><Badge tone={canBook(member) ? 'green' : 'amber'}>{canBook(member) ? 'Active access' : 'Access suspended'}</Badge></div>
-    <div className="craft-two-columns">{live ? <Card title="Your details"><form className="craft-form" onSubmit={event => { event.preventDefault(); void save(); }}><label>Name<input value={name} maxLength={120} required onChange={event => setName(event.target.value)} /></label><label>Phone<input type="tel" value={phone} maxLength={40} onChange={event => setPhone(event.target.value)} /></label><label>Email (your sign-in)<input value={member.email} disabled readOnly /></label><Button type="submit" className="craft-primary" disabled={saving}>{saving ? 'Saving…' : 'Save details'}</Button><p role="status">{message}</p></form><p className="craft-muted">To change your email address, contact the team.</p></Card> : <Card title="Your details"><dl className="craft-details">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p className="craft-muted">To change your name or email, contact the team.</p></Card>}
+    <div className="craft-two-columns">{live ? <Card title="Your details"><form className="craft-form" onSubmit={event => { event.preventDefault(); void save(); }}><label>Name<input value={name} maxLength={120} required onChange={event => setName(event.target.value)} /></label><label>Phone<input type="tel" value={phone} maxLength={40} onChange={event => setPhone(event.target.value)} /></label><label>Email (your sign-in)<input value={member.email} disabled readOnly /></label><Button type="submit" className="craft-primary" disabled={saving}>{saving ? 'Saving…' : 'Save details'}</Button><p role="status">{message}</p></form><form className="craft-form" onSubmit={event => { event.preventDefault(); void changeEmail(); }}><h3>Change your email address</h3><label>New email address<input type="email" value={newEmail} maxLength={254} required onChange={event => setNewEmail(event.target.value)} /></label><Button type="submit" disabled={emailBusy}>{emailBusy ? 'Sending…' : 'Send confirmation'}</Button><p role="status">{emailMessage}</p><p className="craft-muted">For your security we first email a link to your current address, then to the new one. Your sign-in email changes only after both are confirmed.</p></form></Card> : <Card title="Your details"><dl className="craft-details">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><p className="craft-muted">To change your name or email, contact the team.</p></Card>}
       <Card title="Membership terms"><dl className="craft-details"><div><dt>Plan</dt><dd>{member.billing}</dd></div><div><dt>Booking window</dt><dd>{BOOKING_WINDOW[member.tier]}</dd></div><div><dt>Daily limit</dt><dd>Winter (Nov–Apr) 1 hour · Summer (May–Oct) 2 hours</dd></div></dl>{onBilling ? <Button onClick={onBilling}>Membership & billing ↗</Button> : <a className="craft-button" href={`/portal/billing?account=${member.id}`}>Membership & billing ↗</a>}</Card></div></>;
 }
 
