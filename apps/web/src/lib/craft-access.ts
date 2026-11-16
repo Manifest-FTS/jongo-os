@@ -103,29 +103,35 @@ function best(list: Array<{ role: CraftRole; via: CraftAccessVia }>) {
     RANK[b.role] - RANK[a.role] || VIA_PREFERENCE.indexOf(a.via) - VIA_PREFERENCE.indexOf(b.via))[0] ?? null;
 }
 
+/** Reason codes only: logged so an operator can tell why a sign-in was refused. No ids, emails or tokens. */
+function deny(reason: string): null {
+  console.warn(`[craft-access] denied: ${reason}`);
+  return null;
+}
+
 /** Server entry point: reads live rows every call, never caches, denies on any error. */
 export async function resolveCraftAccess(userId: string, siteId: string, now: Date = new Date()): Promise<CraftAccessResult | null> {
-  if (typeof userId !== "string" || typeof siteId !== "string" || !isUuid(userId) || !isUuid(siteId)) return null;
+  if (typeof userId !== "string" || typeof siteId !== "string" || !isUuid(userId) || !isUuid(siteId)) return deny("invalid_ids");
   try {
     const db = await getDb();
-    if (!db) return null;
+    if (!db) return deny("database_unavailable");
     const snapshot: Snapshot | null = await db.$transaction(
       (tx: unknown) => loadSnapshot(tx, userId, siteId),
       { isolationLevel: "RepeatableRead" }
     );
-    if (!snapshot) return null;
+    if (!snapshot) return deny("user_site_or_organization_missing_or_deleted");
     const org = snapshot.site.organization!;
 
     const platformAdmin = await isPlatformAdminUser(userId);
     const selected = best(candidates(snapshot, userId, platformAdmin));
-    if (!selected) return null;
+    if (!selected) return deny("no_role_for_this_app");
 
     const permits = (feature: "cms.read" | "cms.author") => evaluateCmsEntitlement({
       feature, organizationId: org.id, sponsor: org.owner,
       scope: { organizationId: org.id, ownerId: org.ownerId, userId: org.ownerId, role: "owner" },
       enabled: process.env.JONGO_CMS_ENABLED === "true", now
     });
-    if (!permits("cms.read")) return null;
+    if (!permits("cms.read")) return deny(process.env.JONGO_CMS_ENABLED === "true" ? "owner_missing_or_deleted" : "jongo_cms_enabled_is_not_true");
     // A platform admin runs the product, so the owner's missing subscription never limits them; everyone else is capped to reader.
     const capped = !permits("cms.author") && selected.role !== "reader" && !platformAdmin;
 
@@ -143,7 +149,7 @@ export async function resolveCraftAccess(userId: string, siteId: string, now: Da
       }
     };
   } catch {
-    return null;
+    return deny("error");
   }
 }
 
