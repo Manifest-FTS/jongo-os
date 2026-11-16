@@ -197,6 +197,23 @@ describe("entitlement (same denial as resolveDatasetCmsCapabilities)", () => {
   it("returns the identity data needed for claims", async () => {
     expect((await resolve({ grant: { role: "editor" } }))?.user).toEqual({ id: USER, email: "who@example.com", emailVerified: true, name: "Who" });
   });
+
+  it("logs only a reason code when it refuses, so an operator can tell why", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("JONGO_CMS_ENABLED", "");
+    await resolve({ platformAdmin: true });
+    vi.stubEnv("JONGO_CMS_ENABLED", "true");
+    await resolve({});
+    await resolve({ userDeleted: true });
+    const lines = warn.mock.calls.map((call) => String(call[0]));
+    expect(lines).toEqual([
+      "[craft-access] denied: jongo_cms_enabled_is_not_true",
+      "[craft-access] denied: no_role_for_this_app",
+      "[craft-access] denied: user_site_or_organization_missing_or_deleted"
+    ]);
+    expect(lines.join(" ")).not.toMatch(/@|[0-9a-f]{8}-[0-9a-f]{4}/);
+    warn.mockRestore();
+  });
 });
 
 describe("grant management", () => {

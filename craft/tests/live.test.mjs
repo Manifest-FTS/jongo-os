@@ -8,7 +8,7 @@ import { DEMO_NOW, bookingStatus, clockNow, clockToday, editableBooking, overvie
 const NOW = Date.parse('2027-03-04T20:00:00Z'); // 14:00 Chicago, Thursday 4 March 2027 (winter)
 const member = { id: 'u1', name: 'Grace Hopper', email: 'grace@example.test', tier: 'individual', active: true, waiver: true, approved: true, billingStatus: 'active', billing: '$199/month \u00b7 1-year commitment' };
 const bays = [{ id: 'golf-lab-bay-1', displayNumber: 1, name: 'The Fairway' }, { id: 'golf-lab-bay-2', displayNumber: 2, name: 'The Approach' }];
-const actions = { commitBookings: async () => ({ ok: true }), saveBay: async () => ({ ok: true }), saveProfile: async () => ({ ok: true }), requestEmailChange: async () => ({ ok: true }), setAccess: async () => ({ ok: true }), extendCommitment: async () => ({ ok: true }), inviteMember: async () => ({ ok: true }), billingPortal: async () => ({}), signOut: async () => {} };
+const actions = { commitBookings: async () => ({ ok: true }), saveBay: async () => ({ ok: true }), saveProfile: async () => ({ ok: true }), requestEmailChange: async () => ({ ok: true }), setAccess: async () => ({ ok: true }), extendCommitment: async () => ({ ok: true }), inviteMember: async () => ({ ok: true }), addInstructor: async () => ({ ok: true }), billingPortal: async () => ({}), signOut: async () => {} };
 const DETAILS = { u1: { phone: '847-555-0100', planLabel: 'Individual \u2013 Monthly', price: '$199 / month', statusLabel: 'Active', started: 'Nov 13, 2026', commitmentEnd: 'Nov 13, 2027', waiverAccepted: 'Nov 13, 2026' } };
 const live = (extra = {}) => ({ snapshot: { now: NOW, members: [member], bookings: [{ id: 'b1', memberId: 'u1', date: '2027-03-05', start: 18, hours: 1, bay: 2, status: 'booked' }], bays, details: DETAILS }, actions, selfId: 'u1', contactEmail: 'team@example.test', ...extra });
 
@@ -62,6 +62,7 @@ test('the team can invite Junior and Family members; the Junior window is three 
   const admin = live({ selfId: 'a-real', snapshot: { now: NOW, members: [member], bookings: [], bays, details: {} } });
   assert.ok(renderToStaticMarkup(createElement(GolfLabDemo, { initialRole: 'admin', initialView: 'members', live: admin })).includes('Invite Junior or Family member'));
   assert.ok(!renderToStaticMarkup(createElement(GolfLabDemo, { initialRole: 'admin', initialView: 'instructors', live: admin })).includes('Invite Junior or Family member'));
+  assert.ok(renderToStaticMarkup(createElement(GolfLabDemo, { initialRole: 'admin', initialView: 'instructors', live: admin })).includes('Add instructor') && !renderToStaticMarkup(createElement(GolfLabDemo, { initialRole: 'admin', initialView: 'members', live: admin })).includes('Add instructor'), 'the team adds instructors from the Instructors screen only');
   assert.ok(!renderToStaticMarkup(createElement(GolfLabDemo, { initialRole: 'member', initialView: 'profile', live: live() })).includes('Invite Junior'));
   setLiveClock(NOW);
   try {

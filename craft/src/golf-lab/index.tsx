@@ -61,7 +61,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
         case 'bays': return <BayManagement actor={actor} bays={adapter.bays} bookings={adapter.bookings} onUpdate={bays => setAdapter({ ...adapter, bays })} />;
         case 'booking': return <BookingCalendar actor={actor} members={adapter.members} bays={adapter.bays} bookings={adapter.bookings} onUpdate={commit} />;
         case 'members': return <MembersView team={!!live && role === 'admin'} members={adapter.members.filter(row => row.tier !== 'instructor')} bookings={adapter.bookings} />;
-        case 'instructors': return <MembersView instructors members={adapter.members.filter(row => row.tier === 'instructor')} bookings={adapter.bookings} />;
+        case 'instructors': return <MembersView instructors team={!!live && role === 'admin'} members={adapter.members.filter(row => row.tier === 'instructor')} bookings={adapter.bookings} />;
         case 'reports': return <ReportsView members={adapter.members} bookings={adapter.bookings} />;
         case 'billing': return live ? <LiveBillingView role={role} member={role === 'member' ? member : undefined} members={adapter.members.filter(row => row.tier !== 'instructor')} /> : <BillingView role={role} member={role === 'member' ? member : undefined} membershipSelector={membershipSelector} />;
         case 'profile': return <ProfileView member={member} onBilling={() => navigate('billing')} />;
