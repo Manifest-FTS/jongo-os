@@ -4,14 +4,14 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Suspense, useState } from "react";
-import { DM_Sans, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import BrandLogo from "@/components/BrandLogo";
 import SelectedPlanNotice from "@/components/SelectedPlanNotice";
 import { EyeIcon, EyeOffIcon } from "@/components/JongoIcons";
 import { getCredentialSignInErrorMessage } from "@/lib/auth-error-message";
 
-const authHeadings = DM_Sans({ subsets: ["latin"], weight: ["500", "700"], display: "swap", variable: "--font-auth-heading" });
-const authBody = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap", variable: "--font-auth-body" });
+const authHeadings = localFont({ src: "../../../fonts/dm-sans-latin.woff2", weight: "100 1000", display: "swap", variable: "--font-auth-heading" });
+const authBody = localFont({ src: "../../../fonts/inter-latin.woff2", weight: "100 900", display: "swap", variable: "--font-auth-body" });
 
 /** Where to land after signup, e.g. back on the domain order the visitor started. */
 function postSignupPath(): string {

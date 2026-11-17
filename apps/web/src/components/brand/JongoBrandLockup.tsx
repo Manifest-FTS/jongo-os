@@ -1,8 +1,8 @@
 import React from "react";
-import { Josefin_Sans } from "next/font/google";
+import localFont from "next/font/local";
 
-const wordmark = Josefin_Sans({
-  subsets: ["latin"], weight: "600", display: "swap", variable: "--font-jongo-wordmark"
+const wordmark = localFont({
+  src: "../../fonts/josefin-sans-latin.woff2", weight: "100 700", display: "swap", variable: "--font-jongo-wordmark"
 });
 
 /** Original Jongo artwork, never the Manifest M or a recolored wordmark. */
