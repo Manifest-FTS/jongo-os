@@ -7,7 +7,7 @@ import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
 // Test loader definitions without invoking Next's build-time Google fetch.
-vi.mock("next/font/google", () => ({ Josefin_Sans: () => ({ variable: "mock-wordmark" }) }));
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "mock-wordmark" }) }));
 import JongoBrandLockup from "./JongoBrandLockup";
 
 const source = (relative: string) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
@@ -27,20 +27,22 @@ function declarations(selector: string) {
   return values;
 }
 
-function loaderOptions(text: string, name: string) {
+function loaderOptions(text: string, name: string, variable?: string) {
   const file = ts.createSourceFile("font.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let result: Record<string, string | string[]> | undefined;
   function visit(node: ts.Node) {
     if (ts.isCallExpression(node) && node.expression.getText(file) === name) {
       const arg = node.arguments[0];
       if (arg && ts.isObjectLiteralExpression(arg)) {
-        result = {};
+        const found: Record<string, string | string[]> = {};
         for (const prop of arg.properties) {
           if (!ts.isPropertyAssignment(prop)) continue;
           const value = prop.initializer;
-          if (ts.isStringLiteral(value)) result[prop.name.getText(file)] = value.text;
-          if (ts.isArrayLiteralExpression(value)) result[prop.name.getText(file)] = value.elements.map((item) => (item as ts.StringLiteral).text);
+          if (ts.isStringLiteral(value)) found[prop.name.getText(file)] = value.text;
+          if (ts.isArrayLiteralExpression(value)) found[prop.name.getText(file)] = value.elements.map((item) => (item as ts.StringLiteral).text);
         }
+        // Self-hosted loaders share one name, so the CSS variable says which one is meant.
+        if (variable === undefined || found.variable === variable) result = found;
       }
     }
     ts.forEachChild(node, visit);
@@ -81,12 +83,14 @@ describe("platform-only shell brand contract", () => {
   });
 
   it("loads Josefin 600 for stats only, retains DM headings and preserves the separate logo font", () => {
-    expect(loaderOptions(layout, "DM_Sans")).toMatchObject({ weight: ["500", "700"], display: "swap", subsets: ["latin"] });
-    expect(loaderOptions(layout, "Inter")).toMatchObject({ weight: ["400", "500", "600", "700"], display: "swap" });
-    expect(loaderOptions(brand, "Josefin_Sans")).toMatchObject({ weight: "600", display: "swap" });
-    expect(loaderOptions(layout, "Josefin_Sans")).toMatchObject({
-      weight: "600", display: "swap", subsets: ["latin"], variable: "--font-platform-stat"
+    expect(loaderOptions(layout, "localFont", "--font-platform-heading")).toMatchObject({ src: "../../fonts/dm-sans-latin.woff2", weight: "100 1000", display: "swap" });
+    expect(loaderOptions(layout, "localFont", "--font-platform-body")).toMatchObject({ src: "../../fonts/inter-latin.woff2", weight: "100 900", display: "swap" });
+    expect(loaderOptions(brand, "localFont", "--font-jongo-wordmark")).toMatchObject({ src: "../../fonts/josefin-sans-latin.woff2", weight: "100 700", display: "swap" });
+    expect(loaderOptions(layout, "localFont", "--font-platform-stat")).toMatchObject({
+      src: "../../fonts/josefin-sans-latin.woff2", weight: "100 700", display: "swap"
     });
+    expect(layout).not.toContain("next/font/google");
+    expect(brand).not.toContain("next/font/google");
     expect(layout).toContain("platformHeadings.variable");
     expect(layout).toContain("platformBody.variable");
     expect(layout).toContain("platformStats.variable");
