@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Badge, Button, Dialog } from '../shell.js';
 import { addDays, clockToday, validDate, type Member } from './logic.js';
 import { useLive, type LiveDetail, type LiveResult } from './live.js';
+import { TeamCancel } from './membership-ending.js';
 
 /** What the team can do about one account: suspend or restore booking, move the commitment end, and see what was done before. Every change records who and why. */
 export function MemberControls({ member, detail }: { member: Member; detail: LiveDetail }) {
@@ -40,6 +41,7 @@ export function MemberControls({ member, detail }: { member: Member; detail: Liv
       <Button type="submit" disabled={busy || !extendTo || extendNote.trim().length < 8}>Extend commitment</Button>
     </form>}
     <p role="status">{message}</p>
+    <TeamCancel member={member} detail={detail} />
     {!!detail.history?.length && <><h3>Recent changes</h3><ul className="craft-muted">{detail.history.map(line => <li key={line}>{line}</li>)}</ul></>}
   </>;
 }

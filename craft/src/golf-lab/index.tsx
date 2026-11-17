@@ -11,7 +11,7 @@ import { BayCards, BayManagement } from './bays.js';
 import { CalendarDownload } from './calendar-download.js';
 import { LiveProvider, type LiveConfig, type LiveSnapshot } from './live.js';
 import { LiveBillingView } from './live-billing.js';
-export type { LiveAccessInput, LiveActions, LiveCommit, LiveConfig, LiveDetail, LiveHold, LiveInvite, LiveResult, LiveSnapshot } from './live.js';
+export type { LiveAccessInput, LiveActions, LiveCancel, LiveCommit, LiveConfig, LiveDetail, LiveFamilyMember, LiveHold, LiveInvite, LiveResult, LiveSnapshot } from './live.js';
 export { CalendarDownload } from './calendar-download.js';
 export { BayCard, BayCards, BayManagement, BayNameForm } from './bays.js';
 export { BillingView, CheckoutReviewDrawer, billingSections } from './billing.js';
