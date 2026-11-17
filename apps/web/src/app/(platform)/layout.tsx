@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Viewport } from "next";
-import { DM_Sans, Inter, Josefin_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
 import { getGravatarUrl } from "@/lib/gravatar";
@@ -19,14 +19,15 @@ import { NOINDEX } from "@/lib/seo";
 import { isSuperAdminUser } from "@/lib/rbac";
 import "@/styles/brand-platform.css";
 
-const platformHeadings = DM_Sans({
-  subsets: ["latin"], weight: ["500", "700"], display: "swap", variable: "--font-platform-heading"
+// Self-hosted (variable files, latin) so the build never depends on Google Fonts being reachable.
+const platformHeadings = localFont({
+  src: "../../fonts/dm-sans-latin.woff2", weight: "100 1000", display: "swap", variable: "--font-platform-heading"
 });
-const platformBody = Inter({
-  subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap", variable: "--font-platform-body"
+const platformBody = localFont({
+  src: "../../fonts/inter-latin.woff2", weight: "100 900", display: "swap", variable: "--font-platform-body"
 });
-const platformStats = Josefin_Sans({
-  subsets: ["latin"], weight: "600", display: "swap", variable: "--font-platform-stat"
+const platformStats = localFont({
+  src: "../../fonts/josefin-sans-latin.woff2", weight: "100 700", display: "swap", variable: "--font-platform-stat"
 });
 
 // The signed-in app: never indexed (it is behind sign-in anyway).

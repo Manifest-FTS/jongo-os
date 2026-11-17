@@ -5,7 +5,7 @@ import postcss from "postcss";
 import { describe, expect, it, vi } from "vitest";
 import PlatformBrandFooter from "./PlatformBrandFooter";
 
-vi.mock("next/font/google", () => ({ Josefin_Sans: () => ({ variable: "font-jongo-wordmark" }) }));
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "font-jongo-wordmark" }) }));
 
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
 const css = postcss.parse(source("./PlatformBrandFooter.module.css"));
