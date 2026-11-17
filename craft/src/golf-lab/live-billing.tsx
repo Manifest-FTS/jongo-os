@@ -2,18 +2,19 @@
 import { useState } from 'react';
 import { Badge, Button, Card, Tabs } from '../shell.js';
 import { billingSections } from './billing.js';
+import { CancelCard, FamilyPanel } from './membership-ending.js';
 import { useLive } from './live.js';
 import type { Member, Role } from './logic.js';
 
-const CONTACT_NOTE = 'To change or end your membership, contact the team. A request cannot bypass a commitment.';
+const CONTACT_NOTE = 'To change your plan or ask about your membership, contact the team.';
 
 /** Membership & billing with the member's real plan, payments and agreements. Money is handled in Stripe; this screen only shows it and hands over to Stripe's secure portal. */
 export function LiveBillingView({ role, member, members = [] }: { role: Role; member?: Member; members?: Member[] }) {
   const live = useLive();
-  const sections = billingSections(role);
+  const detail = live && member ? live.details[member.id] : undefined;
+  const sections = [...billingSections(role), ...(role === 'member' && detail?.family ? [{ id: 'family', label: 'Family members' }] : [])];
   const [tab, setTab] = useState(sections[0].id), [message, setMessage] = useState(''), [opening, setOpening] = useState(false);
   if (!live) return null;
-  const detail = member ? live.details[member.id] : undefined;
   async function openPortal() {
     setOpening(true); setMessage('');
     try {
@@ -42,6 +43,8 @@ export function LiveBillingView({ role, member, members = [] }: { role: Role; me
         <dl className="craft-details"><div><dt>Commitment ends</dt><dd>{detail?.commitmentEnd ?? 'No commitment'}</dd></div><div><dt>Waiver and agreement</dt><dd>{detail?.waiverAccepted ? `Accepted ${detail.waiverAccepted}${live.waiver ? ` (${live.waiver.version})` : ''}` : 'Not on file'}</dd></div></dl>
         <p>{CONTACT_NOTE}</p><a className="craft-button" href={`mailto:${live.contactEmail}?subject=${encodeURIComponent('Membership change request')}`}>Contact the team ↗</a>
       </Card>}
+      {role === 'member' && member && tab === 'agreements' && <CancelCard member={member} detail={detail} />}
+      {role === 'member' && member && tab === 'family' && <FamilyPanel detail={detail} />}
       {role === 'instructor' && <Card title="Instructor agreement"><p>Contact the team about your agreement. Instructors cannot grant billing or access exceptions.</p></Card>}
       {role === 'admin' && tab === 'membership' && <Card title="Membership plans"><div className="craft-stats">{([['Active', count('active')], ['Payment needed', count('past_due')], ['Paused', count('suspended')], ['Not started', count('unpaid') + count('pending')]] as [string, number][]).map(([label, value]) => <Card title={label} key={label}><h2>{value}</h2></Card>)}</div><p className="craft-muted">Members pick and pay for a plan on the website. Prices are charged through Stripe.</p></Card>}
       {role === 'admin' && tab === 'payment' && <Card title="Billing / payment status"><p>Payments, refunds and receipts are managed in Stripe. Booking access follows the payment status shown here.</p><a className="craft-button" href="https://dashboard.stripe.com/" target="_blank" rel="noopener noreferrer">Open Stripe dashboard ↗</a>
