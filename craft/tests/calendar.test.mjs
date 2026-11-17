@@ -47,7 +47,7 @@ test('instructor cannot export other identities and own series excludes cancelle
 test('admin selected day/week includes history across named bays but excludes cancelled and exclusive end', () => {
   const result = exportFor(admin, { from: '2026-11-01', to: '2026-11-02' });
   assert.equal(result.count, fixtures.bookings.filter(row => row.date === '2026-11-01' && row.status !== 'cancelled').length);
-  assert.match(unfold(result.content), /includes history/); assert.match(unfold(result.content), /The Turn/);
+  assert.match(unfold(result.content), /includes history/); assert.match(unfold(result.content), /Simulator Bay #3/);
   assert.ok(!result.content.includes('ATTENDEE')); assert.ok(!result.content.includes('mailto:'));
 });
 test('UTC DTSTART DTEND respect Chicago winter summer and DST dates with no floating-time ambiguity', () => {

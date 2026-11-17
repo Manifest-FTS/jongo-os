@@ -26,7 +26,7 @@ test('automatic numbers use highest existing number not array length and IDs are
 test('inventory refuses members/instructors, blank/long/duplicate names and identity/number collisions', () => {
   const bays = createBayFixtures();
   for (const role of ['member', 'instructor']) assert.throws(() => updateInventory({ id: 'm1', role }, bays, 'New'), /Only admins/);
-  for (const name of ['', '   ', 'x'.repeat(61), ' the FAIRWAY ']) assert.throws(() => updateInventory(admin, bays, name));
+  for (const name of ['', '   ', 'x'.repeat(61), ' simulator BAY #1 ']) assert.throws(() => updateInventory(admin, bays, name));
   assert.throws(() => updateInventory(admin, bays, 'New', undefined, bays[0].id), /collision/);
   assert.throws(() => updateInventory(admin, [...bays, { ...bays[0], id: 'other' }], 'New'), /collision/);
   assert.throws(() => updateInventory(admin, bays, 'New', 'missing'), /not found/);

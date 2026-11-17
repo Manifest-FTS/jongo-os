@@ -3,9 +3,9 @@ import type { Actor, Booking } from './logic.js';
 /** Operational inventory, not a CMS document. Identity and number never change on rename. */
 export type Bay = { readonly id: string; readonly displayNumber: number; name: string };
 export function createBayFixtures(): Bay[] {
-  return ['The Fairway', 'The Approach', 'The Turn', 'The Launch'].map((name, index) => ({ id: `golf-lab-bay-${index + 1}`, displayNumber: index + 1, name }));
+  return [1, 2, 3, 4].map((number, index) => ({ id: `golf-lab-bay-${number}`, displayNumber: index + 1, name: `Simulator Bay #${number}` }));
 }
-export function bayLabel(bay: Bay): string { return `Bay ${String(bay.displayNumber).padStart(2, '0')} · ${bay.name}`; }
+export function bayLabel(bay: Bay): string { return /\bbay\b/i.test(bay.name) ? bay.name : `Bay ${String(bay.displayNumber).padStart(2, '0')} · ${bay.name}`; }
 /** Legacy reservations store immutable displayNumber, never an array index or editable name. */
 export function resolveBay(bays: readonly Bay[], number: number): Bay | undefined { return bays.find(bay => bay.displayNumber === number); }
 export function assertInventory(bays: readonly Bay[]): void {
