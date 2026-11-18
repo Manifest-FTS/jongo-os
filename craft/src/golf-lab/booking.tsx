@@ -94,6 +94,8 @@ function ScheduleScopeDialog({ target, action, actor, members, bookings, bays, o
 
 export function BookingCalendar({ actor, members, bookings, bays = createBayFixtures(), onUpdate }: { actor: Actor; members: Member[]; bookings: Booking[]; bays?: Bay[]; onUpdate: (rows: Booking[]) => SaveResult }) {
   const live = useLive();
+  const scheduleTitle = actor.role === 'admin' ? 'Bay schedule' : actor.role === 'instructor' ? 'My schedule' : 'Book your next session';
+  const scheduleOverline = actor.role === 'member' ? 'Make time for your game' : scheduleTitle;
   const [date, setDate] = useState(clockToday()), [mobileBay, setMobileBay] = useState(bays[0]?.displayNumber ?? 0);
   const [editor, setEditor] = useState<{ booking?: Booking; scope?: ChangeScope } | null>(null), [detail, setDetail] = useState<Booking | null>(null);
   const [scopeAction, setScopeAction] = useState<{ booking: Booking; action: 'edit' | 'cancel' } | null>(null);
@@ -112,7 +114,7 @@ export function BookingCalendar({ actor, members, bookings, bays = createBayFixt
   }
   if (blocked) return <Card title="Booking unavailable"><p>Complete membership onboarding or contact the team to review access.</p><a href={`/portal/billing?account=${actor.id}`}>Review membership & billing</a></Card>;
   return <>
-    <div className="craft-page-heading"><div><p className="craft-overline">Make time for your game</p><h1>Book your next session</h1><p>{bays.length} bays. One clear calendar. All times Chicago.</p></div><Button className="craft-primary" disabled={!bays.length} onClick={() => setEditor({})}>＋ New booking</Button></div>
+    <div className="craft-page-heading"><div><p className="craft-overline">{scheduleOverline}</p><h1>{scheduleTitle}</h1></div><Button className="craft-primary" disabled={!bays.length} onClick={() => setEditor({})}>＋ New booking</Button></div>
     <BookingDateControls date={date} onChange={setDate} />
     {actor.role !== 'member' && <div className="craft-actions"><CalendarDownload actor={actor} bookings={bookings} members={members} bays={bays} selection={{ from: date, to: addDays(date, 1) }} label={actor.role === 'admin' ? 'Download all-bay day schedule .ics' : 'Download my day schedule .ics'} filename={`golf-lab-${actor.role}-day-${date}.ics`} /><CalendarDownload actor={actor} bookings={bookings} members={members} bays={bays} selection={week} label={actor.role === 'admin' ? 'Download all-bay week schedule .ics' : 'Download my week schedule .ics'} filename={`golf-lab-${actor.role}-week-${week.from}.ics`} /><p className="craft-muted">{actor.role === 'admin' ? 'All bays, including selected-range past/in-progress sessions. Cancelled excluded. Admin-only names.' : 'Only your own future sessions; started, past and cancelled excluded.'} File import only; no calendar sync.</p></div>}
     <BayCards bays={bays} bookings={bookings} date={date} onSelect={bay => { setMobileBay(bay.displayNumber); setNotice(`${bayLabel(bay)} selected. Choose a slot in the day schedule below.`); }} />
