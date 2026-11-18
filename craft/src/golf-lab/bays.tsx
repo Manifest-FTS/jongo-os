@@ -26,7 +26,7 @@ export function BayManagement({ actor, bays, bookings, onUpdate }: { actor: Acto
   const [editor, setEditor] = useState<{ bay?: Bay } | null>(null), [notice, setNotice] = useState('');
   const live = useLive();
   if (actor.role !== 'admin') return <p>Only admins may manage bay inventory.</p>;
-  return <><div className="craft-page-heading"><div><p className="craft-overline">Bay Management</p><h1>Room to grow.</h1><p>{bays.length} simulator bays · stable numbers, names with personality.</p></div><Button className="craft-primary" onClick={() => setEditor({})}>＋ Add bay</Button></div>
+  return <><div className="craft-page-heading"><div><p className="craft-overline">Bay Management</p><h1>Bay Management</h1></div><Button className="craft-primary" onClick={() => setEditor({})}>＋ Add bay</Button></div>
     <p className="craft-muted">Names can change. Bay numbers and internal IDs cannot. No deletion is offered; reservation history stays linked. {live ? 'Changes are saved for everyone.' : 'Changes live in this workspace only and reset on reload.'}</p>
     <p role="status">{notice}</p><div className="craft-bays">{bays.map(bay => <BayCard key={bay.id} bay={bay} bookings={bookings} onEdit={() => setEditor({ bay })} />)}</div>
     {editor && <BayNameForm key={editor.bay?.id ?? 'new'} bay={editor.bay} onClose={() => setEditor(null)} onSave={async name => {
