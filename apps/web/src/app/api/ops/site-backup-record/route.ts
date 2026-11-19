@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { decideDeferral, resolveMaxDeferralHours } from "@/lib/backup-deferral";
+import { planDeferral, resolveMaxDeferralHours } from "@/lib/backup-deferral";
 import { safeEqual } from "@/lib/safe-equal";
 
 export const runtime = "nodejs";
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       const { db } = await import("@/lib/db");
       const row = await db.siteBackup.findUnique({
         where: { id: backupId },
-        select: { siteId: true, status: true }
+        select: { siteId: true, status: true, trigger: true }
       });
 
       const lastSuccess = row?.siteId
@@ -55,40 +55,77 @@ export async function POST(request: Request) {
           })
         : null;
 
-      // Politeness has a deadline. A collision that keeps recurring — a stale
-      // restic lock left by a killed prune, a deploy guard that never clears —
-      // would otherwise drop every placeholder row forever and alert nobody,
-      // because backup alerting is event-based and a deferral is not an event.
-      // The site would simply stop being backed up in silence. Past the limit
-      // this stops deferring and falls through to record a real failure.
-      const decision = decideDeferral({
+      // What the deferral means decides who hears about it (lib/backup-deferral.ts):
+      // a stopped app pauses quietly; a busy server retries and, past the limit,
+      // alerts platform admins rather than mailing the owner about something
+      // they can't fix; a person who clicked "Back up now" is told why it didn't
+      // run; an unknown reason that persists still becomes a real failure.
+      const plan = planDeferral({
+        token: typeof body.error === "string" ? body.error : null,
+        trigger: row?.trigger ?? null,
         lastSuccessAt: lastSuccess?.completedAt ?? null,
         maxDeferralHours: resolveMaxDeferralHours(process.env.JONGO_MAX_DEFERRAL_HOURS)
       });
+      const { publishSiteEvent } = await import("@/lib/live-events");
 
-      if (decision.action === "defer") {
-        const deleted = await db.siteBackup.deleteMany({ where: { id: backupId, status: "running" } });
-
-        let rewound = false;
-        if (row?.siteId && (deleted?.count ?? 0) > 0) {
-          await db.site.update({
-            where: { id: row.siteId },
-            data: { lastScheduledBackupAt: lastSuccess?.completedAt ?? null }
-          });
-          rewound = true;
-        }
-
-        const { publishSiteEvent } = await import("@/lib/live-events");
+      if (plan.action === "report_to_requester") {
+        await db.siteBackup.updateMany({
+          where: { id: backupId, status: "running" },
+          data: { status: "failed", error: plan.message, completedAt: new Date() }
+        });
         await publishSiteEvent(row?.siteId, "backup");
-        return NextResponse.json({ ok: true, backupId, status, removed: deleted?.count ?? 0, rewound });
+        return NextResponse.json({ ok: true, backupId, status: "failed", deferral: plan.kind, notified: false });
       }
 
-      // Record it as the failure it has become, keeping the reason the run
-      // gave so the catalogue says what was actually blocking rather than
-      // just "failed".
-      escalatedFrom = decision.reason;
+      if (plan.action === "retry" || plan.action === "pause" || plan.action === "retry_and_alert_admins") {
+        const deleted = await db.siteBackup.deleteMany({ where: { id: backupId, status: "running" } });
+        if (row?.siteId && (deleted?.count ?? 0) > 0) {
+          const now = new Date();
+          const current = await db.site.findUnique({ where: { id: row.siteId }, select: { backupPausedReason: true, backupPausedAt: true } });
+          const pausedReason = plan.action === "pause" ? "app_stopped" : plan.action === "retry_and_alert_admins" ? "server_busy" : current?.backupPausedReason ?? null;
+          await db.site.update({
+            where: { id: row.siteId },
+            data: {
+              // A stopped app keeps its normal schedule (one quiet try per
+              // period); anything else is due again on the next hourly pass.
+              lastScheduledBackupAt: plan.action === "pause" ? now : lastSuccess?.completedAt ?? null,
+              backupPausedReason: pausedReason,
+              backupPausedAt: pausedReason ? (current?.backupPausedReason === pausedReason ? current.backupPausedAt ?? now : now) : null
+            }
+          });
+        }
+
+        if (plan.action === "retry_and_alert_admins" && row?.siteId) {
+          try {
+            const site = await db.site.findUnique({ where: { id: row.siteId }, select: { name: true, slug: true, organizationId: true } });
+            if (site) {
+              const { sendPlatformAlert } = await import("@/lib/platform-alert");
+              await sendPlatformAlert({
+                key: "backups_blocked",
+                organizationId: site.organizationId,
+                subject: "Jongo backups are blocked on the server",
+                text: [
+                  `Scheduled backups keep waiting: ${String(body.error)} (${plan.reason}).`,
+                  `First app affected: ${site.name || site.slug}. Other apps queue behind it.`,
+                  "Jongo clears a backup lock held longer than JONGO_BACKUP_LOCK_MAX_HOURS (default 6h) on its own.",
+                  "If this keeps coming, check the server: sudo lsof /run/jongo-backup.lock, and ps aux | grep -E 'restic|site-backup'."
+                ].join("\n")
+              });
+            }
+          } catch (error) {
+            console.error("[site-backup-record] platform alert failed", error);
+          }
+        }
+
+        await publishSiteEvent(row?.siteId, "backup");
+        return NextResponse.json({ ok: true, backupId, status, deferral: plan.kind, action: plan.action, removed: true });
+      }
+
+      // Unknown and persistent: record it as the failure it has become, keeping
+      // the reason the run gave so the catalogue says what was actually blocking.
+      escalatedFrom = plan.reason;
       status = "failed";
-      body.error = [body.error, `deferral escalated: ${decision.reason}`].filter(Boolean).join(" — ");
+      body.error = [body.error, `deferral escalated: ${plan.reason}`].filter(Boolean).join(" — ");
     } catch (error) {
       return NextResponse.json(
         { error: `Failed to clear deferred backup: ${error instanceof Error ? error.message : "unknown"}` },
@@ -147,6 +184,10 @@ export async function POST(request: Request) {
         completedAt: new Date()
       }
     });
+
+    if (updated.status === "success") {
+      await db.site.update({ where: { id: updated.siteId }, data: { backupPausedReason: null, backupPausedAt: null } }).catch(() => null);
+    }
 
     // Retention removed these snapshots from Backblaze, so their catalogue rows
     // must stop offering a restore that would fail against a missing snapshot.
