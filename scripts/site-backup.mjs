@@ -64,6 +64,21 @@ const resticHost = (siteSlug || siteName || "").toLowerCase().replace(/[^a-z0-9.
 // ends the command early and breaks the script.
 // Retention policy (per site, applied after each successful backup).
 const keepDaily = Number(process.env.JONGO_BACKUP_KEEP_DAILY || 7) || 7;
+
+// Every step that waits on something outside this script has a time limit.
+// Without them a dump or upload that hung kept the host backup lock forever:
+// every later backup deferred, for days, and only one app ever emailed.
+const hoursEnv = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const dumpTimeoutSec = Math.round(hoursEnv("JONGO_BACKUP_DUMP_TIMEOUT_HOURS", 1) * 3600);
+const resticTimeoutSec = Math.round(hoursEnv("JONGO_BACKUP_UPLOAD_TIMEOUT_HOURS", 4) * 3600);
+// A lock held longer than this belongs to a run that hung or lost its caller:
+// the next backup clears it instead of deferring behind it forever.
+const lockMaxSec = Math.round(hoursEnv("JONGO_BACKUP_LOCK_MAX_HOURS", 6) * 3600);
+// The whole run, from this side: limits above plus slack for metadata steps.
+const runTimeoutMs = (dumpTimeoutSec * 2 + resticTimeoutSec + 1800) * 1000;
 const keepWeekly = Number(process.env.JONGO_BACKUP_KEEP_WEEKLY || 4) || 4;
 const keepMonthly = Number(process.env.JONGO_BACKUP_KEEP_MONTHLY || 6) || 6;
 
@@ -134,9 +149,22 @@ function runSsh(script) {
   if (sshKeyPath) args.push("-i", sshKeyPath, "-o", "IdentitiesOnly=yes");
   if (sshStrict) args.push("-o", `StrictHostKeyChecking=${sshStrict}`);
   if (sshKnownHosts) args.push("-o", `UserKnownHostsFile=${sshKnownHosts}`);
+  // Keepalives end a connection the network dropped, instead of waiting on it forever.
+  args.push("-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=6");
   args.push(`${sshUser}@${sshHost}`, "bash", "-s");
-  const r = spawnSync("ssh", args, { input: script, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 });
-  if (r.error) return { ok: false, stdout: r.stdout || "", stderr: `${r.stderr || ""}\nssh spawn failed: ${r.error.message}` };
+  const r = spawnSync("ssh", args, {
+    input: script,
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: runTimeoutMs,
+    killSignal: "SIGTERM"
+  });
+  if (r.error) {
+    // Hit the overall limit: say so, rather than an anonymous "unknown failure".
+    const timedOut = /ETIMEDOUT/.test(String(r.error.code || r.error.message));
+    return { ok: false, timedOut, stdout: r.stdout || "", stderr: `${r.stderr || ""}\nssh ${timedOut ? "timed out" : "spawn failed"}: ${r.error.message}` };
+  }
   return { ok: r.status === 0, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
 
@@ -157,11 +185,55 @@ BID=${shQuote(backupId)}
 # binary into every backup deferring forever, silently — protection that
 # quietly disables all protection. Absent flock, run unserialised: an
 # occasional collision beats no backups at all.
+#
+# A lock held past LOCK_MAX belongs to a run that hung (a dump that never
+# returned, an upload stuck on the network) or whose caller died. Deferring
+# behind it forever stopped every backup on the host for 11 days once, so the
+# holders are stopped and the lock taken. Age comes from the holding
+# processes themselves (ps etimes), which needs no bookkeeping that a killed
+# run could leave stale.
+LOCK=/run/jongo-backup.lock
+LOCK_MAX=${lockMaxSec}
+lock_holders() {
+  if command -v fuser >/dev/null 2>&1; then fuser "$LOCK" 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$'
+  elif command -v lsof >/dev/null 2>&1; then lsof -t "$LOCK" 2>/dev/null
+  fi
+}
 if command -v flock >/dev/null 2>&1; then
-  exec 9>/run/jongo-backup.lock
-  flock -n 9 || { echo "RESULT=deferred_backup_in_progress"; exit 0; }
+  exec 9>"$LOCK"
+  if ! flock -n 9; then
+    exec 9>&-
+    AGE=0
+    for pid in $(lock_holders); do
+      e=$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d ' ')
+      [ -n "$e" ] && [ "$e" -gt "$AGE" ] && AGE=$e
+    done
+    echo "LOCK_AGE=$AGE"
+    if [ "$AGE" -gt "$LOCK_MAX" ]; then
+      HOLDERS=$(lock_holders | tr '\n' ' ')
+      echo "LOCK_RECLAIMED_FROM=$HOLDERS"
+      [ -n "$HOLDERS" ] && kill -TERM $HOLDERS 2>/dev/null
+      sleep 10
+      HOLDERS=$(lock_holders | tr '\n' ' ')
+      [ -n "$HOLDERS" ] && kill -KILL $HOLDERS 2>/dev/null
+      sleep 2
+      exec 9>"$LOCK"
+      flock -n 9 || { echo "RESULT=deferred_backup_in_progress"; exit 0; }
+    else
+      echo "RESULT=deferred_backup_in_progress"
+      exit 0
+    fi
+  fi
 else
   echo "LOCK=unavailable"
+fi
+
+# Time limits (coreutils timeout; absent, steps run unbounded as before).
+if command -v timeout >/dev/null 2>&1; then
+  T_DUMP="timeout --kill-after=60 ${dumpTimeoutSec}"
+  T_UPLOAD="timeout --kill-after=120 ${resticTimeoutSec}"
+else
+  T_DUMP=""; T_UPLOAD=""
 fi
 
 read_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" 2>/dev/null | awk -F= -v k="$2" '$1==k{print substr($0,index($0,"=")+1)}' | tail -n 1; }
@@ -187,7 +259,7 @@ mysql_dump_to() {
   local bin flags
   for bin in mariadb-dump mysqldump; do
     for flags in "$full" "$base"; do
-      if docker exec -e MYSQL_PWD="$p" "$c" sh -lc "$bin $flags -u$u $d" > "$out" 2>/dev/null && [ -s "$out" ]; then
+      if $T_DUMP docker exec -e MYSQL_PWD="$p" "$c" sh -lc "$bin $flags -u$u $d" > "$out" 2>/dev/null && [ -s "$out" ]; then
         return 0
       fi
     done
@@ -320,7 +392,7 @@ while IFS= read -r c; do
     # off and exits 0, so the restore reports success having changed nothing.
     # --no-owner --no-acl so the dump also replays into a target whose roles
     # differ, which is what restoring into a staging clone does.
-    if docker exec -e PGPASSWORD="$PGP" "$c" sh -lc "pg_dump --clean --if-exists --no-owner --no-acl -U $PGU -d $PGDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
+    if $T_DUMP docker exec -e PGPASSWORD="$PGP" "$c" sh -lc "pg_dump --clean --if-exists --no-owner --no-acl -U $PGU -d $PGDB" > "$DUMP" 2>/dev/null && [ -s "$DUMP" ]; then
       echo "$DUMP" >> "$PATHS_FILE"; DBCOUNT=$((DBCOUNT+1))
     else rm -f "$DUMP"; fi
   else
@@ -434,7 +506,7 @@ REPO="s3:\${B2_ENDPOINT}/\${B2_BUCKET}"
 SIZE_BYTES=$(tr '\\n' '\\0' < "$PATHS_FILE" | du -scb --files0-from=- 2>/dev/null | tail -1 | cut -f1)
 echo "SIZE_BYTES=\${SIZE_BYTES:-0}"
 
-OUT=$(/usr/bin/restic -r "$REPO" backup ${resticLabelFlags} \\
+OUT=$($T_UPLOAD /usr/bin/restic -r "$REPO" backup ${resticLabelFlags} \\
   --tag jongo-backup \\
   --tag "site=$RUUID" \\
   --tag "backup=$BID" \\
@@ -471,10 +543,19 @@ if [ -z "$SNAP" ]; then
   # row and rewinds lastScheduledBackupAt to the last success, so the site is
   # due again on the very next hourly pass. Nothing is lost and nobody is paged.
   if printf '%s' "$OUT" | grep -qiE 'unable to create lock|already locked|repository is already locked'; then
+    # A restic killed mid-run (a timeout, a reboot) leaves its lock in the
+    # repository and restic won't clear it by itself, so every later backup
+    # would defer here forever. "unlock" removes only STALE locks (old, or from
+    # a process that is gone); a live prune's lock is left alone.
+    $T_DUMP /usr/bin/restic -r "$REPO" unlock >/dev/null 2>&1 || true
     echo "RESULT=deferred_repo_locked"
     exit 0
   fi
 
+  if [ "$RC" -eq 124 ] || [ "$RC" -eq 137 ]; then
+    echo "RESULT=fail_upload_timeout"
+    exit 1
+  fi
   echo "RESULT=fail_restic"
   exit 1
 fi
@@ -495,7 +576,7 @@ KEEP_MONTHLY=${keepMonthly}
 # the default (host,paths) starts a new group whenever a site's container set
 # changes, and each group would then keep its own full policy. Grouping by tags
 # would be worse still, since backup=<id> is unique per snapshot.
-FORGET_JSON=$(/usr/bin/restic -r "$REPO" forget --json --group-by host \\
+FORGET_JSON=$($T_DUMP /usr/bin/restic -r "$REPO" forget --json --group-by host \\
   --tag "site=$RUUID" \\
   --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" 2>/dev/null)
 # Retention that quietly stops working is a bill nobody reads until it is large.
@@ -615,6 +696,7 @@ try {
   if (r.stderr.trim()) console.error(r.stderr.trim());
   console.log(r.stdout.trim());
   const k = parseKV(r.stdout);
+  if (r.timedOut && !k.RESULT) k.RESULT = "fail_run_timeout";
 
   // A deferred run is not a failed one: nothing was attempted, so it must not
   // become a failed catalogue row (which would also email the owner an alert
