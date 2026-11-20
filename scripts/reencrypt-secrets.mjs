@@ -23,9 +23,10 @@ const ALGORITHM = "aes-256-gcm";
 export const TARGETS = [
   { model: "githubAppConfig", columns: ["clientSecretEnc", "webhookSecretEnc", "privateKeyEnc"] },
   { model: "wordPressTelemetryConfig", columns: ["passwordCiphertext"] },
-  // SFTP passwords were stored in plain text before encryption; those are
-  // encrypted as they are, not decrypted first.
-  { model: "sftpAccount", columns: ["password"], plaintextLegacy: true }
+  // SFTP and privacy-mode passwords were stored in plain text before
+  // encryption; those are encrypted as they are, not decrypted first.
+  { model: "sftpAccount", columns: ["password"], plaintextLegacy: true },
+  { model: "site", columns: ["privacyModePassword"], plaintextLegacy: true }
 ];
 
 export function parseKey(raw, name = "SECRETS_ENCRYPTION_KEY") {

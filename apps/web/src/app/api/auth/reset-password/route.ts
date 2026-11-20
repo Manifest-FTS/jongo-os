@@ -61,7 +61,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   await db.$transaction([
     db.user.update({
       where: { id: resetToken.userId },
-      data: { passwordHash }
+      // Also signs out every existing session: whoever knew the old password
+      // may already be signed in.
+      data: { passwordHash, sessionVersion: { increment: 1 } }
     }),
     db.passwordResetToken.update({
       where: { id: resetToken.id },

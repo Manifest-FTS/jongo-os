@@ -7,6 +7,14 @@ export function getCredentialSignInErrorMessage(errorCode?: string | null): stri
     return "Too many sign-in attempts. Wait 15 minutes, then try again.";
   }
 
+  if (errorCode === "AUTH_TOTP_REQUIRED") {
+    return "Enter the 6-digit code from your authenticator app.";
+  }
+
+  if (errorCode === "AUTH_TOTP_INVALID") {
+    return "That code didn't work. Enter the newest code from your app, or a recovery code.";
+  }
+
   if (errorCode === "AUTH_DB_UNAVAILABLE") {
     return "Sign-in is temporarily unavailable. Please try again in a few moments.";
   }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Viewport } from "next";
 import localFont from "next/font/local";
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth.config";
 import { getDb } from "@/lib/db";
 import { getGravatarUrl } from "@/lib/gravatar";
@@ -38,6 +39,9 @@ export const viewport: Viewport = { colorScheme: "light", themeColor: "#fafafa" 
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
+  // The browser still holds a session cookie (middleware let it through) but
+  // the account signed out everywhere, reset its password, or was removed.
+  if (!session?.user?.id) redirect("/auth/login?ended=1");
   const canViewBilling = await isSuperAdminUser(session?.user?.id);
   const sessionEmail = session?.user?.email ?? "Account";
   let workspaces: WorkspacePage = { items: [], hasMore: false, nextCursor: null };

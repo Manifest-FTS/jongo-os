@@ -28,7 +28,9 @@ export const AUTH_RATE_LIMITS = {
   // Framework detection reads the repo from the Git host on each call.
   repoInspectPerUser: { scope: "repo-inspect:user", limit: 60, windowSeconds: 10 * 60 },
   // Each deploy key is stored in hosting.
-  deployKeyPerOrg: { scope: "deploy-key:org", limit: 10, windowSeconds: 60 * 60 }
+  deployKeyPerOrg: { scope: "deploy-key:org", limit: 10, windowSeconds: 60 * 60 },
+  // Codes typed into Settings (turn on, turn off, new recovery codes).
+  twoFactorPerUser: { scope: "2fa:user", limit: 10, windowSeconds: 15 * 60 }
 } satisfies Record<string, RateLimitRule>;
 
 export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };

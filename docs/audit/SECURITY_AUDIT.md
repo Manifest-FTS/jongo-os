@@ -16,7 +16,7 @@ Static review of `jongo-os` on branch `stage` @ `d8381ba`. Nothing was exploited
 | S-05 | **High** | Single static ops token grants cross-tenant machine access (backup callbacks, every site's staging routes, diagnostics) — *fixed (token honoured only on local requests)* |
 | S-06 | **High** | No rate limiting on sign-in, registration or password reset — *fixed* |
 | S-07 | Medium | Mock deploy results recorded as real deployments when Coolify creds are missing — *fixed* |
-| S-08 | Medium | Privacy-mode passwords stored in plaintext |
+| S-08 | Medium | Privacy-mode passwords stored in plaintext (fixed 2026-11-20: encrypted with lib/secret-box) |
 | S-09 | Medium | Ops tokens compared with `===` (not constant-time) in middleware and routes — *fixed* |
 | S-10 | Medium | Shell scripts built by string interpolation and run as root over SSH |
 | S-11 | Medium | In-memory, per-process rate limiting (`rate-gate.ts`) |

@@ -6,6 +6,9 @@ import { isDevAuthBypassEnabled, resolveAuthSecret } from "./auth-secret";
 
 const AUTH_DB_UNAVAILABLE_CODE = "AUTH_DB_UNAVAILABLE";
 const AUTH_RATE_LIMITED_CODE = "AUTH_RATE_LIMITED";
+// Password was right and the account has two-step sign-in: ask for the code.
+const AUTH_TOTP_REQUIRED_CODE = "AUTH_TOTP_REQUIRED";
+const AUTH_TOTP_INVALID_CODE = "AUTH_TOTP_INVALID";
 const DEV_AUTH_FALLBACK_USER_ID = "00000000-0000-4000-8000-000000000001";
 
 function isUuid(value?: string | null): boolean {
@@ -61,12 +64,15 @@ declare module "next-auth" {
   interface User {
     id: string;
     email: string;
+    /** User.sessionVersion when this session was issued. */
+    sv?: number;
   }
   interface Session {
     user: {
       id: string;
       email: string;
     };
+    sv?: number;
   }
 }
 
@@ -74,6 +80,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string;
     email: string;
+    sv?: number;
   }
 }
 
@@ -87,7 +94,9 @@ export const authConfig = {
     CredentialsProvider({
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
+        password: { label: "Password", type: "password" },
+        // Authenticator code or recovery code, sent on the second step.
+        code: { label: "Code", type: "text" }
       },
       async authorize(credentials: any, req: any) {
         if (!credentials?.email || !credentials?.password) {
@@ -196,12 +205,28 @@ export const authConfig = {
             return null;
           }
 
+          const { isTwoFactorEnabled, spendSecondFactor } = await import("./two-factor");
+          if (isTwoFactorEnabled(user)) {
+            const code = typeof credentials.code === "string" ? credentials.code.trim() : "";
+            if (!code) {
+              throw new Error(AUTH_TOTP_REQUIRED_CODE);
+            }
+            const second = await spendSecondFactor(db, user, code);
+            if (!second.ok) {
+              throw new Error(AUTH_TOTP_INVALID_CODE);
+            }
+          }
+
           return {
             id: user.id,
             email: normalizeEmail(user.email),
-            name: user.fullName ?? undefined
+            name: user.fullName ?? undefined,
+            sv: typeof user.sessionVersion === "number" ? user.sessionVersion : 0
           };
         } catch (error) {
+          if (error instanceof Error && (error.message === AUTH_TOTP_REQUIRED_CODE || error.message === AUTH_TOTP_INVALID_CODE)) {
+            throw error;
+          }
           if (isLikelyDatabaseUnavailableError(error)) {
             console.error(
               `[auth] Credentials sign-in failed because the database is unavailable at ${getDatabaseHost()}.`,
@@ -221,6 +246,7 @@ export const authConfig = {
       if (user) {
         token.id = user.id;
         token.email = user.email;
+        token.sv = typeof user.sv === "number" ? user.sv : 0;
       }
       return token;
     },
@@ -229,6 +255,7 @@ export const authConfig = {
         session.user.id = token.id as string;
         session.user.email = token.email as string;
       }
+      session.sv = typeof token.sv === "number" ? token.sv : 0;
       return session;
     }
   },
@@ -249,7 +276,7 @@ export type AuthSession = {
  */
 export async function auth(): Promise<AuthSession> {
   const raw = await getServerSession(authConfig as any);
-  const session = raw as unknown as { user?: { id?: string; email?: string } } | null;
+  const session = raw as unknown as { user?: { id?: string; email?: string }; sv?: number } | null;
   if (session?.user?.id) {
     // JWT identifies the account, not its current email, existence or authority.
     // Refresh identity so older email-based technical guards cannot trust stale tokens.
@@ -259,9 +286,13 @@ export async function auth(): Promise<AuthSession> {
       if (!db) return null;
       const user = await db.user.findUnique({
         where: { id: session.user.id },
-        select: { id: true, email: true, fullName: true, deletedAt: true }
+        select: { id: true, email: true, fullName: true, deletedAt: true, sessionVersion: true }
       });
       if (!user || user.deletedAt) return null;
+      // "Sign out everywhere" (or a password reset) raised the version after
+      // this session was issued. Sessions from before the field existed carry
+      // no version and count as 0.
+      if ((session.sv ?? 0) !== (user.sessionVersion ?? 0)) return null;
       return { user: { id: user.id, email: user.email, name: user.fullName } };
     } catch {
       return null;

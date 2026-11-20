@@ -8,6 +8,7 @@ import {
   normalizePrivacyUsername
 } from "@/lib/privacy-mode";
 import { disablePrivacyMode, enablePrivacyMode } from "@/lib/privacy-mode-apply";
+import { decryptSecret, encryptSecret } from "@/lib/secret-box";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,23 @@ type Ctx = {
   permissions: { canDisablePrivacyMode: boolean; canManagePrivacyCredentials: boolean };
 };
 
+const ENCRYPTED = /^v[12]:/;
+
+/**
+ * The stored password in plain text, or null when there is none or it can't be
+ * read back (for example after the encryption key changed). Rows written before
+ * encryption held it unencrypted.
+ */
+function readPassword(stored: unknown): string | null {
+  if (typeof stored !== "string" || !stored) return null;
+  if (!ENCRYPTED.test(stored)) return stored;
+  try {
+    return decryptSecret(stored);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The shape the UI renders. Credentials are included only because the caller has
  * already passed the manage check — this payload must never be widened to a
@@ -31,7 +49,7 @@ function present(row: Record<string, any>) {
   return {
     enabled: Boolean(row.privacyModeEnabled),
     username: row.privacyModeUsername ?? DEFAULT_PRIVACY_USERNAME,
-    password: row.privacyModePassword ?? null,
+    password: readPassword(row.privacyModePassword),
     updatedAt: row.privacyModeUpdatedAt ?? null,
     providerState: row.privacyModeProviderState ?? null,
     providerError: row.privacyModeProviderError ?? null
@@ -139,7 +157,20 @@ export async function GET(_request: Request, { params }: Params) {
   const { siteId } = await params;
   const resolved = await resolve(siteId);
   if (!resolved.ok) return resolved.response;
-  return NextResponse.json({ ok: true, ...present(resolved.ctx.siteRow) });
+  const { db, siteRow } = resolved.ctx;
+  // A row from before encryption: encrypt it now that it has been read.
+  const stored = siteRow.privacyModePassword;
+  if (typeof stored === "string" && stored && !ENCRYPTED.test(stored)) {
+    try {
+      await (db as any).site.updateMany({
+        where: { id: siteRow.id, privacyModePassword: stored },
+        data: { privacyModePassword: encryptSecret(stored) }
+      });
+    } catch (error) {
+      console.error("privacy-mode: could not encrypt a legacy password", error);
+    }
+  }
+  return NextResponse.json({ ok: true, ...present(siteRow) });
 }
 
 /**
@@ -239,9 +270,26 @@ export async function POST(request: Request, { params }: Params) {
 
   // Keep the existing password across unrelated edits: someone who has already
   // shared it with a client should not have it silently rotated because they
-  // renamed the user.
-  const wantsNewPassword = Boolean((body as any)?.regenerate) || !siteRow.privacyModePassword;
-  const password = wantsNewPassword ? generatePrivacyPassword() : String(siteRow.privacyModePassword);
+  // renamed the user. One that can no longer be read back has to be replaced.
+  const currentPassword = readPassword(siteRow.privacyModePassword);
+  const wantsNewPassword = Boolean((body as any)?.regenerate) || !currentPassword;
+  const password = wantsNewPassword ? generatePrivacyPassword() : String(currentPassword);
+  // Seal before touching the proxy, so a missing key can't leave the site
+  // protected by a password nobody can see.
+  let sealedPassword: string;
+  try {
+    sealedPassword = encryptSecret(password);
+  } catch (error) {
+    console.error("privacy-mode: could not encrypt the password", error);
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "encryption_unavailable",
+        message: "Privacy mode can't be saved right now. Please try again later."
+      },
+      { status: 503 }
+    );
+  }
   const username = normalizePrivacyUsername(
     (body as any)?.username ?? siteRow.privacyModeUsername ?? DEFAULT_PRIVACY_USERNAME
   );
@@ -263,7 +311,7 @@ export async function POST(request: Request, { params }: Params) {
     data: {
       privacyModeEnabled: true,
       privacyModeUsername: username,
-      privacyModePassword: password,
+      privacyModePassword: sealedPassword,
       privacyModeUpdatedAt: new Date(),
       privacyModeUpdatedBy: actorId,
       privacyModeProviderState: "applied",
