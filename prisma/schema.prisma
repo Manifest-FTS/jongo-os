@@ -73,6 +73,20 @@ model User {
   authProviderId  String? // external provider ID
   role            GlobalRole @default(collaborator)
 
+  // Raised to sign the account out everywhere (lib/auth.config.ts compares it
+  // with the value stored in each session). Also raised on a password reset.
+  sessionVersion  Int        @default(0)
+
+  // Two-step sign-in (lib/totp.ts, lib/two-factor.ts). Secrets are encrypted
+  // with lib/secret-box; recovery codes are stored as SHA-256 hashes and each
+  // works once. totpLastStep stops a code being used twice.
+  totpSecret        String?
+  totpEnabledAt     DateTime?
+  totpLastStep      Int?
+  totpPendingSecret String?
+  totpPendingAt     DateTime?
+  totpRecoveryCodes String[]  @default([])
+
   // Billing (Stripe). Subscription is per-account, not per-organization: a
   // user's plan caps the usage across every client/org they create, so there
   // is one subscription to track here rather than one per Organization.
@@ -305,10 +319,11 @@ model Site {
   // or indexable. Enforcement is a Traefik router written to the proxy's watched
   // dynamic directory — see lib/privacy-mode.ts.
   //
-  // privacyModePassword is stored in PLAINTEXT, deliberately. The product shows
-  // the current credentials so an operator can hand them to a client, which a
-  // hash cannot support. It gates a not-yet-public site rather than an account,
-  // and it is never returned to a caller who cannot already manage the site.
+  // privacyModePassword is stored encrypted (lib/secret-box), not hashed: the
+  // product shows the current credentials so an operator can hand them to a
+  // client. It is never returned to a caller who cannot already manage the site.
+  // Rows from before encryption are encrypted on first read or by
+  // scripts/reencrypt-secrets.mjs.
   privacyModeEnabled       Boolean   @default(false)
   privacyModeUsername      String?
   privacyModePassword      String?

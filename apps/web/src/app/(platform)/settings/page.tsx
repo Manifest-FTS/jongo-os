@@ -13,6 +13,7 @@ import DesktopNotificationSettings from "@/components/DesktopNotificationSetting
 import OwnershipSyncPanel from "@/components/OwnershipSyncPanel";
 import ProfileSettingsForm from "@/components/ProfileSettingsForm";
 import PlatformAdminsPanel from "@/components/PlatformAdminsPanel";
+import { SignOutEverywhereCard, TwoFactorCard } from "@/components/TwoFactorSettings";
 import { isPlatformAdminEmail } from "@/lib/permissions";
 
 type SettingsPageProps = {
@@ -217,6 +218,9 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               <Link href="/auth/forgot-password" className="btn btn-secondary">Send password reset link</Link>
             </article>
           ) : null}
+
+          <TwoFactorCard />
+          <SignOutEverywhereCard />
         </div>
       ) : null}
 

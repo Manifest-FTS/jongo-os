@@ -35,6 +35,11 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Second step: the password was right and the account uses two-step sign-in.
+  const [needsCode, setNeedsCode] = useState(false);
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [code, setCode] = useState("");
+  const sessionEnded = searchParams?.get("ended") === "1";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,13 +49,18 @@ function LoginForm() {
     const result = await signIn("credentials", {
       email: email.trim().toLowerCase(),
       password,
+      ...(needsCode ? { code: code.trim() } : {}),
       redirect: false
     });
 
     setLoading(false);
 
-    if (result?.error) {
+    if (result?.error === "AUTH_TOTP_REQUIRED") {
+      setNeedsCode(true);
+      setCode("");
+    } else if (result?.error) {
       setError(getCredentialSignInErrorMessage(result.error));
+      if (result.error === "AUTH_TOTP_INVALID") setCode("");
     } else if (result?.ok) {
       router.push(callbackUrl);
     } else {
@@ -58,8 +68,74 @@ function LoginForm() {
     }
   }
 
+  if (needsCode) {
+    return (
+      <form onSubmit={handleSubmit} className="auth-form">
+        <p className="auth-subtitle" style={{ marginTop: 0 }}>
+          {useRecovery
+            ? "Enter one of the recovery codes you saved when you turned on two-step sign-in. Each code works once."
+            : "Open your authenticator app and enter the 6-digit code for Jongo."}
+        </p>
+        <div className="auth-field">
+          <label htmlFor="code">{useRecovery ? "Recovery code" : "Authentication code"}</label>
+          <input
+            id="code"
+            key={useRecovery ? "recovery" : "totp"}
+            type="text"
+            inputMode={useRecovery ? "text" : "numeric"}
+            autoComplete="one-time-code"
+            autoFocus
+            required
+            placeholder={useRecovery ? "xxxxx-xxxxx" : "123456"}
+            maxLength={useRecovery ? 11 : 7}
+            value={code}
+            onChange={(e) => setCode(useRecovery ? e.target.value : e.target.value.replace(/[^\d ]/g, ""))}
+            style={{ letterSpacing: useRecovery ? "0.08em" : "0.3em", fontVariantNumeric: "tabular-nums" }}
+          />
+        </div>
+        {error && <p className="auth-error">{error}</p>}
+        <button type="submit" className="auth-submit" disabled={loading || !code.trim()}>
+          {loading ? "Checking…" : "Verify and sign in"}
+        </button>
+        <p className="auth-link-row">
+          <button
+            type="button"
+            className="auth-inline-link"
+            style={{ background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
+            onClick={() => {
+              setUseRecovery(!useRecovery);
+              setCode("");
+              setError("");
+            }}
+          >
+            {useRecovery ? "Use my authenticator app instead" : "Lost your phone? Use a recovery code"}
+          </button>
+        </p>
+        <p className="auth-link-row">
+          <button
+            type="button"
+            className="auth-inline-link"
+            style={{ background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
+            onClick={() => {
+              setNeedsCode(false);
+              setUseRecovery(false);
+              setCode("");
+              setPassword("");
+              setError("");
+            }}
+          >
+            Back to sign in
+          </button>
+        </p>
+      </form>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="auth-form">
+      {sessionEnded && !error ? (
+        <p className="auth-subtitle" style={{ marginTop: 0 }}>You've been signed out. Sign in again to continue.</p>
+      ) : null}
       <div className="auth-field">
         <label htmlFor="email">Email</label>
         <input

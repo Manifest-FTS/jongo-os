@@ -19,6 +19,7 @@ Constraint: use only existing resources — nothing new to buy or host.
 - S-07 remove mock mode.
 - S-04 dedicated encryption key with key id.
 - S-06 auth rate limiting; S-09 constant-time compares.
+- *Done:* S-08 privacy-mode passwords encrypted at rest (legacy rows on first read or `ops:reencrypt-secrets`).
 - Fix the 2 failing CMS import tests.
 
 **2b. Foundation**
@@ -35,7 +36,7 @@ Constraint: use only existing resources — nothing new to buy or host.
 - Roles: owner, admin, developer, viewer, billing (map current admin→admin, collaborator→developer). Central `can(principal, action, resource)`; retire ad-hoc checks in `repositories.ts`.
 - Audit log on every mutation (via Operation), org-visible audit page.
 - Move subscription from `User` to `Organization` (migration keeps existing user subscriptions attached to their owned orgs).
-- 2FA (TOTP), session revocation.
+- *Done:* 2FA (TOTP with recovery codes, `lib/totp.ts`, `lib/two-factor.ts`) and session revocation ("Sign out everywhere", `User.sessionVersion`; also raised on password reset). Admin reset: `npm run ops:reset-two-factor`.
 
 ## Phase 4 — Coolify integration layer
 - `InfrastructureProvider` interface: `projects`, `apps`, `services`, `databases`, `servers`, `deployments`, `domains`, `envs`, `logs`, `backups`.
