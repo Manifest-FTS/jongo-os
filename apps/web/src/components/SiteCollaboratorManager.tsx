@@ -35,6 +35,8 @@ type Props = {
   craft?: { canGrant: boolean };
 };
 
+const SITE_ROLE_LABELS: Record<string, string> = { admin: "Admin", collaborator: "Collaborator", viewer: "Viewer (read-only)" };
+
 export default function SiteCollaboratorManager({ siteId, currentUserId, craft }: Props) {
   const craftIds = useId();
   const [craftRole, setCraftRole] = useState<"none" | CraftRoleName>("none");
@@ -43,7 +45,7 @@ export default function SiteCollaboratorManager({ siteId, currentUserId, craft }
   const [emailDeliveryConfigured, setEmailDeliveryConfigured] = useState(false);
   const [callerRole, setCallerRole] = useState<"admin" | "collaborator">("collaborator");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "collaborator">("collaborator");
+  const [role, setRole] = useState<"admin" | "collaborator" | "viewer">("collaborator");
   const [forceInvite, setForceInvite] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -53,7 +55,8 @@ export default function SiteCollaboratorManager({ siteId, currentUserId, craft }
   const [inviteActionBusyId, setInviteActionBusyId] = useState<string | null>(null);
 
   const roleOptions = useMemo(() => {
-    return callerRole === "admin" ? ["admin", "collaborator"] as const : ["collaborator"] as const;
+    // A collaborator may add people at their own level or below, never an admin.
+    return callerRole === "admin" ? ["admin", "collaborator", "viewer"] as const : ["collaborator", "viewer"] as const;
   }, [callerRole]);
 
   async function load() {
@@ -245,11 +248,11 @@ export default function SiteCollaboratorManager({ siteId, currentUserId, craft }
           className="form-select"
           style={{ width: "auto", minWidth: "130px" }}
           value={role}
-          onChange={(e) => setRole(e.target.value as "admin" | "collaborator")}
+          onChange={(e) => setRole(e.target.value as "admin" | "collaborator" | "viewer")}
           disabled={busy}
         >
           {roleOptions.map((r) => (
-            <option key={r} value={r}>{r}</option>
+            <option key={r} value={r}>{SITE_ROLE_LABELS[r] ?? r}</option>
           ))}
         </select>
         {craft?.canGrant ? (
@@ -388,7 +391,7 @@ export default function SiteCollaboratorManager({ siteId, currentUserId, craft }
                       disabled={busy}
                     >
                       {roleOptions.map((r) => (
-                        <option key={r} value={r}>{r}</option>
+                        <option key={r} value={r}>{SITE_ROLE_LABELS[r] ?? r}</option>
                       ))}
                     </select>
                   ) : (

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { resolveStagingDomainAccess } from "@/lib/staging-domain-access";
 import { listProductionDomains, setPrimaryProductionDomain } from "@/lib/production-domains";
 import { progressResponse, wantsProgress } from "@/lib/progress";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,8 @@ export async function GET(_request: Request, { params }: Params) {
  * its steps when asked (Accept: application/x-ndjson).
  */
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const access = await resolveStagingDomainAccess((await params).siteId, { manage: true });
   if ("response" in access) return access.response;
   const body = (await request.json().catch(() => ({}))) as { primary?: unknown };

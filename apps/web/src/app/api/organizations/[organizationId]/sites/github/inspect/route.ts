@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOrgMember } from "@/lib/github-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,8 @@ type Params = { params: Promise<{ organizationId: string }> };
  *     | { mode: "private", source, repo, branch, baseDirectory? }
  */
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { organizationId } = await params;
   const access = await requireOrgMember(organizationId);
   if ("response" in access) return access.response;

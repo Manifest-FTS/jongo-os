@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { resolveOrganizationAccess } from "@/lib/tenant-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,8 @@ type Params = { params: Promise<{ organizationId: string }> };
  * is found and reused. Client admins only. Says why when hosting refuses.
  */
 export async function POST(_request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 });

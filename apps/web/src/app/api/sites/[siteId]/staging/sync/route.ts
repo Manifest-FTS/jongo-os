@@ -6,6 +6,7 @@ import { getSiteWorkspace } from "@/lib/repositories";
 import { retryOnceAfterRateLimitError } from "@/lib/rate-limit-retry";
 import { primaryStagingUrl } from "@/lib/staging-domains";
 import { pickFallbackHost, platformSuffixesFromEnv } from "@/lib/staging-domain-rules";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,8 @@ type SyncResponse = {
 };
 
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const session = await auth();
   if (!session?.user?.id) {

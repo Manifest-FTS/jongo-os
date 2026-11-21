@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { hasOnlyFields, resolveOrganizationAccess } from "@/lib/tenant-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -111,6 +112,8 @@ export async function GET(_req: Request, { params }: Params) {
  * Body: { name?: string; description?: string; coolifyProjectId?: string; coolifyProjectName?: string }
  */
 export async function PUT(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -248,6 +251,8 @@ export async function PUT(req: Request, { params }: Params) {
  * Soft-deletes the organization. Only the owner may do this.
  */
 export async function DELETE(_req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

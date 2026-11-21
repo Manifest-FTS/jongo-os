@@ -15,6 +15,7 @@ import {
 import { deleteSftpUser, isSftpConfigured, readSftpConfig, upsertSftpUser } from "@/lib/sftp-provision-apply";
 import { decryptSecret, encryptSecret } from "@/lib/secret-box";
 import { generateDeployKeyPair } from "@/lib/deploy-keys";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -173,6 +174,8 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const resolved = await resolve(siteId);
   if (!resolved.ok) return resolved.response;
@@ -357,6 +360,8 @@ export async function POST(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const resolved = await resolve(siteId);
   if (!resolved.ok) return resolved.response;

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { db } from "@/lib/db";
 import { importLinkedCoolifyProjectSites } from "@/lib/coolify-project-import";
 import { hasOnlyFields, resolveOrganizationAccess } from "@/lib/tenant-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -119,6 +120,8 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

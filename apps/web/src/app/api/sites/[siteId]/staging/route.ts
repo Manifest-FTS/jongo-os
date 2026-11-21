@@ -26,6 +26,7 @@ import { retryOnceAfterRateLimitError } from "@/lib/rate-limit-retry";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { StagingProvisioningPipeline } from "@/orchestration/staging";
 import { safeEqual } from "@/lib/safe-equal";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 /**
  * One matching rule for the whole staging lifecycle.
@@ -1090,6 +1091,8 @@ async function findActiveStagingToggle(siteId: string): Promise<ActiveStagingTog
  * happens (the work carries on if the browser leaves).
  */
 export async function POST(req: Request, context: Params) {
+  const readOnly = await readOnlyDenial(context);
+  if (readOnly) return readOnly;
   const run = () => toggleStagingOnce(req, context);
   return wantsProgress(req) ? progressResponse(run) : run();
 }

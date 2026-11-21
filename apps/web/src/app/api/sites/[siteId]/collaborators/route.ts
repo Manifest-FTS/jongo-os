@@ -19,6 +19,7 @@ import { grantCraftAccess, type CraftRole } from "@/lib/craft-access";
 import { loadInviteCraftRoles, rememberInviteCraftRole } from "@/lib/craft-admin/access";
 import { resolveCraftManager } from "@/lib/craft-admin/gate";
 import { parseCraftRole } from "@/lib/craft-admin/validation";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -147,6 +148,8 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -164,7 +167,7 @@ export async function POST(req: Request, { params }: Params) {
   // With the Craft flag off the accepted field set is exactly what it was before, so `craftRole` is rejected like any unknown field.
   const craftOn = isOidcEnabled();
   if (!hasOnlyFields(body, craftOn ? ["email", "role", "forceInvite", "craftRole"] : ["email", "role", "forceInvite"]) || !isTenantMutationRole(body.role)) {
-    return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
+    return NextResponse.json({ error: "role must be admin, collaborator or viewer" }, { status: 400 });
   }
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const requestedRole = normalizeRole(body.role);

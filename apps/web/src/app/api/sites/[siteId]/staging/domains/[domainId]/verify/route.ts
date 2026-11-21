@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyStagingDomain } from "@/lib/staging-domains";
 import { resolveStagingDomainAccess } from "@/lib/staging-domain-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,8 @@ type Params = { params: Promise<{ siteId: string; domainId: string }> };
  * "checked a moment ago".
  */
 export async function POST(_request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId, domainId } = await params;
   const access = await resolveStagingDomainAccess(siteId, { manage: true });
   if ("response" in access) return access.response;

@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { openJobLog } from "@/lib/job-log";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 
@@ -42,6 +43,8 @@ function resolveScriptPath(name: string): string | null {
  * state first, so the restore itself is reversible.
  */
 export async function POST(request: Request, ctx: Params) {
+  const readOnly = await readOnlyDenial(ctx);
+  if (readOnly) return readOnly;
   try {
     return await restoreBackup(request, ctx);
   } catch (error) {

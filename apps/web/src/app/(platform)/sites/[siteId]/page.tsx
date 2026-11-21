@@ -11,6 +11,7 @@ import InfrastructureDiagnostics from "@/components/InfrastructureDiagnostics";
 import SiteOverviewCollaboratorsCard from "@/components/SiteOverviewCollaboratorsCard";
 import SiteIpAddressCard from "@/components/SiteIpAddressCard";
 import SitePrivacyModeControl from "@/components/SitePrivacyModeControl";
+import WordPressSetupCard from "@/components/WordPressSetupCard";
 import SftpAccessCard from "@/components/SftpAccessCard";
 import { buildTemporaryProductionDomain } from "@/lib/temporary-domains";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
@@ -607,6 +608,8 @@ export default async function SiteOverviewPage({ params }: Params) {
           <SiteOverviewCollaboratorsCard siteId={siteId} currentUserId={session?.user?.id ?? ""} clientId={workspace.clientId} />
 
           <SiteIpAddressCard ipAddress={hostingServerIp} countryName={hostingServerCountryName} />
+
+          {isWordPress ? <WordPressSetupCard siteId={siteId} /> : null}
 
           {/* SFTP opens the WordPress files folder; other app types have none. */}
           {isWordPress || workspace.resourceType === "WordPress" ? (
