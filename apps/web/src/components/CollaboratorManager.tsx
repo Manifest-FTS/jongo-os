@@ -31,7 +31,8 @@ type Props = {
   currentUserId: string;
 };
 
-const ROLES = ["admin", "collaborator"] as const;
+const ROLES = ["admin", "collaborator", "viewer"] as const;
+const ROLE_LABELS: Record<string, string> = { admin: "Admin", collaborator: "Collaborator", viewer: "Viewer (read-only)" };
 
 export default function CollaboratorManager({ organizationId, currentUserId }: Props) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
@@ -39,7 +40,7 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
   const [emailDeliveryConfigured, setEmailDeliveryConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "collaborator">("collaborator");
+  const [role, setRole] = useState<"admin" | "collaborator" | "viewer">("collaborator");
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -273,7 +274,7 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
                 style={{ width: "auto", fontSize: "0.85rem", padding: "0.25rem 0.45rem" }}
               >
                 {ROLES.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>
                 ))}
               </select>
 
@@ -376,7 +377,7 @@ export default function CollaboratorManager({ organizationId, currentUserId }: P
           style={{ width: "auto", minWidth: "128px" }}
         >
           {ROLES.map((r) => (
-            <option key={r} value={r}>{r}</option>
+            <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>
           ))}
         </select>
         <button type="submit" className="btn" disabled={inviteLoading}>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { resolveSiteAccess } from "@/lib/tenant-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,8 @@ export async function GET(_request: Request, { params }: Params) {
 
 /** POST: make a new secret (admins). The old one stops working at once. */
 export async function POST(_request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const loaded = await load(siteId);
   if ("response" in loaded) return loaded.response;

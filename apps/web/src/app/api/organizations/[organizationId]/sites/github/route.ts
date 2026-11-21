@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOrgMember } from "@/lib/github-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ type Params = { params: Promise<{ organizationId: string }> };
  */
 /** With Accept: application/x-ndjson, streams each step as it happens (lib/progress.ts). */
 export async function POST(request: Request, context: Params) {
+  const readOnly = await readOnlyDenial(context);
+  if (readOnly) return readOnly;
   const { progressResponse, wantsProgress } = await import("@/lib/progress");
   if (wantsProgress(request)) return progressResponse(() => createApp(request, context));
   return createApp(request, context);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOrgAdmin } from "@/lib/github-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,8 @@ export async function GET(_request: Request, { params }: Params) {
 
 /** POST { action: "finish_setup" }: retry creating the hosting source now. */
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { organizationId } = await params;
   const access = await requireOrgAdmin(organizationId);
   if ("response" in access) return access.response;
@@ -47,6 +50,8 @@ export async function POST(request: Request, { params }: Params) {
 
 /** DELETE: disconnect GitHub from this client. */
 export async function DELETE(_request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { organizationId } = await params;
   const access = await requireOrgAdmin(organizationId);
   if ("response" in access) return access.response;

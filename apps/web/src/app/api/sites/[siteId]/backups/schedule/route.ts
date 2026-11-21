@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { isValidBackupFrequency, scheduledBackupsDefaultEnabled, summarizeBackupSchedule } from "@/lib/backup-schedule";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ type Params = { params: Promise<{ siteId: string }> };
  * backupScheduleEnabled column.
  */
 export async function PATCH(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   try {
     const { siteId } = await params;
     const session = await auth();

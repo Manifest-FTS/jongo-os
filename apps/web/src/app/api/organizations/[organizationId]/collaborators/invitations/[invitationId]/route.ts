@@ -11,6 +11,7 @@ import {
 } from "@/lib/invitations";
 import { normalizeRole } from "@/lib/roles";
 import { resolveOrganizationAccess } from "@/lib/tenant-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 type Params = { params: Promise<{ organizationId: string; invitationId: string }> };
 
@@ -43,6 +44,8 @@ async function ensureAdminAccess(organizationId: string, userId: string) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -243,6 +246,8 @@ export async function POST(req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

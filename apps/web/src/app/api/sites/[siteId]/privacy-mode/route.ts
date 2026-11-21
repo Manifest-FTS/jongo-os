@@ -9,6 +9,7 @@ import {
 } from "@/lib/privacy-mode";
 import { disablePrivacyMode, enablePrivacyMode } from "@/lib/privacy-mode-apply";
 import { decryptSecret, encryptSecret } from "@/lib/secret-box";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -183,6 +184,8 @@ export async function GET(_request: Request, { params }: Params) {
  * serves publicly — the single outcome this feature must never produce.
  */
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const resolved = await resolve(siteId);
   if (!resolved.ok) return resolved.response;

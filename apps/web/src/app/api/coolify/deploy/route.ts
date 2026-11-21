@@ -47,6 +47,10 @@ export async function POST(req: NextRequest) {
     // Same answer whether the app does not exist or belongs to someone else.
     return NextResponse.json({ error: "App not found." }, { status: 404 });
   }
+  const { READ_ONLY_MESSAGE, isReadOnlyMember } = await import("@/lib/read-only-guard");
+  if (await isReadOnlyMember({ userId, siteId: access.site.id })) {
+    return NextResponse.json({ error: READ_ONLY_MESSAGE, reason: "read_only" }, { status: 403 });
+  }
 
   const permissions = getPermissions(access.isAdmin ? "admin" : "collaborator", access.isPlatformAdmin);
   if (!permissions.canDeployFromGithub) {

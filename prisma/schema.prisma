@@ -37,11 +37,15 @@ enum ClientBillingStatus {
 enum CollaboratorRole {
   admin
   collaborator
+  // Read-only: sees what they're given, changes nothing.
+  viewer
 }
 
 enum SiteCollaboratorRole {
   admin
   collaborator
+  // Read-only: sees what they're given, changes nothing.
+  viewer
 }
 
 enum NotificationType {
@@ -335,6 +339,21 @@ model Site {
   // publicly is the one outcome this feature must never report as success.
   privacyModeProviderState String?
   privacyModeProviderError String?
+
+  // WordPress first-time setup (lib/wordpress-install.ts) for sites Jongo
+  // creates: 'pending' | 'running' | 'installed' | 'already_installed' | 'failed'. Null for
+  // linked/imported sites, which were set up before Jongo knew them.
+  wpInstallState       String?
+  wpInstallError       String?
+  wpInstalledAt        DateTime?
+  // Set while an attempt runs ('running'), so two clicks can't install twice;
+  // an attempt older than 10 minutes is treated as dead.
+  wpInstallStartedAt   DateTime?
+  // { url, title, adminUser, adminEmail } — kept so "Try again" needs no re-entry.
+  wpInstallConfig      Json?
+  // Encrypted (lib/secret-box). Held only until the owner confirms they saved
+  // it, then cleared; Jongo does not keep WordPress admin passwords.
+  wpAdminPasswordEnc   String?
 
   // Set on a database resource that belongs to another app: Coolify registers
   // standalone databases as their own resources, so they were imported as

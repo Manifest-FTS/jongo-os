@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { MinIntervalGate } from "@/lib/rate-gate";
 import { canRunRemedy, isRemedyAction, remedyCooldownMs, remedyGateKey, SITE_REMEDY_ACTIONS, type RemedyAction } from "@/lib/remedies";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,8 @@ function gateFor(key: string, action: RemedyAction): MinIntervalGate {
  * "do this in Coolify" instruction.
  */
 export async function POST(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ ok: false, message: "Sign in first." }, { status: 401 });
 

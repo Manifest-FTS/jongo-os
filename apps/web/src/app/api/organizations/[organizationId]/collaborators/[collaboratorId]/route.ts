@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { normalizeRole } from "@/lib/roles";
 import { hasOnlyFields, isTenantMutationRole, resolveOrganizationAccess } from "@/lib/tenant-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 type Params = { params: Promise<{ organizationId: string; collaboratorId: string }> };
 
@@ -11,6 +12,8 @@ type Params = { params: Promise<{ organizationId: string; collaboratorId: string
  * Body: { role: "admin" | "collaborator" }
  */
 export async function PUT(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -26,7 +29,7 @@ export async function PUT(req: Request, { params }: Params) {
   }
 
   if (!hasOnlyFields(body, ["role"]) || !isTenantMutationRole(body.role)) {
-    return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
+    return NextResponse.json({ error: "role must be admin, collaborator or viewer" }, { status: 400 });
   }
   const role = normalizeRole(body.role);
 
@@ -69,6 +72,8 @@ export async function PUT(req: Request, { params }: Params) {
  * Cannot remove the owner.
  */
 export async function DELETE(_req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

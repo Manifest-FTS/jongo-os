@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
 import { destroyCoolifyApplication, getCoolifyOverview } from "@/lib/coolify";
 import { hasOnlyFields, resolveSiteAccess } from "@/lib/tenant-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 import {
   normalizeTemporaryDomainSlug,
   resolveTemporaryDomainSuffix
@@ -157,6 +158,8 @@ export async function GET(_req: Request, { params }: Params) {
  * Site/client admins may edit settings; infrastructure bindings are platform-only.
  */
 export async function PUT(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -275,6 +278,8 @@ export async function PUT(req: Request, { params }: Params) {
  * Soft-deletes the site. Requires site/client admin or platform authority.
  */
 export async function DELETE(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

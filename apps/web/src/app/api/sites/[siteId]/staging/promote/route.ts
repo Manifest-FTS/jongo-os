@@ -14,6 +14,7 @@ import { runUrlRewrite } from "@/lib/wp-url-rewrite-run";
 import { primaryStagingUrl, stagingUrlsForRewrite } from "@/lib/staging-domains";
 import { pickFallbackHost, platformSuffixesFromEnv } from "@/lib/staging-domain-rules";
 import { summarizeRewriteReport } from "@/lib/wp-url-rewrite";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 // Promote spawns the first-run backup as a detached child process.
 export const runtime = "nodejs";
@@ -288,6 +289,8 @@ async function readRecentBlockedPromoteContext(params: {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const authorizedByToken = hasOpsToken(req);
   const session = await auth();
   if (!session?.user?.id && !authorizedByToken) {

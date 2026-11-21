@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth.config";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ async function access(siteId: string, manage: boolean) {
 
 /** PATCH { repo?, branch?, stagingBranch?, autoDeploy? } (admins and collaborators: canDeployFromGithub). */
 export async function PATCH(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const ctx = await access(siteId, true);
   if ("response" in ctx) return ctx.response;
@@ -41,6 +44,8 @@ export async function PATCH(request: Request, { params }: Params) {
 
 /** POST { action: "deploy" }: deploy now (the pending commit, when there is one). */
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const ctx = await access(siteId, false);
   if ("response" in ctx) return ctx.response;

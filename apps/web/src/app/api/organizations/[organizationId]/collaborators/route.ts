@@ -13,6 +13,7 @@ import {
 import { normalizeRole } from "@/lib/roles";
 import { hasOnlyFields, isTenantMutationRole, resolveOrganizationAccess } from "@/lib/tenant-route-access";
 import { getPlatformAdminContacts } from "@/lib/permissions";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 type Params = { params: Promise<{ organizationId: string }> };
 
@@ -123,6 +124,8 @@ export async function GET(_req: Request, { params }: Params) {
  * Body: { email: string; role: "admin" | "collaborator" }
  */
 export async function POST(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -138,7 +141,7 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   if (!hasOnlyFields(body, ["email", "role", "forceInvite"]) || !isTenantMutationRole(body.role)) {
-    return NextResponse.json({ error: "role must be admin or collaborator" }, { status: 400 });
+    return NextResponse.json({ error: "role must be admin, collaborator or viewer" }, { status: 400 });
   }
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const role = normalizeRole(body.role);

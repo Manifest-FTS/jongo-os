@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { normalizeBackupNote } from "@/lib/backup-note";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ type Params = { params: Promise<{ siteId: string; backupId: string }> };
  * usually discovered later ("this is the one from before the plugin upgrade").
  */
 export async function PATCH(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   try {
     const { siteId, backupId } = await params;
     const session = await auth();

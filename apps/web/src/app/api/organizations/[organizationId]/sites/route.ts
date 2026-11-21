@@ -5,6 +5,7 @@ import { ensureCoolifyAppBackupSchedules, getCoolifyOverview, provisionCoolifyWo
 import { resolveOrganizationAccess } from "@/lib/tenant-route-access";
 import { DEFAULT_BACKUP_FREQUENCY_HOURS } from "@/lib/backup-schedule";
 import { nextAvailableSlug, toSiteSlug } from "@/lib/site-slug";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 import {
   buildTemporaryProductionDomain,
   normalizeTemporaryDomainSlug,
@@ -140,6 +141,8 @@ export async function GET(_req: Request, { params }: Params) {
  */
 /** With Accept: application/x-ndjson, streams each step as it happens (lib/progress.ts). */
 export async function POST(req: Request, context: Params) {
+  const readOnly = await readOnlyDenial(context);
+  if (readOnly) return readOnly;
   const { progressResponse, wantsProgress } = await import("@/lib/progress");
   if (wantsProgress(req)) return progressResponse(() => createApp(req, context));
   return createApp(req, context);
@@ -162,6 +165,8 @@ async function createApp(req: Request, { params }: Params): Promise<Response> {
     gitRepositoryUrl?: string;
     temporaryDomainSlug?: string;
     temporaryDomainSuffix?: string;
+    /** First-time WordPress setup; every field optional (defaults filled in). */
+    wordpress?: { title?: string; adminUser?: string; adminEmail?: string; adminPassword?: string };
   };
   try {
     body = await req.json();
@@ -257,6 +262,26 @@ async function createApp(req: Request, { params }: Params): Promise<Response> {
     let provisionRestarted: boolean | null = null;
     let provisionDomainConverged: boolean | null = null;
     let provisionedProjectUuid: string | null = null;
+
+    let wordpressInstall: import("@/lib/wordpress-install").InstallInputResult | null = null;
+    if (body.provisionWordPress === true && !coolifyServiceUuid) {
+      // Checked before anything is created, so a bad username can't leave a
+      // half-made site behind.
+      const { buildInstallInput } = await import("@/lib/wordpress-install");
+      const plannedDomain = buildTemporaryProductionDomain({ slug: pinnedTemporarySlug, suffix: pinnedTemporarySuffix });
+      wordpressInstall = buildInstallInput({
+        url: plannedDomain ? `https://${plannedDomain}` : null,
+        siteName: name,
+        title: body.wordpress?.title,
+        adminUser: body.wordpress?.adminUser,
+        adminEmail: body.wordpress?.adminEmail,
+        adminPassword: body.wordpress?.adminPassword,
+        fallbackEmail: session.user.email
+      });
+      if (!wordpressInstall.ok) {
+        return NextResponse.json({ error: wordpressInstall.message, field: wordpressInstall.field }, { status: 400 });
+      }
+    }
 
     if (body.provisionWordPress === true && !coolifyServiceUuid) {
       // Reuses the org loaded above, which is already access-checked; a second
@@ -517,6 +542,39 @@ async function createApp(req: Request, { params }: Params): Promise<Response> {
       });
     }
 
+    // Finish WordPress's own setup so the site opens ready to use, not on the
+    // setup screen anyone could complete. Only when the address really applied:
+    // WordPress stores its address at install time.
+    let wordpressSetup: { state: string; message: string; adminUser: string; loginUrl: string } | null = null;
+    if (wordpressInstall?.ok && coolifyServiceUuid && provisionDomainApplied !== false) {
+      const { encryptSecret } = await import("@/lib/secret-box");
+      const { runSiteWordPressInstall } = await import("@/lib/wordpress-install-run");
+      try {
+        await db.site.update({
+          where: { id: site.id },
+          data: {
+            wpInstallState: "pending",
+            wpInstallConfig: wordpressInstall.config,
+            wpAdminPasswordEnc: encryptSecret(wordpressInstall.password)
+          }
+        });
+        const outcome = await runSiteWordPressInstall(db, site.id);
+        wordpressSetup = {
+          ...outcome,
+          adminUser: wordpressInstall.config.adminUser,
+          loginUrl: `${wordpressInstall.config.url}/wp-admin/`
+        };
+      } catch (installError) {
+        console.error("POST /api/organizations/[id]/sites WordPress setup failed:", installError);
+        wordpressSetup = {
+          state: "failed",
+          message: "WordPress setup didn't finish. Use Finish setup on the site's page.",
+          adminUser: wordpressInstall.config.adminUser,
+          loginUrl: `${wordpressInstall.config.url}/wp-admin/`
+        };
+      }
+    }
+
     let backupReconciliation: Awaited<ReturnType<typeof ensureCoolifyAppBackupSchedules>> | null = null;
     if (coolifyServiceUuid) {
       try {
@@ -542,6 +600,7 @@ async function createApp(req: Request, { params }: Params): Promise<Response> {
         environments: site.environments,
         createdAt: site.createdAt,
         backupReconciliation,
+        wordpressSetup,
         // Provisioning can half-succeed: the service is created but the domain
         // is refused or times out. Reporting 201 without this reads as complete
         // success and leaves the site on a Coolify-generated host with nobody
