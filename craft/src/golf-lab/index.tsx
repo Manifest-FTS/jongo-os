@@ -8,10 +8,12 @@ import { createFixtureAdapter } from './fixtures.js';
 import { AdminOverview, MemberHome, MembersView, ProfileView, ReportsView, Onboarding, OverviewCards } from './views.js';
 import { canBook, needsOnboarding, overviewStats, setBookingWindows, setLiveClock, validDate, type Actor, type Booking, type Role } from './logic.js';
 import { BayCards, BayManagement } from './bays.js';
+import { TeamView } from './team-controls.js';
 import { CalendarDownload } from './calendar-download.js';
 import { LiveProvider, type LiveConfig, type LiveSnapshot } from './live.js';
 import { LiveBillingView } from './live-billing.js';
 export type { BookingWindows } from './logic.js';
+export type { LiveAdmin, LiveRetiredBay, LiveTeamStatus } from './live.js';
 export type { LiveAccessInput, LiveActions, LiveCancel, LiveCommit, LiveConfig, LiveDetail, LiveFamilyMember, LiveHold, LiveInvite, LiveResult, LiveSnapshot } from './live.js';
 export { CalendarDownload } from './calendar-download.js';
 export { BayCard, BayCards, BayManagement, BayNameForm } from './bays.js';
@@ -29,6 +31,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
   setBookingWindows(live?.snapshot.windows ?? null);
   const [adapter, setAdapter] = useState(() => live ? { members: live.snapshot.members, bookings: live.snapshot.bookings, bays: live.snapshot.bays } : createFixtureAdapter());
   const [details, setDetails] = useState(live ? live.snapshot.details : {});
+  const [team, setTeam] = useState(live?.snapshot.admins ?? []), [retiredBays, setRetiredBays] = useState(live?.snapshot.retiredBays ?? []);
   const [activeView, setActiveView] = useState(initialView);
   useEffect(() => {
     const back = () => setActiveView(location.pathname.split('/')[2] || (initialRole === 'member' ? 'member' : 'overview'));
@@ -36,7 +39,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
     return () => window.removeEventListener('popstate', back);
   }, [initialRole]);
   const role = initialRole;
-  const apply = (snapshot: LiveSnapshot) => { setLiveClock(snapshot.now); setBookingWindows(snapshot.windows ?? null); setAdapter({ members: snapshot.members, bookings: snapshot.bookings, bays: snapshot.bays }); setDetails(snapshot.details); };
+  const apply = (snapshot: LiveSnapshot) => { setLiveClock(snapshot.now); setBookingWindows(snapshot.windows ?? null); setAdapter({ members: snapshot.members, bookings: snapshot.bookings, bays: snapshot.bays }); setDetails(snapshot.details); setTeam(snapshot.admins ?? []); setRetiredBays(snapshot.retiredBays ?? []); };
   const commit = async (next: Booking[]): Promise<void | string[]> => {
     if (!live) { setAdapter({ ...adapter, bookings: next }); return; }
     const before = new Map(adapter.bookings.map(row => [row.id, row]));
@@ -52,7 +55,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
   const base = role === 'member' ? '/portal' : '/admin';
   const query = live ? '' : `?account=${role === 'instructor' ? 'i1' : role === 'admin' ? 'a1' : member.id}`;
   const href = (id: string) => `${base}${id === 'overview' || id === 'member' ? '' : '/' + id}${query}`;
-  const titles = role === 'admin' ? [['overview', 'Overview'], ['booking', 'Bay schedule'], ['bays', 'Bay Management'], ['members', 'Members'], ['instructors', 'Instructors'], ['reports', 'Reports'], ['billing', 'Billing & overrides']] : role === 'instructor' ? [['booking', 'My schedule']] : [['member', 'Overview'], ...(canBook(member) ? [['booking', 'Book a bay']] : []), ['profile', 'Profile'], ['billing', 'Membership & billing']];
+  const titles = role === 'admin' ? [['overview', 'Overview'], ['booking', 'Bay schedule'], ['bays', 'Bay Management'], ['members', 'Members'], ['instructors', 'Instructors'], ...(live ? [['team', 'Team']] : []), ['reports', 'Reports'], ['billing', 'Billing & overrides']] : role === 'instructor' ? [['booking', 'My schedule']] : [['member', 'Overview'], ...(canBook(member) ? [['booking', 'Book a bay']] : []), ['profile', 'Profile'], ['billing', 'Membership & billing']];
   const view = role === 'instructor' ? 'booking' : activeView;
   const navigate = (id: string) => { if (!titles.some(([key]) => key === id)) return; setActiveView(id); history.pushState(null, '', href(id)); document.getElementById('craft-content')?.focus(); };
   const plugin: CraftPlugin<typeof adapter> = {
@@ -64,6 +67,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
         case 'booking': return <BookingCalendar actor={actor} members={adapter.members} bays={adapter.bays} bookings={adapter.bookings} onUpdate={commit} />;
         case 'members': return <MembersView team={!!live && role === 'admin'} members={adapter.members.filter(row => row.tier !== 'instructor')} bookings={adapter.bookings} />;
         case 'instructors': return <MembersView instructors team={!!live && role === 'admin'} members={adapter.members.filter(row => row.tier === 'instructor')} bookings={adapter.bookings} />;
+        case 'team': return <TeamView />;
         case 'reports': return <ReportsView members={adapter.members} bookings={adapter.bookings} />;
         case 'billing': return live ? <LiveBillingView role={role} member={role === 'member' ? member : undefined} members={adapter.members.filter(row => row.tier !== 'instructor')} /> : <BillingView role={role} member={role === 'member' ? member : undefined} membershipSelector={membershipSelector} />;
         case 'profile': return <ProfileView member={member} onBilling={() => navigate('billing')} />;
@@ -75,7 +79,7 @@ export function GolfLabDemo({ initialView = 'member', initialRole = 'member', ac
   if (role === 'member' && view === 'booking' && !canBook(member)) {
     plugin.views = plugin.views.map(item => item.id === 'member' ? { ...item, render: () => <Onboarding member={member} membershipSelector={membershipSelector} /> } : item);
   }
-  return <LiveProvider value={live ? { ...live, details, apply } : null}><CraftShell plugin={plugin} context={{ identity: { ...actor, label: role === 'admin' ? 'Golf Lab team' : adapter.members.find(row => row.id === actor.id)?.name ?? 'Member' }, adapter }} activeView={view} clientNavigation onNavigate={navigate}
+  return <LiveProvider value={live ? { ...live, details, team, retiredBays, apply } : null}><CraftShell plugin={plugin} context={{ identity: { ...actor, label: role === 'admin' ? 'Golf Lab team' : adapter.members.find(row => row.id === actor.id)?.name ?? 'Member' }, adapter }} activeView={view} clientNavigation onNavigate={navigate}
     brand={{ name: 'THE GOLF LAB', tagline: 'Practice. With purpose.', homeHref: base + query, sidebarNote: live ? undefined : <a href="/style-guide#platform-member">Design system ↗</a> }}
     controls={live ? <div className="craft-preview-controls"><Button onClick={() => { void live.actions.signOut().then(() => location.assign('/login?out=1')); }}>Sign out</Button></div> : <div className="craft-preview-controls"><label>Account<select aria-label="Account" value={actor.id} onChange={event => {
       const id = event.target.value;

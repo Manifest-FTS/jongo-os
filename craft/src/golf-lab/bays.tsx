@@ -1,6 +1,6 @@
 "use client";
 import { useId, useState } from 'react';
-import { Badge, Button, Dialog } from '../shell.js';
+import { Badge, Button, Card, Dialog } from '../shell.js';
 import { clockNow, clockToday, chicagoInstant, type Actor, type Booking } from './logic.js';
 import { bayLabel, bayReservations, updateInventory, type Bay } from './inventory.js';
 import { hourLabel } from './booking.js';
@@ -8,7 +8,7 @@ import { useLive } from './live.js';
 import { BookingWindowsForm } from './team-controls.js';
 
 /** Shared across schedule, management overview and the style guide. No member identities. */
-export function BayCard({ bay, bookings, date = clockToday(), onSelect, onEdit }: { bay: Bay; bookings: Booking[]; date?: string; onSelect?: () => void; onEdit?: () => void }) {
+export function BayCard({ bay, bookings, date = clockToday(), onSelect, onEdit, onRetire }: { bay: Bay; bookings: Booking[]; date?: string; onSelect?: () => void; onEdit?: () => void; onRetire?: () => void }) {
   const rows = bayReservations(bay, bookings, date);
   const occupied = rows.some(row => { const start = chicagoInstant(row.date, row.start), end = chicagoInstant(row.date, row.start + row.hours); return start !== null && end !== null && start <= clockNow() && end > clockNow(); });
   const next = rows.find(row => (chicagoInstant(row.date, row.start) ?? 0) > clockNow());
@@ -17,7 +17,7 @@ export function BayCard({ bay, bookings, date = clockToday(), onSelect, onEdit }
     <p className="craft-overline">Simulator bay {bay.displayNumber}</p><h3>{bay.name}</h3>
     <div className="craft-bay-detail"><strong>{rows.length} {rows.length === 1 ? 'reservation' : 'reservations'}</strong><span>{rows.reduce((total, row) => total + row.hours, 0)} scheduled {rows.reduce((total, row) => total + row.hours, 0) === 1 ? 'hour' : 'hours'} · {date}</span></div>
     <p className="craft-muted">{next ? `Next reserved · ${hourLabel(next.start)}` : 'No upcoming reservations this day'}<br />Scheduled time, not verified attendance.</p>
-    <div className="craft-actions">{onSelect && <Button onClick={onSelect} aria-label={`View schedule for ${bayLabel(bay)}`}>View schedule ↗</Button>}{onEdit && <Button onClick={onEdit} aria-label={`Rename ${bayLabel(bay)}`}>Rename bay</Button>}</div>
+    <div className="craft-actions">{onSelect && <Button onClick={onSelect} aria-label={`View schedule for ${bayLabel(bay)}`}>View schedule ↗</Button>}{onEdit && <Button onClick={onEdit} aria-label={`Rename ${bayLabel(bay)}`}>Rename bay</Button>}{onRetire && <Button onClick={onRetire} aria-label={`Retire ${bayLabel(bay)}`}>Retire bay</Button>}</div>
   </section>;
 }
 export function BayCards({ bays, bookings, date, onSelect }: { bays: Bay[]; bookings: Booking[]; date?: string; onSelect?: (bay: Bay) => void }) {
@@ -27,9 +27,17 @@ export function BayManagement({ actor, bays, bookings, onUpdate }: { actor: Acto
   const [editor, setEditor] = useState<{ bay?: Bay } | null>(null), [notice, setNotice] = useState('');
   const live = useLive();
   if (actor.role !== 'admin') return <p>Only admins may manage bay inventory.</p>;
+  async function setActive(bay: { number: number; name: string }, active: boolean) {
+    setNotice('');
+    try {
+      const result = await live!.actions.setBayActive(bay.number, active);
+      if (result.ok) { live!.apply(result.snapshot); setNotice(active ? `${bay.name} is back in service.` : `${bay.name} is out of service. Its history is kept and you can restore it below.`); } else setNotice(result.errors.join(' '));
+    } catch { setNotice('Unable to save. Try again.'); }
+  }
   return <><div className="craft-page-heading"><div><p className="craft-overline">Bay Management</p><h1>Bay Management</h1></div><Button className="craft-primary" onClick={() => setEditor({})}>＋ Add bay</Button></div>
     <p className="craft-muted">Names can change. Bay numbers and internal IDs cannot. No deletion is offered; reservation history stays linked. {live ? 'Changes are saved for everyone.' : 'Changes live in this workspace only and reset on reload.'}</p>
-    <p role="status">{notice}</p><div className="craft-bays">{bays.map(bay => <BayCard key={bay.id} bay={bay} bookings={bookings} onEdit={() => setEditor({ bay })} />)}</div>
+    <p role="status">{notice}</p><div className="craft-bays">{bays.map(bay => <BayCard key={bay.id} bay={bay} bookings={bookings} onEdit={() => setEditor({ bay })} onRetire={live ? () => void setActive({ number: bay.displayNumber, name: bay.name }, false) : undefined} />)}</div>
+    {live && live.retiredBays.length > 0 && <section aria-label="Retired bays"><h2>Retired bays</h2><p className="craft-muted">Out of service: nobody can book them. Their numbers and past sessions are kept.</p><Card><div className="craft-list">{live.retiredBays.map(bay => <div key={bay.number} className="craft-list-row"><div><strong>Bay {bay.number}</strong><p>{bay.name}</p></div><Button onClick={() => void setActive(bay, true)} aria-label={`Restore ${bay.name}`}>Restore</Button></div>)}</div></Card></section>}
     {live && <BookingWindowsForm />}
     {editor && <BayNameForm key={editor.bay?.id ?? 'new'} bay={editor.bay} onClose={() => setEditor(null)} onSave={async name => {
       if (live) {
