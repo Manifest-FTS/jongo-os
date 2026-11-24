@@ -3,8 +3,15 @@ import { createContext, useContext } from 'react';
 import type { Bay } from './inventory.js';
 import type { Booking, BookingWindows, Member } from './logic.js';
 
+/** Whether a team account (instructor or admin) can sign in. Removed accounts keep their history. */
+export type LiveTeamStatus = 'active' | 'suspended' | 'removed';
+/** A team (admin) account, listed for the team so they know who else has full access. */
+export type LiveAdmin = { id: string; name: string; email: string; status: LiveTeamStatus; addedBy: string | null; self: boolean };
+/** A bay taken out of service. It keeps its number and its history and can be put back. */
+export type LiveRetiredBay = { number: number; name: string };
+
 /** What the server knows right now. `now` is fixed per snapshot so the server render and the browser agree on the time. */
-export type LiveSnapshot = { now: number; members: Member[]; bookings: Booking[]; bays: Bay[]; details: Record<string, LiveDetail>; /** How far ahead each kind of account may book. Absent means the built-in defaults. */ windows?: BookingWindows };
+export type LiveSnapshot = { now: number; members: Member[]; bookings: Booking[]; bays: Bay[]; details: Record<string, LiveDetail>; /** How far ahead each kind of account may book. Absent means the built-in defaults. */ windows?: BookingWindows; /** Team only. Everyone with full access. */ admins?: LiveAdmin[]; /** Team only. */ retiredBays?: LiveRetiredBay[] };
 /** A pause on booking that the team set. It is separate from billing: the plan stays paid. */
 export type LiveHold = { kind: 'medical' | 'other'; note: string; until: string | null };
 /** What may be done about ending a membership right now, worked out by the host. `message` explains it in plain words. */
@@ -12,7 +19,7 @@ export type LiveCancel = { applies: boolean; scheduled: boolean; canRequest: boo
 /** One person attached to an Individual membership. `invited` means the link was sent and they have not paid yet. */
 export type LiveFamilyMember = { id: string; name: string; email: string; statusLabel: string; invited: boolean; cancel: LiveCancel };
 /** Extra facts about an account that the fixtures never had. Present for the signed-in member, or for every account when the team views. */
-export type LiveDetail = { phone: string | null; planLabel: string | null; price: string | null; statusLabel: string; started: string | null; commitmentEnd: string | null; commitmentEndDate?: string | null; waiverAccepted: string | null; stripeUrl?: string; hold?: LiveHold | null; history?: string[]; cancel?: LiveCancel; family?: LiveFamilyMember[]; canAddFamily?: boolean; familyLimit?: number; sponsorName?: string | null };
+export type LiveDetail = { /** Team only, for instructors. */ teamStatus?: LiveTeamStatus; phone: string | null; planLabel: string | null; price: string | null; statusLabel: string; started: string | null; commitmentEnd: string | null; commitmentEndDate?: string | null; waiverAccepted: string | null; stripeUrl?: string; hold?: LiveHold | null; history?: string[]; cancel?: LiveCancel; family?: LiveFamilyMember[]; canAddFamily?: boolean; familyLimit?: number; sponsorName?: string | null };
 export type LiveInvite = { kind: 'junior' | 'family'; name: string; email: string; sponsorId: string };
 export type LiveAccessInput = { hold: 'medical' | 'other' | null; note: string; until: string };
 export type LiveCommit = { created: Booking[]; modified: Booking[] };
@@ -33,6 +40,10 @@ export type LiveActions = {
   inviteMember: (input: LiveInvite) => Promise<LiveResult>;
   /** Team only. Adds an instructor (the default) or another team member (admin); both sign in with an emailed link. */
   addInstructor: (input: { name: string; email: string; role?: 'instructor' | 'admin' }) => Promise<LiveResult>;
+  /** Team only. Suspends (signed out, nothing else changes), restores, or removes (signed out, upcoming sessions cancelled, history kept) an instructor or team member. */
+  setTeamAccess: (memberId: string, action: 'suspend' | 'restore' | 'remove') => Promise<LiveResult>;
+  /** Team only. Takes a bay out of service (only with no upcoming sessions) or puts it back. */
+  setBayActive: (number: number, active: boolean) => Promise<LiveResult>;
   /** Team only. How many days ahead members, juniors and instructors may book. */
   saveBookingWindows: (input: BookingWindows) => Promise<LiveResult>;
   /** An Individual member adds a family member (or sends the link again): the person signs the agreement and pays their own add-on. */
@@ -62,6 +73,6 @@ export type LiveConfig = {
 const LiveContext = createContext<LiveRuntime | null>(null);
 export const LiveProvider = LiveContext.Provider;
 /** The config plus a way for a screen to hand back the fresh snapshot a save returned. */
-export type LiveRuntime = LiveConfig & { details: Record<string, LiveDetail>; apply: (snapshot: LiveSnapshot) => void };
+export type LiveRuntime = LiveConfig & { details: Record<string, LiveDetail>; team: LiveAdmin[]; retiredBays: LiveRetiredBay[]; apply: (snapshot: LiveSnapshot) => void };
 /** Null in the preview (fixtures, simulated saves); a runtime when the host supplies real data. */
 export const useLive = (): LiveRuntime | null => useContext(LiveContext);
