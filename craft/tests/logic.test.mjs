@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, validDate, dailyLimit, chicagoInstant, validateBooking, previewSeries, canManage, canBook, needsOnboarding, overviewStats, bookingStatus, reportingRange, report, csv, checkoutErrors, DEMO_NOW } from '../dist/golf-lab/logic.js';
+import { addDays, validDate, dailyLimit, chicagoInstant, validateBooking, previewSeries, canManage, canBook, needsOnboarding, overviewStats, bookingStatus, reportingRange, report, csv, checkoutErrors, bookingWindowDays, setBookingWindows, DEMO_NOW } from '../dist/golf-lab/logic.js';
 import { createFixtureAdapter } from '../dist/golf-lab/fixtures.js';
 import { golfLabContentSchemas } from '../dist/golf-lab/schemas.js';
 
@@ -85,10 +85,10 @@ test('weekly instructor series is finite and reveals conflicting dates without o
 test('member cannot create instructor recurrence', () => {
   assert.ok(previewSeries(draft(), 2, [], member, actor).every(row => row.errors.length));
 });
-test('instructor proposal is bounded to 90 days, and cannot bypass waiver/access', () => {
-  const candidate = draft({ memberId: instructor.id, date: addDays('2026-11-02', 90) });
+test('instructors book up to 21 days ahead by default, and cannot bypass waiver/access', () => {
+  const candidate = draft({ memberId: instructor.id, date: addDays('2026-11-02', 21) });
   assert.deepEqual(validateBooking(candidate, [], instructor, coach), []);
-  assert.ok(validateBooking({ ...candidate, date: addDays(candidate.date, 1) }, [], instructor, coach).some(error => error.includes('90 days')));
+  assert.ok(validateBooking({ ...candidate, date: addDays(candidate.date, 1) }, [], instructor, coach).some(error => error.includes('21 days')));
   assert.ok(validateBooking(candidate, [], { ...instructor, waiver: false }, coach).some(error => error.includes('waiver')));
 });
 test('completion is scheduled end, cancellation always wins', () => {
@@ -163,4 +163,15 @@ test('overview Chicago calendar ranges cross years, weeks and leap-month boundar
   const rows = [draft({ date: '2027-01-01' }), draft({ date: '2026-12-31' }), draft({ date: '2027-01-03' }), draft({ date: '2027-01-04' })];
   assert.deepEqual(overviewStats(rows, '2027-01-01', chicagoInstant('2027-01-01', 8)), { 'Practicing Now': 0, 'Total Booked Today': 1, 'Booked This Week': 3, 'Booked This Month': 3, 'YTD Bookings': 1 });
   assert.equal(overviewStats([draft({ date: '2028-02-29' }), draft({ date: '2028-03-01' })], '2028-02-01')['Booked This Month'], 1);
+});
+
+test('the booking windows the team saves replace the defaults for each kind of account, and null restores them', () => {
+  try {
+    setBookingWindows({ member: 10, junior: 2, instructor: 30 });
+    assert.deepEqual(['individual', 'family', 'junior', 'instructor'].map(bookingWindowDays), [10, 10, 2, 30]);
+    const candidate = draft({ memberId: instructor.id, date: addDays('2026-11-02', 30) });
+    assert.deepEqual(validateBooking(candidate, [], instructor, coach), []);
+    assert.ok(validateBooking({ ...candidate, date: addDays(candidate.date, 1) }, [], instructor, coach).some(error => error.includes('30 days')));
+  } finally { setBookingWindows(null); }
+  assert.deepEqual(['individual', 'junior', 'instructor'].map(bookingWindowDays), [7, 3, 21]);
 });

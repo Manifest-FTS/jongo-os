@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, applyScheduleStage, bookingStatus, chicagoInstant, createFixtureAdapter, csv, DEMO_NOW, DEMO_TODAY, editableBooking, INSTRUCTOR_HORIZON_DAYS, INSTRUCTOR_MAX_HOURS, previewWeekly, report, stageScheduleChange, updateInventory, validateBooking } from '../dist/golf-lab/logic.js';
+import { addDays, applyScheduleStage, bookingStatus, chicagoInstant, createFixtureAdapter, csv, DEMO_NOW, DEMO_TODAY, editableBooking, bookingWindowDays, INSTRUCTOR_MAX_HOURS, setBookingWindows, previewWeekly, report, stageScheduleChange, updateInventory, validateBooking } from '../dist/golf-lab/logic.js';
 
+// Most tests here build multi-week series, so they run on a 90-day instructor window; the default is checked on its own below.
+const LONG_WINDOWS = { member: 7, junior: 3, instructor: 90 };
+setBookingWindows(LONG_WINDOWS);
 const fixtures = createFixtureAdapter(), coach = { id: 'i1', role: 'instructor' }, admin = { id: 'a1', role: 'admin' }, actor = { id: 'm1', role: 'member' };
 const instructor = fixtures.members.find(row => row.id === coach.id), member = fixtures.members[0];
 const draft = (patch = {}) => ({ id: 'weekly', memberId: 'i1', date: DEMO_TODAY, start: 15, hours: 6, bay: 1, status: 'booked', ...patch });
@@ -37,14 +40,16 @@ test('Derek Monday 15–21 inclusive series represents two months, not eight-cou
   assert.equal(new Set(stage.candidates.map(row => row.booking.id)).size, 10);
 });
 test('inclusive horizon allows boundary, rejects beyond even non-occurrence end dates and invalid bounds', () => {
-  assert.equal(INSTRUCTOR_HORIZON_DAYS, 90);
-  assert.equal(weekly(addDays(DEMO_TODAY, 90)).candidates.length, 13);
-  for (const until of [addDays(DEMO_TODAY, 91), '2026-11-01', '2026-02-30', 'invalid', '']) assert.ok(weekly(until).errors.length);
+  setBookingWindows(null);
+  assert.equal(bookingWindowDays('instructor'), 21);
+  assert.equal(weekly(addDays(DEMO_TODAY, 21)).candidates.length, 4);
+  for (const until of [addDays(DEMO_TODAY, 22), '2026-11-01', '2026-02-30', 'invalid', '']) assert.ok(weekly(until).errors.length);
   assert.ok(weekly('2027-01-02', [], draft({ date: '2026-02-30' })).errors.length);
-  assert.ok(validate(draft({ date: addDays(DEMO_TODAY, 91) })).some(error => error.includes('90 days')));
+  assert.ok(validate(draft({ date: addDays(DEMO_TODAY, 22) })).some(error => error.includes('21 days')));
   const junior = fixtures.members.find(row => row.tier === 'junior');
   assert.ok(validate(draft({ memberId: member.id, hours: 1, date: addDays(DEMO_TODAY, 8) }), member, actor).some(error => error.includes('7 days')));
   assert.ok(validate(draft({ memberId: junior.id, hours: 1, date: addDays(DEMO_TODAY, 4) }), junior, { id: junior.id, role: 'member' }).some(error => error.includes('3 days')));
+  setBookingWindows(LONG_WINDOWS);
 });
 test('DST gaps/repeated hours and internal transitions cannot be scheduled or skipped', () => {
   assert.equal(chicagoInstant('2027-03-14', 2), null);

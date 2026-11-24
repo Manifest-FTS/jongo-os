@@ -1,10 +1,10 @@
 "use client";
 import { createContext, useContext } from 'react';
 import type { Bay } from './inventory.js';
-import type { Booking, Member } from './logic.js';
+import type { Booking, BookingWindows, Member } from './logic.js';
 
 /** What the server knows right now. `now` is fixed per snapshot so the server render and the browser agree on the time. */
-export type LiveSnapshot = { now: number; members: Member[]; bookings: Booking[]; bays: Bay[]; details: Record<string, LiveDetail> };
+export type LiveSnapshot = { now: number; members: Member[]; bookings: Booking[]; bays: Bay[]; details: Record<string, LiveDetail>; /** How far ahead each kind of account may book. Absent means the built-in defaults. */ windows?: BookingWindows };
 /** A pause on booking that the team set. It is separate from billing: the plan stays paid. */
 export type LiveHold = { kind: 'medical' | 'other'; note: string; until: string | null };
 /** What may be done about ending a membership right now, worked out by the host. `message` explains it in plain words. */
@@ -31,7 +31,10 @@ export type LiveActions = {
   extendCommitment: (memberId: string, input: { until: string; note: string }) => Promise<LiveResult>;
   /** Team only. Approve a Junior or Family member by emailing them a link to finish and pay. */
   inviteMember: (input: LiveInvite) => Promise<LiveResult>;
-  addInstructor: (input: { name: string; email: string }) => Promise<LiveResult>;
+  /** Team only. Adds an instructor (the default) or another team member (admin); both sign in with an emailed link. */
+  addInstructor: (input: { name: string; email: string; role?: 'instructor' | 'admin' }) => Promise<LiveResult>;
+  /** Team only. How many days ahead members, juniors and instructors may book. */
+  saveBookingWindows: (input: BookingWindows) => Promise<LiveResult>;
   /** An Individual member adds a family member (or sends the link again): the person signs the agreement and pays their own add-on. */
   addFamilyMember: (input: { name: string; email: string }) => Promise<LiveResult>;
   /** Withdraws a family invitation that was not paid. */
