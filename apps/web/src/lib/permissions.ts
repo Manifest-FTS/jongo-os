@@ -11,7 +11,7 @@ export interface AppCapabilities {
   hasCustomDomains: boolean;
 }
 
-export type CanonicalRole = "admin" | "collaborator";
+export type CanonicalRole = "admin" | "collaborator" | "viewer";
 
 /**
  * What a role may do, one capability per action.
@@ -209,6 +209,15 @@ export async function getPlatformAdminContacts(): Promise<string[]> {
 }
 
 
+/**
+ * A member is view-only when every membership they hold on the resource is
+ * "viewer". Any admin or collaborator grant (on the client or the app) wins.
+ */
+export function isEffectiveViewer(orgRole: unknown, siteRole: unknown): boolean {
+  const roles = [orgRole, siteRole].filter((value) => typeof value === "string" && value);
+  return roles.length > 0 && roles.every((value) => normalizeRole(value) === "viewer");
+}
+
 export function getPermissions(callerRole: unknown, isPlatformAdmin = false): UserPermissions {
   const role = normalizeRole(callerRole);
   const isAdmin = role === "admin" || isPlatformAdmin;
@@ -343,11 +352,21 @@ export async function resolveSitePermissionSnapshot(
       const siteAdmin = isAdminRole(site?.collaborators?.[0]?.role);
       if (ownerAdmin || orgCollaboratorAdmin || siteAdmin) {
         role = "admin";
+      } else if (!isPlatformAdmin && isEffectiveViewer(site?.organization?.collaborators?.[0]?.role, site?.collaborators?.[0]?.role)) {
+        role = "viewer";
       }
     }
   }
 
   const permissions = getPermissions(role, isPlatformAdmin);
+  if (role === "viewer") {
+    // View-only: every capability off. The server enforces the same rule on
+    // each write route (lib/read-only-guard.ts); this only hides the buttons.
+    for (const key of Object.keys(permissions) as Array<keyof UserPermissions>) {
+      if (key.startsWith("can")) (permissions as any)[key] = false;
+    }
+    permissions.isCollaborator = false;
+  }
 
   return {
     ...permissions,

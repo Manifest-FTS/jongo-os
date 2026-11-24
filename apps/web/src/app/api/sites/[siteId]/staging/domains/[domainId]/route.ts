@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { removeStagingDomain } from "@/lib/staging-domains";
 import { resolveStagingDomainAccess } from "@/lib/staging-domain-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,8 @@ type Params = { params: Promise<{ siteId: string; domainId: string }> };
 
 /** DELETE: detach in Coolify and fall back to the .mfts.link address. */
 export async function DELETE(_request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId, domainId } = await params;
   const access = await resolveStagingDomainAccess(siteId, { manage: true });
   if ("response" in access) return access.response;

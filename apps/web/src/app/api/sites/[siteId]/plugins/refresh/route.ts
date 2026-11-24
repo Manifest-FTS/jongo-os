@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { refreshPluginInventory } from "@/lib/wordpress-plugin-inventory";
 import { toPluginInventory } from "@/lib/wordpress-plugin-probe";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 // Shells out to ssh, so it needs the Node runtime.
 export const runtime = "nodejs";
@@ -17,6 +18,8 @@ type Params = { params: Promise<{ siteId: string }> };
  * SHORTINIT and only SELECTs.
  */
 export async function POST(_request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const session = await auth();
   if (!session?.user?.id) {

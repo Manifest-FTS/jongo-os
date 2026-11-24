@@ -57,6 +57,12 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
   const [temporaryDomainSlug, setTemporaryDomainSlug] = useState("");
   const [temporaryDomainSuffix, setTemporaryDomainSuffix] = useState<string>(DEFAULT_TEMPORARY_DOMAIN_SUFFIX);
   const [selectedAppId, setSelectedAppId] = useState("");
+  // First-time WordPress setup. All optional: Jongo fills in sensible defaults.
+  const [wpTitle, setWpTitle] = useState("");
+  const [wpAdminEmail, setWpAdminEmail] = useState("");
+  const [wpAdminUser, setWpAdminUser] = useState("");
+  const [wpAdminPassword, setWpAdminPassword] = useState("");
+  const [wpDetailsOpen, setWpDetailsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeFix, setNoticeFix] = useState<{ siteId: string; remedy: Remedy } | null>(null);
@@ -122,6 +128,11 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
     setTemporaryDomainSuffix(DEFAULT_TEMPORARY_DOMAIN_SUFFIX);
     setSelectedAppId("");
     setGithub(EMPTY_GITHUB_REPO_VALUE);
+    setWpTitle("");
+    setWpAdminEmail("");
+    setWpAdminUser("");
+    setWpAdminPassword("");
+    setWpDetailsOpen(false);
     setError(null);
   }
 
@@ -246,7 +257,8 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
             ...(appDomain
               ? [
                   { id: "address", label: `Setting the address ${appDomain}`, status: "pending" as const },
-                  { id: "start", label: "Starting the site on its address", status: "pending" as const }
+                  { id: "start", label: "Starting the site on its address", status: "pending" as const },
+                  { id: "install", label: "Setting up WordPress (title and admin account)", status: "pending" as const }
                 ]
               : [])
           ]
@@ -259,12 +271,22 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
           coolifyServiceUuid: mode === "link" ? coolifyUuid.trim() || undefined : undefined,
           gitRepositoryUrl: mode === "link" ? gitUrl.trim() || undefined : undefined,
           provisionWordPress: mode === "create",
+          wordpress:
+            mode === "create"
+              ? {
+                  title: wpTitle.trim() || undefined,
+                  adminEmail: wpAdminEmail.trim() || undefined,
+                  adminUser: wpAdminUser.trim() || undefined,
+                  adminPassword: wpAdminPassword || undefined
+                }
+              : undefined,
           temporaryDomainSlug: normalizeTemporaryDomainSlug(temporaryDomainSlug) || undefined,
           temporaryDomainSuffix
       }, onStep);
 
       if (resStatus >= 400) {
         setError(data.error ?? "Failed to create app");
+        if (typeof data.field === "string" && data.field !== "url") setWpDetailsOpen(true);
         return;
       }
 
@@ -507,6 +529,44 @@ export default function CreateSiteForm({ organizationId, availableApps = [], git
               : "Choose a name to see the address."}
           </p>
         </div>
+        {mode === "create" ? (
+          <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "0.75rem 0.9rem" }}>
+            <button
+              type="button"
+              onClick={() => setWpDetailsOpen(!wpDetailsOpen)}
+              aria-expanded={wpDetailsOpen}
+              style={{ background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit", fontWeight: 600, display: "flex", width: "100%", justifyContent: "space-between" }}
+            >
+              <span>WordPress admin login</span>
+              <span className="card-muted" style={{ fontWeight: 400 }}>{wpDetailsOpen ? "Hide" : "Optional"}</span>
+            </button>
+            <p className="form-help" style={{ margin: "0.35rem 0 0" }}>
+              Jongo sets WordPress up for you, so the site opens ready to sign in. Leave these blank to use your email and a strong
+              generated password, shown on the site's page.
+            </p>
+            {wpDetailsOpen ? (
+              <div style={{ display: "grid", gap: "0.7rem", marginTop: "0.75rem" }}>
+                <div>
+                  <label className="form-label">Site title</label>
+                  <input type="text" className="form-input" value={wpTitle} maxLength={100} onChange={(e) => setWpTitle(e.target.value)} placeholder={name.trim() || "My website"} />
+                </div>
+                <div>
+                  <label className="form-label">Admin email</label>
+                  <input type="email" className="form-input" value={wpAdminEmail} onChange={(e) => setWpAdminEmail(e.target.value)} placeholder="Your account email" autoComplete="off" />
+                </div>
+                <div>
+                  <label className="form-label">Admin username</label>
+                  <input type="text" className="form-input mono-input" value={wpAdminUser} maxLength={60} onChange={(e) => setWpAdminUser(e.target.value)} placeholder="From the admin email" autoComplete="off" spellCheck={false} />
+                </div>
+                <div>
+                  <label className="form-label">Admin password</label>
+                  <input type="password" className="form-input" value={wpAdminPassword} onChange={(e) => setWpAdminPassword(e.target.value)} placeholder="Leave blank to generate one" autoComplete="new-password" />
+                  <p className="form-help">At least 12 characters.</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {error && <p className="form-error">{error}</p>}
         <div className="form-row">
           <button type="submit" className="btn" disabled={loading}>

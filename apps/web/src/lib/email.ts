@@ -270,3 +270,55 @@ function escapeHtml(value: string): string {
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+/** Tells the account owner a sign-in security setting changed, in case it wasn't them. */
+export async function sendSecurityChangeEmail(input: {
+  to: string;
+  change: "two_factor_on" | "two_factor_off" | "recovery_codes_replaced" | "signed_out_everywhere";
+  settingsUrl: string;
+}): Promise<EmailResult> {
+  const copy = {
+    two_factor_on: {
+      subject: "Two-step sign-in is on",
+      title: "Two-step sign-in is on",
+      intro: "Signing in to Jongo now needs a code from your authenticator app as well as your password."
+    },
+    two_factor_off: {
+      subject: "Two-step sign-in was turned off",
+      title: "Two-step sign-in was turned off",
+      intro: "Signing in to Jongo now needs only your password."
+    },
+    recovery_codes_replaced: {
+      subject: "New recovery codes were created",
+      title: "New recovery codes were created",
+      intro: "Your old recovery codes no longer work. Keep the new ones somewhere safe."
+    },
+    signed_out_everywhere: {
+      subject: "You were signed out everywhere",
+      title: "You were signed out everywhere",
+      intro: "Every device signed in to your Jongo account has been signed out."
+    }
+  }[input.change];
+
+  const text = [
+    copy.intro,
+    "",
+    "If this wasn't you, reset your password straight away and turn on two-step sign-in:",
+    input.settingsUrl
+  ].join("\n");
+
+  const html = renderTransactionalEmail({
+    preheader: copy.intro,
+    badge: { tone: "info", label: "Account security" },
+    title: copy.title,
+    intro: copy.intro,
+    cta: { label: "Review security settings", url: input.settingsUrl },
+    callout: {
+      tone: "warning",
+      title: "Wasn't you?",
+      body: "Reset your password straight away, then turn on two-step sign-in."
+    }
+  });
+
+  return sendTransactionalEmail({ to: input.to, subject: copy.subject, text, html });
+}

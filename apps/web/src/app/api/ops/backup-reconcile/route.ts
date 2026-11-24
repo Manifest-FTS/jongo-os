@@ -552,7 +552,19 @@ export async function POST(request: Request) {
       ].find((c) => existsSync(c));
 
       const ELIGIBILITY_TTL_MS = 24 * 60 * 60 * 1000;
-      for (const site of due) {
+      // One backup at a time on the host (the script's lock). Starting another
+      // while one runs only makes it defer, and the deferred app then jumps
+      // the queue every hour. Runs too old to be alive were failed above.
+      let otherRunning = 0;
+      try {
+        otherRunning = await (db as any).siteBackup.count({
+          where: { status: "running", startedAt: { gte: new Date(Date.now() - staleAfterHours * 3_600_000) } }
+        });
+      } catch {
+        // Unknown: start as before; the script's own lock still serialises runs.
+      }
+      if (otherRunning > 0 && due.length > 0) scheduleSkipped.push(`all:another_backup_running`);
+      for (const site of otherRunning > 0 ? [] : due) {
         if (!backupScript) break;
         if (scheduledStarted.length >= maxBackupsPerRun) break;
         const row = scheduleRows.find((r: { id: string }) => r.id === site.id);

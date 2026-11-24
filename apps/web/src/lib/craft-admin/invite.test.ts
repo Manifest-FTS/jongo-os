@@ -230,7 +230,7 @@ describe("flag off: the invite endpoints behave exactly as before", () => {
     for (const craftRole of ["editor", null, "none", 5]) {
       const response = await inviteToSite(post({ email: NEW_EMAIL, role: "collaborator", craftRole }), ctx);
       expect(response.status).toBe(400);
-      expect(await json(response)).toEqual({ error: "role must be admin or collaborator" });
+      expect(await json(response)).toEqual({ error: "role must be admin, collaborator or viewer" });
     }
     expect(world.invitations).toEqual([]);
   });

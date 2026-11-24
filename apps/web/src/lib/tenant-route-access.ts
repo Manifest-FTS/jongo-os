@@ -59,8 +59,8 @@ export async function resolveSiteAccess(siteId: string, userId: string) {
 }
 
 /** Check the submitted value, not normalizeRole's permissive legacy fallback. */
-export function isTenantMutationRole(value: unknown): value is "admin" | "collaborator" {
-  return value === "admin" || value === "collaborator";
+export function isTenantMutationRole(value: unknown): value is "admin" | "collaborator" | "viewer" {
+  return value === "admin" || value === "collaborator" || value === "viewer";
 }
 
 export function hasOnlyFields(body: unknown, fields: readonly string[]): body is Record<string, unknown> {

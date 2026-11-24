@@ -418,14 +418,21 @@ export default async function BackupsPage({ params, searchParams }: Params) {
         select: {
           backupScheduleEnabled: true,
           backupFrequencyHours: true,
-          lastScheduledBackupAt: true
+          lastScheduledBackupAt: true,
+          backupPausedReason: true,
+          backupPausedAt: true
         }
       });
       if (!row) return null;
-      return summarizeBackupSchedule({
-        ...row,
-        platformDefaultEnabled: scheduledBackupsDefaultEnabled()
-      });
+      const { backupPausedReason, backupPausedAt, ...schedule } = row;
+      return {
+        ...summarizeBackupSchedule({
+          ...schedule,
+          platformDefaultEnabled: scheduledBackupsDefaultEnabled()
+        }),
+        pausedReason: (backupPausedReason as string | null) ?? null,
+        pausedAt: backupPausedAt ? new Date(backupPausedAt) : null
+      };
     } catch {
       return null;
     }
@@ -552,6 +559,21 @@ export default async function BackupsPage({ params, searchParams }: Params) {
               <Link href={`/apps/${siteId}/settings`} className="action-link">Open app settings to verify resource mapping</Link>
             </p>
           )}
+        </article>
+      ) : null}
+
+      {/* Why scheduled backups are on hold (set by the backup callback, cleared by the next success). */}
+      {scheduleSummary?.enabled && scheduleSummary.pausedReason ? (
+        <article className="card" style={{ borderLeft: "4px solid var(--warning, #d97706)" }} aria-live="polite">
+          <h3 className="card-title" style={{ marginBottom: "0.35rem" }}>
+            {scheduleSummary.pausedReason === "app_stopped" ? "Backups paused while the app is stopped" : "Backups are waiting for the server"}
+          </h3>
+          <p className="card-muted" style={{ margin: 0 }}>
+            {scheduleSummary.pausedReason === "app_stopped"
+              ? "Nothing changes while the app isn't running, so your last backup is still up to date. Backups start again on their own once the app is running."
+              : "Another backup or a deploy has been holding up this one. Jongo keeps retrying every hour and our team has been told. Your last backup is still available to restore."}
+            {scheduleSummary.pausedAt ? ` On hold for ${formatAge(scheduleSummary.pausedAt.toISOString())}.` : ""}
+          </p>
         </article>
       ) : null}
 

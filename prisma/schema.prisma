@@ -37,11 +37,15 @@ enum ClientBillingStatus {
 enum CollaboratorRole {
   admin
   collaborator
+  // Read-only: sees what they're given, changes nothing.
+  viewer
 }
 
 enum SiteCollaboratorRole {
   admin
   collaborator
+  // Read-only: sees what they're given, changes nothing.
+  viewer
 }
 
 enum NotificationType {
@@ -72,6 +76,20 @@ model User {
   authProvider    String? // 'local', 'github', 'google', etc.
   authProviderId  String? // external provider ID
   role            GlobalRole @default(collaborator)
+
+  // Raised to sign the account out everywhere (lib/auth.config.ts compares it
+  // with the value stored in each session). Also raised on a password reset.
+  sessionVersion  Int        @default(0)
+
+  // Two-step sign-in (lib/totp.ts, lib/two-factor.ts). Secrets are encrypted
+  // with lib/secret-box; recovery codes are stored as SHA-256 hashes and each
+  // works once. totpLastStep stops a code being used twice.
+  totpSecret        String?
+  totpEnabledAt     DateTime?
+  totpLastStep      Int?
+  totpPendingSecret String?
+  totpPendingAt     DateTime?
+  totpRecoveryCodes String[]  @default([])
 
   // Billing (Stripe). Subscription is per-account, not per-organization: a
   // user's plan caps the usage across every client/org they create, so there
@@ -305,10 +323,11 @@ model Site {
   // or indexable. Enforcement is a Traefik router written to the proxy's watched
   // dynamic directory — see lib/privacy-mode.ts.
   //
-  // privacyModePassword is stored in PLAINTEXT, deliberately. The product shows
-  // the current credentials so an operator can hand them to a client, which a
-  // hash cannot support. It gates a not-yet-public site rather than an account,
-  // and it is never returned to a caller who cannot already manage the site.
+  // privacyModePassword is stored encrypted (lib/secret-box), not hashed: the
+  // product shows the current credentials so an operator can hand them to a
+  // client. It is never returned to a caller who cannot already manage the site.
+  // Rows from before encryption are encrypted on first read or by
+  // scripts/reencrypt-secrets.mjs.
   privacyModeEnabled       Boolean   @default(false)
   privacyModeUsername      String?
   privacyModePassword      String?
@@ -320,6 +339,21 @@ model Site {
   // publicly is the one outcome this feature must never report as success.
   privacyModeProviderState String?
   privacyModeProviderError String?
+
+  // WordPress first-time setup (lib/wordpress-install.ts) for sites Jongo
+  // creates: 'pending' | 'running' | 'installed' | 'already_installed' | 'failed'. Null for
+  // linked/imported sites, which were set up before Jongo knew them.
+  wpInstallState       String?
+  wpInstallError       String?
+  wpInstalledAt        DateTime?
+  // Set while an attempt runs ('running'), so two clicks can't install twice;
+  // an attempt older than 10 minutes is treated as dead.
+  wpInstallStartedAt   DateTime?
+  // { url, title, adminUser, adminEmail } — kept so "Try again" needs no re-entry.
+  wpInstallConfig      Json?
+  // Encrypted (lib/secret-box). Held only until the owner confirms they saved
+  // it, then cleared; Jongo does not keep WordPress admin passwords.
+  wpAdminPasswordEnc   String?
 
   // Set on a database resource that belongs to another app: Coolify registers
   // standalone databases as their own resources, so they were imported as
@@ -335,6 +369,12 @@ model Site {
   // Rate limit for scheduled-backup failure email. A site that is broken fails
   // every night, and a nightly alert trains people to ignore alerts.
   backupAlertSentAt      DateTime?
+  // Why scheduled backups are on hold, shown on the Backups page:
+  // app_stopped (no running container; resumes by itself) | server_busy
+  // (waiting on another backup, a deploy or a repository lock). Cleared by the
+  // next successful backup.
+  backupPausedReason     String?
+  backupPausedAt         DateTime?
   // Note: Site is referred to as "App" in UI/UX language
 
   // Relations

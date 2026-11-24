@@ -14,6 +14,7 @@ import { resolveSiteAccess } from "@/lib/tenant-route-access";
 import { isOidcEnabled } from "@/lib/oidc/config";
 import { loadInviteCraftRoles, rememberInviteCraftRole } from "@/lib/craft-admin/access";
 import { resolveCraftManager } from "@/lib/craft-admin/gate";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 type Params = { params: Promise<{ siteId: string; invitationId: string }> };
 
@@ -48,6 +49,8 @@ async function getAccess(siteId: string, userId: string): Promise<Access | null>
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

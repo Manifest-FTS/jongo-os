@@ -4,6 +4,7 @@ import { getSiteWorkspace } from "@/lib/repositories";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { runUrlRewrite } from "@/lib/wp-url-rewrite-run";
 import { summarizeRewriteReport } from "@/lib/wp-url-rewrite";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 // Shells out to ssh.
 export const runtime = "nodejs";
@@ -22,6 +23,8 @@ type Params = { params: Promise<{ siteId: string }> };
  * arrived at by omitting a flag.
  */
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const session = await auth();
   if (!session?.user?.id) {

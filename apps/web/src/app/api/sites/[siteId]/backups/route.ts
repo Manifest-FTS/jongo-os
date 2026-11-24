@@ -4,6 +4,7 @@ import { getSiteWorkspace } from "@/lib/repositories";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
 import { normalizeBackupNote } from "@/lib/backup-note";
 import { startSiteBackup } from "@/lib/site-backup-start";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,8 @@ type Params = { params: Promise<{ siteId: string }> };
  * /api/ops/site-backup-record when finished.
  */
 export async function POST(request: Request, ctx: Params) {
+  const readOnly = await readOnlyDenial(ctx);
+  if (readOnly) return readOnly;
   try {
     return await createBackup(request, ctx);
   } catch (error) {

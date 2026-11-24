@@ -5,6 +5,7 @@ import { clockNow, clockToday, chicagoInstant, type Actor, type Booking } from '
 import { bayLabel, bayReservations, updateInventory, type Bay } from './inventory.js';
 import { hourLabel } from './booking.js';
 import { useLive } from './live.js';
+import { BookingWindowsForm } from './team-controls.js';
 
 /** Shared across schedule, management overview and the style guide. No member identities. */
 export function BayCard({ bay, bookings, date = clockToday(), onSelect, onEdit }: { bay: Bay; bookings: Booking[]; date?: string; onSelect?: () => void; onEdit?: () => void }) {
@@ -29,6 +30,7 @@ export function BayManagement({ actor, bays, bookings, onUpdate }: { actor: Acto
   return <><div className="craft-page-heading"><div><p className="craft-overline">Bay Management</p><h1>Bay Management</h1></div><Button className="craft-primary" onClick={() => setEditor({})}>＋ Add bay</Button></div>
     <p className="craft-muted">Names can change. Bay numbers and internal IDs cannot. No deletion is offered; reservation history stays linked. {live ? 'Changes are saved for everyone.' : 'Changes live in this workspace only and reset on reload.'}</p>
     <p role="status">{notice}</p><div className="craft-bays">{bays.map(bay => <BayCard key={bay.id} bay={bay} bookings={bookings} onEdit={() => setEditor({ bay })} />)}</div>
+    {live && <BookingWindowsForm />}
     {editor && <BayNameForm key={editor.bay?.id ?? 'new'} bay={editor.bay} onClose={() => setEditor(null)} onSave={async name => {
       if (live) {
         const result = await live.actions.saveBay({ number: editor.bay?.displayNumber, name });

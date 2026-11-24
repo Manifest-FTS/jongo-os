@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { addStagingDomain, listStagingDomains } from "@/lib/staging-domains";
 import { resolveStagingDomainAccess } from "@/lib/staging-domain-access";
 import { checkCustomStagingDomainEntitlement } from "@/lib/hosting-entitlement";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 async function planAllowsCustomDomain(siteDbId: string, userId: string) {
   const { db } = await import("@/lib/db");
@@ -33,6 +34,8 @@ export async function GET(_request: Request, { params }: Params) {
 
 /** POST { hostname }: claim a hostname; it stays pending until DNS is verified. */
 export async function POST(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const access = await resolveStagingDomainAccess((await params).siteId, { manage: true });
   if ("response" in access) return access.response;
   const plan = await planAllowsCustomDomain(access.siteDbId, access.userId);

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from 'react';
 import { Badge, Button, Dialog } from '../shell.js';
-import { addDays, clockToday, validDate, type Member } from './logic.js';
+import { addDays, bookingWindowDays, clockToday, validDate, type BookingWindows, type Member } from './logic.js';
 import { useLive, type LiveDetail, type LiveResult } from './live.js';
 import { TeamCancel } from './membership-ending.js';
 
@@ -76,27 +76,56 @@ export function InviteDialog({ members, onClose }: { members: Member[]; onClose:
   </Dialog>;
 }
 
-/** The team adds an instructor: no payment or invitation, they just sign in with an emailed link. Instructors see only their own schedule. */
-export function InstructorDialog({ onClose }: { onClose: () => void }) {
+/** The team adds an instructor or another team member: no payment or invitation, they just sign in with an emailed link. Instructors see only their own schedule; team members see everything. */
+export function InstructorDialog({ onClose, role = 'instructor' }: { onClose: () => void; role?: 'instructor' | 'admin' }) {
   const live = useLive();
   const [name, setName] = useState(''), [email, setEmail] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [added, setAdded] = useState(false);
   if (!live) return null;
   async function add() {
     setBusy(true); setMessage('');
     try {
-      const result = await live!.actions.addInstructor({ name, email });
+      const result = await live!.actions.addInstructor({ name, email, role });
       if (result.ok) { live!.apply(result.snapshot); setAdded(true); setMessage(`${name} can now sign in at the member login with ${email}. We emailed them how.`); setName(''); setEmail(''); }
       else setMessage(result.errors.join(' '));
     } catch { setMessage('Unable to add. Try again.'); }
     setBusy(false);
   }
-  return <Dialog title="Add an instructor" onClose={onClose}>
+  return <Dialog title={role === 'admin' ? 'Add a team member' : 'Add an instructor'} onClose={onClose}>
     <form className="craft-form" onSubmit={event => { event.preventDefault(); void add(); }}>
-      <p>Instructors sign in with their email, book their own sessions and weekly blocks, and see their own schedule. They cannot see members, billing or reports.</p>
+      <p>{role === 'admin' ? 'Team members sign in with their email and have full access: members, bookings, bays, billing, reports and settings, and they can add other team members and instructors.' : 'Instructors sign in with their email, book their own sessions and weekly blocks, and see their own schedule. They cannot see members, billing or reports.'}</p>
       <label>Name<input value={name} maxLength={120} required onChange={event => { setName(event.target.value); setAdded(false); }} /></label>
       <label>Email (their sign-in)<input type="email" value={email} maxLength={254} required onChange={event => { setEmail(event.target.value); setAdded(false); }} /></label>
       <p role="status">{message}</p>
-      <div className="craft-actions"><Button onClick={onClose}>{added ? 'Done' : 'Cancel'}</Button><Button type="submit" className="craft-primary" disabled={busy}>{busy ? 'Adding\u2026' : 'Add instructor'}</Button></div>
+      <div className="craft-actions"><Button onClick={onClose}>{added ? 'Done' : 'Cancel'}</Button><Button type="submit" className="craft-primary" disabled={busy}>{busy ? 'Adding\u2026' : role === 'admin' ? 'Add team member' : 'Add instructor'}</Button></div>
     </form>
   </Dialog>;
+}
+
+/** The team sets how many days ahead each kind of account may book. Saved for everyone, and checked again on the server. */
+export function BookingWindowsForm() {
+  const live = useLive();
+  const [values, setValues] = useState({ member: String(bookingWindowDays('individual')), junior: String(bookingWindowDays('junior')), instructor: String(bookingWindowDays('instructor')) });
+  const [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
+  if (!live) return null;
+  const change = (key: keyof BookingWindows) => (event: { target: { value: string } }) => { setValues({ ...values, [key]: event.target.value }); setMessage(''); };
+  async function save() {
+    const next = { member: Number(values.member), junior: Number(values.junior), instructor: Number(values.instructor) };
+    setBusy(true); setMessage('');
+    try {
+      const result = await live!.actions.saveBookingWindows(next);
+      if (result.ok) { live!.apply(result.snapshot); setMessage('Saved. New limits apply to every booking from now on; sessions already booked are not changed.'); }
+      else setMessage(result.errors.join(' '));
+    } catch { setMessage('Unable to save. Try again.'); }
+    setBusy(false);
+  }
+  const field = (key: keyof BookingWindows, label: string) => <label>{label}<input type="number" inputMode="numeric" min={1} max={90} step={1} required value={values[key]} onChange={change(key)} /></label>;
+  return <section aria-label="Booking windows">
+    <h2>Booking windows</h2>
+    <p className="craft-muted">How many days ahead each kind of account may book. An instructor's weekly blocks must also end inside their window.</p>
+    <form className="craft-form" onSubmit={event => { event.preventDefault(); void save(); }}>
+      <div className="craft-form-grid">{field('member', 'Members and family (days)')}{field('junior', 'Juniors (days)')}{field('instructor', 'Instructors (days)')}</div>
+      <p role="status">{message}</p>
+      <div className="craft-actions"><Button type="submit" className="craft-primary" disabled={busy}>{busy ? 'Saving\u2026' : 'Save booking windows'}</Button></div>
+    </form>
+  </section>;
 }

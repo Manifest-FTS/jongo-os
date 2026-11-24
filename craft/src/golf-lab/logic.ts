@@ -20,11 +20,13 @@ export const clockToday = (): string => liveNow === null ? DEMO_TODAY : chicagoD
 export const TIME_ZONE = 'America/Chicago';
 /** Configurable fixture bounds, not approved production instructor policy. */
 export const INSTRUCTOR_MAX_HOURS = 12;
-export const INSTRUCTOR_HORIZON_DAYS = 90;
-export const MEMBER_WINDOW_DAYS = 7;
-export const JUNIOR_WINDOW_DAYS = 3;
+/** How many days ahead each kind of account may book. The team sets these; the host sends the saved values with every snapshot. */
+export type BookingWindows = { member: number; junior: number; instructor: number };
+export const DEFAULT_BOOKING_WINDOWS: BookingWindows = { member: 7, junior: 3, instructor: 21 };
+let windows = DEFAULT_BOOKING_WINDOWS;
+export function setBookingWindows(next: BookingWindows | null): void { windows = next ?? DEFAULT_BOOKING_WINDOWS; }
 /** How many days ahead this account may book. */
-export const bookingWindowDays = (tier: Member['tier']): number => tier === 'instructor' ? INSTRUCTOR_HORIZON_DAYS : tier === 'junior' ? JUNIOR_WINDOW_DAYS : MEMBER_WINDOW_DAYS;
+export const bookingWindowDays = (tier: Member['tier']): number => tier === 'instructor' ? windows.instructor : tier === 'junior' ? windows.junior : windows.member;
 export function validDate(date: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date + 'T12:00:00Z')) && new Date(date + 'T12:00:00Z').toISOString().slice(0, 10) === date;
 }
@@ -66,7 +68,7 @@ export function validateBooking(candidate: Booking, bookings: readonly Booking[]
   if (member.tier === 'family' && !member.individualSponsor) errors.push('Family add-on requires an Individual membership.');
   const instructor = member.tier === 'instructor';
   const window = bookingWindowDays(member.tier);
-  if (dayDifference(candidate.date, today) < 0 || dayDifference(candidate.date, today) > window) errors.push(`Advance booking limit: ${window} days.${instructor ? ' Proposed instructor policy.' : ''}`);
+  if (dayDifference(candidate.date, today) < 0 || dayDifference(candidate.date, today) > window) errors.push(`Advance booking limit: ${window} days.`);
   const live = bookings.filter(row => row.status !== 'cancelled' && row.id !== candidate.id);
   if (live.some(row => row.date === candidate.date && row.bay === candidate.bay && row.start < candidate.start + candidate.hours && candidate.start < row.start + row.hours)) errors.push('Bay conflict. Choose another bay or time; existing bookings are never displaced.');
   if (live.some(row => row.date === candidate.date && row.memberId === member.id && row.start < candidate.start + candidate.hours && candidate.start < row.start + row.hours)) errors.push('This account already has an overlapping reservation.');
@@ -75,7 +77,7 @@ export function validateBooking(candidate: Booking, bookings: readonly Booking[]
   return errors;
 }
 export function previewSeries(candidate: Booking, count: number, bookings: readonly Booking[], member: Member, actor: Actor, bays: readonly Bay[] = createBayFixtures()): { booking: Booking; errors: string[] }[] {
-  if (!Number.isInteger(count) || count < 2 || count > Math.floor(INSTRUCTOR_HORIZON_DAYS / 7) + 1 || !validDate(candidate.date)) throw new Error('Series must contain valid weekly occurrences within the proposed 90-day horizon.');
+  if (!Number.isInteger(count) || count < 2 || count > Math.floor(bookingWindowDays('instructor') / 7) + 1 || !validDate(candidate.date)) throw new Error('Series must contain valid weekly occurrences within the instructor booking window.');
   const staged = [...bookings];
   return Array.from({ length: count }, (_, index) => {
     const booking = { ...candidate, id: `${candidate.id}-${index}`, date: addDays(candidate.date, index * 7), seriesId: candidate.id };
@@ -94,7 +96,7 @@ export function editableBooking(row: Booking, now = clockNow()): boolean {
 /** Inclusive end date. Reject invalid bounds, never silently truncate an out-of-range request. */
 export function previewWeekly(candidate: Booking, until: string, bookings: readonly Booking[], member: Member, actor: Actor, bays: readonly Bay[] = createBayFixtures()): ScheduleStage {
   if (!validDate(candidate.date) || !validDate(until) || until < candidate.date) return { action: 'save', candidates: [], errors: ['Choose a valid end date on or after the start date (inclusive).'] };
-  if (dayDifference(candidate.date, clockToday()) < 0 || dayDifference(until, clockToday()) > INSTRUCTOR_HORIZON_DAYS) return { action: 'save', candidates: [], errors: ['The entire series must be within the proposed 90-day instructor preview horizon.'] };
+  if (dayDifference(candidate.date, clockToday()) < 0 || dayDifference(until, clockToday()) > bookingWindowDays('instructor')) return { action: 'save', candidates: [], errors: [`The entire series must be within the ${bookingWindowDays('instructor')}-day instructor booking window.`] };
   if (actor.role === 'member' || member.tier !== 'instructor') return { action: 'save', candidates: [], errors: ['Only instructors/admin may create instructor series.'] };
   const rows = Array.from({ length: Math.floor(dayDifference(until, candidate.date) / 7) + 1 }, (_, index) => ({ ...candidate, id: `${candidate.id}-${index}`, seriesId: candidate.id, date: addDays(candidate.date, index * 7) }));
   return stageCandidates(rows, bookings, member, actor, bays);

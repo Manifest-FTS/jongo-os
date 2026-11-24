@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Badge, Button, Card, Dialog } from '../shell.js';
-import { addDays, applyScheduleStage, bookingStatus, canBook, canManage, bookingWindowDays, editableBooking, clockToday, INSTRUCTOR_MAX_HOURS, INSTRUCTOR_HORIZON_DAYS, previewWeekly, reportingRange, stageScheduleChange, validateBooking, type ChangeScope, type ScheduleStage, type Actor, type Booking, type Member } from './logic.js';
+import { addDays, applyScheduleStage, bookingStatus, canBook, canManage, bookingWindowDays, editableBooking, clockToday, INSTRUCTOR_MAX_HOURS, previewWeekly, reportingRange, stageScheduleChange, validateBooking, type ChangeScope, type ScheduleStage, type Actor, type Booking, type Member } from './logic.js';
 import { bayLabel, createBayFixtures, resolveBay, type Bay } from './inventory.js';
 import { BayCards } from './bays.js';
 import { CalendarDownload } from './calendar-download.js';
@@ -66,9 +66,9 @@ export function BookingEditor({ actor, members, bookings, bays = createBayFixtur
         <label>Start time<select aria-label="Start time" value={draft.start} onChange={event => update({ start: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{hourLabel(hour)}</option>)}</select></label>
         <label>Duration<select aria-label="Duration" value={draft.hours} onChange={event => update({ hours: Number(event.target.value) })}>{Array.from({ length: member.tier === 'instructor' ? INSTRUCTOR_MAX_HOURS : 2 }, (_, index) => index + 1).map(hours => <option key={hours} value={hours} disabled={draft.start + hours > 24}>{hours} {hours === 1 ? 'hour' : 'hours'}</option>)}</select></label></div>
       <p className="craft-muted">Ends at {hourLabel(draft.start + draft.hours)} · {draft.hours} scheduled hours</p>
-      <p className="craft-callout">{member.tier === 'instructor' ? `Up to ${INSTRUCTOR_MAX_HOURS} whole hours, or local day end. The 12-hour ceiling is a configurable prototype bound. Proposed ${INSTRUCTOR_HORIZON_DAYS}-day instructor horizon, not client-approved policy.` : `${bookingWindowDays(member.tier)}-day advance · Nov–Apr 1 hour/day · May–Oct 2 hours/day, across all bays.`}</p>
+      <p className="craft-callout">{member.tier === 'instructor' ? `Up to ${INSTRUCTOR_MAX_HOURS} whole hours, or local day end · ${bookingWindowDays(member.tier)}-day advance.` : `${bookingWindowDays(member.tier)}-day advance · Nov–Apr 1 hour/day · May–Oct 2 hours/day, across all bays.`}</p>
       {canRepeat && <><label className="craft-check"><input type="checkbox" checked={weekly} onChange={event => { setWeekly(event.target.checked); setPreview(null); }} />Repeat weekly (instructor series)</label>
-        {weekly && <div><label>Repeat until (inclusive)<input aria-label="Repeat until (inclusive)" type="date" required value={until} min={draft.date} max={addDays(clockToday(), INSTRUCTOR_HORIZON_DAYS)} onChange={event => { setUntil(event.target.value); resetReview(); }} /></label><small>Weekly on the start date's weekday. End date is included when it falls on that weekday.</small></div>}
+        {weekly && <div><label>Repeat until (inclusive)<input aria-label="Repeat until (inclusive)" type="date" required value={until} min={draft.date} max={addDays(clockToday(), bookingWindowDays('instructor'))} onChange={event => { setUntil(event.target.value); resetReview(); }} /></label><small>Weekly on the start date's weekday. End date is included when it falls on that weekday.</small></div>}
       </>}
       {needsReview && <><Button onClick={previewRows}>Preview dates & conflicts</Button>{preview && <SchedulePreview stage={preview} />}<label className="craft-check"><input type="checkbox" checked={skip} onChange={event => setSkip(event.target.checked)} />Explicitly skip conflicted dates; old occurrences keep their original schedule. Policy errors cannot be skipped.</label></>}
       {!!errors.length && <div role="alert" className="craft-error">{errors.map(error => <p key={error}>{error}</p>)}</div>}

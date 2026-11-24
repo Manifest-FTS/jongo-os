@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { auth } from "@/lib/auth.config";
 import { getSiteWorkspace } from "@/lib/repositories";
 import { resolveSitePermissionSnapshot } from "@/lib/permissions";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,8 @@ function resolveScriptPath(name: string): string | null {
  * replaces — a button that reports success before anything has happened.
  */
 export async function POST(request: Request, ctx: Params) {
+  const readOnly = await readOnlyDenial(ctx);
+  if (readOnly) return readOnly;
   try {
     return await flushCache(request, ctx);
   } catch (error) {

@@ -74,7 +74,12 @@ export default async function ClientWorkspaceLayout({ children, params }: Layout
     { name: "Apps", href: `/clients/${clientId}/apps` },
     // Git sources (GitHub Apps), like Coolify's Sources: the whole client team.
     { name: "Sources", href: `/clients/${clientId}/sources` },
-    ...(canManageClient ? [{ name: "Settings", href: `/clients/${clientId}/settings` } satisfies WorkspaceTab] : [])
+    ...(canManageClient
+      ? [
+          { name: "Activity", href: `/clients/${clientId}/activity` } satisfies WorkspaceTab,
+          { name: "Settings", href: `/clients/${clientId}/settings` } satisfies WorkspaceTab
+        ]
+      : [])
   ];
 
   return (

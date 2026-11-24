@@ -211,6 +211,6 @@ describe("site shell is not authority for its children", () => {
     const root = fileURLToPath(new URL("../app/(platform)/clients/[clientId]/", import.meta.url));
     const pages = readdirSync(root, { recursive: true }).map(String)
       .map((path) => path.replaceAll("\\", "/")).filter((path) => path.endsWith("page.tsx")).sort();
-    expect(pages).toEqual(["apps/page.tsx", "content/[datasetId]/page.tsx", "content/page.tsx", "page.tsx", "settings/page.tsx", "sources/page.tsx", "team/page.tsx"]);
+    expect(pages).toEqual(["activity/page.tsx", "apps/page.tsx", "content/[datasetId]/page.tsx", "content/page.tsx", "page.tsx", "settings/page.tsx", "sources/page.tsx", "team/page.tsx"]);
   });
 });

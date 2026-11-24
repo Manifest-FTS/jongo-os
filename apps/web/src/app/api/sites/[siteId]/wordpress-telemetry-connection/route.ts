@@ -7,6 +7,7 @@ import type { SiteWorkspaceRecord } from "@/lib/repositories";
 import { collectFromRestCredentials } from "@/lib/wordpress-telemetry-bridge-providers";
 import { decryptSecret, encryptSecret } from "@/lib/wordpress-telemetry-secrets";
 import { isAdminRole } from "@/lib/roles";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 type Params = { params: Promise<{ siteId: string }> };
 
@@ -450,6 +451,8 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function PUT(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const resolved = await resolveAuthorizedSite(siteId);
   if (resolved.error) {
@@ -516,6 +519,8 @@ export async function PUT(req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const resolved = await resolveAuthorizedSite(siteId);
   if (resolved.error) {
@@ -603,6 +608,8 @@ export async function POST(req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { siteId } = await params;
   const resolved = await resolveAuthorizedSite(siteId);
   if (resolved.error) {

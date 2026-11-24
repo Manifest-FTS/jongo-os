@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOrgAdmin, requireOrgMember } from "@/lib/github-route-access";
+import { readOnlyDenial } from "@/lib/read-only-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +9,8 @@ type Params = { params: Promise<{ organizationId: string; sourceId: string }> };
 
 /** PATCH: Manual installation (an existing GitHub App's credentials). */
 export async function PATCH(request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { organizationId, sourceId } = await params;
   const access = await requireOrgMember(organizationId);
   if ("response" in access) return access.response;
@@ -29,6 +32,8 @@ export async function PATCH(request: Request, { params }: Params) {
 
 /** DELETE: remove a Git source (client admins). */
 export async function DELETE(_request: Request, { params }: Params) {
+  const readOnly = await readOnlyDenial({ params });
+  if (readOnly) return readOnly;
   const { organizationId, sourceId } = await params;
   const access = await requireOrgAdmin(organizationId);
   if ("response" in access) return access.response;
