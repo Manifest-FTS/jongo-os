@@ -1,8 +1,8 @@
 "use client";
 import { useState } from 'react';
-import { Badge, Button, Dialog } from '../shell.js';
+import { Badge, Button, Card, Dialog } from '../shell.js';
 import { addDays, bookingWindowDays, clockToday, validDate, type BookingWindows, type Member } from './logic.js';
-import { useLive, type LiveDetail, type LiveResult } from './live.js';
+import { useLive, type LiveDetail, type LiveResult, type LiveTeamStatus } from './live.js';
 import { TeamCancel } from './membership-ending.js';
 
 /** What the team can do about one account: suspend or restore booking, move the commitment end, and see what was done before. Every change records who and why. */
@@ -128,4 +128,55 @@ export function BookingWindowsForm() {
       <div className="craft-actions"><Button type="submit" className="craft-primary" disabled={busy}>{busy ? 'Saving\u2026' : 'Save booking windows'}</Button></div>
     </form>
   </section>;
+}
+
+const TEAM_TONE: Record<LiveTeamStatus, 'green' | 'amber' | 'neutral'> = { active: 'green', suspended: 'amber', removed: 'neutral' };
+const TEAM_LABEL: Record<LiveTeamStatus, string> = { active: 'Active', suspended: 'Suspended', removed: 'Removed' };
+
+/** Suspend, restore or remove an instructor or team member. Suspending signs them out; removing also cancels their upcoming sessions. History is always kept. */
+export function TeamAccountControls({ id, name, status, self = false }: { id: string; name: string; status: LiveTeamStatus; self?: boolean }) {
+  const live = useLive();
+  const [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [confirming, setConfirming] = useState(false);
+  if (!live) return null;
+  async function run(action: 'suspend' | 'restore' | 'remove', done: string) {
+    setBusy(true); setMessage('');
+    try {
+      const result = await live!.actions.setTeamAccess(id, action);
+      if (result.ok) { live!.apply(result.snapshot); setMessage(done); setConfirming(false); } else { setMessage(result.errors.join(' ')); setConfirming(false); }
+    } catch { setMessage('Unable to save. Try again.'); }
+    setBusy(false);
+  }
+  if (self) return <div><p className="craft-muted">This is your account. Another team member can change your access.</p></div>;
+  return <div>
+    <div className="craft-actions">
+      {status === 'active' && <Button disabled={busy} onClick={() => void run('suspend', `${name} is suspended and signed out.`)}>Suspend</Button>}
+      {status !== 'active' && <Button disabled={busy} onClick={() => void run('restore', `${name} can sign in again.`)}>Restore</Button>}
+      {status !== 'removed' && <Button disabled={busy} onClick={() => setConfirming(true)}>Remove</Button>}
+    </div>
+    <p role="status">{message}</p>
+    {confirming && <Dialog title={`Remove ${name}?`} onClose={() => setConfirming(false)}>
+      <p>They are signed out at once and cannot sign in. Their upcoming sessions are cancelled; past sessions and history are kept. You can restore them later.</p>
+      <div className="craft-actions"><Button onClick={() => setConfirming(false)}>Keep</Button><Button className="craft-primary" disabled={busy} onClick={() => void run('remove', `${name} was removed.`)}>{busy ? 'Removing\u2026' : 'Remove'}</Button></div>
+    </Dialog>}
+  </div>;
+}
+
+/** Who has full access, so nobody has to guess. Each email address has one role. */
+export function TeamView() {
+  const live = useLive();
+  const [adding, setAdding] = useState(false);
+  if (!live) return null;
+  const people = live.team, active = people.filter(person => person.status === 'active').length;
+  return <>
+    <div className="craft-page-heading"><div><p className="craft-overline">Team</p><h1>Team</h1></div><Badge>{active} active</Badge></div>
+    <div className="craft-actions"><Button className="craft-primary" onClick={() => setAdding(true)}>+ Add team member</Button></div>
+    <p className="craft-muted">Everyone here has full access: members, bookings, bays, billing, reports and settings. Each email address can have only one role, so someone who is also an instructor needs a second address, for example name+coach@yourdomain.com.</p>
+    <Card><div className="craft-list">{people.map(person => <div key={person.id} className="craft-member-row">
+      <span className="craft-avatar" aria-hidden="true">{person.name.split(' ').map(word => word[0]).slice(0, 2).join('')}</span>
+      <div><strong>{person.name}{person.self ? ' (you)' : ''}</strong><p>{person.email}{person.addedBy ? ` · added by ${person.addedBy}` : ''}</p></div>
+      <Badge tone={TEAM_TONE[person.status]}>{TEAM_LABEL[person.status]}</Badge>
+      <TeamAccountControls id={person.id} name={person.name} status={person.status} self={person.self} />
+    </div>)}</div></Card>
+    {adding && <InstructorDialog role="admin" onClose={() => setAdding(false)} />}
+  </>;
 }
