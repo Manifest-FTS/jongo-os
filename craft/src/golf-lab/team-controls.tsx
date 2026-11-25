@@ -121,7 +121,7 @@ export function BookingWindowsForm() {
   const field = (key: keyof BookingWindows, label: string) => <label>{label}<input type="number" inputMode="numeric" min={1} max={90} step={1} required value={values[key]} onChange={change(key)} /></label>;
   return <section aria-label="Booking windows">
     <h2>Booking windows</h2>
-    <p className="craft-muted">How many days ahead each kind of account may book. An instructor's weekly blocks must also end inside their window.</p>
+    <p className="craft-muted">How many days ahead each kind of account may book. An instructor's weekly blocks must also end inside their window. One instructor can have their own limit under Instructors, View details.</p>
     <form className="craft-form" onSubmit={event => { event.preventDefault(); void save(); }}>
       <div className="craft-form-grid">{field('member', 'Members and family (days)')}{field('junior', 'Juniors (days)')}{field('instructor', 'Instructors (days)')}</div>
       <p role="status">{message}</p>
@@ -178,5 +178,30 @@ export function TeamView() {
       <TeamAccountControls id={person.id} name={person.name} status={person.status} self={person.self} />
     </div>)}</div></Card>
     {adding && <InstructorDialog role="admin" onClose={() => setAdding(false)} />}
+  </>;
+}
+
+/** One instructor's own days-ahead limit. Blank means they follow the instructor default set in Bay Management. */
+export function InstructorWindowControl({ member }: { member: Member }) {
+  const live = useLive();
+  const [value, setValue] = useState(member.bookingWindow ? String(member.bookingWindow) : ''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
+  if (!live) return null;
+  const fallback = bookingWindowDays('instructor');
+  async function save(days: number | null) {
+    setBusy(true); setMessage('');
+    try {
+      const result = await live!.actions.setMemberBookingWindow(member.id, days);
+      if (result.ok) { live!.apply(result.snapshot); if (days === null) setValue(''); setMessage(days === null ? 'Back to the instructor default.' : `Saved: ${days} days ahead.`); } else setMessage(result.errors.join(' '));
+    } catch { setMessage('Unable to save. Try again.'); }
+    setBusy(false);
+  }
+  return <>
+    <h3>Booking window</h3>
+    <p className="craft-muted">{member.bookingWindow ? `Custom: ${member.bookingWindow} days ahead.` : `Uses the instructor default (${fallback} days ahead).`} It applies to their sessions and weekly blocks.</p>
+    <form className="craft-form" onSubmit={event => { event.preventDefault(); void save(Number(value)); }}>
+      <label>Days ahead for {member.name}<input type="number" inputMode="numeric" min={1} max={90} step={1} required value={value} placeholder={`Default (${fallback})`} onChange={event => { setValue(event.target.value); setMessage(''); }} /></label>
+      <p role="status">{message}</p>
+      <div className="craft-actions"><Button type="submit" className="craft-primary" disabled={busy}>{busy ? 'Saving\u2026' : 'Save'}</Button>{member.bookingWindow ? <Button disabled={busy} onClick={() => void save(null)}>Use the default</Button> : null}</div>
+    </form>
   </>;
 }
