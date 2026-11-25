@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, validDate, dailyLimit, chicagoInstant, validateBooking, previewSeries, canManage, canBook, needsOnboarding, overviewStats, bookingStatus, reportingRange, report, csv, checkoutErrors, bookingWindowDays, setBookingWindows, DEMO_NOW } from '../dist/golf-lab/logic.js';
+import { addDays, validDate, dailyLimit, chicagoInstant, validateBooking, previewSeries, canManage, canBook, needsOnboarding, overviewStats, bookingStatus, reportingRange, report, csv, checkoutErrors, bookingWindowDays, memberWindowDays, setBookingWindows, DEMO_NOW } from '../dist/golf-lab/logic.js';
 import { createFixtureAdapter } from '../dist/golf-lab/fixtures.js';
 import { golfLabContentSchemas } from '../dist/golf-lab/schemas.js';
 
@@ -174,4 +174,18 @@ test('the booking windows the team saves replace the defaults for each kind of a
     assert.ok(validateBooking({ ...candidate, date: addDays(candidate.date, 1) }, [], instructor, coach).some(error => error.includes('30 days')));
   } finally { setBookingWindows(null); }
   assert.deepEqual(['individual', 'junior', 'instructor'].map(bookingWindowDays), [7, 3, 21]);
+});
+
+test('one instructor can have their own window; everyone else keeps the default', () => {
+  const own = { ...instructor, bookingWindow: 40 };
+  assert.deepEqual([memberWindowDays(own), memberWindowDays(instructor), bookingWindowDays('instructor')], [40, 21, 21]);
+  const far = draft({ memberId: instructor.id, date: addDays('2026-11-02', 40) });
+  assert.deepEqual(validateBooking(far, [], own, coach), []);
+  assert.ok(validateBooking(far, [], instructor, coach).some(error => error.includes('21 days')), 'without their own limit the default applies');
+  assert.ok(validateBooking({ ...far, date: addDays(far.date, 1) }, [], own, coach).some(error => error.includes('40 days')));
+});
+
+test('a member or junior can have their own window too', () => {
+  const [plain, junior] = [fixtures.members.find(row => row.tier === 'individual'), fixtures.members.find(row => row.tier === 'junior')];
+  assert.deepEqual([memberWindowDays(plain), memberWindowDays({ ...plain, bookingWindow: 14 }), memberWindowDays(junior), memberWindowDays({ ...junior, bookingWindow: 5 })], [7, 14, 3, 5]);
 });
