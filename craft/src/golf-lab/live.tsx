@@ -44,6 +44,8 @@ export type LiveActions = {
   setTeamAccess: (memberId: string, action: 'suspend' | 'restore' | 'remove') => Promise<LiveResult>;
   /** Team only. Takes a bay out of service (only with no upcoming sessions) or puts it back. */
   setBayActive: (number: number, active: boolean) => Promise<LiveResult>;
+  /** Team only. One person's own days-ahead limit, or null to use the default for their kind of account. */
+  setMemberBookingWindow: (memberId: string, days: number | null) => Promise<LiveResult>;
   /** Team only. How many days ahead members, juniors and instructors may book. */
   saveBookingWindows: (input: BookingWindows) => Promise<LiveResult>;
   /** An Individual member adds a family member (or sends the link again): the person signs the agreement and pays their own add-on. */
