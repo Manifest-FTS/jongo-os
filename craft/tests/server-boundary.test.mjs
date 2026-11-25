@@ -67,7 +67,7 @@ test('the server graph is where the Node-only imports live, and it never imports
 });
 
 test('package.json: ./server and ./auth exports, optional peers, shipped migrations, preview.25', () => {
-  assert.equal(pkg.version, '0.1.0-preview.29');
+  assert.equal(pkg.version, '0.1.0-preview.30');
   assert.equal(pkg.engines.node, '>=22.12');
   assert.deepEqual(pkg.exports['./server'], { types: './dist/server/index.d.ts', import: './dist/server/index.js' });
   assert.deepEqual(pkg.exports['./auth'], { types: './dist/auth/index.d.ts', import: './dist/auth/index.js' });

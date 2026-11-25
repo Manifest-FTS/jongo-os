@@ -184,3 +184,8 @@ test('one instructor can have their own window; everyone else keeps the default'
   assert.ok(validateBooking(far, [], instructor, coach).some(error => error.includes('21 days')), 'without their own limit the default applies');
   assert.ok(validateBooking({ ...far, date: addDays(far.date, 1) }, [], own, coach).some(error => error.includes('40 days')));
 });
+
+test('a member or junior can have their own window too', () => {
+  const [plain, junior] = [fixtures.members.find(row => row.tier === 'individual'), fixtures.members.find(row => row.tier === 'junior')];
+  assert.deepEqual([memberWindowDays(plain), memberWindowDays({ ...plain, bookingWindow: 14 }), memberWindowDays(junior), memberWindowDays({ ...junior, bookingWindow: 5 })], [7, 14, 3, 5]);
+});
