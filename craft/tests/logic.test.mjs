@@ -189,3 +189,12 @@ test('a member or junior can have their own window too', () => {
   const [plain, junior] = [fixtures.members.find(row => row.tier === 'individual'), fixtures.members.find(row => row.tier === 'junior')];
   assert.deepEqual([memberWindowDays(plain), memberWindowDays({ ...plain, bookingWindow: 14 }), memberWindowDays(junior), memberWindowDays({ ...junior, bookingWindow: 5 })], [7, 14, 3, 5]);
 });
+
+test('an admin can book one account on a second bay at the same time, but never the same bay', () => {
+  const admin = { id: 'a1', role: 'admin' }, day = addDays('2026-11-02', 1);
+  const existing = [draft({ id: 'first', memberId: instructor.id, date: day, bay: 1, start: 15, hours: 3 })];
+  const second = draft({ id: 'second', memberId: instructor.id, date: day, bay: 2, start: 16, hours: 2 });
+  assert.deepEqual(validateBooking(second, existing, instructor, admin), []);
+  assert.ok(validateBooking(second, existing, instructor, coach).some(error => error.includes('overlapping reservation')), 'the instructor on their own still cannot double-book');
+  assert.ok(validateBooking({ ...second, bay: 1 }, existing, instructor, admin).some(error => error.includes('Bay conflict')), 'the same bay is never double-booked');
+});

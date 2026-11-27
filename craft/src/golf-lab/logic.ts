@@ -73,7 +73,8 @@ export function validateBooking(candidate: Booking, bookings: readonly Booking[]
   if (dayDifference(candidate.date, today) < 0 || dayDifference(candidate.date, today) > window) errors.push(`Advance booking limit: ${window} days.`);
   const live = bookings.filter(row => row.status !== 'cancelled' && row.id !== candidate.id);
   if (live.some(row => row.date === candidate.date && row.bay === candidate.bay && row.start < candidate.start + candidate.hours && candidate.start < row.start + row.hours)) errors.push('Bay conflict. Choose another bay or time; existing bookings are never displaced.');
-  if (live.some(row => row.date === candidate.date && row.memberId === member.id && row.start < candidate.start + candidate.hours && candidate.start < row.start + row.hours)) errors.push('This account already has an overlapping reservation.');
+  // The team may book one account on two bays at once (an instructor running two bays); everyone else books themselves one bay at a time.
+  if (actor.role !== 'admin' && live.some(row => row.date === candidate.date && row.memberId === member.id && row.start < candidate.start + candidate.hours && candidate.start < row.start + row.hours)) errors.push('This account already has an overlapping reservation.');
   const used = live.filter(row => row.memberId === member.id && row.date === candidate.date).reduce((sum, row) => sum + row.hours, 0);
   if (!instructor && used + candidate.hours > dailyLimit(candidate.date)) errors.push(`Daily limit: ${dailyLimit(candidate.date)} hour(s) across all bays. Winter Nov–Apr: 1; summer May–Oct: 2.`);
   return errors;
